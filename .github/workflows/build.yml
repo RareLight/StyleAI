@@ -129,16 +129,49 @@ jobs:
           
           cd ..
 
+      - name: Prepare release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          TAG="v${VERSION}"
+          # Auto-generierte Release Notes von GitHub (falls möglich)
+          gh api repos/${{ github.repository }}/releases/generate-notes \
+            -f tag_name="${TAG}" \
+            -q '.body' > release_notes.md 2>/dev/null || echo -n "" > release_notes.md
+          # Standard-Hinweise zu Known Issues und manuellen Schritten anhängen
+          cat >> release_notes.md << 'NOTES'
+
+          ## Known issues
+          This release has issues with Windows Smartscreen and macOS Gatekeeper, which will prevent the start of the LrGenius backend. You will get an error in Lightroom that the LrGeniusAI database cannot be started.
+          Which means depending on your platform there are necessary manual steps to do before the first use. Please note the pre-release tag. I'm still trying to get this as easy as possible. If you have a stable working copy of LrGeniusTagAI 1.x or LrGeniusAI 2.0 installed do not yet make the switch.
+
+          ## Manual steps
+          **macOS**
+          - Open a Terminal
+          - `cd <directory with contents of the downloaded zip file>`
+          - `chmod +x lrgenius-server/lrgenius-server`
+          - `xattr -dr com.apple.quarantine lrgenius-server`
+
+          **Windows**
+          - Open Explorer go to folder where you extracted the zip file.
+          - Go to the lrgenius-server sub directory.
+          - Double-click lrgenius-server.exe
+          - A Windows Smartscreen warning will appear.
+          - Click More -> Run anyway
+          NOTES
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.event.inputs.version }}
           name: Release v${{ github.event.inputs.version }}
+          body_path: release_notes.md
           files: |
             artifacts/LrGeniusAI-windows-x64-${{ github.event.inputs.version }}.zip
             artifacts/LrGeniusAI-macos-arm64-${{ github.event.inputs.version }}.zip
           draft: false
-          prerelease: true
-          generate_release_notes: true
+          prerelease: ${{ github.ref != 'refs/heads/main' }}
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
