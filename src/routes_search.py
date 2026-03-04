@@ -15,10 +15,20 @@ def search_route():
         quality_sort = request.args.get('quality_sort', None)
 
         uuids_to_search = None
+        search_sources = None
+        vertex_project_id = None
+        vertex_location = None
         if request.method == 'POST' and request.is_json:
-            uuids_to_search = request.get_json().get('uuids')
+            body = request.get_json()
+            uuids_to_search = body.get('uuids')
+            search_sources = body.get('search_sources')
+            vertex_project_id = body.get('vertex_project_id') or body.get('vertexProjectId')
+            vertex_location = body.get('vertex_location') or body.get('vertexLocation')
 
-        sorted_results = service_search.search_images(term, quality_sort, uuids_to_search)
+        sorted_results = service_search.search_images(
+            term, quality_sort, uuids_to_search, search_sources,
+            vertex_project_id=vertex_project_id, vertex_location=vertex_location
+        )
         return jsonify(sorted_results)
     except Exception as e:
         logger.error(f"Error during search: {e}", exc_info=True)

@@ -10,6 +10,7 @@ pillow
 ollama
 lmstudio
 google-genai
+google-cloud-aiplatform
 openai
 requests
 chromadb
