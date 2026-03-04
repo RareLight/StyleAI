@@ -77,6 +77,11 @@ def _extract_options(data):
     options['compute_metadata'] = 'metadata' in tasks
     options['compute_quality'] = 'quality' in tasks
     options['compute_faces'] = 'faces' in tasks
+    options['compute_vertexai'] = 'vertexai' in tasks
+
+    # Vertex AI config (from Lightroom plugin manager)
+    options['vertex_project_id'] = data.get('vertex_project_id') or data.get('vertexProjectId')
+    options['vertex_location'] = data.get('vertex_location') or data.get('vertexLocation')
 
     return options
 
@@ -354,8 +359,8 @@ def get_ids():
     
     Query parameters:
         has_embedding (string): 'true' to get only images with real embeddings,
-                               'false' to get only images with dummy embeddings,
-                               omit to get all images.
+                                'false' to get only images with dummy embeddings,
+                                omit to get all images.
     """
     logger.info("Get IDs request received")
     
@@ -386,4 +391,3 @@ def check_unprocessed():
     needing = get_uuids_needing_processing(uuids, options)
     logger.info(f"check-unprocessed: {len(needing)} of {len(uuids)} photos need processing")
     return jsonify({"uuids": needing}), 200
-

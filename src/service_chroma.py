@@ -9,16 +9,19 @@ from config import DB_PATH, logger
 chroma_client = None
 collection = None
 face_collection = None
+vertex_collection = None
 
 # InsightFace embeddings are 512-dimensional
 FACE_EMBEDDING_DIM = 512
+# Vertex AI Multimodal Embeddings (image) default dimension
+VERTEX_EMBEDDING_DIM = 1408
 
 # Max limit for get() when counting; Chroma may apply a default limit otherwise
 STATS_GET_LIMIT = 2_000_000
 
 def _ensure_initialized():
     """Initialize ChromaDB client and collections on first use (lazy loading)."""
-    global chroma_client, collection, face_collection
+    global chroma_client, collection, face_collection, vertex_collection
     if chroma_client is not None:
         return
     
@@ -40,6 +43,14 @@ def _ensure_initialized():
     except Exception:
         face_collection = chroma_client.create_collection(name="face_embeddings")
         logger.info("Created new ChromaDB face_embeddings collection.")
+
+    # Initialize image_embeddings_vertex (Google Vertex AI multimodal embeddings)
+    try:
+        vertex_collection = chroma_client.get_collection(name="image_embeddings_vertex")
+        logger.info("Loaded existing ChromaDB image_embeddings_vertex collection.")
+    except Exception:
+        vertex_collection = chroma_client.create_collection(name="image_embeddings_vertex")
+        logger.info("Created new ChromaDB image_embeddings_vertex collection.")
 
 
 def add_image(uuid, embedding, metadata):
@@ -84,6 +95,81 @@ def get_image(uuid):
 def delete_image(uuid):
     _ensure_initialized()
     collection.delete(ids=[uuid])
+    try:
+        delete_vertex_image(uuid)
+    except Exception:
+        pass
+
+
+# --- Vertex AI image embeddings collection API ---
+
+def add_vertex_image(uuid, embedding, metadata=None):
+    """Add or overwrite Vertex AI embedding for an image. metadata can be minimal (e.g. {"uuid": uuid})."""
+    _ensure_initialized()
+    if metadata is None:
+        metadata = {"uuid": uuid}
+    existing = vertex_collection.get(ids=[uuid], include=[])
+    if existing and existing.get("ids"):
+        vertex_collection.update(ids=[uuid], embeddings=[embedding], metadatas=[metadata])
+    else:
+        vertex_collection.add(ids=[uuid], embeddings=[embedding], metadatas=[metadata])
+
+
+def update_vertex_image(uuid, embedding=None, metadata=None):
+    """Update Vertex AI embedding and/or metadata for an existing document."""
+    _ensure_initialized()
+    if embedding is not None and metadata is not None:
+        vertex_collection.update(ids=[uuid], embeddings=[embedding], metadatas=[metadata])
+    elif embedding is not None:
+        vertex_collection.update(ids=[uuid], embeddings=[embedding])
+    elif metadata is not None:
+        vertex_collection.update(ids=[uuid], metadatas=[metadata])
+
+
+def get_vertex_image(uuid):
+    """Get Vertex AI embedding record for an image. Returns Chroma get() result or empty."""
+    _ensure_initialized()
+    return vertex_collection.get(ids=[uuid], include=['metadatas', 'embeddings'])
+
+
+def delete_vertex_image(uuid):
+    """Remove Vertex AI embedding for an image."""
+    _ensure_initialized()
+    try:
+        vertex_collection.delete(ids=[uuid])
+    except Exception as e:
+        logger.debug("delete_vertex_image %s: %s", uuid, e)
+
+
+def has_vertex_embedding(uuid):
+    """Return True if this image has a Vertex AI embedding in the vertex collection."""
+    _ensure_initialized()
+    try:
+        r = vertex_collection.get(ids=[uuid], include=[])
+        return len(r.get("ids", [])) > 0
+    except Exception:
+        return False
+
+
+def query_vertex_images(query_embedding, n_results, where_clause=None):
+    """Query the Vertex AI image embeddings collection by embedding. Returns ids, distances, metadatas."""
+    _ensure_initialized()
+    try:
+        return vertex_collection.query(
+            where=where_clause,
+            query_embeddings=[query_embedding],
+            n_results=n_results,
+            include=['metadatas', 'distances'],
+        )
+    except Exception as e:
+        logger.error(f"Error querying Vertex images: {e}", exc_info=True)
+        return {'ids': [[]], 'distances': [[]], 'metadatas': [[]]}
+
+
+def get_all_vertex_image_ids():
+    """Return all image UUIDs that have a Vertex AI embedding (for search fallback)."""
+    _ensure_initialized()
+    return vertex_collection.get(include=[], limit=STATS_GET_LIMIT)["ids"]
 
 
 def query_images(query_embedding, n_results, where_clause=None):
@@ -312,4 +398,3 @@ def query_faces(query_embedding, n_results, where_clause=None):
     except Exception as e:
         logger.error(f"Error querying face_embeddings: {e}", exc_info=True)
         return {"ids": [[]], "distances": [[]], "metadatas": [[]]}
-

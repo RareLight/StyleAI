@@ -34,3 +34,4 @@ dependencies:
     - onnxruntime
     - scikit-learn
     - scipy
+    - google-cloud-aiplatform

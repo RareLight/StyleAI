@@ -3,6 +3,7 @@ import service_chroma as chroma_service
 from service_metadata import get_analysis_service
 import server_lifecycle as server_lifecycle
 import service_face as face_service
+import service_vertexai as vertexai_service
 import json
 from datetime import datetime as time
 
@@ -65,6 +66,7 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
     compute_metadata = options.get('compute_metadata', False)
     compute_quality = options.get('compute_quality', True)
     compute_faces = options.get('compute_faces', False)
+    compute_vertexai = options.get('compute_vertexai', False)
 
     if not uuids:
         return []
@@ -85,8 +87,9 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
         needs_metadata = compute_metadata and (regenerate_metadata or not has_any_metadata)
         needs_quality = compute_quality and (regenerate_metadata or existing.get('overall_score') is None)
         needs_faces = compute_faces and (regenerate_metadata or not chroma_service.faces_checked_for_photo(uuid))
+        needs_vertexai = compute_vertexai and (regenerate_metadata or not chroma_service.has_vertex_embedding(uuid))
 
-        if needs_embedding or needs_metadata or needs_quality or needs_faces:
+        if needs_embedding or needs_metadata or needs_quality or needs_faces or needs_vertexai:
             needing_processing.append(uuid)
 
     return needing_processing
@@ -119,10 +122,11 @@ def process_image_task(
         compute_metadata = options.get('compute_metadata', False)
         compute_quality = options.get('compute_quality', True)
         compute_faces = options.get('compute_faces', False)
+        compute_vertexai = options.get('compute_vertexai', False)
 
         logger.info(f"Starting batch processing of {total_images} images...")
         logger.info(f"regenerate_metadata={regenerate_metadata}, compute_embeddings={compute_embeddings}, "
-                   f"compute_metadata={compute_metadata}, compute_quality={compute_quality}, compute_faces={compute_faces}")
+                   f"compute_metadata={compute_metadata}, compute_quality={compute_quality}, compute_faces={compute_faces}, compute_vertexai={compute_vertexai}")
         
         # Check existing records if regenerate_metadata is False
         existing_records = {}
@@ -138,6 +142,7 @@ def process_image_task(
         images_needing_metadata = []
         images_needing_quality = []
         images_needing_faces = []
+        images_needing_vertexai = []
         
         for _, uuid, _ in image_triplets:
             existing = existing_records.get(uuid, {})
@@ -146,6 +151,10 @@ def process_image_task(
             needs_embedding = compute_embeddings and (regenerate_metadata or not existing.get('has_embedding', False))
             if needs_embedding:
                 images_needing_embeddings.append(uuid)
+
+            # Check if Vertex AI embedding is needed
+            if compute_vertexai and (regenerate_metadata or not chroma_service.has_vertex_embedding(uuid)):
+                images_needing_vertexai.append(uuid)
 
             # Check if faces are needed
             needs_faces = compute_faces and (regenerate_metadata or not chroma_service.faces_checked_for_photo(uuid))
@@ -168,14 +177,15 @@ def process_image_task(
                 images_needing_quality.append(uuid)
         
         logger.info(f"Generation needed: {len(images_needing_embeddings)} embeddings, "
-                   f"{len(images_needing_metadata)} metadata, {len(images_needing_quality)} quality scores, {len(images_needing_faces)} faces")
+                   f"{len(images_needing_metadata)} metadata, {len(images_needing_quality)} quality scores, {len(images_needing_faces)} faces, {len(images_needing_vertexai)} vertexai")
 
         # If nothing needs to be generated and we're not regenerating, skip work.
         # When regenerate_metadata is True we must not early-return: new images (no entry yet)
         # still need to be added to Chroma with at least minimal metadata.
-        # Also do NOT early-return when compute_faces is True - we need to process images for face detection.
+        # Also do NOT early-return when compute_faces or compute_vertexai is True - we need to process images.
         if (not regenerate_metadata
                 and not compute_faces
+                and not compute_vertexai
                 and len(images_needing_embeddings) == 0
                 and len(images_needing_metadata) == 0
                 and len(images_needing_quality) == 0):
@@ -199,6 +209,26 @@ def process_image_task(
         # Only fail batch when we actually needed embeddings but got none
         if embeddings is None and len(images_needing_embeddings) > 0:
             return 0, total_images
+
+        # Vertex AI embeddings (optional, parallel to SigLIP2): generate for images_needing_vertexai
+        vertex_project_id = options.get('vertex_project_id')
+        vertex_location = options.get('vertex_location')
+        vertex_embeddings_by_uuid = {}
+        if images_needing_vertexai and vertexai_service.is_available(vertex_project_id, vertex_location):
+            vertex_uuids = []
+            vertex_bytes = []
+            for image_bytes, uuid, _ in image_triplets:
+                if uuid in set(images_needing_vertexai):
+                    vertex_uuids.append(uuid)
+                    vertex_bytes.append(image_bytes)
+            if vertex_bytes:
+                logger.info(f"Generating Vertex AI embeddings for {len(vertex_bytes)} images...")
+                vertex_results = vertexai_service.get_image_embeddings(
+                    vertex_bytes, vertex_project_id=vertex_project_id, vertex_location=vertex_location
+                )
+                for uid, emb in zip(vertex_uuids, vertex_results):
+                    if emb is not None:
+                        vertex_embeddings_by_uuid[uid] = emb
 
         for i, (image_bytes, uuid, filename) in enumerate(image_triplets):
             try:
@@ -321,6 +351,11 @@ def process_image_task(
                     else:
                         logger.info(f"UUID {uuid} is new. Indexing metadata-only entry (no embedding).")
                     chroma_service.add_image(uuid, embedding, main_metadata)
+
+                # Vertex AI embeddings (optional, separate Chroma collection)
+                if uuid in vertex_embeddings_by_uuid:
+                    chroma_service.add_vertex_image(uuid, vertex_embeddings_by_uuid[uuid], {"uuid": uuid})
+                    logger.debug(f"UUID {uuid}: Vertex AI embedding stored.")
 
                 # Face detection and indexing (second Chroma collection)
                 if compute_faces and image_bytes:
