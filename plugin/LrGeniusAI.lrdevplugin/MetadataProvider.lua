@@ -81,5 +81,46 @@ return {
                     require "TaskImportMetadata"
                 end
             end
+
+            if previousSchemaVersion ~= nil and previousSchemaVersion < 24 then
+                local migrationChoice = LrDialogs.confirm(
+                    "Backend ID migration required",
+                    "This update introduces file-based photo_id values (breaking change).\n\n" ..
+                    "If you already have an indexed backend database from older versions, " ..
+                    "run the one-time migration now.",
+                    "Run migration now",
+                    "Later"
+                )
+
+                if migrationChoice == "ok" then
+                    LrTasks.startAsyncTask(function()
+                        local status, ok, msg
+                        if type(LrTasks) == "table" and type(LrTasks.pcall) == "function" then
+                            status, ok, msg = LrTasks.pcall(function()
+                                return SearchIndexAPI.migratePhotoIdsFromCatalog()
+                            end)
+                        else
+                            ok, msg = SearchIndexAPI.migratePhotoIdsFromCatalog()
+                            status = true
+                        end
+
+                        if not status then
+                            log:error("Photo-ID migration crashed during schema upgrade.")
+                            LrDialogs.message("Photo-ID Migration failed", tostring(ok), "critical")
+                        elseif ok then
+                            LrDialogs.message("Photo-ID Migration", msg or "Migration completed.")
+                        else
+                            LrDialogs.message("Photo-ID Migration failed", msg or "Unknown error", "critical")
+                        end
+                    end)
+                else
+                    LrDialogs.message(
+                        "Migration reminder",
+                        "Please run 'Migrate existing DB IDs to photo_id' later from:\n" ..
+                        "Plug-in Manager -> LrGeniusAI -> Backend Server.",
+                        "info"
+                    )
+                end
+            end
         end,
 }
