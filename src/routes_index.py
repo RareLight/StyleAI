@@ -16,6 +16,18 @@ index_bp = Blueprint('index', __name__)
 # Store timestamps of the last 100 requests to calculate processing speed
 request_timestamps = deque(maxlen=100)
 
+
+def _parse_json_field(value, default=None):
+    """Parse JSON-encoded form fields when clients submit multipart data."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return default
+    return value
+
 def _extract_options(data):
     """Extracts options from request data (form or json)."""
     options = {}
@@ -37,8 +49,8 @@ def _extract_options(data):
     options['submit_gps'] = str(data.get('submit_gps', 'false')).lower() == 'true'
     options['submit_keywords'] = str(data.get('submit_keywords', 'false')).lower() == 'true'
     options['submit_folder_names'] = str(data.get('submit_folder_names', 'false')).lower() == 'true'
-    options['existing_keywords'] = data.get('existing_keywords')
-    options['gps_coordinates'] = data.get('gps_coordinates')
+    options['existing_keywords'] = _parse_json_field(data.get('existing_keywords'))
+    options['gps_coordinates'] = _parse_json_field(data.get('gps_coordinates'))
     options['folder_names'] = data.get('folder_names')
     options['user_context'] = data.get('user_context')
     

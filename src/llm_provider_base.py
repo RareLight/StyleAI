@@ -240,7 +240,7 @@ class LLMProviderBase(ABC):
         # Add contextual information if provided and enabled
         context_additions = []
         
-        if request.submit_gps and request.gps_coordinates:
+        if request.submit_gps and isinstance(request.gps_coordinates, dict):
             lat = request.gps_coordinates.get('latitude')
             lon = request.gps_coordinates.get('longitude')
             if lat is not None and lon is not None:
