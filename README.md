@@ -45,6 +45,54 @@ Whether you prefer running local models to ensure maximum privacy or want to lev
 
 ---
 
+## ☁️ Google Vertex AI Login (gcloud)
+
+If you want to use Vertex AI with LrGeniusAI, run the login on the machine where `geniusai-server` is running.
+
+### macOS
+
+1. Install Google Cloud CLI (if needed):  
+   [https://cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install)
+2. Open Terminal and run:
+
+```bash
+gcloud init
+gcloud config set project YOUR_PROJECT_ID
+gcloud auth application-default login
+```
+
+3. Optional verification:
+
+```bash
+gcloud auth application-default print-access-token
+```
+
+### Windows (PowerShell)
+
+1. Install Google Cloud CLI (if needed):  
+   [https://cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install)
+2. Open **Google Cloud SDK Shell** (or PowerShell with `gcloud` in PATH) and run:
+
+```powershell
+gcloud init
+gcloud config set project YOUR_PROJECT_ID
+gcloud auth application-default login
+```
+
+3. Optional verification:
+
+```powershell
+gcloud auth application-default print-access-token
+```
+
+### Notes
+
+- `gcloud auth application-default login` creates local Application Default Credentials (ADC).
+- Set `Vertex AI Project ID` and `Vertex AI Location` in the Lightroom plugin settings.
+- For headless/server deployments, prefer service-account auth via `GOOGLE_APPLICATION_CREDENTIALS`.
+
+---
+
 ## 🛠️ Tech Stack
 
 - **Frontend / Lightroom Plugin:** Lua
