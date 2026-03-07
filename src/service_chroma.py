@@ -462,81 +462,101 @@ def migrate_photo_ids(id_mappings, *, update_faces=True, update_vertex=True, ove
         id_mappings: list of {"old_id": "...", "new_id": "..."} dicts.
     """
     _ensure_initialized()
+    total_requested = len(id_mappings or [])
     summary = {
-        "requested": len(id_mappings or []),
+        "requested": total_requested,
         "migrated": 0,
         "skipped": 0,
         "missing_old": 0,
         "conflicts": 0,
         "errors": 0,
     }
+    logger.info(
+        "Starting photo_id migration: requested=%s overwrite=%s dry_run=%s update_faces=%s update_vertex=%s",
+        total_requested,
+        overwrite,
+        dry_run,
+        update_faces,
+        update_vertex,
+    )
     if not id_mappings:
+        logger.info("Photo_id migration finished immediately: no mappings provided")
         return summary
 
-    for item in id_mappings:
+    progress_interval = 100
+
+    for idx, item in enumerate(id_mappings, start=1):
         old_id = _normalize_photo_id(item.get("old_id") or item.get("old_uuid"))
         new_id = _normalize_photo_id(item.get("new_id") or item.get("new_photo_id"))
         if not old_id or not new_id:
             summary["skipped"] += 1
-            continue
-        if old_id == new_id:
+        elif old_id == new_id:
             summary["skipped"] += 1
-            continue
-        try:
-            old_rec = get_image(old_id)
-            if not old_rec or not old_rec.get("ids"):
-                summary["missing_old"] += 1
-                continue
+        else:
+            try:
+                old_rec = get_image(old_id)
+                if not old_rec or not old_rec.get("ids"):
+                    summary["missing_old"] += 1
+                else:
+                    new_rec = get_image(new_id)
+                    if new_rec and new_rec.get("ids") and not overwrite:
+                        summary["conflicts"] += 1
+                    elif dry_run:
+                        summary["migrated"] += 1
+                    else:
+                        old_metadata = _first_result_item(old_rec.get("metadatas"), {}) or {}
+                        old_embedding = _first_result_item(old_rec.get("embeddings"))
+                        merged_metadata = dict(old_metadata)
+                        merged_metadata[LEGACY_UUID_FIELD] = old_id
+                        merged_metadata[PHOTO_ID_FIELD] = new_id
 
-            new_rec = get_image(new_id)
-            if new_rec and new_rec.get("ids") and not overwrite:
-                summary["conflicts"] += 1
-                continue
+                        if new_rec and new_rec.get("ids"):
+                            update_image(new_id, merged_metadata, embedding=old_embedding)
+                        else:
+                            add_image(new_id, old_embedding, merged_metadata, legacy_uuid=old_id)
+                        delete_image(old_id)
 
-            if dry_run:
-                summary["migrated"] += 1
-                continue
+                        if update_vertex:
+                            old_v = get_vertex_image(old_id)
+                            if old_v and old_v.get("ids"):
+                                old_v_emb = _first_result_item(old_v.get("embeddings"))
+                                old_v_meta = _first_result_item(old_v.get("metadatas"), {}) or {}
+                                old_v_meta = _ensure_photo_metadata(new_id, old_v_meta)
+                                old_v_meta[LEGACY_UUID_FIELD] = old_id
+                                if old_v_emb is not None:
+                                    add_vertex_image(new_id, old_v_emb, old_v_meta, legacy_uuid=old_id)
+                                    delete_vertex_image(old_id)
 
-            old_metadata = _first_result_item(old_rec.get("metadatas"), {}) or {}
-            old_embedding = _first_result_item(old_rec.get("embeddings"))
-            merged_metadata = dict(old_metadata)
-            merged_metadata[LEGACY_UUID_FIELD] = old_id
-            merged_metadata[PHOTO_ID_FIELD] = new_id
+                        if update_faces:
+                            face_data = face_collection.get(where={"photo_uuid": old_id}, include=["metadatas"])
+                            face_ids = face_data.get("ids", []) or []
+                            metas = face_data.get("metadatas", []) or []
+                            if face_ids and metas:
+                                new_metas = []
+                                for m in metas:
+                                    nm = dict(m or {})
+                                    nm["photo_uuid"] = new_id
+                                    nm["photo_id"] = new_id
+                                    new_metas.append(nm)
+                                update_face_metadatas(face_ids, new_metas)
 
-            if new_rec and new_rec.get("ids"):
-                update_image(new_id, merged_metadata, embedding=old_embedding)
-            else:
-                add_image(new_id, old_embedding, merged_metadata, legacy_uuid=old_id)
-            delete_image(old_id)
+                        summary["migrated"] += 1
+            except Exception as e:
+                logger.error("Failed to migrate photo ID %s -> %s: %s", old_id, new_id, e, exc_info=True)
+                summary["errors"] += 1
 
-            if update_vertex:
-                old_v = get_vertex_image(old_id)
-                if old_v and old_v.get("ids"):
-                    old_v_emb = _first_result_item(old_v.get("embeddings"))
-                    old_v_meta = _first_result_item(old_v.get("metadatas"), {}) or {}
-                    old_v_meta = _ensure_photo_metadata(new_id, old_v_meta)
-                    old_v_meta[LEGACY_UUID_FIELD] = old_id
-                    if old_v_emb is not None:
-                        add_vertex_image(new_id, old_v_emb, old_v_meta, legacy_uuid=old_id)
-                        delete_vertex_image(old_id)
-
-            if update_faces:
-                face_data = face_collection.get(where={"photo_uuid": old_id}, include=["metadatas"])
-                face_ids = face_data.get("ids", []) or []
-                metas = face_data.get("metadatas", []) or []
-                if face_ids and metas:
-                    new_metas = []
-                    for m in metas:
-                        nm = dict(m or {})
-                        nm["photo_uuid"] = new_id
-                        nm["photo_id"] = new_id
-                        new_metas.append(nm)
-                    update_face_metadatas(face_ids, new_metas)
-
-            summary["migrated"] += 1
-        except Exception as e:
-            logger.error("Failed to migrate photo ID %s -> %s: %s", old_id, new_id, e, exc_info=True)
-            summary["errors"] += 1
+        if idx == 1 or idx % progress_interval == 0 or idx == total_requested:
+            logger.info(
+                "Photo_id migration progress: %s/%s processed, migrated=%s skipped=%s missing_old=%s conflicts=%s errors=%s",
+                idx,
+                total_requested,
+                summary["migrated"],
+                summary["skipped"],
+                summary["missing_old"],
+                summary["conflicts"],
+                summary["errors"],
+            )
+    logger.info("Photo_id migration finished: %s", summary)
     return summary
 
 

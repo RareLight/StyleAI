@@ -143,6 +143,15 @@ def migrate_photo_ids():
     if not isinstance(mappings, list):
         return jsonify({"error": "mappings must be a list"}), 400
 
+    logger.info(
+        "Received photo_id migration request: mappings=%s overwrite=%s dry_run=%s update_faces=%s update_vertex=%s mapping_file=%s",
+        len(mappings),
+        bool(data.get("overwrite", False)),
+        bool(data.get("dry_run", False)),
+        bool(data.get("update_faces", True)),
+        bool(data.get("update_vertex", True)),
+        data.get("mapping_file"),
+    )
     summary = chroma_service.migrate_photo_ids(
         mappings,
         update_faces=bool(data.get("update_faces", True)),
@@ -150,4 +159,5 @@ def migrate_photo_ids():
         overwrite=bool(data.get("overwrite", False)),
         dry_run=bool(data.get("dry_run", False)),
     )
+    logger.info("Completed photo_id migration request: %s", summary)
     return jsonify({"status": "ok", "summary": summary}), 200
