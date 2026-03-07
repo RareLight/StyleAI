@@ -114,6 +114,62 @@ jobs:
           path: build/
           retention-days: 1
 
+  build-plugin-only:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    name: Build Plugin Only
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure tag commit is on main
+        shell: bash
+        run: |
+          TAG_SHA="${GITHUB_SHA}"
+          git fetch origin main
+          if git branch -r --contains "$TAG_SHA" | grep -q "origin/main"; then
+            echo "Tag commit is contained in origin/main."
+          else
+            echo "Error: Tag commit is not contained in origin/main."
+            exit 1
+          fi
+
+      - name: Update Info.lua with version and build date
+        shell: bash
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          REVISION=$(echo "$VERSION" | cut -d. -f3)
+          MAJOR=${MAJOR:-0}
+          MINOR=${MINOR:-0}
+          REVISION=${REVISION:-0}
+          BUILD_DATE=$(date +%Y%m%d)
+          INFO_LUA="plugin/LrGeniusAI.lrdevplugin/Info.lua"
+          sed 's/Info.MAJOR = .*/Info.MAJOR = '"$MAJOR"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
+          sed 's/Info.MINOR = .*/Info.MINOR = '"$MINOR"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
+          sed 's/Info.REVISION = .*/Info.REVISION = '"$REVISION"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
+          sed 's/Info.BUILD = [0-9]*/build = '"$BUILD_DATE"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
+          echo "Updated Info.lua: MAJOR=$MAJOR MINOR=$MINOR REVISION=$REVISION build=$BUILD_DATE"
+
+      - name: Prepare plugin-only files
+        shell: bash
+        run: |
+          BUILD_DIR="build-plugin-only"
+          mkdir -p "$BUILD_DIR"
+          cp -r plugin/LrGeniusAI.lrdevplugin "$BUILD_DIR/"
+
+      - name: Upload plugin-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lrgenius-ai-plugin-only
+          path: build-plugin-only/
+          retention-days: 1
+
   build-docker-images:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -171,7 +227,7 @@ jobs:
           sbom: false
           
   create-release:
-    needs: [build-and-release]
+    needs: [build-and-release, build-plugin-only]
     runs-on: ubuntu-latest
     name: Create Release
     permissions:
@@ -200,6 +256,12 @@ jobs:
             zip -r ../LrGeniusAI-macos-arm64-${VERSION}.zip .
             cd ..
           fi
+
+          if [ -d "lrgenius-ai-plugin-only" ]; then
+            cd lrgenius-ai-plugin-only
+            zip -r ../LrGeniusAI-plugin-only-${VERSION}.zip .
+            cd ..
+          fi
           
           cd ..
 
@@ -224,7 +286,7 @@ jobs:
 
           ## Known issues
           This release has issues with Windows Smartscreen and macOS Gatekeeper, which will prevent the start of the LrGenius backend. You will get an error in Lightroom that the LrGeniusAI database cannot be started.
-          Which means depending on your platform there are necessary manual steps to do before the first use. Please note the pre-release tag. I'm still trying to get this as easy as possible. If you have a stable working copy of LrGeniusTagAI 1.x or LrGeniusAI 2.0 installed do not yet make the switch.
+          Which means depending on your platform there are necessary manual steps to do before the first use. 
 
           ## Manual steps
           **macOS**
@@ -239,6 +301,9 @@ jobs:
           - Double-click lrgenius-server.exe
           - A Windows Smartscreen warning will appear.
           - Click More -> Run anyway
+
+          ## Docker backend
+          - Users running the backend via Docker can use the `LrGeniusAI-plugin-only-<version>.zip` asset.
           NOTES
 
       - name: Create release
@@ -250,6 +315,7 @@ jobs:
           files: |
             artifacts/LrGeniusAI-windows-x64-${{ github.ref_name }}.zip
             artifacts/LrGeniusAI-macos-arm64-${{ github.ref_name }}.zip
+            artifacts/LrGeniusAI-plugin-only-${{ github.ref_name }}.zip
           draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: false
