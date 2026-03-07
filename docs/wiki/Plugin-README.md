@@ -4,7 +4,7 @@
 
 # LrGeniusAI Lightroom Plugin
 
-AI-powered metadata, semantic search, quality scoring, and face workflows for Adobe Lightroom Classic.
+AI-powered metadata, semantic search, and face workflows for Adobe Lightroom Classic.
 
 ---
 

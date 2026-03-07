@@ -9,7 +9,7 @@ The server documentation is maintained in:
 ## Key responsibilities
 
 - image indexing
-- metadata and quality persistence
+- metadata persistence
 - semantic search
 - faces/person APIs
 - database migration endpoints
