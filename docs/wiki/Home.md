@@ -22,7 +22,6 @@ LrGeniusAI is an AI extension for Lightroom Classic with:
 
 - metadata generation
 - semantic search
-- quality scoring
 - face/person workflows
 
 For project overview and release info, see the main repository README.
