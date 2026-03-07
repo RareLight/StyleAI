@@ -166,7 +166,7 @@ jobs:
       - name: Upload plugin-only artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lrgenius-ai-plugin-only
+          name: lrgenius-ai-plugin-docker-backend
           path: build-plugin-only/
           retention-days: 1
 
@@ -257,9 +257,9 @@ jobs:
             cd ..
           fi
 
-          if [ -d "lrgenius-ai-plugin-only" ]; then
-            cd lrgenius-ai-plugin-only
-            zip -r ../LrGeniusAI-plugin-only-${VERSION}.zip .
+          if [ -d "lrgenius-ai-plugin-docker-backend" ]; then
+            cd lrgenius-ai-plugin-docker-backend
+            zip -r ../LrGeniusAI-plugin-docker-backend-${VERSION}.zip .
             cd ..
           fi
           
@@ -303,7 +303,7 @@ jobs:
           - Click More -> Run anyway
 
           ## Docker backend
-          - Users running the backend via Docker can use the `LrGeniusAI-plugin-only-<version>.zip` asset.
+          - Users running the backend via Docker can use the `LrGeniusAI-plugin-docker-backend-<version>.zip` asset.
           NOTES
 
       - name: Create release
@@ -315,7 +315,7 @@ jobs:
           files: |
             artifacts/LrGeniusAI-windows-x64-${{ github.ref_name }}.zip
             artifacts/LrGeniusAI-macos-arm64-${{ github.ref_name }}.zip
-            artifacts/LrGeniusAI-plugin-only-${{ github.ref_name }}.zip
+            artifacts/LrGeniusAI-plugin-docker-backend-${{ github.ref_name }}.zip
           draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: false
