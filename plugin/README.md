@@ -79,6 +79,54 @@ In the plugin settings dialog you can configure:
 
 ---
 
+## Google Vertex AI Login (gcloud)
+
+If you want to use Vertex AI from LrGeniusAI, run the login on the machine where the backend server runs.
+
+### macOS
+
+1. Install Google Cloud CLI (if not installed):
+   - [https://cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install)
+2. Open Terminal and run:
+
+```bash
+gcloud init
+gcloud config set project YOUR_PROJECT_ID
+gcloud auth application-default login
+```
+
+3. Optional verification:
+
+```bash
+gcloud auth application-default print-access-token
+```
+
+### Windows (PowerShell)
+
+1. Install Google Cloud CLI (if not installed):
+   - [https://cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install)
+2. Open **Google Cloud SDK Shell** (or PowerShell with gcloud in PATH) and run:
+
+```powershell
+gcloud init
+gcloud config set project YOUR_PROJECT_ID
+gcloud auth application-default login
+```
+
+3. Optional verification:
+
+```powershell
+gcloud auth application-default print-access-token
+```
+
+### Notes
+
+- `gcloud auth application-default login` creates local Application Default Credentials (ADC) used by the backend.
+- In plugin settings, set `Vertex AI Project ID` and `Vertex AI Location` (for example `us-central1`).
+- For headless/server deployments, prefer a service account with `GOOGLE_APPLICATION_CREDENTIALS`.
+
+---
+
 ## Typical Workflow
 
 1. Run **Analyze and Index Photos**
