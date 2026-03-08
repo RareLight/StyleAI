@@ -221,3 +221,46 @@ def group_similar_images(photo_ids, phash_threshold, clip_threshold, time_delta,
     except Exception as e:
         logger.error(f"Error during similarity grouping: {str(e)}")
         raise e
+
+
+def cull_images(photo_ids, phash_threshold, clip_threshold, time_delta, culling_preset="default"):
+    """
+    High-level culling wrapper around grouping/ranking.
+    Returns grouped results plus a compact summary for UI/reporting.
+    """
+    groups = group_similar_images(
+        photo_ids,
+        phash_threshold,
+        clip_threshold,
+        time_delta,
+        culling_preset=culling_preset,
+    )
+
+    picks = 0
+    alternates = 0
+    rejects = 0
+    near_duplicate_groups = 0
+    for group in groups:
+        if group.get("group_type") == "near_duplicate":
+            near_duplicate_groups += 1
+        photos = group.get("photos") or []
+        for photo in photos:
+            if photo.get("winner"):
+                picks += 1
+            elif photo.get("reject_candidate"):
+                rejects += 1
+            else:
+                alternates += 1
+
+    return {
+        "status": "success",
+        "summary": {
+            "group_count": len(groups),
+            "pick_count": picks,
+            "alternate_count": alternates,
+            "reject_candidate_count": rejects,
+            "near_duplicate_group_count": near_duplicate_groups,
+            "culling_preset": culling_preset,
+        },
+        "groups": groups,
+    }
