@@ -238,7 +238,7 @@ end
 
 
 ---
--- Unified function to analyze and index photos with metadata, quality scores, and embeddings.
+-- Unified function to analyze and index photos with metadata and embeddings.
 -- Replaces the old separate analyze and index workflows.
 -- @param photoId string The ID of the photo.
 -- @param filename string The filename of the photo.
@@ -562,7 +562,7 @@ function SearchIndexAPI.getAllIndexedPhotoUUIDs(requireEmbeddings)
 end
 
 ---
--- Retrieves metadata and quality scores for a photo by ID.
+-- Retrieves stored metadata for a photo by ID.
 -- @param photoId The photo ID to retrieve.
 -- @return table|nil Response containing metadata and quality fields, or nil on error.
 -- Response structure:
@@ -570,7 +570,6 @@ end
 --     status = "success",
 --     photo_id = "...",
 --     metadata = { title = "...", caption = "...", keywords = {...}, alt_text = "..." },
---     quality = { overall_score = 0.8, composition_score = 0.9, ... }
 --   }
 --
 function SearchIndexAPI.getPhotoData(photoId)
@@ -655,7 +654,7 @@ function SearchIndexAPI.removeMissingFromIndex()
 end
 
 ---
--- Analyzes and indexes selected photos with LLM processing (metadata, quality, embeddings).
+-- Analyzes and indexes selected photos with LLM processing (metadata, embeddings).
 -- Uses JPEG export instead of thumbnails for better reliability.
 -- @param selectedPhotos table Array of LrPhoto objects to process.
 -- @param progressScope LrProgressScope Progress scope for UI updates.
@@ -1237,7 +1236,7 @@ end
 -- Gets photos that need processing for "New or unprocessed photos" scope.
 -- When taskOptions is provided, uses backend to check which photos lack the selected tasks' data.
 -- When taskOptions is nil, falls back to legacy behavior: photos not in index (with embeddings).
--- @param taskOptions table|nil { enableEmbeddings, enableMetadata, enableQuality, enableFaces, enableVertexAI, regenerateMetadata }
+-- @param taskOptions table|nil { enableEmbeddings, enableMetadata, enableFaces, enableVertexAI, regenerateMetadata }
 -- @return boolean success, table photosToProcess
 --
 function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions)
@@ -1265,7 +1264,6 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions)
         local tasks = {}
         if taskOptions.enableEmbeddings then table.insert(tasks, "embeddings") end
         if taskOptions.enableMetadata then table.insert(tasks, "metadata") end
-        if taskOptions.enableQuality then table.insert(tasks, "quality") end
         if taskOptions.enableFaces then table.insert(tasks, "faces") end
         if taskOptions.enableVertexAI then table.insert(tasks, "vertexai") end
 

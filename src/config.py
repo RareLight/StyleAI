@@ -32,20 +32,6 @@ CLIP_MODEL_NAME="ViT-SO400M-16-SigLIP2-384"
 IMAGE_MODEL_ID = "timm/" + CLIP_MODEL_NAME
 
 
-# --- Prompts for Quality Scoring ---
-# Optimized prompts for faster processing and better JSON compliance
-QUALITY_SCORING_USER_PROMPT = """Rate this photo critically. Respond exclusively with JSON in this format:
-{"overall_score": <1.0-10.0>, "composition_score": <1.0-10.0>, "lighting_score": <1.0-10.0>, "motiv_score": <1.0-10.0>, "colors_score": <1.0-10.0>, "emotion_score": <1.0-10.0>, "critique": "<brief specific critique>"}
-
-Use the full 1-10 scale. Be critical and specific about weaknesses."""
-
-QUALITY_SCORING_SYSTEM_PROMPT = """
-"""
-
-# Legacy aliases for backward compatibility with Qwen provider
-USER_PROMPT = QUALITY_SCORING_USER_PROMPT
-SYSTEM_PROMPT = QUALITY_SCORING_SYSTEM_PROMPT
-
 # --- Prompts for Metadata Generation ---
 METADATA_GENERATION_SYSTEM_PROMPT = """You are a professional photography analyst with expertise in object recognition and computer-generated image description. 
 You also try to identify famous buildings and landmarks as well as the location where the photo was taken. 

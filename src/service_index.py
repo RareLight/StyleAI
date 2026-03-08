@@ -64,7 +64,6 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
     regenerate_metadata = options.get('regenerate_metadata', True)
     compute_embeddings = options.get('compute_embeddings', True)
     compute_metadata = options.get('compute_metadata', False)
-    compute_quality = options.get('compute_quality', True)
     compute_faces = options.get('compute_faces', False)
     compute_vertexai = options.get('compute_vertexai', False)
 
@@ -85,11 +84,10 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
         needs_embedding = compute_embeddings and (regenerate_metadata or not existing.get('has_embedding', False))
         has_any_metadata = existing.get('title') or existing.get('caption') or existing.get('alt_text') or existing.get('keywords')
         needs_metadata = compute_metadata and (regenerate_metadata or not has_any_metadata)
-        needs_quality = compute_quality and (regenerate_metadata or existing.get('overall_score') is None)
         needs_faces = compute_faces and (regenerate_metadata or not chroma_service.faces_checked_for_photo(uuid))
         needs_vertexai = compute_vertexai and (regenerate_metadata or not chroma_service.has_vertex_embedding(uuid))
 
-        if needs_embedding or needs_metadata or needs_quality or needs_faces or needs_vertexai:
+        if needs_embedding or needs_metadata or needs_faces or needs_vertexai:
             needing_processing.append(uuid)
 
     return needing_processing
@@ -125,13 +123,12 @@ def process_image_task(
         regenerate_metadata = options.get('regenerate_metadata', True)
         compute_embeddings = options.get('compute_embeddings', True)
         compute_metadata = options.get('compute_metadata', False)
-        compute_quality = options.get('compute_quality', True)
         compute_faces = options.get('compute_faces', False)
         compute_vertexai = options.get('compute_vertexai', False)
 
         logger.info(f"Starting batch processing of {total_images} images...")
         logger.info(f"regenerate_metadata={regenerate_metadata}, compute_embeddings={compute_embeddings}, "
-                   f"compute_metadata={compute_metadata}, compute_quality={compute_quality}, compute_faces={compute_faces}, compute_vertexai={compute_vertexai}")
+                   f"compute_metadata={compute_metadata}, compute_faces={compute_faces}, compute_vertexai={compute_vertexai}")
         
         # Check existing records if regenerate_metadata is False
         existing_records = {}
@@ -145,7 +142,6 @@ def process_image_task(
         # Determine what actually needs to be computed for each image
         images_needing_embeddings = []
         images_needing_metadata = []
-        images_needing_quality = []
         images_needing_faces = []
         images_needing_vertexai = []
         
@@ -175,14 +171,9 @@ def process_image_task(
                           f"alt_text={bool(existing.get('alt_text'))}, keywords={bool(existing.get('keywords'))}")
             if needs_metadata:
                 images_needing_metadata.append(uuid)
-            
-            # Check if quality scores are needed
-            needs_quality = compute_quality and (regenerate_metadata or not existing.get('overall_score'))
-            if needs_quality:
-                images_needing_quality.append(uuid)
         
         logger.info(f"Generation needed: {len(images_needing_embeddings)} embeddings, "
-                   f"{len(images_needing_metadata)} metadata, {len(images_needing_quality)} quality scores, {len(images_needing_faces)} faces, {len(images_needing_vertexai)} vertexai")
+                   f"{len(images_needing_metadata)} metadata, {len(images_needing_faces)} faces, {len(images_needing_vertexai)} vertexai")
 
         # If nothing needs to be generated and we're not regenerating, skip work.
         # When regenerate_metadata is True we must not early-return: new images (no entry yet)
@@ -192,8 +183,7 @@ def process_image_task(
                 and not compute_faces
                 and not compute_vertexai
                 and len(images_needing_embeddings) == 0
-                and len(images_needing_metadata) == 0
-                and len(images_needing_quality) == 0):
+                and len(images_needing_metadata) == 0):
             logger.info("No generation required (regenerate_metadata=False and all fields present). Returning success without changes.")
             return len(image_triplets), 0
 
@@ -206,9 +196,9 @@ def process_image_task(
         siglip_processor = server_lifecycle.get_processor()
 
         # Convert lists to sets for faster lookup in analyze_batch
-        embeddings, datetimes, metadata_results, ratings = analysis_service.analyze_batch(
+        embeddings, datetimes, metadata_results = analysis_service.analyze_batch(
             image_triplets, options, siglip_model, siglip_processor,
-            set(images_needing_embeddings), set(images_needing_metadata), set(images_needing_quality)
+            set(images_needing_embeddings), set(images_needing_metadata)
         )
 
         # Only fail batch when we actually needed embeddings but got none
@@ -238,23 +228,16 @@ def process_image_task(
         for i, (image_bytes, uuid, filename) in enumerate(image_triplets):
             try:
                 embedding = embeddings[i] if embeddings is not None else None
-                rating_data = ratings[i] if ratings else None
                 metadata_data = metadata_results[i] if metadata_results else None
                 
                 existing = existing_records.get(uuid, {})
                 
                 need_embedding = uuid in images_needing_embeddings
                 need_metadata = uuid in images_needing_metadata
-                need_quality = uuid in images_needing_quality
 
                 # Validate that required new data was generated if needed
                 if need_embedding and embedding is None:
                     logger.error(f"Embedding generation failed for {uuid}. Skipping.")
-                    failure_count += 1
-                    continue
-                
-                if need_quality and (not rating_data or not rating_data.success):
-                    logger.error(f"Quality rating generation failed for {uuid}. Skipping.")
                     failure_count += 1
                     continue
 
@@ -265,7 +248,7 @@ def process_image_task(
 
                 # If nothing needed for this UUID (already complete) and no face processing, skip
                 # When compute_faces is True we must not skip - we need to reach face detection
-                if (not need_embedding and not need_metadata and not need_quality
+                if (not need_embedding and not need_metadata
                         and not regenerate_metadata and not compute_faces):
                     logger.info(f"UUID {uuid}: already fully indexed; skipping update.")
                     success_count += 1
@@ -292,18 +275,6 @@ def process_image_task(
                     capture_time = datetimes.get(uuid)
                     if capture_time:
                         main_metadata["capture_time"] = capture_time
-
-                # Update quality scores if newly generated
-                if rating_data and rating_data.success:
-                    main_metadata["overall_score"] = rating_data.overall_score
-                    main_metadata["composition_score"] = rating_data.composition_score
-                    main_metadata["lighting_score"] = rating_data.lighting_score
-                    main_metadata["motiv_score"] = rating_data.motiv_score
-                    main_metadata["colors_score"] = rating_data.colors_score
-                    main_metadata["emotion_score"] = rating_data.emotion_score
-                    main_metadata["quality_critique"] = rating_data.critique
-                    main_metadata["provider"] = provider
-                    main_metadata["model"] = model_name
 
                 # Update metadata fields if newly generated
                 if metadata_data and metadata_data.success:
