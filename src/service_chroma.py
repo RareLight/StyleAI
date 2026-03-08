@@ -2,7 +2,7 @@ import chromadb
 from chromadb.config import Settings
 import os
 import numpy as np
-from config import DB_PATH, logger
+from config import DB_PATH, logger, CULLING_CONFIG
 
 
 # --- ChromaDB Client and Collection Initialization (Lazy) ---
@@ -362,29 +362,36 @@ def _derive_grouping_thresholds(phash_threshold, clip_threshold, time_delta):
     try:
         time_window_seconds = max(0, int(time_delta))
     except (TypeError, ValueError):
-        time_window_seconds = 1
+        time_window_seconds = CULLING_CONFIG["grouping"]["time_window_default_seconds"]
 
     if clip_threshold == "auto":
-        burst_distance_threshold = 0.12
+        burst_distance_threshold = CULLING_CONFIG["grouping"]["burst_distance_auto"]
     else:
         try:
             burst_distance_threshold = max(0.0, float(clip_threshold))
         except (TypeError, ValueError):
-            burst_distance_threshold = 0.12
+            burst_distance_threshold = CULLING_CONFIG["grouping"]["burst_distance_auto"]
 
     if phash_threshold == "auto":
-        duplicate_distance_threshold = 0.05
+        duplicate_distance_threshold = CULLING_CONFIG["grouping"]["duplicate_distance_auto"]
     else:
         try:
             # The route exposes a pHash-style integer threshold even though the
             # current implementation uses stored embeddings only. Lower numbers
             # therefore remain stricter and higher numbers relax duplicate linking.
-            normalized = max(0.0, min(float(phash_threshold), 32.0)) / 32.0
-            duplicate_distance_threshold = 0.02 + (normalized * 0.06)
+            phash_max = CULLING_CONFIG["grouping"]["phash_max"]
+            normalized = max(0.0, min(float(phash_threshold), phash_max)) / phash_max
+            duplicate_distance_threshold = (
+                CULLING_CONFIG["grouping"]["duplicate_distance_min"]
+                + (normalized * CULLING_CONFIG["grouping"]["duplicate_distance_span"])
+            )
         except (TypeError, ValueError):
-            duplicate_distance_threshold = 0.05
+            duplicate_distance_threshold = CULLING_CONFIG["grouping"]["duplicate_distance_auto"]
 
-    duplicate_time_window_seconds = max(time_window_seconds * 4, 10)
+    duplicate_time_window_seconds = max(
+        time_window_seconds * CULLING_CONFIG["grouping"]["duplicate_time_window_multiplier"],
+        CULLING_CONFIG["grouping"]["duplicate_time_window_min_seconds"],
+    )
     return duplicate_distance_threshold, burst_distance_threshold, duplicate_time_window_seconds, time_window_seconds
 
 
@@ -444,7 +451,11 @@ def _rank_group_records(component_records, group_type):
         face_score = _extract_culling_metric(
             metadata,
             "cull_face_score",
-            (0.45 * face_sharpness) + (0.35 * face_prominence) + (0.20 * face_visibility),
+            (
+                CULLING_CONFIG["face_metrics"]["score_weight_sharpness"] * face_sharpness
+                + CULLING_CONFIG["face_metrics"]["score_weight_prominence"] * face_prominence
+                + CULLING_CONFIG["face_metrics"]["score_weight_visibility"] * face_visibility
+            ),
         )
         eye_openness = _extract_culling_metric(metadata, "cull_eye_openness", 0.0)
         blink_penalty = _extract_culling_metric(metadata, "cull_blink_penalty", 1.0)
@@ -471,13 +482,26 @@ def _rank_group_records(component_records, group_type):
         if group_has_faces:
             if item["cull_face_count"] > 0:
                 item["cull_score"] = (
-                    0.55 * item["cull_technical_score"]
-                    + 0.45 * item["cull_face_score"]
+                    CULLING_CONFIG["ranking"]["face_group_weight_technical"] * item["cull_technical_score"]
+                    + CULLING_CONFIG["ranking"]["face_group_weight_face"] * item["cull_face_score"]
                 )
-                item["cull_score"] = max(0.0, min(1.0, item["cull_score"] - (0.10 * item["cull_blink_penalty"])))
+                item["cull_score"] = max(
+                    0.0,
+                    min(
+                        1.0,
+                        item["cull_score"] - (
+                            CULLING_CONFIG["ranking"]["face_group_blink_penalty_weight"] * item["cull_blink_penalty"]
+                        ),
+                    ),
+                )
             else:
                 # Penalize face-missing shots in face-heavy groups.
-                item["cull_score"] = max(0.0, (0.70 * item["cull_technical_score"]) - 0.20)
+                item["cull_score"] = max(
+                    0.0,
+                    (
+                        CULLING_CONFIG["ranking"]["face_missing_technical_weight"] * item["cull_technical_score"]
+                    ) - CULLING_CONFIG["ranking"]["face_missing_penalty"],
+                )
         else:
             item["cull_score"] = item["cull_technical_score"]
 
@@ -500,25 +524,35 @@ def _rank_group_records(component_records, group_type):
 
     for index, item in enumerate(scored_records, start=1):
         reason_codes = []
-        if item["cull_sharpness"] < 0.2:
+        if item["cull_sharpness"] < CULLING_CONFIG["ranking"]["reason_blur_threshold"]:
             reason_codes.append("blurred")
-        if item["cull_exposure"] < 0.35:
+        if item["cull_exposure"] < CULLING_CONFIG["ranking"]["reason_exposure_threshold"]:
             if item["cull_shadow_clip"] >= item["cull_highlight_clip"]:
                 reason_codes.append("underexposed")
             else:
                 reason_codes.append("overexposed")
-        if index == 1 and len(scored_records) > 1 and item["cull_sharpness"] >= (max_sharpness - 0.02):
+        if index == 1 and len(scored_records) > 1 and item["cull_sharpness"] >= (
+            max_sharpness - CULLING_CONFIG["ranking"]["reason_sharpest_delta"]
+        ):
             reason_codes.append("sharpest_in_group")
         if group_has_faces:
             if item["cull_face_count"] == 0:
                 reason_codes.append("no_face_detected_in_group")
-            elif item["cull_face_score"] >= (max_face_score - 0.03) and index == 1:
+            elif item["cull_face_score"] >= (
+                max_face_score - CULLING_CONFIG["ranking"]["reason_best_face_delta"]
+            ) and index == 1:
                 reason_codes.append("best_face_quality")
-            elif item["cull_face_score"] < max(0.0, max_face_score - 0.10):
+            elif item["cull_face_score"] < max(
+                0.0,
+                max_face_score - CULLING_CONFIG["ranking"]["reason_weak_face_delta"],
+            ):
                 reason_codes.append("weak_face_quality")
-            if item["cull_eye_openness"] >= max(0.0, max_eye_openness - 0.05) and index == 1:
+            if item["cull_eye_openness"] >= max(
+                0.0,
+                max_eye_openness - CULLING_CONFIG["ranking"]["reason_eyes_open_delta"],
+            ) and index == 1:
                 reason_codes.append("eyes_open_best")
-            elif item["cull_blink_penalty"] > 0.55:
+            elif item["cull_blink_penalty"] > CULLING_CONFIG["ranking"]["reason_possible_blink_threshold"]:
                 reason_codes.append("possible_blink")
         if index > 1 and group_type != "single":
             reason_codes.append("near_duplicate_weaker")
@@ -526,11 +560,19 @@ def _rank_group_records(component_records, group_type):
         reject_candidate = False
         if len(scored_records) > 1:
             reject_candidate = (
-                item["cull_score"] <= max(0.0, winner_score - 0.18)
-                or item["cull_sharpness"] < 0.2
-                or item["cull_exposure"] < 0.28
-                or (group_has_faces and item["cull_face_count"] > 0 and item["cull_face_score"] < 0.30)
-                or (group_has_faces and item["cull_face_count"] > 0 and item["cull_blink_penalty"] > 0.75)
+                item["cull_score"] <= max(0.0, winner_score - CULLING_CONFIG["ranking"]["reject_score_delta"])
+                or item["cull_sharpness"] < CULLING_CONFIG["ranking"]["reason_blur_threshold"]
+                or item["cull_exposure"] < CULLING_CONFIG["ranking"]["reject_exposure_threshold"]
+                or (
+                    group_has_faces
+                    and item["cull_face_count"] > 0
+                    and item["cull_face_score"] < CULLING_CONFIG["ranking"]["reject_face_score_threshold"]
+                )
+                or (
+                    group_has_faces
+                    and item["cull_face_count"] > 0
+                    and item["cull_blink_penalty"] > CULLING_CONFIG["ranking"]["reject_blink_penalty_threshold"]
+                )
             )
 
         item["cull_group_rank"] = index

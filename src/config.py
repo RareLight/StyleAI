@@ -62,6 +62,69 @@ DEFAULT_KEYWORD_CATEGORIES = [
 LMSTUDIO_HOST = "localhost:1234"
 OLLAMA_BASE_URL = "http://localhost:11434"
 
+# --- Culling Tuning Configuration ---
+# Centralized weights and thresholds for image culling logic.
+# Adjust these values to tune ranking behavior without code changes.
+CULLING_CONFIG = {
+    "grouping": {
+        "time_window_default_seconds": 1,
+        "burst_distance_auto": 0.12,
+        "duplicate_distance_auto": 0.05,
+        "duplicate_distance_min": 0.02,
+        "duplicate_distance_span": 0.06,
+        "phash_max": 32.0,
+        "duplicate_time_window_multiplier": 4,
+        "duplicate_time_window_min_seconds": 10,
+    },
+    "image_metrics": {
+        "sharpness_denominator": 0.015,
+        "highlight_threshold": 0.98,
+        "shadow_threshold": 0.02,
+        "highlight_clip_weight": 2.5,
+        "shadow_clip_weight": 2.0,
+        "exposure_target": 0.5,
+        "exposure_tolerance": 0.35,
+        "exposure_balance_weight": 0.75,
+        "exposure_clip_weight": 0.25,
+        "noise_denominator": 0.08,
+        "technical_weight_sharpness": 0.5,
+        "technical_weight_exposure": 0.35,
+        "technical_weight_noise": 0.15,
+    },
+    "face_metrics": {
+        "face_sharpness_denominator": 0.02,
+        "eye_patch_ratio": 0.08,
+        "eye_patch_radius_min": 2,
+        "eye_patch_radius_max": 8,
+        "eye_openness_denominator": 0.07,
+        "prominence_normalizer": 0.12,
+        "visibility_det_weight": 0.5,
+        "visibility_center_weight": 0.5,
+        "score_weight_sharpness": 0.35,
+        "score_weight_prominence": 0.25,
+        "score_weight_visibility": 0.20,
+        "score_weight_eye_openness": 0.20,
+    },
+    "ranking": {
+        "face_group_weight_technical": 0.55,
+        "face_group_weight_face": 0.45,
+        "face_group_blink_penalty_weight": 0.10,
+        "face_missing_technical_weight": 0.70,
+        "face_missing_penalty": 0.20,
+        "reason_blur_threshold": 0.20,
+        "reason_exposure_threshold": 0.35,
+        "reason_sharpest_delta": 0.02,
+        "reason_best_face_delta": 0.03,
+        "reason_weak_face_delta": 0.10,
+        "reason_eyes_open_delta": 0.05,
+        "reason_possible_blink_threshold": 0.55,
+        "reject_score_delta": 0.18,
+        "reject_exposure_threshold": 0.28,
+        "reject_face_score_threshold": 0.30,
+        "reject_blink_penalty_threshold": 0.75,
+    },
+}
+
 # --- Logger Setup ---
 LOG_PATH = os.path.join(os.path.dirname(DB_PATH), "lrgenius-server.log")
 
