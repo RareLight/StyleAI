@@ -23,7 +23,7 @@ local ENDPOINTS = {
     INDEX_BY_REFERENCE = "/index_by_reference",
     INDEX_BASE64 = "/index_base64",
     SEARCH = "/search",
-    STATS = "/stats",
+    STATS = "/db/stats",
     MODELS = "/models",
     GET_IDS = "/get/ids",
     REMOVE = "/remove",
@@ -40,6 +40,7 @@ local ENDPOINTS = {
     FACES_DETECT = "/faces/detect",
     FACES_QUERY = "/faces/query",
     MIGRATE_PHOTO_IDS = "/database/migrate-photo-ids",
+    DB_BACKUP = "/db/backup",
 }
 
 local EXPORT_SETTINGS = {
@@ -875,6 +876,50 @@ end
 function SearchIndexAPI.isBackendOnLocalhost()
     local url = getBaseUrl()
     return not not (url:match("^https?://127%.0%.0%.1") or url:match("^https?://localhost"))
+end
+
+function SearchIndexAPI.downloadDatabaseBackup()
+    local url = getBaseUrl() .. ENDPOINTS.DB_BACKUP
+    local downloadsDir = LrPathUtils.getStandardFilePath('desktop')
+    local timestamp = os.date("%Y%m%d-%H%M%S")
+    local outputPath = LrPathUtils.child(downloadsDir, "LrGeniusAI-backend-backup-" .. timestamp .. ".zip")
+
+    log:info("Downloading database backup from " .. url .. " to " .. outputPath)
+
+    local responseBody, hdrs = LrHttp.get(url, 300)
+    local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
+    if status == nil or status < 200 or status >= 300 then
+        local err = "Backup download failed. HTTP status: " .. tostring(status or "unknown")
+        if responseBody and #responseBody > 0 then
+            local ok, decoded = pcall(function()
+                return JSON:decode(responseBody)
+            end)
+            if ok and decoded and decoded.error then
+                err = err .. " - " .. tostring(decoded.error)
+            end
+        end
+        log:error(err)
+        return false, err
+    end
+
+    local file, openErr = io.open(outputPath, "wb")
+    if not file then
+        local err = "Could not create backup file: " .. tostring(openErr)
+        log:error(err)
+        return false, err
+    end
+
+    file:write(responseBody or "")
+    file:close()
+
+    if not LrFileUtils.exists(outputPath) then
+        local err = "Backup file was not created."
+        log:error(err)
+        return false, err
+    end
+
+    log:info("Database backup downloaded successfully: " .. outputPath)
+    return true, outputPath
 end
 
 function SearchIndexAPI.shutdownServer()

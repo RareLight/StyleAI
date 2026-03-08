@@ -17,6 +17,7 @@ logger.info("Imported server_lifecycle")
 from routes_index import index_bp
 from routes_search import search_bp
 from routes_server import server_bp
+from routes_db import db_bp
 from routes_import import import_bp
 from routes_clip import clip_bp
 from routes_faces import faces_bp
@@ -29,6 +30,7 @@ logger.info("Flask app created")
 app.register_blueprint(index_bp)
 app.register_blueprint(search_bp)
 app.register_blueprint(server_bp)
+app.register_blueprint(db_bp)
 app.register_blueprint(clip_bp)
 app.register_blueprint(import_bp)
 app.register_blueprint(faces_bp)

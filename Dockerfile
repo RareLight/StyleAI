@@ -39,11 +39,12 @@ ENV HF_HOME=/models/huggingface
 ENV INSIGHTFACE_ROOT=/models/insightface
 ENV CLOUDSDK_CONFIG=/root/.config/gcloud
 
-# ChromaDB-Daten persistent (von außen mounten)
+# Persistente Backend-Daten (Chroma/JSON/SQLite) per Volume mounten.
+# Diese Dateien werden auch vom /db/backup-Endpunkt gesichert.
 VOLUME /data
 VOLUME /models
 
 EXPOSE 19819
 
-# DB-Pfad per Volume; bei Bedarf überschreiben: docker run ... geniusai-server --db-path /anderer/pfad
+# DB-Pfad zeigt auf das persistente Backend-Datenverzeichnis unter /data/db.
 CMD ["python", "/app/src/geniusai_server.py", "--db-path", "/data/db"]

@@ -266,19 +266,20 @@ def get_face_count():
 def get_image_metadata_stats():
     """
     Return counts of images by metadata presence (no embeddings loaded).
-    Returns dict: total, with_embedding, with_title, with_caption, with_keywords, with_quality_score.
+    Returns dict: total, with_embedding, with_title, with_caption, with_keywords, with_vertexai.
     """
     _ensure_initialized()
     result = collection.get(include=["metadatas"], limit=STATS_GET_LIMIT)
     ids = result.get("ids", [])
     metadatas = result.get("metadatas", []) or []
+    vertex_ids = set(get_all_vertex_image_ids())
     total = len(ids)
     with_embedding = 0
     with_title = 0
     with_caption = 0
     with_keywords = 0
-    with_quality_score = 0
-    for m in metadatas:
+    with_vertexai = 0
+    for idx, m in enumerate(metadatas):
         if m.get("has_embedding", True):
             with_embedding += 1
         if (m.get("title") or "").strip():
@@ -287,15 +288,15 @@ def get_image_metadata_stats():
             with_caption += 1
         if (m.get("keywords") or m.get("flattened_keywords") or "").strip():
             with_keywords += 1
-        if m.get("overall_score") is not None:
-            with_quality_score += 1
+        if idx < len(ids) and ids[idx] in vertex_ids:
+            with_vertexai += 1
     return {
         "total": total,
         "with_embedding": with_embedding,
         "with_title": with_title,
         "with_caption": with_caption,
         "with_keywords": with_keywords,
-        "with_quality_score": with_quality_score,
+        "with_vertexai": with_vertexai,
     }
 
 
