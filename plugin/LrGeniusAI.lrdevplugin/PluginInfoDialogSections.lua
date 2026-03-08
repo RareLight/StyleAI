@@ -268,8 +268,23 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                                 if ok then
                                     LrShell.revealInShell(result)
                                     LrDialogs.message("Database backup downloaded.", result)
+                                elseif result == "canceled" then
+                                    log:trace("Database backup download canceled by user")
                                 else
                                     LrDialogs.message("Database backup failed", tostring(result or "Unknown error"), "critical")
+                                end
+                            end)
+                        end,
+                    },
+                    f:push_button {
+                        title = "Show DB stats",
+                        action = function(button)
+                            LrTasks.startAsyncTask(function()
+                                local stats, err = SearchIndexAPI.getStats()
+                                if stats then
+                                    LrDialogs.message("Database statistics", SearchIndexAPI.formatStats(stats), "info")
+                                else
+                                    LrDialogs.message("Database statistics failed", tostring(err or "Unknown error"), "critical")
                                 end
                             end)
                         end,
