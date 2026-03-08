@@ -6,6 +6,9 @@ import service_face as face_service
 import service_vertexai as vertexai_service
 import json
 from datetime import datetime as time
+from PIL import Image
+import io
+import numpy as np
 
 def _flatten_keywords(keywords):
     """
@@ -54,6 +57,92 @@ def _flatten_keywords(keywords):
         return ', '.join(all_keywords)
     
     return ""
+
+
+def _safe_unit_interval(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def _load_analysis_grayscale(image_bytes: bytes, max_side: int = 512) -> np.ndarray:
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    if max(image.size) > max_side:
+        scale = max_side / float(max(image.size))
+        resized = (
+            max(32, int(round(image.size[0] * scale))),
+            max(32, int(round(image.size[1] * scale))),
+        )
+        image = image.resize(resized, Image.Resampling.BILINEAR)
+    rgb = np.asarray(image, dtype=np.float32) / 255.0
+    return (0.299 * rgb[:, :, 0]) + (0.587 * rgb[:, :, 1]) + (0.114 * rgb[:, :, 2])
+
+
+def _compute_culling_metrics(image_bytes: bytes) -> dict:
+    """
+    Compute cheap, deterministic image-quality metrics for culling.
+    All normalized quality scores use a 0..1 range where higher is better,
+    except the explicit clip/noise fields which are stored as penalties.
+    """
+    try:
+        gray = _load_analysis_grayscale(image_bytes)
+        if gray.shape[0] < 8 or gray.shape[1] < 8:
+            raise ValueError("Image too small for culling metrics")
+
+        center = gray[1:-1, 1:-1]
+        laplacian = (
+            -4.0 * center
+            + gray[:-2, 1:-1]
+            + gray[2:, 1:-1]
+            + gray[1:-1, :-2]
+            + gray[1:-1, 2:]
+        )
+        sharpness_raw = float(np.var(laplacian))
+        sharpness = _safe_unit_interval(sharpness_raw / (sharpness_raw + 0.015))
+
+        luminance_mean = float(np.mean(gray))
+        highlight_clip = float(np.mean(gray >= 0.98))
+        shadow_clip = float(np.mean(gray <= 0.02))
+        clipping_penalty = _safe_unit_interval((highlight_clip * 2.5) + (shadow_clip * 2.0))
+        exposure_balance = _safe_unit_interval(1.0 - (abs(luminance_mean - 0.5) / 0.35))
+        exposure = _safe_unit_interval((0.75 * exposure_balance) + (0.25 * (1.0 - clipping_penalty)))
+
+        blurred = (
+            gray[:-2, :-2] + gray[:-2, 1:-1] + gray[:-2, 2:]
+            + gray[1:-1, :-2] + gray[1:-1, 1:-1] + gray[1:-1, 2:]
+            + gray[2:, :-2] + gray[2:, 1:-1] + gray[2:, 2:]
+        ) / 9.0
+        reference = gray[1:-1, 1:-1]
+        residual = np.abs(reference - blurred)
+        midtone_mask = (reference > 0.15) & (reference < 0.85)
+        if np.any(midtone_mask):
+            noise_raw = float(np.mean(residual[midtone_mask]))
+        else:
+            noise_raw = float(np.mean(residual))
+        noise_penalty = _safe_unit_interval(noise_raw / 0.08)
+
+        technical_score = _safe_unit_interval(
+            (0.5 * sharpness)
+            + (0.35 * exposure)
+            + (0.15 * (1.0 - noise_penalty))
+        )
+
+        return {
+            "cull_sharpness": round(sharpness, 4),
+            "cull_exposure": round(exposure, 4),
+            "cull_noise": round(noise_penalty, 4),
+            "cull_highlight_clip": round(highlight_clip, 4),
+            "cull_shadow_clip": round(shadow_clip, 4),
+            "cull_technical_score": round(technical_score, 4),
+        }
+    except Exception as exc:
+        logger.warning("Could not compute culling metrics: %s", exc)
+        return {
+            "cull_sharpness": 0.0,
+            "cull_exposure": 0.0,
+            "cull_noise": 1.0,
+            "cull_highlight_clip": 0.0,
+            "cull_shadow_clip": 0.0,
+            "cull_technical_score": 0.0,
+        }
 
 
 def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
@@ -275,6 +364,9 @@ def process_image_task(
                     capture_time = datetimes.get(uuid)
                     if capture_time:
                         main_metadata["capture_time"] = capture_time
+
+                # Technical culling metrics are cheap enough to compute on every pass.
+                main_metadata.update(_compute_culling_metrics(image_bytes))
 
                 # Update metadata fields if newly generated
                 if metadata_data and metadata_data.success:

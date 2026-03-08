@@ -388,6 +388,107 @@ def _derive_grouping_thresholds(phash_threshold, clip_threshold, time_delta):
     return duplicate_distance_threshold, burst_distance_threshold, duplicate_time_window_seconds, time_window_seconds
 
 
+def _record_sort_key(item):
+    return (
+        item["capture_time"] is None,
+        item["capture_time"] if item["capture_time"] is not None else float("inf"),
+        item["filename"],
+        item["photo_id"],
+    )
+
+
+def _extract_culling_metric(metadata, key, default):
+    value = _safe_float((metadata or {}).get(key), default)
+    if value is None:
+        return default
+    return max(0.0, min(1.0, value))
+
+
+def _explanation_from_reason_codes(reason_codes):
+    labels = {
+        "sharpest_in_group": "sharpest in group",
+        "blurred": "noticeably blurred",
+        "underexposed": "darker than stronger alternatives",
+        "overexposed": "brighter than stronger alternatives",
+        "near_duplicate_weaker": "weaker duplicate or burst alternative",
+    }
+    if not reason_codes:
+        return "single image in group"
+    return "; ".join(labels.get(code, code.replace("_", " ")) for code in reason_codes)
+
+
+def _rank_group_records(component_records, group_type):
+    scored_records = []
+    for record in component_records:
+        metadata = record["metadata"]
+        sharpness = _extract_culling_metric(metadata, "cull_sharpness", 0.0)
+        exposure = _extract_culling_metric(metadata, "cull_exposure", 0.0)
+        noise_penalty = _extract_culling_metric(metadata, "cull_noise", 1.0)
+        highlight_clip = _extract_culling_metric(metadata, "cull_highlight_clip", 0.0)
+        shadow_clip = _extract_culling_metric(metadata, "cull_shadow_clip", 0.0)
+        clipping_penalty = max(0.0, min(1.0, highlight_clip + shadow_clip))
+        technical_score = _extract_culling_metric(
+            metadata,
+            "cull_technical_score",
+            (0.5 * sharpness) + (0.3 * exposure) + (0.1 * (1.0 - noise_penalty)) + (0.1 * (1.0 - clipping_penalty)),
+        )
+
+        scored_records.append({
+            **record,
+            "cull_sharpness": sharpness,
+            "cull_exposure": exposure,
+            "cull_noise": noise_penalty,
+            "cull_highlight_clip": highlight_clip,
+            "cull_shadow_clip": shadow_clip,
+            "cull_technical_score": technical_score,
+            "cull_score": technical_score,
+        })
+
+    scored_records.sort(key=lambda item: (
+        -item["cull_score"],
+        -item["cull_sharpness"],
+        -item["cull_exposure"],
+        item["cull_noise"],
+        item["photo_id"],
+    ))
+
+    if not scored_records:
+        return []
+
+    max_sharpness = max(item["cull_sharpness"] for item in scored_records)
+    winner_score = scored_records[0]["cull_score"]
+
+    for index, item in enumerate(scored_records, start=1):
+        reason_codes = []
+        if item["cull_sharpness"] < 0.2:
+            reason_codes.append("blurred")
+        if item["cull_exposure"] < 0.35:
+            if item["cull_shadow_clip"] >= item["cull_highlight_clip"]:
+                reason_codes.append("underexposed")
+            else:
+                reason_codes.append("overexposed")
+        if index == 1 and len(scored_records) > 1 and item["cull_sharpness"] >= (max_sharpness - 0.02):
+            reason_codes.append("sharpest_in_group")
+        if index > 1 and group_type != "single":
+            reason_codes.append("near_duplicate_weaker")
+
+        reject_candidate = False
+        if len(scored_records) > 1:
+            reject_candidate = (
+                item["cull_score"] <= max(0.0, winner_score - 0.18)
+                or item["cull_sharpness"] < 0.2
+                or item["cull_exposure"] < 0.28
+            )
+
+        item["cull_group_rank"] = index
+        item["cull_group_winner"] = index == 1
+        item["cull_reject_candidate"] = reject_candidate and index != 1
+        item["cull_reason_codes"] = reason_codes
+        item["cull_explanation"] = _explanation_from_reason_codes(reason_codes)
+
+    return scored_records
+
+
 def group_and_sort_images(uuids, phash_threshold, clip_threshold, time_delta):
     """
     Group indexed images into stable similarity clusters for culling workflows.
@@ -435,14 +536,10 @@ def group_and_sort_images(uuids, phash_threshold, clip_threshold, time_delta):
             "filename": filename,
             "capture_time": capture_time,
             "embedding": _embedding_to_array(embedding_by_id.get(photo_id)),
+            "metadata": metadata,
         })
 
-    records.sort(key=lambda item: (
-        item["capture_time"] is None,
-        item["capture_time"] if item["capture_time"] is not None else float("inf"),
-        item["filename"],
-        item["photo_id"],
-    ))
+    records.sort(key=_record_sort_key)
 
     adjacency = {item["photo_id"]: set() for item in records}
     edge_kinds = {}
@@ -483,6 +580,7 @@ def group_and_sort_images(uuids, phash_threshold, clip_threshold, time_delta):
     groups = []
     visited = set()
     group_counter = 1
+    metadata_updates = []
 
     for record in records:
         start_id = record["photo_id"]
@@ -501,13 +599,9 @@ def group_and_sort_images(uuids, phash_threshold, clip_threshold, time_delta):
                 if neighbor_id not in visited:
                     stack.append(neighbor_id)
 
-        component_records = [item for item in records if item["photo_id"] in set(component_ids)]
-        component_records.sort(key=lambda item: (
-            item["capture_time"] is None,
-            item["capture_time"] if item["capture_time"] is not None else float("inf"),
-            item["filename"],
-            item["photo_id"],
-        ))
+        component_id_set = set(component_ids)
+        component_records = [item for item in records if item["photo_id"] in component_id_set]
+        component_records.sort(key=_record_sort_key)
 
         group_photo_ids = [item["photo_id"] for item in component_records]
         capture_times = [item["capture_time"] for item in component_records if item["capture_time"] is not None]
@@ -537,12 +631,61 @@ def group_and_sort_images(uuids, phash_threshold, clip_threshold, time_delta):
         else:
             group_type = "near_duplicate"
 
+        ranked_records = _rank_group_records(component_records, group_type)
+        group_id = f"group_{group_counter:04d}"
+        winner_photo_id = ranked_records[0]["photo_id"] if ranked_records else group_photo_ids[0]
+        alternate_photo_ids = [item["photo_id"] for item in ranked_records[1:] if not item["cull_reject_candidate"]]
+        reject_candidate_photo_ids = [item["photo_id"] for item in ranked_records if item["cull_reject_candidate"]]
+
+        for ranked in ranked_records:
+            updated_metadata = dict(ranked["metadata"] or {})
+            updated_metadata.update({
+                "cull_group_id": group_id,
+                "cull_group_size": len(group_photo_ids),
+                "cull_group_rank": ranked["cull_group_rank"],
+                "cull_group_winner": ranked["cull_group_winner"],
+                "cull_score": round(ranked["cull_score"], 4),
+                "cull_reject_candidate": ranked["cull_reject_candidate"],
+                "cull_reason_codes": json.dumps(ranked["cull_reason_codes"]),
+                "cull_explanation": ranked["cull_explanation"],
+                "cull_sharpness": round(ranked["cull_sharpness"], 4),
+                "cull_exposure": round(ranked["cull_exposure"], 4),
+                "cull_noise": round(ranked["cull_noise"], 4),
+                "cull_highlight_clip": round(ranked["cull_highlight_clip"], 4),
+                "cull_shadow_clip": round(ranked["cull_shadow_clip"], 4),
+                "cull_technical_score": round(ranked["cull_technical_score"], 4),
+            })
+            metadata_updates.append((ranked["photo_id"], updated_metadata))
+
         groups.append({
-            "group_id": f"group_{group_counter:04d}",
+            "group_id": group_id,
             "group_type": group_type,
             "group_size": len(group_photo_ids),
             "primary_photo_id": group_photo_ids[0],
             "photo_ids": group_photo_ids,
+            "winner_photo_id": winner_photo_id,
+            "alternate_photo_ids": alternate_photo_ids,
+            "reject_candidate_photo_ids": reject_candidate_photo_ids,
+            "photos": [
+                {
+                    "photo_id": item["photo_id"],
+                    "rank": item["cull_group_rank"],
+                    "cull_score": round(item["cull_score"], 4),
+                    "winner": item["cull_group_winner"],
+                    "reject_candidate": item["cull_reject_candidate"],
+                    "reason_codes": item["cull_reason_codes"],
+                    "explanation": item["cull_explanation"],
+                    "metrics": {
+                        "sharpness": round(item["cull_sharpness"], 4),
+                        "exposure": round(item["cull_exposure"], 4),
+                        "noise": round(item["cull_noise"], 4),
+                        "highlight_clip": round(item["cull_highlight_clip"], 4),
+                        "shadow_clip": round(item["cull_shadow_clip"], 4),
+                        "technical_score": round(item["cull_technical_score"], 4),
+                    },
+                }
+                for item in ranked_records
+            ],
             "min_capture_time": min(capture_times) if capture_times else None,
             "max_capture_time": max(capture_times) if capture_times else None,
             "time_span_seconds": round(time_span_seconds, 3),
@@ -564,6 +707,11 @@ def group_and_sort_images(uuids, phash_threshold, clip_threshold, time_delta):
         group["min_capture_time"] if group["min_capture_time"] is not None else float("inf"),
         group["primary_photo_id"],
     ))
+
+    if metadata_updates:
+        update_ids = [photo_id for photo_id, _ in metadata_updates]
+        update_metadatas = [metadata for _, metadata in metadata_updates]
+        collection.update(ids=update_ids, metadatas=update_metadatas)
 
     logger.info(
         "Grouped %s photos into %s groups (duplicate_distance=%s, burst_distance=%s, time_window=%ss)",
