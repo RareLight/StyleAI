@@ -1405,29 +1405,56 @@ end
 -- When taskOptions is provided, uses backend to check which photos lack the selected tasks' data.
 -- When taskOptions is nil, falls back to legacy behavior: photos not in index (with embeddings).
 -- @param taskOptions table|nil { enableEmbeddings, enableMetadata, enableFaces, enableVertexAI, regenerateMetadata }
+-- @param lookupProgressScope LrProgressScope|nil Optional progress for "looking up which photos need processing".
 -- @return boolean success, table photosToProcess
 --
-function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions)
+function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressScope)
     local allPhotos = PhotoSelector.getPhotosInScope('all')
     if allPhotos == nil then
         ErrorHandler.handleError("No photos found in catalog", "Something went wrong")
         return false, {}
     end
 
+    local totalCatalog = #allPhotos
+    local function updateLookupProgress(current, total)
+        if lookupProgressScope and not lookupProgressScope:isCanceled() then
+            lookupProgressScope:setPortionComplete(current, total)
+            lookupProgressScope:setCaption(
+                LOC("$$$/LrGeniusAI/AnalyzeAndIndex/LookupProgress=Looking up which photos need processing... ^1/^2", tostring(current), tostring(total)))
+        end
+    end
+
     -- New behavior: use backend to check which photos need processing based on selected tasks
     if taskOptions and type(taskOptions) == "table" then
+        if lookupProgressScope then
+            lookupProgressScope:setCaption(LOC "$$$/LrGeniusAI/AnalyzeAndIndex/LookupPhase1=Preparing catalog photos for lookup...")
+            lookupProgressScope:setPortionComplete(0, totalCatalog)
+        end
+
         local photoIds = {}
-        for _, photo in ipairs(allPhotos) do
+        local updateInterval = math.max(1, math.floor(totalCatalog / 50))
+        for i, photo in ipairs(allPhotos) do
+            if lookupProgressScope and lookupProgressScope:isCanceled() then
+                return false, {}
+            end
             local photoId, idErr = getPhotoIdForPhoto(photo)
             if photoId then
                 table.insert(photoIds, photoId)
             else
                 log:error("Could not compute photo_id for missing-check: " .. tostring(idErr))
             end
+            if i % updateInterval == 0 or i == totalCatalog then
+                updateLookupProgress(i, totalCatalog)
+            end
         end
         if #photoIds == 0 then
             return true, {}
         end
+
+        if lookupProgressScope then
+            lookupProgressScope:setCaption(LOC "$$$/LrGeniusAI/AnalyzeAndIndex/LookupPhase2=Checking server for unprocessed photos...")
+        end
+
 
         local tasks = {}
         if taskOptions.enableEmbeddings then table.insert(tasks, "embeddings") end
@@ -1450,11 +1477,23 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions)
         local photoIdSet = {}
         for _, pid in ipairs(needingPhotoIds) do photoIdSet[pid] = true end
 
+        if lookupProgressScope then
+            lookupProgressScope:setCaption(LOC "$$$/LrGeniusAI/AnalyzeAndIndex/LookupPhase3=Matching photos to process...")
+            lookupProgressScope:setPortionComplete(0, totalCatalog)
+        end
+
+
         local photosToProcess = {}
-        for _, photo in ipairs(allPhotos) do
+        for i, photo in ipairs(allPhotos) do
+            if lookupProgressScope and lookupProgressScope:isCanceled() then
+                return false, {}
+            end
             local photoId = getPhotoIdForPhoto(photo)
             if photoIdSet[photoId] then
                 table.insert(photosToProcess, photo)
+            end
+            if i % updateInterval == 0 or i == totalCatalog then
+                updateLookupProgress(i, totalCatalog)
             end
         end
         return true, photosToProcess
