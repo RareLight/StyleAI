@@ -926,7 +926,8 @@ end
 function SearchIndexAPI.pingServer()
     local url = getBaseUrl() .. "/ping"
     local result, hdrs = LrHttp.get(url)
-    if hdrs.status == 200 and result == "pong" then
+    local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
+    if status == 200 and result == "pong" then
         return true
     else
         return false
@@ -966,7 +967,7 @@ function SearchIndexAPI.downloadDatabaseBackup()
             local ok, decoded = pcall(function()
                 return JSON:decode(responseBody)
             end)
-            if ok and decoded and decoded.error then
+            if ok and type(decoded) == "table" and decoded.error then
                 err = err .. " - " .. tostring(decoded.error)
             end
         end
@@ -1132,7 +1133,7 @@ _requestMultipart = function(url, mimeChunks, timeout)
         local err_msg = "API request failed. HTTP status: " .. tostring(status or (type(hdrs) == "table" and hdrs.status) or hdrs or 'unknown')
         if result and #result > 0 then
             local decoded_err = JSON:decode(result)
-            if decoded_err and decoded_err.error then
+            if type(decoded_err) == "table" and decoded_err.error then
                 err_msg = err_msg .. " - " .. decoded_err.error
             else
                 err_msg = err_msg .. " Response: " .. result
@@ -1172,7 +1173,7 @@ _request = function(method, url, body, timeout)
         local err_msg = "API request failed. HTTP status: " .. tostring(status or (type(hdrs) == "table" and hdrs.status) or hdrs or 'unknown')
         if result and #result > 0 then
             local decoded_err = JSON:decode(result)
-            if decoded_err and decoded_err.error then
+            if type(decoded_err) == "table" and decoded_err.error then
                 err_msg = err_msg .. " - " .. decoded_err.error
             else
                 err_msg = err_msg .. " Response: " .. result
