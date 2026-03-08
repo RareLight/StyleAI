@@ -33,6 +33,74 @@ The server is built with **Python** and designed to run as a local background pr
 
 ---
 
+## 🗄️ Database API
+
+The backend exposes dedicated database endpoints for status and backup operations.
+
+### `GET /db/stats`
+
+Returns aggregated counters for the current backend database, including:
+
+- total indexed photos
+- photos with SigLIP embeddings
+- photos with title / caption / keywords
+- photos with Vertex AI embeddings
+- total indexed faces
+- total detected persons
+
+### `GET /db/backup`
+
+Creates and returns a ZIP backup of the persistent backend data directory. This includes the Chroma data as well as accompanying JSON and SQLite files stored under the configured DB path.
+
+Recommended use cases:
+
+- before one-time DB migrations
+- before moving or rebuilding the backend host
+- before larger maintenance work on the server
+
+The ZIP is created temporarily on the server for download and removed again after the response is sent.
+
+### Lightroom plugin integration
+
+In `Plug-in Manager -> LrGeniusAI -> Backend Server`, the button `Download DB backup` downloads this ZIP from the backend and reveals the saved file in Finder or Explorer.
+
+---
+
+## ☁️ Persistent Vertex AI Login In Docker Compose
+
+If you run the backend remotely via Docker Compose, authenticate inside the container so Vertex AI uses Application Default Credentials (ADC) from the same runtime that executes the Python code.
+
+The Compose file mounts `./gcloud` to `/root/.config/gcloud`, which keeps the active `gcloud` config and `application_default_credentials.json` persistent across container restarts and rebuilds.
+
+### Recommended setup
+
+```bash
+cd server
+mkdir -p gcloud
+docker compose up -d --build
+docker compose exec geniusai-server gcloud config set project YOUR_PROJECT_ID
+docker compose exec geniusai-server gcloud auth application-default login
+docker compose exec geniusai-server gcloud auth application-default print-access-token
+```
+
+### Headless remote servers
+
+If the server is only reachable via SSH and has no browser, use:
+
+```bash
+docker compose exec geniusai-server gcloud auth application-default login --no-browser
+```
+
+Then complete the remote bootstrap flow on a second trusted machine with a browser and Google Cloud CLI installed.
+
+### Important notes
+
+- Do not set `GOOGLE_APPLICATION_CREDENTIALS` if you want the backend to use ADC created by `gcloud auth application-default login`.
+- Set `Vertex AI Project ID` and `Vertex AI Location` in the Lightroom plugin settings, or provide `GOOGLE_CLOUD_PROJECT` / `VERTEX_LOCATION` as environment variables.
+- For fully non-interactive deployments, a service account via `GOOGLE_APPLICATION_CREDENTIALS` is still the better option.
+
+---
+
 ## ⚠️ Breaking Change: `photo_id` Migration
 
 The server switched primary IDs from legacy Lightroom UUIDs to file-based `photo_id` values.

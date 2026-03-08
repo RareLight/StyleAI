@@ -10,10 +10,19 @@ Welcome to the project wiki.
 - [Help: Analyze and Index](Help-Analyze-and-Index)
 - [Help: Advanced Search](Help-Advanced-Search)
 - [Help: Choosing AI Model](Help-Choosing-AI-Model)
+- [Feature Priority Decision](Feature-Priority-Decision)
 - [Help: Ollama Setup](Help-Ollama-Setup)
 - [Help: LM Studio Setup](Help-LM-Studio-Setup)
 - [Project README](Project-README)
 - [Plugin README](Plugin-README)
+- [Server README](Server-README)
+
+## Important note
+
+The new DB backup workflow is documented in:
+
+- [Getting Started](Getting-Started)
+- [Server Guide](Server-Guide)
 - [Server README](Server-README)
 
 ## What is LrGeniusAI?
