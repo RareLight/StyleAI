@@ -654,9 +654,22 @@ LrTasks.startAsyncTask(function()
             enableVertexAI = props.enableVertexAI,
             regenerateMetadata = props.regenerateMetadata
         } or nil
-        local photosToProcess, errorStatus = PhotoSelector.getPhotosInScope(props.scope, taskOptionsForScope)
+
+        local lookupProgressScope
+        if props.scope == "missing" then
+            lookupProgressScope = LrProgressScope({
+                title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/LookupTitle=Looking up which photos need processing...",
+                functionContext = context,
+                parent = progressScope,
+            })
+        end
+        local photosToProcess, errorStatus = PhotoSelector.getPhotosInScope(props.scope, taskOptionsForScope, lookupProgressScope)
+        if lookupProgressScope then
+            lookupProgressScope:done()
+        end
 
         if photosToProcess == nil or type(photosToProcess) ~= 'table' or #photosToProcess == 0 then
+            progressScope:done()
             if errorStatus == "Invalid view" then
                 LrDialogs.message(
                     LOC "$$$/LrGeniusAI/common/InvalidViewTitle=Invalid View",
@@ -671,6 +684,9 @@ LrTasks.startAsyncTask(function()
             end
             return
         end
+
+        -- Update main progress with photo count (counter)
+        progressScope:setCaption(LOC("$$$/LrGeniusAI/AnalyzeAndIndex/ProgressCount=^1 photos to process", tostring(#photosToProcess)))
 
         -- If photo context dialog is enabled, show it for each photo
         if props.showPhotoContextDialog and props.enableMetadata then
