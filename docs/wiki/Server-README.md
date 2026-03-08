@@ -112,7 +112,7 @@ If you run an existing database, perform a one-time migration.
 - Trigger from Lightroom plugin UI:
   - `File -> Plug-in Manager -> LrGeniusAI -> Backend Server -> Migrate existing DB IDs to photo_id`
 - Trigger via API:
-  - `POST /database/migrate-photo-ids`
+  - `POST /db/migrate-photo-ids`
   - Body: `{ "mappings": [{ "old_id": "...", "new_id": "..." }] }`
 - Trigger on server startup:
   - Set `GENIUSAI_MIGRATION_FILE` to a JSON mapping file path
