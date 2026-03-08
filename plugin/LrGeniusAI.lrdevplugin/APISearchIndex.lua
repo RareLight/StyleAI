@@ -245,23 +245,38 @@ end
 -- @param photo LrPhoto
 -- @param minWidth number Minimum width (long edge); nil = smallest preview.
 -- @param minHeight number Optional; if minWidth is set, controls height of returned pixels.
+-- @param requestState table|nil Optional state/config with timeoutSeconds.
 -- @return string|nil JPEG data string, or nil on failure.
 -- @return string|nil Error message when JPEG is nil.
 --
-function SearchIndexAPI.getJpegThumbnailForPhoto(photo, minWidth, minHeight)
+function SearchIndexAPI.getJpegThumbnailForPhoto(photo, minWidth, minHeight, requestState)
     if not photo then
         return nil, "Photo is nil"
     end
     local result = nil
     local errResult = nil
     local done = false
-    local timeoutSeconds = 3
+    local callbackCount = 0
+    local timeoutSeconds = tonumber(requestState and requestState.timeoutSeconds) or tonumber(prefs and prefs.previewThumbnailTimeoutSeconds) or 12
     local deadline = LrDate.currentTime() + timeoutSeconds
 
     local callback = function(jpegData, err)
-        result = jpegData
-        errResult = err
-        done = true
+        callbackCount = callbackCount + 1
+
+        -- Adobe reports that the callback may fire more than once. Prefer the
+        -- first non-empty JPEG payload and otherwise keep waiting until timeout.
+        if jpegData and type(jpegData) == "string" and #jpegData > 0 then
+            result = jpegData
+            errResult = nil
+            done = true
+            return
+        end
+
+        if err and err ~= "" then
+            errResult = err
+        elseif not errResult then
+            errResult = "No thumbnail data"
+        end
     end
 
     local requestObj = photo:requestJpegThumbnail(minWidth, minHeight, callback)
@@ -278,7 +293,7 @@ function SearchIndexAPI.getJpegThumbnailForPhoto(photo, minWidth, minHeight)
     end
 
     if not done then
-        return nil, "Thumbnail request timed out"
+        return nil, string.format("Thumbnail request timed out after %.1fs (callbacks=%d)", timeoutSeconds, callbackCount)
     end
     if result and type(result) == "string" and #result > 0 then
         return result, nil
@@ -863,6 +878,14 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local activeWorkers = 0
     local keepRunning = true
     local catalog = LrApplication.activeCatalog()
+    local previewRequestState = {
+        enabled = (prefs and prefs.usePreviewThumbnails ~= false),
+        timeoutSeconds = tonumber(prefs and prefs.previewThumbnailTimeoutSeconds) or 12,
+        cooldownSeconds = tonumber(prefs and prefs.previewThumbnailCooldownSeconds) or 1,
+        disableAfterConsecutiveTimeouts = tonumber(prefs and prefs.previewThumbnailDisableAfterTimeouts) or 3,
+        consecutiveTimeouts = 0,
+        disabledForRun = false,
+    }
     
     local analyzeWorker = function()
         while #photoToProcessStack > 0 do
@@ -907,17 +930,36 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     photoOptions.photo_id = photoId
 
                     local success, indexResponse
-                    local usePreviewThumbnails = (prefs and prefs.usePreviewThumbnails ~= false)
+                    local usePreviewThumbnails = previewRequestState.enabled and not previewRequestState.disabledForRun
                     local thumbnailSize = tonumber(prefs and prefs.exportSize) or 1024
                     local leafName = LrPathUtils.leafName(filename or "photo.jpg")
 
                     if usePreviewThumbnails then
-                        local jpegData, thumbErr = SearchIndexAPI.getJpegThumbnailForPhoto(photo, thumbnailSize, thumbnailSize)
+                        local jpegData, thumbErr = SearchIndexAPI.getJpegThumbnailForPhoto(photo, thumbnailSize, thumbnailSize, previewRequestState)
                         if jpegData and #jpegData > 0 then
+                            previewRequestState.consecutiveTimeouts = 0
                             log:trace("Using Lightroom preview for " .. filename)
                             success, indexResponse = SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, leafName, photoOptions)
                         else
                             log:trace("Preview unavailable for " .. filename .. ", falling back to export: " .. tostring(thumbErr))
+                            if thumbErr and string.find(thumbErr, "timed out", 1, true) then
+                                previewRequestState.consecutiveTimeouts = previewRequestState.consecutiveTimeouts + 1
+                                if previewRequestState.consecutiveTimeouts >= previewRequestState.disableAfterConsecutiveTimeouts then
+                                    previewRequestState.disabledForRun = true
+                                    log:warn("Disabling Lightroom preview thumbnails for the rest of this batch after " ..
+                                        tostring(previewRequestState.consecutiveTimeouts) .. " consecutive timeouts.")
+                                else
+                                    log:trace("Cooling down preview requests after timeout (" ..
+                                        tostring(previewRequestState.consecutiveTimeouts) .. "/" ..
+                                        tostring(previewRequestState.disableAfterConsecutiveTimeouts) .. ")")
+                                end
+
+                                if previewRequestState.cooldownSeconds > 0 then
+                                    LrTasks.sleep(previewRequestState.cooldownSeconds)
+                                end
+                            else
+                                previewRequestState.consecutiveTimeouts = 0
+                            end
                             jpegData = nil
                         end
                     end
