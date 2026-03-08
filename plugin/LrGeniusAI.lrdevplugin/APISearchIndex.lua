@@ -488,6 +488,27 @@ function SearchIndexAPI.getStats()
     return _request('GET', getBaseUrl() .. ENDPOINTS.STATS)
 end
 
+function SearchIndexAPI.formatStats(stats)
+    if type(stats) ~= "table" then
+        return "No statistics available."
+    end
+
+    local photos = stats.photos or {}
+    local faces = stats.faces or {}
+    local persons = stats.persons or {}
+
+    return table.concat({
+        "Photos total: " .. tostring(photos.total or 0),
+        "Photos with embeddings: " .. tostring(photos.with_embedding or 0),
+        "Photos with title: " .. tostring(photos.with_title or 0),
+        "Photos with caption: " .. tostring(photos.with_caption or 0),
+        "Photos with keywords: " .. tostring(photos.with_keywords or 0),
+        "Photos with Vertex AI: " .. tostring(photos.with_vertexai or 0),
+        "Faces total: " .. tostring(faces.total or 0),
+        "Persons total: " .. tostring(persons.total or 0),
+    }, "\n")
+end
+
 function SearchIndexAPI.getAllIndexedPhotoIds(requireEmbeddings)
     local url = getBaseUrl() .. ENDPOINTS.GET_IDS
     -- If requireEmbeddings is true, only get UUIDs with real embeddings
@@ -880,9 +901,21 @@ end
 
 function SearchIndexAPI.downloadDatabaseBackup()
     local url = getBaseUrl() .. ENDPOINTS.DB_BACKUP
-    local downloadsDir = LrPathUtils.getStandardFilePath('desktop')
-    local timestamp = os.date("%Y%m%d-%H%M%S")
-    local outputPath = LrPathUtils.child(downloadsDir, "LrGeniusAI-backend-backup-" .. timestamp .. ".zip")
+    local outputPath = LrDialogs.runSavePanel({
+        title = "Save database backup",
+        prompt = "Save Backup",
+        canCreateDirectories = true,
+        requiredFileType = "zip",
+    })
+
+    if not outputPath or outputPath == "" then
+        log:info("Database backup download canceled by user")
+        return nil, "canceled"
+    end
+
+    if not outputPath:lower():match("%.zip$") then
+        outputPath = outputPath .. ".zip"
+    end
 
     log:info("Downloading database backup from " .. url .. " to " .. outputPath)
 
