@@ -44,10 +44,11 @@ Compared with culling, more of the product shape is still undefined.
 
 Build `AI Culling Assistant` first with a narrow first release:
 
-1. Reuse existing quality fields as the initial ranking signal.
-2. Add a dedicated command that creates Lightroom collections for top picks and weaker candidates.
-3. Allow optional thresholds or target counts per selection/view.
-4. Keep the first version deterministic and review-friendly before adding more nuanced heuristics.
+1. Implement burst and near-duplicate grouping first.
+2. Use explainable technical and face-aware signals as the initial ranking basis.
+3. Add a dedicated command that creates Lightroom collections for top picks and weaker candidates.
+4. Allow optional thresholds or target counts per selection/view.
+5. Keep the first version deterministic and review-friendly before adding a lightweight aesthetic model.
 
 ## Priority order
 
