@@ -13,7 +13,7 @@ import os
 import numpy as np
 from PIL import Image
 
-from config import logger
+from config import logger, CULLING_CONFIG
 
 # Lazy-loaded FaceAnalysis app
 _face_app = None
@@ -55,7 +55,8 @@ def _compute_face_sharpness(crop_rgb: np.ndarray) -> float:
         + gray[1:-1, 2:]
     )
     variance = float(np.var(laplacian))
-    return max(0.0, min(1.0, variance / (variance + 0.02)))
+    denominator = CULLING_CONFIG["face_metrics"]["face_sharpness_denominator"]
+    return max(0.0, min(1.0, variance / (variance + denominator)))
 
 
 def _compute_eye_openness_proxy(crop_rgb: np.ndarray, bbox_list: List[int], keypoints) -> float:
@@ -83,7 +84,10 @@ def _compute_eye_openness_proxy(crop_rgb: np.ndarray, bbox_list: List[int], keyp
         return 0.0
 
     face_span = max(4.0, float(min(x2 - x1, y2 - y1)))
-    patch_radius = int(max(2, min(8, round(face_span * 0.08))))
+    patch_ratio = CULLING_CONFIG["face_metrics"]["eye_patch_ratio"]
+    patch_radius_min = CULLING_CONFIG["face_metrics"]["eye_patch_radius_min"]
+    patch_radius_max = CULLING_CONFIG["face_metrics"]["eye_patch_radius_max"]
+    patch_radius = int(max(patch_radius_min, min(patch_radius_max, round(face_span * patch_ratio))))
     eye_scores = []
 
     # InsightFace 5-point format starts with left and right eye.
@@ -100,7 +104,8 @@ def _compute_eye_openness_proxy(crop_rgb: np.ndarray, bbox_list: List[int], keyp
         # Eyes-open tends to keep stronger local vertical gradients than shut eyelids.
         vgrad = np.abs(np.diff(patch, axis=0))
         score_raw = float(np.mean(vgrad))
-        score = max(0.0, min(1.0, score_raw / (score_raw + 0.07)))
+        denominator = CULLING_CONFIG["face_metrics"]["eye_openness_denominator"]
+        score = max(0.0, min(1.0, score_raw / (score_raw + denominator)))
         eye_scores.append(score)
 
     if not eye_scores:

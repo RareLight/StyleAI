@@ -1,4 +1,4 @@
-from config import logger
+from config import logger, CULLING_CONFIG
 import service_chroma as chroma_service
 from service_metadata import get_analysis_service
 import server_lifecycle as server_lifecycle
@@ -96,14 +96,27 @@ def _compute_culling_metrics(image_bytes: bytes) -> dict:
             + gray[1:-1, 2:]
         )
         sharpness_raw = float(np.var(laplacian))
-        sharpness = _safe_unit_interval(sharpness_raw / (sharpness_raw + 0.015))
+        sharpness = _safe_unit_interval(
+            sharpness_raw / (sharpness_raw + CULLING_CONFIG["image_metrics"]["sharpness_denominator"])
+        )
 
         luminance_mean = float(np.mean(gray))
-        highlight_clip = float(np.mean(gray >= 0.98))
-        shadow_clip = float(np.mean(gray <= 0.02))
-        clipping_penalty = _safe_unit_interval((highlight_clip * 2.5) + (shadow_clip * 2.0))
-        exposure_balance = _safe_unit_interval(1.0 - (abs(luminance_mean - 0.5) / 0.35))
-        exposure = _safe_unit_interval((0.75 * exposure_balance) + (0.25 * (1.0 - clipping_penalty)))
+        highlight_clip = float(np.mean(gray >= CULLING_CONFIG["image_metrics"]["highlight_threshold"]))
+        shadow_clip = float(np.mean(gray <= CULLING_CONFIG["image_metrics"]["shadow_threshold"]))
+        clipping_penalty = _safe_unit_interval(
+            (highlight_clip * CULLING_CONFIG["image_metrics"]["highlight_clip_weight"])
+            + (shadow_clip * CULLING_CONFIG["image_metrics"]["shadow_clip_weight"])
+        )
+        exposure_balance = _safe_unit_interval(
+            1.0 - (
+                abs(luminance_mean - CULLING_CONFIG["image_metrics"]["exposure_target"])
+                / CULLING_CONFIG["image_metrics"]["exposure_tolerance"]
+            )
+        )
+        exposure = _safe_unit_interval(
+            (CULLING_CONFIG["image_metrics"]["exposure_balance_weight"] * exposure_balance)
+            + (CULLING_CONFIG["image_metrics"]["exposure_clip_weight"] * (1.0 - clipping_penalty))
+        )
 
         blurred = (
             gray[:-2, :-2] + gray[:-2, 1:-1] + gray[:-2, 2:]
@@ -117,12 +130,12 @@ def _compute_culling_metrics(image_bytes: bytes) -> dict:
             noise_raw = float(np.mean(residual[midtone_mask]))
         else:
             noise_raw = float(np.mean(residual))
-        noise_penalty = _safe_unit_interval(noise_raw / 0.08)
+        noise_penalty = _safe_unit_interval(noise_raw / CULLING_CONFIG["image_metrics"]["noise_denominator"])
 
         technical_score = _safe_unit_interval(
-            (0.5 * sharpness)
-            + (0.35 * exposure)
-            + (0.15 * (1.0 - noise_penalty))
+            (CULLING_CONFIG["image_metrics"]["technical_weight_sharpness"] * sharpness)
+            + (CULLING_CONFIG["image_metrics"]["technical_weight_exposure"] * exposure)
+            + (CULLING_CONFIG["image_metrics"]["technical_weight_noise"] * (1.0 - noise_penalty))
         )
 
         return {
@@ -160,11 +173,14 @@ def _aggregate_face_culling_metrics(face_results: list[dict]) -> dict:
 
     face_count = len(face_results)
     sharpness_values = [_safe_unit_interval(face.get("sharpness", 0.0)) for face in face_results]
-    prominence_values = [_safe_unit_interval(face.get("area_ratio", 0.0) / 0.12) for face in face_results]
+    prominence_values = [
+        _safe_unit_interval(face.get("area_ratio", 0.0) / CULLING_CONFIG["face_metrics"]["prominence_normalizer"])
+        for face in face_results
+    ]
     visibility_values = [
         _safe_unit_interval(
-            (0.5 * _safe_unit_interval(face.get("det_score", 0.0)))
-            + (0.5 * _safe_unit_interval(face.get("center_proximity", 0.0)))
+            (CULLING_CONFIG["face_metrics"]["visibility_det_weight"] * _safe_unit_interval(face.get("det_score", 0.0)))
+            + (CULLING_CONFIG["face_metrics"]["visibility_center_weight"] * _safe_unit_interval(face.get("center_proximity", 0.0)))
         )
         for face in face_results
     ]
@@ -177,10 +193,10 @@ def _aggregate_face_culling_metrics(face_results: list[dict]) -> dict:
     eye_openness = max(eye_openness_values) if eye_openness_values else 0.0
     blink_penalty = min(blink_penalties) if blink_penalties else 1.0
     face_score = _safe_unit_interval(
-        (0.35 * face_sharpness)
-        + (0.25 * face_prominence)
-        + (0.20 * face_visibility)
-        + (0.20 * eye_openness)
+        (CULLING_CONFIG["face_metrics"]["score_weight_sharpness"] * face_sharpness)
+        + (CULLING_CONFIG["face_metrics"]["score_weight_prominence"] * face_prominence)
+        + (CULLING_CONFIG["face_metrics"]["score_weight_visibility"] * face_visibility)
+        + (CULLING_CONFIG["face_metrics"]["score_weight_eye_openness"] * eye_openness)
     )
 
     return {
