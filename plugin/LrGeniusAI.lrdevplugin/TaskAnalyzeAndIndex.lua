@@ -687,6 +687,10 @@ LrTasks.startAsyncTask(function()
 
         -- Update main progress with photo count (counter)
         progressScope:setCaption(LOC("$$$/LrGeniusAI/AnalyzeAndIndex/ProgressCount=^1 photos to process", tostring(#photosToProcess)))
+        -- Reset progress portion after delta lookup so subsequent phases (import, processing) start from 0
+        if props.scope == "missing" then
+            progressScope:setPortionComplete(0, 1)
+        end
 
         -- If photo context dialog is enabled, show it for each photo
         if props.showPhotoContextDialog and props.enableMetadata then
