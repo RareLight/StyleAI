@@ -109,6 +109,22 @@ local function photosFromIds(photoIds, photoById)
 end
 
 
+local function joinReasonCodes(reasonCodes)
+    if type(reasonCodes) ~= "table" or #reasonCodes == 0 then
+        return ""
+    end
+    return table.concat(reasonCodes, ", ")
+end
+
+
+local function formatMetric(value)
+    if type(value) ~= "number" then
+        return tostring(value or "")
+    end
+    return string.format("%.4f", value)
+end
+
+
 LrTasks.startAsyncTask(function()
     LrFunctionContext.callWithContext("TaskCullPhotos", function(context)
         if not Util.waitForServerDialog() then return end
@@ -222,6 +238,59 @@ LrTasks.startAsyncTask(function()
         local timestamp = LrDate.timeToW3CDate(LrDate.currentTime())
         local resultSet = nil
         local picksCollection = nil
+
+        local cullDataByPhotoId = {}
+        for _, group in ipairs(groups) do
+            local groupId = tostring(group["group_id"] or "")
+            local groupType = tostring(group["group_type"] or "")
+            local groupPhotos = group["photos"] or {}
+            for _, photoResult in ipairs(groupPhotos) do
+                local photoId = photoResult["photo_id"]
+                if photoId then
+                    local metrics = photoResult["metrics"] or {}
+                    local decision = "alternate"
+                    if photoResult["winner"] then
+                        decision = "pick"
+                    elseif photoResult["reject_candidate"] then
+                        decision = "reject_candidate"
+                    end
+                    cullDataByPhotoId[photoId] = {
+                        decision = decision,
+                        groupId = groupId,
+                        groupType = groupType,
+                        groupRank = tostring(photoResult["rank"] or ""),
+                        groupWinner = photoResult["winner"] and "true" or "false",
+                        score = formatMetric(photoResult["cull_score"]),
+                        reasonCodes = joinReasonCodes(photoResult["reason_codes"]),
+                        explanation = tostring(photoResult["explanation"] or ""),
+                        sharpness = formatMetric(metrics["sharpness"]),
+                        exposure = formatMetric(metrics["exposure"]),
+                        noise = formatMetric(metrics["noise"]),
+                        technicalScore = formatMetric(metrics["technical_score"]),
+                    }
+                end
+            end
+        end
+
+        catalog:withPrivateWriteAccessDo(function()
+            for photoId, cullData in pairs(cullDataByPhotoId) do
+                local photo = photoById[photoId]
+                if photo then
+                    photo:setPropertyForPlugin(_PLUGIN, "cullDecision", cullData.decision)
+                    photo:setPropertyForPlugin(_PLUGIN, "cullGroupId", cullData.groupId)
+                    photo:setPropertyForPlugin(_PLUGIN, "cullGroupType", cullData.groupType)
+                    photo:setPropertyForPlugin(_PLUGIN, "cullGroupRank", cullData.groupRank)
+                    photo:setPropertyForPlugin(_PLUGIN, "cullGroupWinner", cullData.groupWinner)
+                    photo:setPropertyForPlugin(_PLUGIN, "cullScore", cullData.score)
+                    photo:setPropertyForPlugin(_PLUGIN, "cullReasonCodes", cullData.reasonCodes)
+                    photo:setPropertyForPlugin(_PLUGIN, "cullExplanation", cullData.explanation)
+                    photo:setPropertyForPlugin(_PLUGIN, "cullSharpness", cullData.sharpness)
+                    photo:setPropertyForPlugin(_PLUGIN, "cullExposure", cullData.exposure)
+                    photo:setPropertyForPlugin(_PLUGIN, "cullNoise", cullData.noise)
+                    photo:setPropertyForPlugin(_PLUGIN, "cullTechnicalScore", cullData.technicalScore)
+                end
+            end
+        end, Defaults.catalogWriteAccessOptions)
 
         catalog:withWriteAccessDo("Create culling collections", function()
             resultSet = catalog:createCollectionSet(
