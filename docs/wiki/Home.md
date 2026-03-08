@@ -11,6 +11,7 @@ Welcome to the project wiki.
 - [Help: Advanced Search](Help-Advanced-Search)
 - [Help: Choosing AI Model](Help-Choosing-AI-Model)
 - [Feature Priority Decision](Feature-Priority-Decision)
+- [Image Culling Implementation Plan](Image-Culling-Implementation-Plan)
 - [Help: Ollama Setup](Help-Ollama-Setup)
 - [Help: LM Studio Setup](Help-LM-Studio-Setup)
 - [Project README](Project-README)
