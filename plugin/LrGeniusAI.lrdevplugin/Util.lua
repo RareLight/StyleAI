@@ -293,13 +293,13 @@ function Util.getGlobalPhotoIdForPhoto(photo, options)
 
     if not options.forceRecompute and not Util.nilOrEmpty(cachedId) then
         if cachedAlgorithm == STABLE_ID_ALGO then
-            log:trace("getGlobalPhotoIdForPhoto: cache hit for " .. tostring(originalFilePath))
+            -- log:trace("getGlobalPhotoIdForPhoto: cache hit for " .. tostring(originalFilePath))
             return cachedId, nil
         end
         if cachedAlgorithm == LEGACY_HASH_ALGO
             and cachedSize == tonumber(attributes.fileSize)
             and math.floor(cachedMtime or 0) == math.floor(tonumber(attributes.fileModificationDate) or 0) then
-            log:trace("getGlobalPhotoIdForPhoto: cache hit for legacy hash " .. tostring(originalFilePath))
+            -- log:trace("getGlobalPhotoIdForPhoto: cache hit for legacy hash " .. tostring(originalFilePath))
             return cachedId, nil
         end
     end
