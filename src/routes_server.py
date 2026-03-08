@@ -6,7 +6,6 @@ import server_lifecycle
 from config import logger, DB_PATH
 from service_metadata import get_analysis_service
 import service_chroma as chroma_service
-import service_persons as persons_service
 
 server_bp = Blueprint('server', __name__)
 
@@ -14,41 +13,6 @@ server_bp = Blueprint('server', __name__)
 def ping():
     #logger.info("Ping request received")
     return "pong"
-
-
-@server_bp.route('/stats', methods=['GET'])
-@server_bp.route('/database/stats', methods=['GET'])
-def database_stats():
-    """
-    Return database statistics: indexed photos, faces, persons, and metadata/embedding counts.
-
-    Returns: {
-        "photos": { "total", "with_embedding", "with_title", "with_caption", "with_keywords", "with_quality_score" },
-        "faces": { "total" },
-        "persons": { "total" }
-    }
-    """
-    try:
-        image_stats = chroma_service.get_image_metadata_stats()
-        face_count = chroma_service.get_face_count()
-        persons = persons_service.list_persons()
-        person_count = len(persons)
-
-        return jsonify({
-            "photos": {
-                "total": image_stats["total"],
-                "with_embedding": image_stats["with_embedding"],
-                "with_title": image_stats["with_title"],
-                "with_caption": image_stats["with_caption"],
-                "with_keywords": image_stats["with_keywords"],
-                "with_quality_score": image_stats["with_quality_score"],
-            },
-            "faces": {"total": face_count},
-            "persons": {"total": person_count},
-        })
-    except Exception as e:
-        logger.error(f"Error computing database stats: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
 
 
 @server_bp.route('/shutdown', methods=['POST'])

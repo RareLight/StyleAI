@@ -260,6 +260,20 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                             end)
                         end,
                     },
+                    f:push_button {
+                        title = "Download DB backup",
+                        action = function(button)
+                            LrTasks.startAsyncTask(function()
+                                local ok, result = SearchIndexAPI.downloadDatabaseBackup()
+                                if ok then
+                                    LrShell.revealInShell(result)
+                                    LrDialogs.message("Database backup downloaded.", result)
+                                else
+                                    LrDialogs.message("Database backup failed", tostring(result or "Unknown error"), "critical")
+                                end
+                            end)
+                        end,
+                    },
                 },
             },
             f:group_box {
