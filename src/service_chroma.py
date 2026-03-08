@@ -325,12 +325,255 @@ def get_all_image_ids(has_embedding=None):
     return filtered_ids
 
 
+def _safe_float(value, default=None):
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _embedding_to_array(embedding):
+    if embedding is None:
+        return None
+    try:
+        arr = np.asarray(embedding, dtype=np.float32)
+    except Exception:
+        return None
+    if arr.size == 0 or np.allclose(arr, 0.0):
+        return None
+    return arr
+
+
+def _cosine_distance(embedding_a, embedding_b):
+    if embedding_a is None or embedding_b is None:
+        return None
+    norm_a = np.linalg.norm(embedding_a)
+    norm_b = np.linalg.norm(embedding_b)
+    if norm_a == 0.0 or norm_b == 0.0:
+        return None
+    similarity = float(np.dot(embedding_a, embedding_b) / (norm_a * norm_b))
+    similarity = max(-1.0, min(1.0, similarity))
+    return 1.0 - similarity
+
+
+def _derive_grouping_thresholds(phash_threshold, clip_threshold, time_delta):
+    try:
+        time_window_seconds = max(0, int(time_delta))
+    except (TypeError, ValueError):
+        time_window_seconds = 1
+
+    if clip_threshold == "auto":
+        burst_distance_threshold = 0.12
+    else:
+        try:
+            burst_distance_threshold = max(0.0, float(clip_threshold))
+        except (TypeError, ValueError):
+            burst_distance_threshold = 0.12
+
+    if phash_threshold == "auto":
+        duplicate_distance_threshold = 0.05
+    else:
+        try:
+            # The route exposes a pHash-style integer threshold even though the
+            # current implementation uses stored embeddings only. Lower numbers
+            # therefore remain stricter and higher numbers relax duplicate linking.
+            normalized = max(0.0, min(float(phash_threshold), 32.0)) / 32.0
+            duplicate_distance_threshold = 0.02 + (normalized * 0.06)
+        except (TypeError, ValueError):
+            duplicate_distance_threshold = 0.05
+
+    duplicate_time_window_seconds = max(time_window_seconds * 4, 10)
+    return duplicate_distance_threshold, burst_distance_threshold, duplicate_time_window_seconds, time_window_seconds
+
+
 def group_and_sort_images(uuids, phash_threshold, clip_threshold, time_delta):
     """
-    [NOT IMPLEMENTED] Groups a list of images by similarity and sorts them by quality.
+    Group indexed images into stable similarity clusters for culling workflows.
+
+    The current implementation uses stored capture times and image embeddings.
+    A stricter embedding threshold acts as the duplicate signal until a real
+    perceptual hash is available in the backend.
     """
-    logger.warning("group_and_sort_images is not yet implemented.")
-    return []
+    _ensure_initialized()
+
+    if not uuids:
+        return []
+
+    duplicate_distance_threshold, burst_distance_threshold, duplicate_time_window_seconds, time_window_seconds = _derive_grouping_thresholds(
+        phash_threshold, clip_threshold, time_delta
+    )
+
+    unique_photo_ids = []
+    seen_ids = set()
+    for photo_id in uuids:
+        normalized_id = _normalize_photo_id(photo_id)
+        if normalized_id and normalized_id not in seen_ids:
+            unique_photo_ids.append(normalized_id)
+            seen_ids.add(normalized_id)
+
+    if not unique_photo_ids:
+        return []
+
+    raw = collection.get(ids=unique_photo_ids, include=["metadatas", "embeddings"])
+    metadata_by_id = {}
+    embedding_by_id = {}
+    for idx, photo_id in enumerate(raw.get("ids", [])):
+        metadata_list = raw.get("metadatas", [])
+        embedding_list = raw.get("embeddings", [])
+        metadata_by_id[photo_id] = metadata_list[idx] if idx < len(metadata_list) else {}
+        embedding_by_id[photo_id] = embedding_list[idx] if idx < len(embedding_list) else None
+
+    records = []
+    for photo_id in unique_photo_ids:
+        metadata = metadata_by_id.get(photo_id, {}) or {}
+        capture_time = _safe_float(metadata.get("capture_time"))
+        filename = str(metadata.get("filename") or "")
+        records.append({
+            "photo_id": photo_id,
+            "filename": filename,
+            "capture_time": capture_time,
+            "embedding": _embedding_to_array(embedding_by_id.get(photo_id)),
+        })
+
+    records.sort(key=lambda item: (
+        item["capture_time"] is None,
+        item["capture_time"] if item["capture_time"] is not None else float("inf"),
+        item["filename"],
+        item["photo_id"],
+    ))
+
+    adjacency = {item["photo_id"]: set() for item in records}
+    edge_kinds = {}
+
+    for left_index in range(len(records)):
+        left = records[left_index]
+        for right_index in range(left_index + 1, len(records)):
+            right = records[right_index]
+            distance = _cosine_distance(left["embedding"], right["embedding"])
+
+            time_gap = None
+            if left["capture_time"] is not None and right["capture_time"] is not None:
+                time_gap = abs(right["capture_time"] - left["capture_time"])
+                if time_gap > duplicate_time_window_seconds and distance is None:
+                    break
+
+            is_near_duplicate = (
+                distance is not None
+                and distance <= duplicate_distance_threshold
+                and (time_gap is None or time_gap <= duplicate_time_window_seconds)
+            )
+            is_burst_neighbor = (
+                distance is not None
+                and distance <= burst_distance_threshold
+                and time_gap is not None
+                and time_gap <= time_window_seconds
+            )
+
+            if not is_near_duplicate and not is_burst_neighbor:
+                continue
+
+            left_id = left["photo_id"]
+            right_id = right["photo_id"]
+            adjacency[left_id].add(right_id)
+            adjacency[right_id].add(left_id)
+            edge_kinds[tuple(sorted((left_id, right_id)))] = "near_duplicate" if is_near_duplicate else "burst"
+
+    groups = []
+    visited = set()
+    group_counter = 1
+
+    for record in records:
+        start_id = record["photo_id"]
+        if start_id in visited:
+            continue
+
+        stack = [start_id]
+        component_ids = []
+        while stack:
+            current_id = stack.pop()
+            if current_id in visited:
+                continue
+            visited.add(current_id)
+            component_ids.append(current_id)
+            for neighbor_id in sorted(adjacency[current_id], reverse=True):
+                if neighbor_id not in visited:
+                    stack.append(neighbor_id)
+
+        component_records = [item for item in records if item["photo_id"] in set(component_ids)]
+        component_records.sort(key=lambda item: (
+            item["capture_time"] is None,
+            item["capture_time"] if item["capture_time"] is not None else float("inf"),
+            item["filename"],
+            item["photo_id"],
+        ))
+
+        group_photo_ids = [item["photo_id"] for item in component_records]
+        capture_times = [item["capture_time"] for item in component_records if item["capture_time"] is not None]
+        time_span_seconds = 0.0
+        if len(capture_times) >= 2:
+            time_span_seconds = float(max(capture_times) - min(capture_times))
+
+        pair_distances = []
+        group_edge_types = set()
+        for left_index in range(len(component_records)):
+            for right_index in range(left_index + 1, len(component_records)):
+                left = component_records[left_index]
+                right = component_records[right_index]
+                distance = _cosine_distance(left["embedding"], right["embedding"])
+                if distance is not None:
+                    pair_distances.append(round(distance, 4))
+                edge_type = edge_kinds.get(tuple(sorted((left["photo_id"], right["photo_id"]))))
+                if edge_type:
+                    group_edge_types.add(edge_type)
+
+        if len(group_photo_ids) == 1:
+            group_type = "single"
+        elif "near_duplicate" in group_edge_types and "burst" not in group_edge_types:
+            group_type = "near_duplicate"
+        elif time_span_seconds <= time_window_seconds:
+            group_type = "burst"
+        else:
+            group_type = "near_duplicate"
+
+        groups.append({
+            "group_id": f"group_{group_counter:04d}",
+            "group_type": group_type,
+            "group_size": len(group_photo_ids),
+            "primary_photo_id": group_photo_ids[0],
+            "photo_ids": group_photo_ids,
+            "min_capture_time": min(capture_times) if capture_times else None,
+            "max_capture_time": max(capture_times) if capture_times else None,
+            "time_span_seconds": round(time_span_seconds, 3),
+            "debug": {
+                "thresholds": {
+                    "duplicate_distance": round(duplicate_distance_threshold, 4),
+                    "burst_distance": round(burst_distance_threshold, 4),
+                    "duplicate_time_window_seconds": duplicate_time_window_seconds,
+                    "time_window_seconds": time_window_seconds,
+                },
+                "pairwise_distances": pair_distances,
+                "edge_types": sorted(group_edge_types),
+            },
+        })
+        group_counter += 1
+
+    groups.sort(key=lambda group: (
+        group["min_capture_time"] is None,
+        group["min_capture_time"] if group["min_capture_time"] is not None else float("inf"),
+        group["primary_photo_id"],
+    ))
+
+    logger.info(
+        "Grouped %s photos into %s groups (duplicate_distance=%s, burst_distance=%s, time_window=%ss)",
+        len(unique_photo_ids),
+        len(groups),
+        round(duplicate_distance_threshold, 4),
+        round(burst_distance_threshold, 4),
+        time_window_seconds,
+    )
+    return groups
 
 
 # --- Face embeddings collection API ---
