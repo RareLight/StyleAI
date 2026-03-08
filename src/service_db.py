@@ -1,10 +1,14 @@
 import os
 import json
+import shutil
 import tempfile
 import zipfile
 from datetime import datetime
 
 from config import logger, DB_PATH
+
+# Ordner für serverseitig aufgehobene Backups: Docker /data/db/backups, Standalone <db-path>/backups
+BACKUPS_DIR = os.path.join(DB_PATH, "backups")
 import service_chroma as chroma_service
 import service_persons as persons_service
 
@@ -53,6 +57,16 @@ def build_backup_zip() -> tuple[str, str]:
                 included_files += 1
 
     logger.info("Created DB backup zip at %s with %s files from %s", zip_path, included_files, DB_PATH)
+
+    # Kopie serverseitig aufbewahren (Docker: /data/db/backups, Standalone: <db-path>/backups)
+    try:
+        os.makedirs(BACKUPS_DIR, exist_ok=True)
+        persistent_path = os.path.join(BACKUPS_DIR, backup_name)
+        shutil.copy2(zip_path, persistent_path)
+        logger.info("DB backup saved server-side to %s", persistent_path)
+    except Exception as e:
+        logger.warning("Could not save backup to %s: %s", BACKUPS_DIR, e)
+
     return zip_path, backup_name
 
 
