@@ -439,7 +439,7 @@ def process_image_task(
         siglip_processor = server_lifecycle.get_processor()
 
         # Convert lists to sets for faster lookup in analyze_batch
-        embeddings, datetimes, metadata_results = analysis_service.analyze_batch(
+        embeddings, metadata_results = analysis_service.analyze_batch(
             image_triplets, options, siglip_model, siglip_processor,
             set(images_needing_embeddings), set(images_needing_metadata)
         )
@@ -515,11 +515,33 @@ def process_image_task(
                         "model": model_name,
                     }
 
-                # Update/add datetime if present
-                if datetimes:
-                    capture_time = datetimes.get(uuid)
-                    if capture_time:
-                        main_metadata["capture_time"] = capture_time
+                # Prefer explicit capture_time from Lightroom catalog (if provided).
+                # `date_time_unix` is a seconds-since-epoch float, `date_time` is
+                # an ISO/W3C string kept for backwards compatibility.
+                capture_time = None
+                catalog_time_unix = options.get('date_time_unix')
+                if catalog_time_unix is not None:
+                    try:
+                        capture_time = float(catalog_time_unix)
+                    except (TypeError, ValueError):
+                        logger.warning("Invalid date_time_unix value for %s: %r", uuid, catalog_time_unix)
+                elif options.get('date_time'):
+                    from datetime import datetime, timezone
+                    dt_str = options['date_time']
+                    try:
+                        # Normalize common W3C/ISO forms (e.g. trailing 'Z').
+                        normalized = str(dt_str).strip()
+                        if normalized.endswith("Z"):
+                            normalized = normalized[:-1] + "+00:00"
+                        dt_obj = datetime.fromisoformat(normalized)
+                        if dt_obj.tzinfo is None:
+                            dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+                        capture_time = float(dt_obj.timestamp())
+                    except Exception as e:
+                        logger.warning("Could not parse date_time for %s: %r (%s)", uuid, dt_str, e)
+
+                if capture_time is not None:
+                    main_metadata["capture_time"] = capture_time
 
                 # Technical culling metrics are cheap enough to compute on every pass.
                 main_metadata.update(_compute_culling_metrics(image_bytes))
