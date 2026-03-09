@@ -130,8 +130,6 @@ class AnalysisService:
                 else:
                     embeddings.append(None)  # Placeholder for images not needing embeddings
 
-        datetimes = self._read_datetime_from_exifs(uuids, image_data)
-
         metadata_results = None
         if len(uuids_needing_metadata) > 0:
             logger.info(f"Generating metadata for {len(uuids_needing_metadata)} images out of {len(uuids)} total")
@@ -152,7 +150,10 @@ class AnalysisService:
                 else:
                     metadata_results.append(None)
 
-        return embeddings, datetimes, metadata_results
+        # Datetime/capture_time extraction is now handled entirely by the client
+        # (Lightroom plugin) via explicit fields in the request and stored in
+        # service_index.process_image_task. We no longer read EXIF here.
+        return embeddings, metadata_results
 
     def _generate_image_embeddings(self, images: List[Image.Image], image_model, image_processor) -> List[Optional[List[float]]]:
         """
@@ -181,28 +182,6 @@ class AnalysisService:
                 embeddings.append(None)
         
         return embeddings
-
-    def _read_datetime_from_exifs(self, uuids: List[str], image_data: List[bytes]) -> Dict[str, Optional[float]]:
-        """
-        Analyzes image data to extract capture time for a batch of images.
-        """
-        results = {}
-        for i, data in enumerate(image_data):
-            uuid = uuids[i]
-            capture_time = None
-            try:
-                image_for_exif = Image.open(io.BytesIO(data))
-                exif_data = image_for_exif.getexif()
-                if exif_data:                    
-                    date_time_original = exif_data.get(36867) # DateTimeOriginal
-                    if date_time_original:
-                        dt_object = datetime.strptime(date_time_original, '%Y:%m:%d %H:%M:%S')
-                        capture_time = float(dt_object.timestamp())
-            except Exception as e:
-                logger.warning(f"Could not read EXIF data for {uuid}: {e}")
-            
-            results[uuid] = capture_time
-        return results
 
     def _generate_metadata_batch(self, uuids: List[str], image_data: List[bytes], options: dict) -> List[Optional[MetadataGenerationResponse]]:
         """
