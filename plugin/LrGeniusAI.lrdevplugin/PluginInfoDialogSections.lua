@@ -237,6 +237,21 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                 },
                 f:row {
                     f:push_button {
+                        title = "Generate hash-based photo IDs (catalog only)",
+                        action = function(button)
+                            LrTasks.startAsyncTask(function()
+                                local ok, msg = SearchIndexAPI.generateGlobalPhotoIdsForCatalog()
+                                if ok then
+                                    LrDialogs.message("Photo-ID Generation", msg or "Generation completed.")
+                                else
+                                    LrDialogs.message("Photo-ID Generation failed", msg or "Unknown error", "critical")
+                                end
+                            end)
+                        end,
+                    },
+                },
+                f:row {
+                    f:push_button {
                         title = "Migrate existing DB IDs to photo_id",
                         action = function(button)
                             LrTasks.startAsyncTask(function()
