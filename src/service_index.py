@@ -347,7 +347,8 @@ def process_image_task(
                     chroma_service.update_image(uuid, main_metadata, embedding=update_embedding)
                 elif regenerate_metadata:
                     logger.info(f"UUID {uuid} set to regenerate. Updating (embedding: {update_embedding is not None}).")
-                    if chroma_service.get_image(uuid) is not None:
+                    existing_in_chroma = chroma_service.get_image(uuid)
+                    if existing_in_chroma and existing_in_chroma.get("ids"):
                         chroma_service.update_image(uuid, main_metadata, embedding=update_embedding)
                     else:
                         chroma_service.add_image(uuid, embedding, main_metadata)
