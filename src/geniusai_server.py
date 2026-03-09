@@ -1,5 +1,7 @@
 import os
 import sys
+import threading
+import time
 from flask import Flask, jsonify
 from waitress import serve
 import datetime
@@ -22,6 +24,7 @@ from routes_import import import_bp
 from routes_clip import clip_bp
 from routes_faces import faces_bp
 import service_chroma
+import service_persons
 
 app = Flask(__name__)
 logger.info("Flask app created")
@@ -34,6 +37,74 @@ app.register_blueprint(db_bp)
 app.register_blueprint(clip_bp)
 app.register_blueprint(import_bp)
 app.register_blueprint(faces_bp)
+
+
+def _bool_env(name: str, default: bool = False) -> bool:
+    val = os.environ.get(name, "").strip().lower()
+    if not val:
+        return default
+    return val in ("1", "true", "yes", "on")
+
+
+def _start_faces_cluster_scheduler() -> None:
+    """
+    Periodically run face clustering in a background thread while the backend is running.
+
+    Controlled via environment variables:
+      GENIUSAI_FACES_CLUSTER_ENABLED    (bool; default: false)
+      GENIUSAI_FACES_CLUSTER_INTERVAL   (seconds; default: 3600)
+      GENIUSAI_FACES_CLUSTER_DISTANCE   (float cosine distance; default: 0.5)
+      GENIUSAI_FACES_CLUSTER_MIN_FACES  (int; optional; if unset -> None)
+      GENIUSAI_FACES_CLUSTER_LINKAGE    ("complete" | "average"; default: "complete")
+    """
+    if not _bool_env("GENIUSAI_FACES_CLUSTER_ENABLED", default=False):
+        logger.info("Faces cluster scheduler disabled (GENIUSAI_FACES_CLUSTER_ENABLED not set).")
+        return
+
+    try:
+        interval = int(os.environ.get("GENIUSAI_FACES_CLUSTER_INTERVAL", "3600"))
+    except ValueError:
+        interval = 3600
+
+    try:
+        distance = float(os.environ.get("GENIUSAI_FACES_CLUSTER_DISTANCE", "0.5"))
+    except ValueError:
+        distance = 0.5
+
+    min_faces_raw = os.environ.get("GENIUSAI_FACES_CLUSTER_MIN_FACES", "").strip()
+    min_faces = None
+    if min_faces_raw:
+        try:
+            min_faces = int(min_faces_raw)
+        except ValueError:
+            min_faces = None
+
+    linkage = (os.environ.get("GENIUSAI_FACES_CLUSTER_LINKAGE", "complete") or "complete").strip().lower()
+    if linkage not in ("complete", "average"):
+        linkage = "complete"
+
+    def _loop() -> None:
+        logger.info(
+            "Starting faces cluster scheduler: interval=%ss, distance=%.3f, min_faces=%s, linkage=%s",
+            interval,
+            distance,
+            str(min_faces) if min_faces is not None else "None",
+            linkage,
+        )
+        while True:
+            try:
+                summary = service_persons.run_clustering(
+                    distance_threshold=distance,
+                    min_faces_per_person=min_faces,
+                    linkage=linkage,
+                )
+                logger.info("Periodic faces clustering summary: %s", summary)
+            except Exception as e:
+                logger.error("Periodic faces clustering failed: %s", e, exc_info=True)
+            time.sleep(max(60, interval))
+
+    t = threading.Thread(target=_loop, name="faces-cluster-scheduler", daemon=True)
+    t.start()
 
 @app.errorhandler(500)
 def handle_internal_server_error(e):
@@ -66,6 +137,9 @@ if __name__ == "__main__":
     
     # Write PID for lifecycle management
     server_lifecycle.write_pid_file()
+
+    # Start optional background faces clustering scheduler
+    _start_faces_cluster_scheduler()
     
     host = os.environ.get("GENIUSAI_HOST", "127.0.0.1")
     port = int(os.environ.get("GENIUSAI_PORT", "19819"))
