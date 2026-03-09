@@ -134,7 +134,8 @@ LrTasks.startAsyncTask(function()
 
         -- Determine photos to search based on scope
         local photosToSearch
-        if props.searchScope == 'selection' or props.searchScope == 'view' then
+        -- 'selected' matches the popup_menu value; keep 'view' as-is
+        if props.searchScope == 'selected' or props.searchScope == 'view' then
             local status
             photosToSearch, status = PhotoSelector.getPhotosInScope(props.searchScope)
             if not photosToSearch or #photosToSearch == 0 then
@@ -150,6 +151,7 @@ LrTasks.startAsyncTask(function()
         local qualitySort = props.useQualityFilter and props.qualitySort or nil
 
         -- Semantic search (with optional quality filter)
+        local searchStartedAt = LrDate.currentTime()
         if props.searchTerm ~= "" then
             log:trace("Performing semantic search for: " .. props.searchTerm)
             local searchOptions = {
@@ -168,6 +170,10 @@ LrTasks.startAsyncTask(function()
                 searchOptions.metadataFields = { "flattened_keywords", "alt_text", "caption", "title" }
             end
             results = SearchIndexAPI.searchIndex(props.searchTerm, qualitySort, photosToSearch, searchOptions)
+            local elapsedMs = math.floor((LrDate.currentTime() - searchStartedAt) * 1000)
+            log:trace("Semantic search completed. term=" .. tostring(props.searchTerm) ..
+                " results=" .. tostring(type(results) == "table" and #results or 0) ..
+                " elapsedMs=" .. tostring(elapsedMs))
             collectionName = string.format("'%s' @ %s", props.searchTerm, LrDate.timeToW3CDate(LrDate.currentTime()))
 
         -- Quality-only search
@@ -205,23 +211,36 @@ LrTasks.startAsyncTask(function()
             return
         end
 
-        local photos = {}
+        -- Build a list of photo IDs once and resolve them in batch for better performance.
+        local resolveStartedAt = LrDate.currentTime()
+        local photoIds = {}
         for _, result in ipairs(results) do
             if type(result) == "table" then
                 local resultPhotoId = result.photo_id or result.uuid
-                local photo = SearchIndexAPI.findPhotoByPhotoId(resultPhotoId)
-                if photo then
-                    table.insert(photos, photo)
+                if resultPhotoId then
+                    table.insert(photoIds, resultPhotoId)
                 else
-                    log:warn(LOC("$$$/LrGeniusAI/AdvancedSearchTask/photoNotFound=Photo with ID ^1 not found in catalog.", tostring(resultPhotoId)))
+                    log:warn(LOC("$$$/LrGeniusAI/AdvancedSearchTask/photoNotFound=Photo with ID ^1 not found in catalog.", "nil"))
                 end
             end
         end
 
-        if #photos > 0 then
+        if #photoIds == 0 then
+            LrDialogs.message(LOC "$$$/LrGeniusAI/AdvancedSearchTask/noResults=No Results", LOC "$$$/LrGeniusAI/AdvancedSearchTask/noResultsMessage=No photos found matching the criteria.")
+            return
+        end
+
+        local photos = SearchIndexAPI.findPhotosByPhotoIds(photoIds)
+        local resolveElapsedMs = math.floor((LrDate.currentTime() - resolveStartedAt) * 1000)
+        log:trace("Semantic search: resolved photos from IDs. ids=" .. tostring(#photoIds) ..
+            " resolved=" .. tostring(photos and #photos or 0) ..
+            " elapsedMs=" .. tostring(resolveElapsedMs))
+
+        if photos and #photos > 0 then
             local collectionSet = nil
             local collection = nil
-            
+            local collectionStartedAt = LrDate.currentTime()
+
             catalog:withWriteAccessDo("Create Collection Set", function()
                 collectionSet = catalog:createCollectionSet(LOC "$$$/LrGeniusAI/AdvancedSearchTask/collectionSetName=Search Results", nil, true)
             end, Defaults.catalogWriteAccessOptions)
@@ -245,6 +264,10 @@ LrTasks.startAsyncTask(function()
                 catalog:setActiveSources({collection})
                 LrApplicationView.gridView()
             end, Defaults.catalogWriteAccessOptions)
+
+            local collectionElapsedMs = math.floor((LrDate.currentTime() - collectionStartedAt) * 1000)
+            log:trace("Semantic search: collection created and photos added. count=" .. tostring(#photos) ..
+                " elapsedMs=" .. tostring(collectionElapsedMs))
 
             if collection == nil then
                 ErrorHandler.handleError(LOC "$$$/LrGeniusAI/AdvancedSearchTask/collectionErrorTitle=Collection Error", LOC "$$$/LrGeniusAI/AdvancedSearchTask/collectionErrorMessage=Failed to create collection for search results.")

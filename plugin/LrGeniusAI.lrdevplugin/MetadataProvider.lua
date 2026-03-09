@@ -206,8 +206,9 @@ return {
             title = "Global Photo ID",
             dataType = 'string',
             readOnly = true,
-            searchable = false,
+            searchable = true,
             browsable = false,
+            version = 2,
         },
         {
             id = 'globalPhotoIdFileSize',
@@ -235,7 +236,7 @@ return {
         },
     },
 
-    schemaVersion = 29,
+    schemaVersion = 30,
     updateFromEarlierSchemaVersion = function (catalog, previousSchemaVersion, progressScope)
             catalog:assertHasPrivateWriteAccess("AIMetadataProvider.updateFromEarlierSchemaVersion")
             if previousSchemaVersion ~= nil and previousSchemaVersion < 23 then

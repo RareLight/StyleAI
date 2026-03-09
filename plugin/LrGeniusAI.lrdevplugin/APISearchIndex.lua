@@ -132,6 +132,8 @@ function SearchIndexAPI.findPhotosByPhotoIds(photoIds)
             local photo = catalog:findPhotoByUuid(photoId)
             if photo then
                 table.insert(photos, photo)
+            else
+                log:warn("findPhotosByPhotoIds: Photo with UUID " .. tostring(photoId) .. " not found in catalog (non-global IDs).")
             end
         end
         return photos
@@ -143,7 +145,11 @@ function SearchIndexAPI.findPhotosByPhotoIds(photoIds)
     end
 
     local photoById = {}
+    local startedAt = LrDate.currentTime()
     local allPhotos = catalog:getAllPhotos()
+    local allPhotosElapsed = math.floor((LrDate.currentTime() - startedAt) * 1000)
+    log:trace("findPhotosByPhotoIds: catalog:getAllPhotos() returned " .. tostring(#allPhotos) ..
+        " photos in " .. tostring(allPhotosElapsed) .. "ms")
 
     for _, photo in ipairs(allPhotos) do
         local cachedId = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoId")
@@ -152,16 +158,12 @@ function SearchIndexAPI.findPhotosByPhotoIds(photoIds)
         end
     end
 
-    for _, photo in ipairs(allPhotos) do
-        local candidateId = getPhotoIdForPhoto(photo)
-        if candidateId and idSet[candidateId] and not photoById[candidateId] then
-            photoById[candidateId] = photo
-        end
-    end
-
     for _, photoId in ipairs(photoIds) do
-        if photoById[photoId] then
-            table.insert(photos, photoById[photoId])
+        local photo = photoById[photoId]
+        if photo then
+            table.insert(photos, photo)
+        else
+            log:warn("findPhotosByPhotoIds: Photo with global ID " .. tostring(photoId) .. " not found in catalog.")
         end
     end
 
@@ -563,20 +565,6 @@ function SearchIndexAPI.searchIndex(searchTerm, qualitySort, photosToSearch, sea
         }
     end
 
-    -- Vertex AI config from plugin prefs so server can use Vertex for semantic search
-    local vertex_project_id_raw = (searchOptions and searchOptions.vertex_project_id) or (prefs and prefs.vertexProjectId)
-    local vertex_project_id = nil
-    local vertex_location = (searchOptions and searchOptions.vertex_location) or (prefs and prefs.vertexLocation) or "us-central1"
-    if type(vertex_project_id_raw) == "string" then
-        local trimmedProjectId = vertex_project_id_raw:gsub("^%s*(.-)%s*$", "%1")
-        if trimmedProjectId ~= "" then
-            vertex_project_id = trimmedProjectId
-        end
-    end
-    if vertex_location and type(vertex_location) == "string" then
-        vertex_location = vertex_location:gsub("^%s*(.-)%s*$", "%1")
-    end
-
     if photosToSearch and #photosToSearch > 0 then
         -- Perform a scoped search via POST
         local photoIds = {}
@@ -596,10 +584,6 @@ function SearchIndexAPI.searchIndex(searchTerm, qualitySort, photosToSearch, sea
         if search_sources then
             body.search_sources = search_sources
         end
-        if vertex_project_id and vertex_project_id ~= "" then
-            body.vertex_project_id = vertex_project_id
-            body.vertex_location = vertex_location
-        end
         local postUrl = buildUrlWithParams(url, params)
 
         log:trace("Searching index via POST (scoped): " .. postUrl)
@@ -608,19 +592,8 @@ function SearchIndexAPI.searchIndex(searchTerm, qualitySort, photosToSearch, sea
         -- Global search: use POST when search_sources are provided so we can send JSON body
         if search_sources then
             local body = { term = searchTerm, search_sources = search_sources }
-            if vertex_project_id and vertex_project_id ~= "" then
-                body.vertex_project_id = vertex_project_id
-                body.vertex_location = vertex_location
-            end
             local postUrl = buildUrlWithParams(url, params)
             log:trace("Searching index via POST (global with search_sources): " .. postUrl)
-            return _request('POST', postUrl, body)
-        end
-        -- GET without search_sources: still send Vertex config via POST if we have it so Vertex search works
-        if vertex_project_id and vertex_project_id ~= "" then
-            local body = { term = searchTerm, vertex_project_id = vertex_project_id, vertex_location = vertex_location }
-            local postUrl = buildUrlWithParams(url, params)
-            log:trace("Searching index via POST (global with vertex config): " .. postUrl)
             return _request('POST', postUrl, body)
         end
         local getUrl = buildUrlWithParams(url, params)
