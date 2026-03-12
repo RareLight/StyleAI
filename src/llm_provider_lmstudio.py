@@ -38,11 +38,10 @@ class LMStudioProvider(LLMProviderBase):
             # Resolve host: request override -> provider default
             host = getattr(request, "lmstudio_base_url", None) or self.host
 
-            # Convert image to base64 data URI
-            image_handle = lms.prepare_image(request.image_data)
-
             # Use a scoped client for this host instead of global default client
             with lms.Client(host) as client:
+                # Prepare image via client so we don't depend on the default client
+                image_handle = client.files.prepare_image(request.image_data)
                 model = client.llm(request.model)
                 
                 # Prepare prompts
