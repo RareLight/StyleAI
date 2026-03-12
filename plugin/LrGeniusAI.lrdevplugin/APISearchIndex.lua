@@ -898,8 +898,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     if datetime ~= nil and type(datetime) == "number" then
                         -- Keep backwards-compatible ISO string for older backends
                         photoOptions.date_time = LrDate.timeToW3CDate(datetime)
-                        -- Also send raw catalog timestamp (seconds since epoch, may include fractions)
-                        photoOptions.date_time_unix = datetime
+                        -- Also send Unix timestamp (seconds since 1970-01-01 UTC)
+                        photoOptions.date_time_unix = LrDate.timeToPosixDate(datetime)
                     end
                     photoOptions.user_context = catalog:getPropertyForPlugin(_PLUGIN, 'photoContext') or ""
                     photoOptions.photo_id = photoId
