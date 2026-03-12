@@ -211,6 +211,10 @@ class AnalysisService:
             logger.warning(f"Requested provider '{provider}' not available, using fallback: {provider}")
         
         selected_provider = self.providers[provider]
+
+        # Allow overriding LM Studio host per-request (e.g. remote LM Studio server)
+        if provider == 'lmstudio' and options.get('lmstudio_base_url'):
+            selected_provider = LMStudioProvider({'base_url': options['lmstudio_base_url']})
         logger.info(f"Generating metadata for {uuid} using {provider}")
         
         request = MetadataGenerationRequest(
@@ -249,8 +253,13 @@ class AnalysisService:
             logger.error(f"Unexpected error during metadata generation for {uuid}: {e}", exc_info=True)
             return MetadataGenerationResponse(uuid=uuid, success=False, error=str(e))
 
-    def get_available_models(self, openai_apikey: Optional[str] = None, gemini_apikey: Optional[str] = None,
-                            ollama_base_url: Optional[str] = None) -> Dict[str, List[str]]:
+    def get_available_models(
+        self,
+        openai_apikey: Optional[str] = None,
+        gemini_apikey: Optional[str] = None,
+        ollama_base_url: Optional[str] = None,
+        lmstudio_base_url: Optional[str] = None,
+    ) -> Dict[str, List[str]]:
         """
         Return all available multimodal (vision-capable) models from all providers.
         """
@@ -264,6 +273,9 @@ class AnalysisService:
                 
                 if provider_name == 'ollama' and ollama_base_url:
                     provider_instance = OllamaProvider({'base_url': ollama_base_url})
+                if provider_name == 'lmstudio' and lmstudio_base_url:
+                    provider_instance = LMStudioProvider({'base_url': lmstudio_base_url})
+
                 if provider_name in ['ollama', 'lmstudio'] and not provider_instance.is_available():
                     result[provider_name] = []
                     continue
