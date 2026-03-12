@@ -353,6 +353,7 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
         keyword_categories = options.keyword_categories and JSON:encode(options.keyword_categories) or "[]",
         date_time = options.date_time,
         ollama_base_url = options.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
+        lmstudio_base_url = options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
         vertex_project_id = options.vertex_project_id,
         vertex_location = options.vertex_location,
         regenerate_metadata = tostring(options.regenerate_metadata ~= false),
@@ -479,6 +480,9 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
     end
     if options.ollama_base_url or (prefs and prefs.ollamaBaseUrl) then
         table.insert(mimeChunks, { name = "ollama_base_url", value = options.ollama_base_url or prefs.ollamaBaseUrl })
+    end
+    if options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl) then
+        table.insert(mimeChunks, { name = "lmstudio_base_url", value = options.lmstudio_base_url or prefs.lmstudioBaseUrl })
     end
     if options.vertex_project_id and options.vertex_project_id ~= "" then
         table.insert(mimeChunks, { name = "vertex_project_id", value = options.vertex_project_id })
@@ -1656,7 +1660,8 @@ function SearchIndexAPI.getModels(openaiApiKey, geminiApiKey)
     local body = { 
         openai_apikey = openaiApiKey, 
         gemini_apikey = geminiApiKey,
-        ollama_base_url = (prefs and prefs.ollamaBaseUrl) or nil
+        ollama_base_url = (prefs and prefs.ollamaBaseUrl) or nil,
+        lmstudio_base_url = (prefs and prefs.lmstudioBaseUrl) or nil,
     }
     local result, err = _request('POST', url, body)
     if err then

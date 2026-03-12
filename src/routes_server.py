@@ -49,11 +49,13 @@ def list_models():
         openai_apikey = data.get('openai_apikey')
         gemini_apikey = data.get('gemini_apikey')
         ollama_base_url = data.get('ollama_base_url')
+        lmstudio_base_url = data.get('lmstudio_base_url')
     else:
         # Support GET for backward compatibility
         openai_apikey = request.args.get('openai_apikey')
         gemini_apikey = request.args.get('gemini_apikey')
         ollama_base_url = request.args.get('ollama_base_url')
+        lmstudio_base_url = request.args.get('lmstudio_base_url')
 
     logger.info("Models request received - checking all providers")
     
@@ -63,7 +65,8 @@ def list_models():
         models = get_analysis_service().get_available_models(
             openai_apikey=openai_apikey,
             gemini_apikey=gemini_apikey,
-            ollama_base_url=ollama_base_url
+            ollama_base_url=ollama_base_url,
+            lmstudio_base_url=lmstudio_base_url,
         )
         return jsonify({"models": models})
     except Exception as e:

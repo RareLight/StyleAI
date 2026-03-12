@@ -65,6 +65,7 @@ def _extract_options(data):
 
     options['replace_ss'] = str(data.get('replace_ss', 'false')).lower() == 'true'
     options['ollama_base_url'] = data.get('ollama_base_url') or None  # Optional: use custom Ollama host
+    options['lmstudio_base_url'] = data.get('lmstudio_base_url') or None  # Optional: use custom LM Studio host
     # Support both snake_case and camelCase keys from clients
     reg_val = data.get('regenerate_metadata')
     if reg_val is None:

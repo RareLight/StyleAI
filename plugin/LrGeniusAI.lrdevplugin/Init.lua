@@ -134,6 +134,10 @@ if _G.prefs.ollamaBaseUrl == nil then
     _G.prefs.ollamaBaseUrl = Defaults.defaultOllamaBaseUrl
 end
 
+if _G.prefs.lmstudioBaseUrl == nil then
+    _G.prefs.lmstudioBaseUrl = Defaults.defaultLmStudioBaseUrl
+end
+
 if _G.prefs.backendServerUrl == nil or _G.prefs.backendServerUrl == "" then
     _G.prefs.backendServerUrl = Defaults.defaultBackendServerUrl
 end

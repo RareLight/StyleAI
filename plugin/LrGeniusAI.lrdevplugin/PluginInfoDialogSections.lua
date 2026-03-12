@@ -45,6 +45,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
     propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck
     propertyTable.backendServerUrl = prefs.backendServerUrl or Defaults.defaultBackendServerUrl
     propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
+    propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
 end
 
 function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
@@ -372,6 +373,35 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
             },
             f:group_box {
                 width = share 'groupBoxWidth',
+                title = "LM Studio Settings",
+                f:row {
+                    f:static_text {
+                        title = "LM Studio Base URL (host:port)",
+                        width = share 'labelWidth'
+                    },
+                    f:edit_field {
+                        value = bind 'lmstudioBaseUrl',
+                        width = share 'inputWidth',
+                        width_in_chars = 35,
+                    },
+                    f:push_button {
+                        title = "Setup LM Studio",
+                        action = function(button)
+                            LrHttp.openUrlInBrowser("https://lrgenius.com/help/lm-studio-setup/")
+                        end,
+                        width = share 'apiButtonWidth',
+                    },
+                },
+                f:row {
+                    f:static_text {
+                        title = "For local LM Studio leave default. Use host:port to connect to LM Studio on another machine (e.g. 192.168.1.50:1234).",
+                        width_in_chars = 60,
+                        wrap = true,
+                    },
+                },
+            },
+            f:group_box {
+                width = share 'groupBoxWidth',
                 title = LOC "$$$/LrGeniusAI/UI/Prompts=Prompts",
                 f:row {
                     f:static_text {
@@ -512,6 +542,12 @@ function PluginInfoDialogSections.endDialog(propertyTable)
         prefs.ollamaBaseUrl = propertyTable.ollamaBaseUrl:gsub("^%s*(.-)%s*$", "%1")
     else
         prefs.ollamaBaseUrl = Defaults.defaultOllamaBaseUrl
+    end
+
+    if propertyTable.lmstudioBaseUrl and propertyTable.lmstudioBaseUrl:gsub("^%s*(.-)%s*$", "%1") ~= "" then
+        prefs.lmstudioBaseUrl = propertyTable.lmstudioBaseUrl:gsub("^%s*(.-)%s*$", "%1")
+    else
+        prefs.lmstudioBaseUrl = Defaults.defaultLmStudioBaseUrl
     end
 
     propertyTable.keepChecksRunning = false -- Stop the async task checking for CLIP readiness
