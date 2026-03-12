@@ -117,14 +117,13 @@ class LMStudioProvider(LLMProviderBase):
         Returns:
             List of model identifiers for vision-capable models.
         """
-        if not self.is_available():
-            logger.warning("LM Studio not available for listing models")
-            return []
-        
         try:
-            models = lms.list_downloaded_models("llm")
-            all_models = [model.model_key for model in models]
-            return all_models
+            # Use a scoped client so we respect the configured host and
+            # avoid relying on a not-yet-resolved default API port.
+            with lms.Client(self.host) as client:
+                models = client.llm.list_downloaded()
+                all_models = [model.model_key for model in models]
+                return all_models
             
         except Exception as e:
             logger.error(f"An unexpected error occurred while listing LM Studio models: {e}", exc_info=True)
