@@ -1,6 +1,7 @@
 import chromadb
 from chromadb.config import Settings
 import os
+import json
 import numpy as np
 from config import DB_PATH, logger, CULLING_CONFIG, get_culling_config
 
