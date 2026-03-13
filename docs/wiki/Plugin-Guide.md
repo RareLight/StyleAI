@@ -12,6 +12,7 @@ The plugin documentation is maintained in:
 - Advanced Search
 - Metadata import/retrieval
 - People and face workflows
+- Image culling workflow
 - Vertex AI and gcloud setup
 - Migration from legacy UUID IDs to `photo_id`
 

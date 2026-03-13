@@ -6,6 +6,8 @@ Build an `Image Culling` workflow that is useful for real photographers, explain
 
 This plan assumes that the current LLM-based quality scoring remains inactive and is **not** used as the core ranking signal for the MVP.
 
+> **Status note:** The MVP described in this document has been implemented in the backend (`group_and_sort_images` plus culling metrics and presets) and in the Lightroom plugin task `Cull Similar Photos`. The checklist at the end reflects the original implementation plan.
+
 ## Product Direction
 
 The first release should not try to answer the vague question "How good is this photo?" with a single expensive model score.
@@ -264,16 +266,16 @@ For each set, compare:
 
 ## Concrete Todo Checklist
 
-- [ ] Implement similarity grouping backend in `service_chroma.py`
-- [ ] Define JSON response schema for grouped culling results
-- [ ] Add technical image metrics
-- [ ] Add face-aware culling metrics
-- [ ] Implement first `cull_score` weighting
-- [ ] Create Lightroom culling task
-- [ ] Create collections for picks / alternates / reject candidates
-- [ ] Add explanation fields and debug output
-- [ ] Build small benchmark dataset for evaluation
-- [ ] Evaluate optional aesthetic model as secondary signal
+- [x] Implement similarity grouping backend in `service_chroma.py`
+- [x] Define JSON response schema for grouped culling results
+- [x] Add technical image metrics
+- [x] Add face-aware culling metrics
+- [x] Implement first `cull_score` weighting
+- [x] Create Lightroom culling task
+- [x] Create collections for picks / alternates / reject candidates
+- [x] Add explanation fields and debug output
+- [x] Build small benchmark dataset for evaluation
+- [x] Evaluate optional aesthetic model as secondary signal
 
 ## Branch Start Package
 
