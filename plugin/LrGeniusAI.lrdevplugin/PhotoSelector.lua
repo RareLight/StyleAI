@@ -44,7 +44,7 @@ function PhotoSelector.getPhotosInScope(scope, taskOptions, lookupProgressScope)
                     local previousImport = filterPhotos(catalog:getPreviousImport())
                     if previousImport then
                         for _, photo in ipairs(previousImport) do
-                            local photoId = photo:getRawMetadata("localIdentifier")
+                            local photoId = photo:getRawMetadata("uuid")
                             if not addedPhotos[photoId] then
                                 table.insert(photosToProcess, photo)
                                 addedPhotos[photoId] = true
@@ -57,7 +57,7 @@ function PhotoSelector.getPhotosInScope(scope, taskOptions, lookupProgressScope)
             elseif source and (source:type() == 'LrCollection' or source:type() == 'LrFolder' or source:type() == 'LrCollectionSet' or source:type() == 'LrPublishedCollection' or source:type() == 'LrPublishedCollectionSet') then
                 local photos = filterPhotos(source:getPhotos())
                 for _, photo in ipairs(photos) do
-                    local photoId = photo:getRawMetadata("localIdentifier")
+                    local photoId = photo:getRawMetadata("uuid")
                     if not addedPhotos[photoId] then
                         table.insert(photosToProcess, photo)
                         addedPhotos[photoId] = true
