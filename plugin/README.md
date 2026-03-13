@@ -11,6 +11,7 @@ LrGeniusAI adds a backend-powered AI layer to Lightroom Classic. It helps you:
 - Generate metadata (`title`, `caption`, `keywords`, `alt_text`)
 - Run semantic search on your catalog
 - Detect, cluster, and browse people/faces
+- Run image culling on selections or the current view and create result collections for fast review
 - Re-import generated metadata back into Lightroom
 
 The plugin is designed to work with local and cloud providers, while keeping Lightroom as your main workspace.
@@ -43,6 +44,19 @@ The plugin is designed to work with local and cloud providers, while keeping Lig
 - Import existing Lightroom metadata to backend
 - Retrieve generated metadata from backend
 - Apply validated values back to catalog
+
+---
+
+### Image Culling
+
+- Cull similar photos from **selected photos** or the **current view**
+- Group near-duplicates and bursts using backend similarity signals
+- Rank photos into:
+  - `Picks`
+  - `Alternates`
+  - `Reject Candidates`
+  - optional `Duplicates / Near Duplicates`
+- Create a dedicated Lightroom collection set for each culling run and switch you directly to the picks collection for review
 
 ---
 
@@ -165,7 +179,8 @@ gcloud auth application-default print-access-token
 2. Optionally validate generated metadata
 3. Use **Advanced Search** to find related images
 4. Use **People** and **Find Similar Faces** for portrait-heavy catalogs
-5. Re-run **Import Metadata from Catalog** if needed for sync
+5. Run **Cull Similar Photos** on a selection or the current view to create Picks / Alternates / Reject Candidates collections
+6. Re-run **Import Metadata from Catalog** if needed for sync
 
 ---
 

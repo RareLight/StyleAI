@@ -38,7 +38,23 @@ If you upgraded from an older release with UUID-based backend IDs:
 
 This is a one-time step.
 
-## 5. Create a DB backup
+## 5. Run culling on similar photos
+
+After indexing, you can run the image culling workflow to quickly review bursts and near-duplicates:
+
+1. Select photos or use the current view in Lightroom.
+2. Open `Library -> Plug-in Extras -> Cull Similar Photos`.
+3. Choose the desired culling preset (for example `default` or `sports`) and scope.
+4. Wait for the backend to group and rank your photos.
+5. Review the created collection set with:
+   - `Picks`
+   - `Alternates`
+   - `Reject Candidates`
+   - optional `Duplicates / Near Duplicates`
+
+Each run creates a timestamped collection set and switches Lightroom to the Picks collection for immediate review.
+
+## 6. Create a DB backup
 
 Before migrations, server moves, or larger backend maintenance, create a backup from Lightroom:
 
@@ -49,7 +65,7 @@ Before migrations, server moves, or larger backend maintenance, create a backup 
 
 The backup contains the full persistent backend DB directory, including Chroma data as well as SQLite and JSON files.
 
-## 6. Vertex AI login
+## 7. Vertex AI login
 
 Use gcloud ADC on the server host:
 
@@ -76,7 +92,7 @@ docker compose exec geniusai-server gcloud auth application-default login --no-b
 
 The bind mount `./gcloud:/root/.config/gcloud` keeps ADC and the active gcloud project persistent across container restarts and rebuilds.
 
-## 7. Imported help pages
+## 8. Imported help pages
 
 Curated pages migrated from `lrgenius.com/help`:
 

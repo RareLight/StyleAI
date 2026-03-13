@@ -9,6 +9,7 @@ Welcome to the project wiki.
 - [Server Guide](Server-Guide)
 - [Help: Analyze and Index](Help-Analyze-and-Index)
 - [Help: Advanced Search](Help-Advanced-Search)
+- [Help: Cull Photos](Help-Cull-Photos)
 - [Help: Choosing AI Model](Help-Choosing-AI-Model)
 - [Feature Priority Decision](Feature-Priority-Decision)
 - [Image Culling Implementation Plan](Image-Culling-Implementation-Plan)
@@ -33,5 +34,6 @@ LrGeniusAI is an AI extension for Lightroom Classic with:
 - metadata generation
 - semantic search
 - face/person workflows
+- image culling workflows (grouping, ranking, and Lightroom collections for culling results)
 
 For project overview and release info, see the main repository README.
