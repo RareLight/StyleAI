@@ -477,6 +477,7 @@ def _rank_group_records(component_records, group_type, culling_config=None):
         face_prominence = _extract_culling_metric(metadata, "cull_face_prominence", 0.0)
         face_visibility = _extract_culling_metric(metadata, "cull_face_visibility", 0.0)
         occlusion_penalty = _extract_culling_metric(metadata, "cull_occlusion", 0.0)
+        eye_openness = _extract_culling_metric(metadata, "cull_eye_openness", 0.0)
         face_score = _extract_culling_metric(
             metadata,
             "cull_face_score",
@@ -497,7 +498,6 @@ def _rank_group_records(component_records, group_type, culling_config=None):
                 )
             ),
         )
-        eye_openness = _extract_culling_metric(metadata, "cull_eye_openness", 0.0)
         blink_penalty = _extract_culling_metric(metadata, "cull_blink_penalty", 1.0)
 
         scored_records.append({
