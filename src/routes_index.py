@@ -49,7 +49,17 @@ def _extract_options(data):
     options['submit_gps'] = str(data.get('submit_gps', 'false')).lower() == 'true'
     options['submit_keywords'] = str(data.get('submit_keywords', 'false')).lower() == 'true'
     options['submit_folder_names'] = str(data.get('submit_folder_names', 'false')).lower() == 'true'
-    options['existing_keywords'] = _parse_json_field(data.get('existing_keywords'))
+    raw_existing = _parse_json_field(data.get('existing_keywords'))
+    # Lightroom may send keywordTagsForExport as a comma-separated string; normalize to list
+    # so ", ".join(existing_keywords) in the prompt does not iterate over characters (issue #45).
+    if raw_existing is None:
+        options['existing_keywords'] = None
+    elif isinstance(raw_existing, str):
+        options['existing_keywords'] = [k.strip() for k in raw_existing.split(',') if k.strip()]
+    elif isinstance(raw_existing, list):
+        options['existing_keywords'] = [str(k).strip() for k in raw_existing if str(k).strip()]
+    else:
+        options['existing_keywords'] = None
     options['gps_coordinates'] = _parse_json_field(data.get('gps_coordinates'))
     options['folder_names'] = data.get('folder_names')
     options['user_context'] = data.get('user_context')
