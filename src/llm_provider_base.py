@@ -180,8 +180,14 @@ class LLMProviderBase(ABC):
                 context_additions.append(f"This photo was taken at the following coordinates: {lat}, {lon}")
         
         if request.submit_keywords and request.existing_keywords:
-            keywords_str = ", ".join(request.existing_keywords)
-            context_additions.append(f"Some keywords are: {keywords_str}")
+            # Must be a list; if still a string, split so join() doesn't iterate over characters (issue #45).
+            kw_list = request.existing_keywords
+            if isinstance(kw_list, str):
+                kw_list = [k.strip() for k in kw_list.split(',') if k.strip()]
+            if isinstance(kw_list, list):
+                keywords_str = ", ".join(str(k).strip() for k in kw_list if str(k).strip())
+                if keywords_str:
+                    context_additions.append(f"Some keywords are: {keywords_str}")
         
         if request.user_context:
             context_additions.append(f"Some context for this photo: {request.user_context}")

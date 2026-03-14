@@ -889,7 +889,15 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     end
                     if options.submit_keywords then
                         local keywords = photo:getFormattedMetadata("keywordTagsForExport")
-                        if keywords then photoOptions.existing_keywords = keywords end
+                        if keywords then
+                            -- Lightroom may return a comma-separated string; send as array so server
+                            -- does not treat it as iterable of characters (issue #45).
+                            if type(keywords) == "string" then
+                                photoOptions.existing_keywords = Util.string_split(keywords, ",")
+                            else
+                                photoOptions.existing_keywords = keywords
+                            end
+                        end
                     end
                     if options.submit_folder_names then
                         local originalFilePath = photo:getRawMetadata("path")
