@@ -145,6 +145,10 @@ def _start_housekeeping_scheduler() -> None:
                 zip_path, backup_name = service_db.build_backup_zip()
                 logger.info("Periodic DB backup created: %s (%s)", backup_name, zip_path)
                 service_db.prune_old_backups(max_keep=max_keep)
+                try:
+                    os.remove(zip_path)
+                except OSError as e:
+                    logger.warning("Could not remove temporary backup zip %s: %s", zip_path, e)
             except Exception as e:
                 logger.error("Periodic DB backup failed: %s", e, exc_info=True)
             time.sleep(interval)

@@ -46,7 +46,9 @@ def build_backup_zip() -> tuple[str, str]:
     root_parent = os.path.dirname(DB_PATH)
     included_files = 0
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
-        for current_root, _, files in os.walk(DB_PATH):
+        for current_root, dirs, files in os.walk(DB_PATH):
+            # Do not include the backups directory in the backup (avoid self-embedding and runaway size)
+            dirs[:] = [d for d in dirs if not (current_root == DB_PATH and d == "backups")]
             files.sort()
             for filename in files:
                 full_path = os.path.join(current_root, filename)
