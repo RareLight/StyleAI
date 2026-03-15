@@ -98,6 +98,29 @@ Notes:
 - Existing migrated entries are skipped automatically.
 - Main embeddings, vertex embeddings, and face references are migrated.
 
+---
+
+## Breaking Change: Cross-Catalog Backend (Soft State, No Deletion)
+
+When using a **shared remote backend** with multiple Lightroom catalogs, the backend no longer deletes photo data when a photo is removed from one catalog. Instead it only marks that catalog as no longer “having” that photo (**catalog_ids**). Other catalogs that still have the photo keep seeing it.
+
+### What the plugin does
+
+- Sends a stable **catalog_id** with all index and read requests so the backend can scope data per catalog.
+- **Sync cleanup**: When you run “Remove missing photos from index” (or the equivalent), the plugin calls the backend to **disassociate** this catalog from photos that are no longer in the current catalog. It does **not** ask the backend to delete those photos.
+- **Claim photos**: So that existing indexed photos are visible to this catalog under the new behavior, the plugin runs an automatic one-time “claim” on first use: it tells the backend to add this catalog’s **catalog_id** to all photos that are currently in the catalog. This runs in the background once per catalog; no dialog.
+
+### Manual “Claim photos for this catalog”
+
+In `Plug-in Manager -> LrGeniusAI -> Backend Server` you can click **Claim photos for this catalog** to:
+
+- Re-run the claim (e.g. after restoring a backup or re-adding many photos).
+- Manually fix visibility if automatic claim did not run or failed.
+
+This adds the current catalog’s id to the listed photos on the backend; it does not delete any data.
+
+---
+
 ## Identity Scope Note
 
 The current `photo_id` / hash / derived `canonicalId` strategy is more stable than Lightroom catalog UUIDs, but it is still not guaranteed to be 100% cross-catalog safe in every workflow.
