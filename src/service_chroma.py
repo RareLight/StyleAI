@@ -473,12 +473,22 @@ def sync_claim(catalog_id, photo_ids):
     """Add catalog_id to each photo's catalog_ids (claim existing backend photos for this catalog).
     Used for migration: unclaimed photos become visible to this catalog.
     Returns {"claimed": N, "errors": M}. Uses batched get/update for speed.
+    Deduplicates photo_ids so Chroma get() is not given duplicate IDs (e.g. virtual copies share file-based id).
     """
     _ensure_initialized()
     if not catalog_id:
         return {"claimed": 0, "errors": 0}
     catalog_id_str = str(catalog_id).strip()
-    photo_ids = [str(pid).strip() for pid in (photo_ids or []) if pid]
+    # Deduplicate: same photo_id can appear multiple times (virtual copies, same file)
+    seen = set()
+    unique = []
+    for pid in photo_ids or []:
+        pid = str(pid).strip()
+        if not pid or pid in seen:
+            continue
+        seen.add(pid)
+        unique.append(pid)
+    photo_ids = unique
     claimed = 0
     errors = 0
     for start in range(0, len(photo_ids), SYNC_CLAIM_BATCH_SIZE):
