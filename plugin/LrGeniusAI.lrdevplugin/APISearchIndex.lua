@@ -958,11 +958,14 @@ function SearchIndexAPI.findSimilarImages(photoId, options)
     if cid then
         body.catalog_id = cid
     end
+    log:info("findSimilarImages: photo_id=%s max_results=%s phash_max_hamming=%s scope=%s", photoId, body.max_results, body.phash_max_hamming, body.scope_photo_ids and (#body.scope_photo_ids .. " ids") or "all")
     local result, err = _request("POST", getBaseUrl() .. ENDPOINTS.FIND_SIMILAR, body, 120)
     if err then
         log:error("findSimilarImages failed: " .. tostring(err))
         return nil, err
     end
+    local count = (result and result.results and #result.results) or 0
+    log:info("findSimilarImages: got %s similar photo(s)", count)
     return result
 end
 
