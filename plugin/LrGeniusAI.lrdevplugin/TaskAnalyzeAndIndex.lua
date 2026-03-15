@@ -778,6 +778,7 @@ LrTasks.startAsyncTask(function()
                                 skippedCount = skippedCount + 1
                                 -- Clear only metadata so the photo stays in the index and can be regenerated later
                                 SearchIndexAPI.removePhotoMetadata(photoId)
+                                Util.addPhotoToRejectedDescriptionsCollection(photo, Defaults.catalogWriteAccessOptions)
                             elseif result == "cancel" then
                                 break
                             end

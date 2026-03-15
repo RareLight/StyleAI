@@ -252,6 +252,7 @@ LrTasks.startAsyncTask(function()
                             validatedData = nil
                             -- Clear only metadata so the photo stays in the index and can be regenerated later
                             SearchIndexAPI.removePhotoMetadata(photoId)
+                            Util.addPhotoToRejectedDescriptionsCollection(photo, Defaults.catalogWriteAccessOptions)
                         else
                             -- Validation canceled
                             break
