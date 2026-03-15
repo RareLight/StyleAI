@@ -256,7 +256,12 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                         title = "Claim photos for this catalog",
                         action = function(button)
                             LrTasks.startAsyncTask(function()
-                                local ok, err, result = SearchIndexAPI.claimPhotosForCatalog()
+                                local progressScope = LrProgressScope({
+                                    title = LOC "$$$/LrGeniusAI/SearchIndexAPI/claimingPhotos=Claiming photos for this catalog...",
+                                    functionContext = nil,
+                                })
+                                local ok, err, result = SearchIndexAPI.claimPhotosForCatalog(progressScope)
+                                progressScope:done()
                                 if ok then
                                     local msg = result and ("Claimed: " .. tostring(result.claimed) .. (result.errors and result.errors > 0 and ("; errors: " .. tostring(result.errors)) or "")) or "Done."
                                     LrDialogs.message("Claim photos", msg)

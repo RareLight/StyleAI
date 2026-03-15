@@ -181,6 +181,8 @@
 "$$$/LrGeniusAI/SearchIndexAPI/allRatedMessage=Toutes les photos sont déjà évaluées."
 "$$$/LrGeniusAI/SearchIndexAPI/cleaningIndex=Nettoyage de l'index de recherche"
 "$$$/LrGeniusAI/SearchIndexAPI/cleaningIndexProgress=Nettoyage de l'index. Photo ^1/^2"
+"$$$/LrGeniusAI/SearchIndexAPI/claimingPhotos=Réclamation des photos pour ce catalogue..."
+"$$$/LrGeniusAI/SearchIndexAPI/claimingPhotosBatch=Réclamation des photos... lot ^1/^2"
 "$$$/LrGeniusAI/SearchIndexAPI/noPhotosSelectedTitle=Aucune photo sélectionnée"
 "$$$/LrGeniusAI/SearchIndexAPI/noPhotosSelectedMessage=Veuillez sélectionner au moins une photo à traiter."
 "$$$/LrGeniusAI/SearchIndexAPI/noPhotosToIndex=Aucune photo à indexer."
