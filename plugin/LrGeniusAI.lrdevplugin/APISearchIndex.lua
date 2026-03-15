@@ -1701,7 +1701,7 @@ _request = function(method, url, body, timeout, options)
         return nil, err
     end
 
-    -- hdrs kann Tabelle mit .status oder (in einigen LR-Versionen) direkt die Status-Nummer sein
+    -- hdrs kann Tabelle mit .status oder (in einigen LR-Versionen) direkt die Status-Nummer sein. Bei Verbindungsfehlern kann hdrs ein Fehlerstring sein.
     local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
     if status ~= nil and status >= 200 and status < 300 then
         if options.raw then
@@ -1712,13 +1712,24 @@ _request = function(method, url, body, timeout, options)
         end
         return {} -- Return an empty table for successful but empty responses
     else
-        local err_msg = "API request failed. HTTP status: " .. httpStatusForLog(status, hdrs)
-        if result and #result > 0 then
-            local decoded_err = JSON:decode(result)
-            if type(decoded_err) == "table" and decoded_err.error then
-                err_msg = err_msg .. " - " .. decoded_err.error
+        local statusStr = httpStatusForLog(status, hdrs)
+        local err_msg
+        if status == nil then
+            -- No HTTP response: connection refused, timeout, DNS, or LrHttp returned error string in hdrs
+            if type(hdrs) == "string" and hdrs ~= "" then
+                err_msg = "API request failed (no response): " .. tostring(hdrs)
             else
-                err_msg = err_msg .. " Response: " .. result
+                err_msg = "API request failed (no response). Check backend URL and that the server is running. URL: " .. tostring(url and url:gsub("%?.*", "") or "nil")
+            end
+        else
+            err_msg = "API request failed. HTTP status: " .. statusStr
+            if result and #result > 0 then
+                local decoded_err = JSON:decode(result)
+                if type(decoded_err) == "table" and decoded_err.error then
+                    err_msg = err_msg .. " - " .. decoded_err.error
+                else
+                    err_msg = err_msg .. " Response: " .. result
+                end
             end
         end
         log:error(err_msg)
