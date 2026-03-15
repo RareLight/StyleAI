@@ -1285,6 +1285,62 @@ def find_similar_to_photo(
     return out
 
 
+def find_similar_to_photo_by_clip(photo_id, scope_photo_ids=None, max_results=100, catalog_id=None):
+    """
+    Find indexed photos semantically similar to the given photo by CLIP embedding (k-NN).
+    Returns list of {"photo_id", "phash_distance": None, "clip_distance"} sorted by clip_distance.
+    Excludes the reference photo_id.
+    """
+    _ensure_initialized()
+    photo_id = _normalize_photo_id(photo_id)
+    if not photo_id:
+        logger.warning("find_similar_to_photo_by_clip: empty or invalid photo_id")
+        return []
+
+    target_data = get_image(photo_id, catalog_id=catalog_id)
+    if not target_data or not target_data.get("ids"):
+        logger.warning("find_similar_to_photo_by_clip: reference photo_id %s not found or not in catalog", photo_id)
+        return []
+    first_emb = _first_result_item(target_data.get("embeddings"))
+    if first_emb is None:
+        logger.warning("find_similar_to_photo_by_clip: reference photo_id %s has no embedding; run Analyze & Index with embeddings", photo_id)
+        return []
+    query_embedding = _embedding_to_array(first_emb)
+    if query_embedding is None:
+        return []
+
+    where_clause = None
+    if scope_photo_ids is not None and len(scope_photo_ids) > 0:
+        ids_list = [str(pid).strip() for pid in scope_photo_ids if pid and str(pid).strip() != photo_id]
+        if not ids_list:
+            return []
+        where_clause = {"photo_id": {"$in": ids_list}}
+
+    n_fetch = max_results + 1
+    result = query_images(
+        query_embedding,
+        n_fetch,
+        where_clause=where_clause,
+        catalog_id=catalog_id,
+    )
+    ids0 = result.get("ids") and result["ids"][0]
+    dist0 = result.get("distances") and result["distances"][0]
+    if not ids0 or not dist0:
+        logger.info("find_similar_to_photo_by_clip: no results from query")
+        return []
+    out = []
+    for i, pid in enumerate(ids0):
+        if pid == photo_id:
+            continue
+        d = dist0[i] if i < len(dist0) else None
+        if d is not None:
+            out.append({"photo_id": pid, "phash_distance": None, "clip_distance": float(d)})
+        if len(out) >= max_results:
+            break
+    logger.info("find_similar_to_photo_by_clip: %s similar photo(s) found by CLIP", len(out))
+    return out
+
+
 # --- Face embeddings collection API ---
 
 def add_face(face_id, embedding, photo_uuid, thumbnail_b64, person_id="", extra_metadata=None):

@@ -139,11 +139,15 @@ def find_similar_route():
     if not isinstance(use_clip, bool):
         use_clip = str(use_clip).lower() in ("true", "1", "yes")
 
+    similarity_mode = (data.get('similarity_mode') or "phash").strip().lower()
+    if similarity_mode not in ("phash", "clip"):
+        similarity_mode = "phash"
+
     catalog_id = data.get('catalog_id') or request.args.get('catalog_id')
 
     logger.info(
-        "find_similar: photo_id=%s max_results=%s phash_max_hamming=%s use_clip=%s scope_photo_ids=%s catalog_id=%s",
-        photo_id, max_results, phash_max_hamming, use_clip,
+        "find_similar: photo_id=%s similarity_mode=%s max_results=%s phash_max_hamming=%s use_clip=%s scope_photo_ids=%s catalog_id=%s",
+        photo_id, similarity_mode, max_results, phash_max_hamming, use_clip,
         len(scope_photo_ids) if scope_photo_ids else 0,
         catalog_id or "(none)",
     )
@@ -154,6 +158,7 @@ def find_similar_route():
             max_results=max_results,
             phash_max_hamming=phash_max_hamming,
             use_clip=use_clip,
+            similarity_mode=similarity_mode,
             catalog_id=catalog_id,
         )
         logger.info("find_similar: returning %s results", len(results))

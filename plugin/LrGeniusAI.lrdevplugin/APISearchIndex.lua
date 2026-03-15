@@ -950,6 +950,7 @@ function SearchIndexAPI.findSimilarImages(photoId, options)
         max_results = options.max_results or 100,
         phash_max_hamming = options.phash_max_hamming or 10,
         use_clip = options.use_clip ~= false,
+        similarity_mode = options.similarity_mode or "phash",
     }
     if options.scope_photo_ids and type(options.scope_photo_ids) == "table" and #options.scope_photo_ids > 0 then
         body.scope_photo_ids = options.scope_photo_ids
