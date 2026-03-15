@@ -72,6 +72,26 @@ local EXPORT_SETTINGS = {
 local _request
 local _requestMultipart
 
+-- Returns a string safe for logging; never passes a table to tostring (avoids "table: 0x...").
+local function httpStatusForLog(status, hdrs)
+    if type(status) == "number" then
+        return tostring(status)
+    end
+    if type(hdrs) == "number" then
+        return tostring(hdrs)
+    end
+    if type(hdrs) == "table" then
+        local s = hdrs.status or hdrs.statusCode
+        if type(s) == "number" then
+            return tostring(s)
+        end
+        if type(s) == "string" then
+            return s
+        end
+    end
+    return "unknown"
+end
+
 -- Catalog DB migrations: one-time backend operations per catalog (e.g. claim_photos after cross-catalog soft state).
 -- Each entry: { id = "unique_id", run = function() return ok, err end }. Completed ids stored in catalog plugin property "catalogDbMigrations" (comma-separated). Sentinel ",in_progress" prevents concurrent runs.
 local CATALOG_DB_MIGRATIONS = {
@@ -1605,7 +1625,7 @@ _requestMultipart = function(url, mimeChunks, timeout)
         end
         return {} -- Return an empty table for successful but empty responses
     else
-        local err_msg = "API request failed. HTTP status: " .. tostring(status or (type(hdrs) == "table" and hdrs.status) or hdrs or 'unknown')
+        local err_msg = "API request failed. HTTP status: " .. httpStatusForLog(status, hdrs)
         if result and #result > 0 then
             local decoded_err = JSON:decode(result)
             if type(decoded_err) == "table" and decoded_err.error then
@@ -1654,7 +1674,7 @@ _request = function(method, url, body, timeout, options)
         end
         return {} -- Return an empty table for successful but empty responses
     else
-        local err_msg = "API request failed. HTTP status: " .. tostring(status or (type(hdrs) == "table" and hdrs.status) or hdrs or 'unknown')
+        local err_msg = "API request failed. HTTP status: " .. httpStatusForLog(status, hdrs)
         if result and #result > 0 then
             local decoded_err = JSON:decode(result)
             if type(decoded_err) == "table" and decoded_err.error then
@@ -2249,8 +2269,9 @@ function SearchIndexAPI.isClipReady()
     local url = getBaseUrl() .. ENDPOINTS.CLIP_STATUS
     local res, err = _request('GET', url)
     if err then
-        log:error("isClipReady failed: " .. err)
-        return false, err
+        local errStr = (type(err) == "string") and err or "unknown"
+        log:error("isClipReady failed: " .. errStr)
+        return false, errStr
     end
     if res ~= nil then
         if res.clip == "ready" then
