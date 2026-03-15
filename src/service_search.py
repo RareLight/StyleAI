@@ -279,13 +279,23 @@ def find_similar_images(
     max_results=100,
     phash_max_hamming=10,
     use_clip=True,
+    similarity_mode="phash",
     catalog_id=None,
 ):
     """
-    Find indexed photos similar to the given photo by perceptual hash (and optionally CLIP).
+    Find indexed photos similar to the given photo.
 
+    similarity_mode: "phash" = near-duplicates by perceptual hash (optionally ranked by CLIP);
+                    "clip" = semantically similar by embedding (k-NN).
     Returns list of {"photo_id", "phash_distance", "clip_distance"} sorted by similarity.
     """
+    if similarity_mode == "clip":
+        return chroma_service.find_similar_to_photo_by_clip(
+            photo_id=photo_id,
+            scope_photo_ids=scope_photo_ids,
+            max_results=max_results,
+            catalog_id=catalog_id,
+        )
     return chroma_service.find_similar_to_photo(
         photo_id=photo_id,
         scope_photo_ids=scope_photo_ids,

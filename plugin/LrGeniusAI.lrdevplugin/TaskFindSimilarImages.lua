@@ -14,6 +14,7 @@ local function showFindSimilarDialog(ctx)
     props.searchScope = prefs.findSimilarScope or "all"
     props.maxResults = prefs.findSimilarMaxResults or 100
     props.phashStrictness = prefs.findSimilarPhashStrictness or "normal"
+    props.similarityMode = prefs.findSimilarMode or "clip"
 
     local contents = f:column {
         bind_to_object = props,
@@ -21,6 +22,17 @@ local function showFindSimilarDialog(ctx)
         f:static_text {
             title = LOC "$$$/LrGeniusAI/FindSimilarImages/SelectOptions=Search options:",
             font = "<system/bold>",
+        },
+        f:row {
+            f:static_text { title = LOC "$$$/LrGeniusAI/FindSimilarImages/FindBy=Find by:", width = 120 },
+            f:popup_menu {
+                value = bind "similarityMode",
+                items = {
+                    { title = LOC "$$$/LrGeniusAI/FindSimilarImages/ModePhash=Near duplicates (phash)", value = "phash" },
+                    { title = LOC "$$$/LrGeniusAI/FindSimilarImages/ModeClip=Similar content (CLIP)", value = "clip" },
+                },
+                width = 260,
+            },
         },
         f:row {
             f:static_text { title = LOC "$$$/LrGeniusAI/FindSimilarImages/SearchIn=Search in:", width = 120 },
@@ -73,11 +85,13 @@ local function showFindSimilarDialog(ctx)
     prefs.findSimilarScope = props.searchScope
     prefs.findSimilarMaxResults = props.maxResults
     prefs.findSimilarPhashStrictness = props.phashStrictness
+    prefs.findSimilarMode = props.similarityMode
 
     return {
         searchScope = props.searchScope,
         maxResults = props.maxResults,
         phashStrictness = props.phashStrictness,
+        similarityMode = props.similarityMode,
     }
 end
 
@@ -199,6 +213,7 @@ LrTasks.startAsyncTask(function()
             max_results = options.maxResults,
             phash_max_hamming = phashMaxHammingFromStrictness(options.phashStrictness),
             use_clip = true,
+            similarity_mode = options.similarityMode or "phash",
         }
         if scopePhotoIds and #scopePhotoIds > 0 then
             apiOptions.scope_photo_ids = scopePhotoIds
