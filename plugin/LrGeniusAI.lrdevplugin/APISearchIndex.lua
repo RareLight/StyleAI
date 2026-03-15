@@ -72,8 +72,93 @@ local EXPORT_SETTINGS = {
 local _request
 local _requestMultipart
 
+-- Catalog DB migrations: one-time backend operations per catalog (e.g. claim_photos after cross-catalog soft state).
+-- Each entry: { id = "unique_id", run = function() return ok, err end }. Completed ids stored in catalog plugin property "catalogDbMigrations" (comma-separated). Sentinel ",in_progress" prevents concurrent runs.
+local CATALOG_DB_MIGRATIONS = {
+    {
+        id = "claim_photos_v1",
+        run = function()
+            local ok, err = SearchIndexAPI.claimPhotosForCatalog()
+            return ok, err
+        end,
+    },
+    -- Add future migrations here, e.g. { id = "some_breaking_change_v1", run = function() ... return ok, err end },
+}
+
+local MIGRATION_IN_PROGRESS = "in_progress"
+
 local function shouldUseGlobalPhotoId()
     return prefs and prefs.useGlobalPhotoId ~= false
+end
+
+local function parseCompletedMigrations(raw)
+    local completed = {}
+    local inProgress = false
+    if raw and raw ~= "" then
+        for part in string.gmatch(raw, "([^,]+)") do
+            part = part:match("^%s*(.-)%s*$") or part
+            if part == MIGRATION_IN_PROGRESS then
+                inProgress = true
+            else
+                completed[part] = true
+            end
+        end
+    end
+    return completed, inProgress
+end
+
+--- Ensures all registered catalog DB migrations have been run for the active catalog. Runs pending ones in background; uses catalog plugin property catalogDbMigrations so each migration runs once per catalog.
+local function ensureDbMigrationsDone()
+    local catalog = LrApplication.activeCatalog()
+    if not catalog then
+        return
+    end
+    local raw = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
+    local completed, inProgress = parseCompletedMigrations(raw)
+    if inProgress then
+        return
+    end
+    local pending = {}
+    for _, m in ipairs(CATALOG_DB_MIGRATIONS) do
+        if not completed[m.id] then
+            pending[#pending + 1] = m
+        end
+    end
+    if #pending == 0 then
+        return
+    end
+    catalog:withPrivateWriteAccessDo(function()
+        local newRaw = (raw == "" or raw:match("%S") == nil) and MIGRATION_IN_PROGRESS or (raw .. "," .. MIGRATION_IN_PROGRESS)
+        catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", newRaw)
+    end)
+    LrTasks.startAsyncTask(function()
+        local done = raw
+        for _, m in ipairs(pending) do
+            local ok, err
+            if type(m.run) == "function" then
+                local status, a, b = pcall(function() return m.run() end)
+                if status then
+                    ok, err = a, b
+                else
+                    ok, err = false, tostring(a)
+                end
+            end
+            if ok then
+                done = (done == "" or done:match("%S") == nil) and m.id or (done .. "," .. m.id)
+                catalog:withPrivateWriteAccessDo(function()
+                    catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", done)
+                end)
+                log:info("Catalog DB migration completed: " .. tostring(m.id))
+            else
+                log:warn("Catalog DB migration failed: " .. tostring(m.id) .. " - " .. tostring(err))
+            end
+        end
+        catalog:withPrivateWriteAccessDo(function()
+            local current = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
+            current = current:gsub("," .. MIGRATION_IN_PROGRESS .. "$", ""):gsub("^" .. MIGRATION_IN_PROGRESS .. ",?", ""):gsub("^%s*,%s*", "")
+            catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", current)
+        end)
+    end)
 end
 
 --- Returns the stable catalog identifier for the active catalog (for backend catalog-scoped operations).
@@ -83,6 +168,7 @@ local function getCatalogId()
         log:warn("getCatalogId: " .. tostring(err))
         return nil
     end
+    ensureDbMigrationsDone()
     return id
 end
 
