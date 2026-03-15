@@ -218,6 +218,7 @@ LrTasks.startAsyncTask(function()
 
         local results = (result and result.results) and result.results or {}
         if #results == 0 then
+            log:warn("Find similar images: 0 results for photo_id=%s scope=%s phash_max_hamming=%s", photoId, options.searchScope, phashMaxHammingFromStrictness(options.phashStrictness))
             LrDialogs.message(
                 LOC "$$$/LrGeniusAI/FindSimilarImages/NoResultsTitle=No similar images",
                 LOC "$$$/LrGeniusAI/FindSimilarImages/NoResultsMessage=No similar images found. The photo may not be indexed yet, or no other photos are similar enough. Run 'Analyze & Index' to ensure perceptual hashes are computed."

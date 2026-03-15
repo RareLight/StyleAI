@@ -1216,7 +1216,14 @@ def find_similar_to_photo(
     _ensure_initialized()
     photo_id = _normalize_photo_id(photo_id)
     if not photo_id:
+        logger.warning("find_similar_to_photo: empty or invalid photo_id")
         return []
+
+    scope_source = "scope_photo_ids (%s)" % len(scope_photo_ids) if scope_photo_ids is not None else ("catalog_id=%s" % (catalog_id or "all"))
+    logger.info(
+        "find_similar_to_photo: photo_id=%s max_results=%s phash_max_hamming=%s use_clip=%s scope=%s",
+        photo_id, max_results, phash_max_hamming, use_clip, scope_source,
+    )
 
     target_data = get_image(photo_id, catalog_id=catalog_id)
     if not target_data or not target_data.get("ids"):
@@ -1233,6 +1240,10 @@ def find_similar_to_photo(
         first_emb = _first_result_item(target_data.get("embeddings"))
         if first_emb is not None:
             target_embedding = _embedding_to_array(first_emb)
+    logger.info(
+        "find_similar_to_photo: reference has phash, use_clip_embedding=%s",
+        target_embedding is not None,
+    )
 
     if scope_photo_ids is not None:
         candidate_ids = [str(pid).strip() for pid in scope_photo_ids if pid and str(pid).strip() != photo_id]
@@ -1240,6 +1251,7 @@ def find_similar_to_photo(
         candidate_ids = get_all_image_ids(catalog_id=catalog_id)
         candidate_ids = [pid for pid in candidate_ids if pid != photo_id]
 
+    logger.info("find_similar_to_photo: %s candidate photo(s) to compare", len(candidate_ids))
     if not candidate_ids:
         return []
 
@@ -1268,7 +1280,9 @@ def find_similar_to_photo(
             })
 
     results.sort(key=lambda r: (r["phash_distance"], r["clip_distance"] if r["clip_distance"] is not None else float("inf")))
-    return results[:max_results]
+    out = results[:max_results]
+    logger.info("find_similar_to_photo: %s similar photo(s) found (phash_distance <= %s)", len(out), phash_max_hamming)
+    return out
 
 
 # --- Face embeddings collection API ---
