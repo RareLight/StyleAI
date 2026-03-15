@@ -718,4 +718,56 @@ function Util.waitForServerDialog()
     return result
 end
 
+---
+-- Adds a photo to the "Rejected AI Descriptions" collection (under set "LrGeniusAI").
+-- Finds or creates the set and collection by name, then adds the photo.
+-- @param photo LrPhoto
+-- @param writeOptions optional; e.g. Defaults.catalogWriteAccessOptions
+--
+function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
+    if not photo then return end
+    writeOptions = writeOptions or { timeout = 60 }
+    local catalog = LrApplication.activeCatalog()
+    local setName = LOC "$$$/LrGeniusAI/Rejected/CollectionSetName=LrGeniusAI"
+    local collName = LOC "$$$/LrGeniusAI/Rejected/CollectionName=Rejected AI Descriptions"
+
+    local collectionSet, collection
+
+    local function findSetAndCollection()
+        local children = catalog:getChildCollections()
+        if children then
+            for _, child in ipairs(children) do
+                if child:type() == "LrCollectionSet" and child:getName() == setName then
+                    collectionSet = child
+                    break
+                end
+            end
+        end
+        if not collectionSet then
+            collectionSet = catalog:createCollectionSet(setName, nil, true)
+        end
+        if collectionSet then
+            local collChildren = collectionSet:getChildCollections()
+            if collChildren then
+                for _, c in ipairs(collChildren) do
+                    if c:type() == "LrCollection" and c:getName() == collName then
+                        collection = c
+                        break
+                    end
+                end
+            end
+            if not collection then
+                collection = catalog:createCollection(collName, collectionSet, false)
+            end
+        end
+    end
+
+    catalog:withWriteAccessDo(LOC "$$$/LrGeniusAI/Rejected/AddToCollection=Add to Rejected AI Descriptions", function()
+        findSetAndCollection()
+        if collection then
+            collection:addPhotos({ photo })
+        end
+    end, writeOptions)
+end
+
 return Util
