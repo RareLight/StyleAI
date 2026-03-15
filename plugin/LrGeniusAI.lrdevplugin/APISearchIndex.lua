@@ -93,16 +93,17 @@ local function httpStatusForLog(status, hdrs)
 end
 
 -- Catalog DB migrations: one-time backend operations per catalog (e.g. claim_photos after cross-catalog soft state).
--- Each entry: { id = "unique_id", run = function() return ok, err end }. Completed ids stored in catalog plugin property "catalogDbMigrations" (comma-separated). Sentinel ",in_progress" prevents concurrent runs.
+-- Each entry: { id = "unique_id", run = function(progressScope) return ok, err [, userMessage] end }. progressScope is optional (nil for migrations that don't need it). Optional userMessage is shown via LrDialogs when present.
 local CATALOG_DB_MIGRATIONS = {
     {
         id = "claim_photos_v1",
-        run = function()
-            local ok, err = SearchIndexAPI.claimPhotosForCatalog()
-            return ok, err
+        run = function(progressScope)
+            local ok, err, result = SearchIndexAPI.claimPhotosForCatalog(progressScope)
+            local msg = (ok and result and (result.claimed or 0) >= 0) and (tostring(result.claimed or 0) .. " photos claimed for this catalog.") or nil
+            return ok, err, msg
         end,
     },
-    -- Add future migrations here, e.g. { id = "some_breaking_change_v1", run = function() ... return ok, err end },
+    -- Add future migrations here, e.g. { id = "some_breaking_change_v1", run = function(progressScope) ... return ok, err [, userMessage] end },
 }
 
 local MIGRATION_IN_PROGRESS = "in_progress"
@@ -154,18 +155,25 @@ local function ensureDbMigrationsDone()
     LrTasks.startAsyncTask(function()
         local done = raw
         for _, m in ipairs(pending) do
-            local ok, err
+            local progressScope
+            if m.id == "claim_photos_v1" then
+                progressScope = LrProgressScope({
+                    title = LOC "$$$/LrGeniusAI/SearchIndexAPI/claimingPhotos=Claiming photos for this catalog...",
+                    functionContext = nil,
+                })
+            end
+            local ok, err, userMessage
             if type(m.run) == "function" then
-                local status, a, b
+                local status, a, b, c
                 if type(LrTasks) == "table" and type(LrTasks.pcall) == "function" then
-                    status, a, b = LrTasks.pcall(function() return m.run() end)
+                    status, a, b, c = LrTasks.pcall(function() return m.run(progressScope) end)
                 else
-                    status, a, b = pcall(function() return m.run() end)
+                    status, a, b, c = pcall(function() return m.run(progressScope) end)
                 end
                 if status then
-                    ok, err = a, b
+                    ok, err, userMessage = a, b, c
                 else
-                    ok, err = false, tostring(a)
+                    ok, err, userMessage = false, tostring(a), nil
                 end
             end
             if ok then
@@ -174,8 +182,17 @@ local function ensureDbMigrationsDone()
                     catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", done)
                 end)
                 log:info("Catalog DB migration completed: " .. tostring(m.id))
+                if userMessage and userMessage ~= "" then
+                    LrDialogs.message("Claim photos", userMessage, "info")
+                end
             else
                 log:warn("Catalog DB migration failed: " .. tostring(m.id) .. " - " .. tostring(err))
+                if m.id == "claim_photos_v1" then
+                    LrDialogs.message("Claim photos failed", tostring(err or "Unknown error") .. "\n\nYou can try again from Plug-in Manager → LrGeniusAI → Backend Server → Claim photos for this catalog.", "critical")
+                end
+            end
+            if progressScope then
+                progressScope:done()
             end
         end
         catalog:withPrivateWriteAccessDo(function()
@@ -1025,9 +1042,10 @@ end
 ---
 -- Claim backend photos for this catalog (add catalog_id to their catalog_ids).
 -- Use after migration so existing indexed photos become visible to this catalog.
+-- @param progressScope LrProgressScope|nil Optional; when provided, shows progress and supports cancel.
 -- @return boolean success, string|nil error message, table|nil result
 --
-function SearchIndexAPI.claimPhotosForCatalog()
+function SearchIndexAPI.claimPhotosForCatalog(progressScope)
     local catalogId = getCatalogId()
     if not catalogId then
         return false, "No catalog identifier", nil
@@ -1045,12 +1063,23 @@ function SearchIndexAPI.claimPhotosForCatalog()
         end
     end
     if #photoIds == 0 then
+        if progressScope then progressScope:done() end
         return true, nil, { claimed = 0, errors = 0 }
     end
     local batchSize = 2500
+    local totalBatches = math.ceil(#photoIds / batchSize)
     local totalClaimed = 0
     local totalErrors = 0
     for startIdx = 1, #photoIds, batchSize do
+        if progressScope then
+            if progressScope:isCanceled() then
+                progressScope:done()
+                return false, "canceled", nil
+            end
+            local batchNum = math.floor((startIdx - 1) / batchSize) + 1
+            progressScope:setPortionComplete(batchNum - 1, totalBatches)
+            progressScope:setCaption(LOC("$$$/LrGeniusAI/SearchIndexAPI/claimingPhotosBatch=Claiming photos... batch ^1/^2", tostring(batchNum), tostring(totalBatches)))
+        end
         local stopIdx = math.min(startIdx + batchSize - 1, #photoIds)
         local batch = {}
         for j = startIdx, stopIdx do
@@ -1061,12 +1090,16 @@ function SearchIndexAPI.claimPhotosForCatalog()
             photo_ids = batch,
         }, 120)
         if err then
+            if progressScope then progressScope:done() end
             return false, err, nil
         end
         if result then
             totalClaimed = totalClaimed + (result.claimed or 0)
             totalErrors = totalErrors + (result.errors or 0)
         end
+    end
+    if progressScope then
+        progressScope:setPortionComplete(totalBatches, totalBatches)
     end
     return true, nil, { claimed = totalClaimed, errors = totalErrors }
 end

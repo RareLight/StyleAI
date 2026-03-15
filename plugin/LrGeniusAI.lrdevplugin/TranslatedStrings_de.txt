@@ -192,6 +192,8 @@
 "$$$/LrGeniusAI/SearchIndexAPI/allRatedMessage=Alle Fotos sind bereits bewertet."
 "$$$/LrGeniusAI/SearchIndexAPI/cleaningIndex=Bereinige Suchindex"
 "$$$/LrGeniusAI/SearchIndexAPI/cleaningIndexProgress=Bereinige Index. Foto ^1/^2"
+"$$$/LrGeniusAI/SearchIndexAPI/claimingPhotos=Fotos für diesen Katalog übernehmen..."
+"$$$/LrGeniusAI/SearchIndexAPI/claimingPhotosBatch=Fotos übernehmen... Stapel ^1/^2"
 "$$$/LrGeniusAI/SearchIndexAPI/noPhotosSelectedTitle=Keine Fotos ausgewählt"
 "$$$/LrGeniusAI/SearchIndexAPI/noPhotosSelectedMessage=Bitte wählen Sie mindestens ein Foto zur Verarbeitung aus."
 "$$$/LrGeniusAI/SearchIndexAPI/noPhotosToIndex=Keine Fotos zum Indexieren."
