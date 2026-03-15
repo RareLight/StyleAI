@@ -52,6 +52,10 @@ return {
 			title = LOC "$$$/LrGeniusAI/Menu/FindSimilarFaces=Find Similar Faces...",
 			file = "TaskFindSimilarFaces.lua",
 		},
+		{
+			title = LOC "$$$/LrGeniusAI/Menu/FindSimilarImages=Find Similar Images...",
+			file = "TaskFindSimilarImages.lua",
+		},
 	},
 
 	LrExportMenuItems = {
@@ -82,6 +86,10 @@ return {
 		{
 			title = LOC "$$$/LrGeniusAI/Menu/FindSimilarFaces=Find Similar Faces...",
 			file = "TaskFindSimilarFaces.lua",
+		},
+		{
+			title = LOC "$$$/LrGeniusAI/Menu/FindSimilarImages=Find Similar Images...",
+			file = "TaskFindSimilarImages.lua",
 		},
 	},
 
