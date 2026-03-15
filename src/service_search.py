@@ -271,3 +271,26 @@ def cull_images(photo_ids, phash_threshold, clip_threshold, time_delta, culling_
         },
         "groups": groups,
     }
+
+
+def find_similar_images(
+    photo_id,
+    scope_photo_ids=None,
+    max_results=100,
+    phash_max_hamming=10,
+    use_clip=True,
+    catalog_id=None,
+):
+    """
+    Find indexed photos similar to the given photo by perceptual hash (and optionally CLIP).
+
+    Returns list of {"photo_id", "phash_distance", "clip_distance"} sorted by similarity.
+    """
+    return chroma_service.find_similar_to_photo(
+        photo_id=photo_id,
+        scope_photo_ids=scope_photo_ids,
+        max_results=max_results,
+        phash_max_hamming=phash_max_hamming,
+        use_clip=use_clip,
+        catalog_id=catalog_id,
+    )

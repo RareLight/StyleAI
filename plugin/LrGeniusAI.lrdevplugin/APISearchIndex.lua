@@ -24,6 +24,7 @@ local ENDPOINTS = {
     INDEX_BASE64 = "/index_base64",
     GROUP_SIMILAR = "/group_similar",
     CULL = "/cull",
+    FIND_SIMILAR = "/find_similar",
     SEARCH = "/search",
     STATS = "/db/stats",
     MODELS = "/models",
@@ -928,6 +929,38 @@ function SearchIndexAPI.cullPhotos(photoIds, options)
     local result, err = _request("POST", getBaseUrl() .. ENDPOINTS.CULL, body, 300)
     if err then
         log:error("cullPhotos failed: " .. tostring(err))
+        return nil, err
+    end
+    return result
+end
+
+---
+-- Find photos similar to the given photo by perceptual hash (and optionally CLIP).
+-- @param photoId string Reference photo ID (must be indexed with phash).
+-- @param options table Optional: scope_photo_ids (table), max_results (number), phash_max_hamming (number), use_clip (boolean), catalog_id (string).
+-- @return table|nil { results = { { photo_id, phash_distance, clip_distance }, ... } }, or nil, err
+--
+function SearchIndexAPI.findSimilarImages(photoId, options)
+    if not photoId or type(photoId) ~= "string" or photoId:match("^%s*$") then
+        return nil, "photo_id required"
+    end
+    options = options or {}
+    local body = {
+        photo_id = photoId,
+        max_results = options.max_results or 100,
+        phash_max_hamming = options.phash_max_hamming or 10,
+        use_clip = options.use_clip ~= false,
+    }
+    if options.scope_photo_ids and type(options.scope_photo_ids) == "table" and #options.scope_photo_ids > 0 then
+        body.scope_photo_ids = options.scope_photo_ids
+    end
+    local cid = getCatalogId()
+    if cid then
+        body.catalog_id = cid
+    end
+    local result, err = _request("POST", getBaseUrl() .. ENDPOINTS.FIND_SIMILAR, body, 120)
+    if err then
+        log:error("findSimilarImages failed: " .. tostring(err))
         return nil, err
     end
     return result

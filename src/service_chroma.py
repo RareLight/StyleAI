@@ -1185,6 +1185,90 @@ def group_and_sort_images(uuids, phash_threshold, clip_threshold, time_delta, cu
     return groups
 
 
+# Batch size for get() when scanning candidates (Chroma may have limits on large id lists)
+FIND_SIMILAR_BATCH_SIZE = 5000
+
+
+def find_similar_to_photo(
+    photo_id,
+    scope_photo_ids=None,
+    max_results=100,
+    phash_max_hamming=10,
+    use_clip=True,
+    catalog_id=None,
+):
+    """
+    Find indexed photos similar to the given photo by perceptual hash (and optionally CLIP).
+
+    Args:
+        photo_id: The reference photo ID (must be indexed and have cull_phash/phash).
+        scope_photo_ids: Optional list of candidate photo IDs to consider. If None, uses all
+            indexed photos for the catalog (when catalog_id is set) or all indexed photos.
+        max_results: Maximum number of similar photos to return.
+        phash_max_hamming: Maximum Hamming distance for perceptual hash (0–64). Lower = stricter.
+        use_clip: If True, also use CLIP embedding distance to rank; requires embeddings.
+        catalog_id: Optional catalog filter for scope when scope_photo_ids is None.
+
+    Returns:
+        List of dicts: [{"photo_id": str, "phash_distance": int, "clip_distance": float or None}, ...]
+        sorted by phash_distance then clip_distance. Excludes the reference photo_id.
+    """
+    _ensure_initialized()
+    photo_id = _normalize_photo_id(photo_id)
+    if not photo_id:
+        return []
+
+    target_data = get_image(photo_id, catalog_id=catalog_id)
+    if not target_data or not target_data.get("ids"):
+        logger.warning("find_similar_to_photo: reference photo_id %s not found or not in catalog", photo_id)
+        return []
+    target_meta = (target_data.get("metadatas") or [None])[0] or {}
+    target_phash = _phash_to_int(target_meta.get("cull_phash") or target_meta.get("phash"))
+    if target_phash is None:
+        logger.warning("find_similar_to_photo: reference photo_id %s has no phash; run Analyze & Index first", photo_id)
+        return []
+
+    target_embedding = None
+    if use_clip and target_data.get("embeddings"):
+        target_embedding = _embedding_to_array(_first_result_item(target_data.get("embeddings")))
+
+    if scope_photo_ids is not None:
+        candidate_ids = [str(pid).strip() for pid in scope_photo_ids if pid and str(pid).strip() != photo_id]
+    else:
+        candidate_ids = get_all_image_ids(catalog_id=catalog_id)
+        candidate_ids = [pid for pid in candidate_ids if pid != photo_id]
+
+    if not candidate_ids:
+        return []
+
+    results = []
+    for start in range(0, len(candidate_ids), FIND_SIMILAR_BATCH_SIZE):
+        batch = candidate_ids[start : start + FIND_SIMILAR_BATCH_SIZE]
+        raw = collection.get(ids=batch, include=["metadatas", "embeddings"])
+        ids_list = raw.get("ids") or []
+        metas = raw.get("metadatas") or [{}] * len(ids_list)
+        embs = raw.get("embeddings")
+        for idx, pid in enumerate(ids_list):
+            meta = metas[idx] if idx < len(metas) else {}
+            cand_phash = _phash_to_int(meta.get("cull_phash") or meta.get("phash"))
+            phash_dist = _phash_hamming_distance(target_phash, cand_phash) if cand_phash is not None else None
+            if phash_dist is None or phash_dist > phash_max_hamming:
+                continue
+            clip_dist = None
+            if use_clip and target_embedding is not None and embs is not None:
+                cand_emb = _embedding_to_array(embs[idx] if idx < len(embs) else None)
+                if cand_emb is not None:
+                    clip_dist = _cosine_distance(target_embedding, cand_emb)
+            results.append({
+                "photo_id": pid,
+                "phash_distance": phash_dist,
+                "clip_distance": clip_dist,
+            })
+
+    results.sort(key=lambda r: (r["phash_distance"], r["clip_distance"] if r["clip_distance"] is not None else float("inf")))
+    return results[:max_results]
+
+
 # --- Face embeddings collection API ---
 
 def add_face(face_id, embedding, photo_uuid, thumbnail_b64, person_id="", extra_metadata=None):
