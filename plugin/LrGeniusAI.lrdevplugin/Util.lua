@@ -76,6 +76,10 @@ function Util.dumpTable(t)
     -- Redact base64 data for security
     local result = s:gsub('(data = )"([A-Za-z0-9+/=]+)"', '%1"base64 removed"')
     result = result:gsub('(url = "data:image/jpeg;base64,)([A-Za-z0-9+/]+=?=?)"', '%1base64 removed"')
+    -- Redact common API key fields by name (prefs / options)
+    result = result:gsub('(api_key%s*=%s*)"([^"]*)"', '%1"<redacted>"')
+    result = result:gsub('(chatgptApiKey%s*=%s*)"([^"]*)"', '%1"<redacted>"')
+    result = result:gsub('(geminiApiKey%s*=%s*)"([^"]*)"', '%1"<redacted>"')
     return result
 end
 
