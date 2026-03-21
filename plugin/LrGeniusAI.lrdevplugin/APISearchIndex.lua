@@ -169,7 +169,7 @@ local function ensureDbMigrationsDone()
                 if type(LrTasks) == "table" and type(LrTasks.pcall) == "function" then
                     status, a, b, c = LrTasks.pcall(function() return m.run(progressScope) end)
                 else
-                    status, a, b, c = pcall(function() return m.run(progressScope) end)
+                    status, a, b, c = LrTasks.pcall(function() return m.run(progressScope) end)
                 end
                 if status then
                     ok, err, userMessage = a, b, c
@@ -1578,7 +1578,7 @@ function SearchIndexAPI.downloadDatabaseBackup()
     if status == nil or status < 200 or status >= 300 then
         local err = "Backup download failed. HTTP status: " .. tostring(status or "unknown")
         if type(responseBody) == "string" and #responseBody > 0 then
-            local ok, decoded = pcall(function()
+            local ok, decoded = LrTasks.pcall(function()
                 return JSON:decode(responseBody)
             end)
             log:info("downloadDatabaseBackup: error response JSON decode ok=" .. tostring(ok) .. ", decodedType=" .. tostring(type(decoded)))
@@ -1607,7 +1607,7 @@ function SearchIndexAPI.downloadDatabaseBackup()
         dataToWrite = tostring(dataToWrite)
     end
 
-    local writeOk, writeErr = pcall(function()
+    local writeOk, writeErr = LrTasks.pcall(function()
         file:write(dataToWrite)
     end)
     if not writeOk then
@@ -1657,8 +1657,8 @@ end
 local function cleanupServerPidAndOkFiles()
     local pidPath = getServerPidFilePath()
     local okPath = getServerOkFilePath()
-    if LrFileUtils.exists(pidPath) then pcall(function() LrFileUtils.delete(pidPath) end) end
-    if LrFileUtils.exists(okPath) then pcall(function() LrFileUtils.delete(okPath) end) end
+    if LrFileUtils.exists(pidPath) then LrTasks.pcall(function() LrFileUtils.delete(pidPath) end) end
+    if LrFileUtils.exists(okPath) then LrTasks.pcall(function() LrFileUtils.delete(okPath) end) end
 end
 
 local function readPidFromPidFile()
@@ -1705,7 +1705,7 @@ local function acquireStartLock(lockStaleSeconds)
             return false
         else
             -- Stale lock: remove it.
-            pcall(function() LrFileUtils.delete(lockPath) end)
+            LrTasks.pcall(function() LrFileUtils.delete(lockPath) end)
         end
     end
 
@@ -1721,7 +1721,7 @@ end
 local function releaseStartLock()
     serverStartInProgress = false
     local lockPath = getServerLockFilePath()
-    if LrFileUtils.exists(lockPath) then pcall(function() LrFileUtils.delete(lockPath) end) end
+    if LrFileUtils.exists(lockPath) then LrTasks.pcall(function() LrFileUtils.delete(lockPath) end) end
 end
 
 function SearchIndexAPI.shutdownServer(opts)
@@ -1740,7 +1740,7 @@ function SearchIndexAPI.shutdownServer(opts)
     log:trace("Requesting graceful backend shutdown")
 
     -- /shutdown returns JSON, so we can go through _request() decoding.
-    pcall(function()
+    LrTasks.pcall(function()
         _request("POST", url, {}, shutdownRequestTimeoutSeconds)
     end)
 
@@ -1834,7 +1834,7 @@ function SearchIndexAPI.startServer(opts)
     end
 
     -- Make sure we don't leave the lock behind on early returns.
-    local ok, startResult = pcall(function()
+    local ok, startResult = LrTasks.pcall(function()
         -- If pid/OK are stale, clean them before starting.
         local pid = readPidFromPidFile()
         if pid and not isPidAlive(pid) then
