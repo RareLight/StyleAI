@@ -245,7 +245,7 @@ LrTasks.startAsyncTask(function()
     LrFunctionContext.callWithContext("TaskPeople", function(context)
         if not Util.waitForServerDialog() then return end
         local persons, loadError = loadPersonsFromServer()
-        local ok, result, pending = pcall(showPeopleDialog, context, persons, loadError)
+        local ok, result, pending = LrTasks.pcall(showPeopleDialog, context, persons, loadError)
         if not ok then
             ErrorHandler.handleError(LOC "$$$/LrGeniusAI/People/ErrorTitle=Error", tostring(result))
             return

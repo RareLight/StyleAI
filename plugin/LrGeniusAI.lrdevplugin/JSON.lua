@@ -1321,7 +1321,7 @@ function OBJDEF:decode(text, etc, options)
    --
    -- Finally, go parse it
    --
-   local success, value, next_i = pcall(grok_one, self, text, 1, options)
+   local success, value, next_i = LrTasks.pcall(grok_one, self, text, 1, options)
 
    if success then
 

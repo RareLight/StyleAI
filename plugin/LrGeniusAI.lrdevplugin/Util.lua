@@ -154,7 +154,7 @@ function Util.getDefaultPartialHashWindowBytes()
 end
 
 local function safeGetRawMetadata(photo, key)
-    local ok, value = pcall(function()
+    local ok, value = LrTasks.pcall(function()
         return photo:getRawMetadata(key)
     end)
     if ok then return value end
@@ -162,7 +162,7 @@ local function safeGetRawMetadata(photo, key)
 end
 
 local function safeGetFormattedMetadata(photo, key)
-    local ok, value = pcall(function()
+    local ok, value = LrTasks.pcall(function()
         return photo:getFormattedMetadata(key)
     end)
     if ok then return value end
@@ -703,7 +703,7 @@ function Util.waitForServerDialog()
             log:trace("Backend version mismatch detected; attempting local backend restart once.")
 
             -- Best-effort: try graceful shutdown first; structured lifecycle will escalate if needed.
-            pcall(function()
+            LrTasks.pcall(function()
                 SearchIndexAPI.shutdownServer({
                     graceSeconds = 5,
                     forceWaitSeconds = 5,
@@ -713,7 +713,7 @@ function Util.waitForServerDialog()
             end)
 
             LrTasks.sleep(1)
-            pcall(function()
+            LrTasks.pcall(function()
                 SearchIndexAPI.startServer({ readyTimeoutSeconds = 60 })
             end)
 
@@ -764,7 +764,7 @@ function Util.waitForServerDialog()
                     restartAttempted = true
                     log:trace("Backend version mismatch detected after ping; restarting local backend once.")
 
-                    pcall(function()
+                    LrTasks.pcall(function()
                         SearchIndexAPI.shutdownServer({
                             graceSeconds = 5,
                             forceWaitSeconds = 5,
@@ -773,7 +773,7 @@ function Util.waitForServerDialog()
                         })
                     end)
                     LrTasks.sleep(1)
-                    pcall(function()
+                    LrTasks.pcall(function()
                         SearchIndexAPI.startServer({ readyTimeoutSeconds = 60 })
                     end)
 
