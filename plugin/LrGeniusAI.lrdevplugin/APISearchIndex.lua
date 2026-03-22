@@ -2132,13 +2132,29 @@ function SearchIndexAPI.clusterFaces(distanceThreshold)
 end
 
 ---
--- Get list of all persons (face clusters) with name, face_count, photo_count, thumbnail.
--- @return table|nil { status, persons = { { person_id, name, face_count, photo_count, thumbnail }, ... } } or nil, err
+-- Get list of all persons (face clusters) with name, face_count, photo_count (no thumbnails).
+-- @return table|nil { status, persons = { { person_id, name, face_count, photo_count }, ... } } or nil, err
 function SearchIndexAPI.getPersons()
     local url = getBaseUrl() .. ENDPOINTS.FACES_PERSONS
     local result, err = _request('GET', url)
     if err then
         log:error("getPersons failed: " .. err)
+        return nil, err
+    end
+    return result
+end
+
+---
+-- Get base64 JPEG thumbnail for one person (lazy load). GET /faces/persons/<id>/thumbnail
+-- @return table|nil { status, person_id, thumbnail } or nil, err
+function SearchIndexAPI.getPersonThumbnail(personId)
+    if not personId or personId == "" then
+        return nil, "person_id required"
+    end
+    local url = getBaseUrl() .. ENDPOINTS.FACES_PERSON_PHOTOS .. "/" .. personId .. "/thumbnail"
+    local result, err = _request('GET', url)
+    if err then
+        log:error("getPersonThumbnail failed: " .. err)
         return nil, err
     end
     return result
