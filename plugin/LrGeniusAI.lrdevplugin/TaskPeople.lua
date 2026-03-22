@@ -88,9 +88,11 @@ local function showSetNameDialog(currentName)
 end
 
 --- Zeigt den Personen-Dialog. persons müssen bereits geladen sein (Thumbnails in Temp-Dateien). loadError optional bei Ladefehler.
+-- Kein DataGrid im SDK: Raster aus f:row / f:column; je Zelle Thumbnail, Name, Foto-Anzahl, "Name setzen".
 local function showPeopleDialog(ctx, persons, loadError)
     local f = LrView.osFactory()
     local bind = LrView.bind
+    local share = LrView.share
 
     persons = persons or {}
 
@@ -98,42 +100,100 @@ local function showPeopleDialog(ctx, persons, loadError)
     props.persons = persons
     props.selectedPersonIndex = (#persons > 0) and 1 or 0
 
-    -- Zeilen für Thumbnail-Liste: je Person eine Zeile (Radio + Thumbnail + Name/Anzahl)
-    local listRows = {}
-    if #persons == 0 then
-        listRows[1] = f:static_text {
-            title = loadError or LOC "$$$/LrGeniusAI/People/NoPersons=No persons yet. Run 'Cluster faces' after indexing photos with face embeddings.",
-        }
-    else
-        for i, p in ipairs(persons) do
-            local name = (p.name and p.name ~= "") and p.name or LOC "$$$/LrGeniusAI/People/Unnamed=Unnamed"
-            local line = string.format("%s (%d %s, %d %s)",
-                name,
-                p.face_count or 0,
-                (p.face_count or 0) == 1 and (LOC "$$$/LrGeniusAI/People/Face=face") or (LOC "$$$/LrGeniusAI/People/Faces=faces"),
-                p.photo_count or 0,
-                (p.photo_count or 0) == 1 and (LOC "$$$/LrGeniusAI/People/Photo=photo") or (LOC "$$$/LrGeniusAI/People/Photos=photos"))
-            local thumbView = (p.thumbnail_path and p.thumbnail_path ~= "") and f:picture { value = p.thumbnail_path, width = 48, height = 48 } or f:spacer { width = 48, height = 48 }
-            listRows[#listRows + 1] = f:row {
-                spacing = f:control_spacing(),
-                f:radio_button { value = bind "selectedPersonIndex", checked_value = i, title = "" },
-                thumbView,
-                f:static_text { title = line },
-            }
-        end
+    -- Muss vor Aufbau der Zellen existieren (Buttons in jeder Zelle).
+    local pendingSetNamePayload = nil
+
+    local GRID_COLS = 4
+    local THUMB_SIZE = 96
+
+    local function photoCountLabel(pc)
+        pc = tonumber(pc) or 0
+        local unit = (pc == 1) and (LOC "$$$/LrGeniusAI/People/Photo=photo") or (LOC "$$$/LrGeniusAI/People/Photos=photos")
+        return string.format("%d %s", pc, unit)
     end
 
-    local listScroller = f:scrolled_view {
-        horizontal_scroller = false,
-        vertical_scroller = true,
-        width = 420,
-        height = 220,
-        f:column { unpack(listRows) },
-    }
+    local listScroller
+    local peopleListBlock
+    if #persons == 0 then
+        peopleListBlock = f:static_text {
+            title = loadError or LOC "$$$/LrGeniusAI/People/NoPersons=No persons yet. Run 'Cluster faces' after indexing photos with face embeddings.",
+        }
+        listScroller = peopleListBlock
+    else
+        local gridRows = {}
+        for startIdx = 1, #persons, GRID_COLS do
+            local rowCells = {}
+            for c = 0, GRID_COLS - 1 do
+                local idx = startIdx + c
+                if idx <= #persons then
+                    local p = persons[idx]
+                    local displayName = (p.name and p.name ~= "") and p.name or LOC "$$$/LrGeniusAI/People/Unnamed=Unnamed"
+                    local thumbView = (p.thumbnail_path and p.thumbnail_path ~= "") and f:picture {
+                        value = p.thumbnail_path,
+                        width = THUMB_SIZE,
+                        height = THUMB_SIZE,
+                    } or f:spacer { width = THUMB_SIZE, height = THUMB_SIZE }
+                    rowCells[#rowCells + 1] = f:column {
+                        spacing = 6,
+                        width = share "personCell",
+                        alignment = "center",
+                        thumbView,
+                        f:static_text {
+                            title = displayName,
+                            alignment = "center",
+                        },
+                        f:static_text {
+                            title = photoCountLabel(p.photo_count),
+                            size = "small",
+                            alignment = "center",
+                        },
+                        f:push_button {
+                            title = LOC "$$$/LrGeniusAI/People/SetName=Set name...",
+                            action = function()
+                                local person = props.persons[idx]
+                                if not person or not person.person_id or person.person_id == "" then return end
+                                pendingSetNamePayload = {
+                                    person_id = person.person_id,
+                                    currentName = person.name or "",
+                                }
+                                LrDialogs.stopModalWithResult(listScroller, "set_name")
+                            end,
+                        },
+                        f:radio_button {
+                            value = bind "selectedPersonIndex",
+                            checked_value = idx,
+                            title = LOC "$$$/LrGeniusAI/People/SelectForLibrary=Library",
+                        },
+                    }
+                else
+                    rowCells[#rowCells + 1] = f:spacer { width = share "personCell" }
+                end
+            end
+            gridRows[#gridRows + 1] = f:row {
+                spacing = 14,
+                alignment = "center",
+                unpack(rowCells),
+            }
+        end
 
-    -- Filled when user clicks "Set name..."; main dialog is closed immediately, then async task runs
-    -- showSetNameDialog + API + reload + fresh showPeopleDialog.
-    local pendingSetNamePayload = nil
+        listScroller = f:scrolled_view {
+            horizontal_scroller = false,
+            vertical_scroller = true,
+            width = 580,
+            height = 320,
+            alignment = "center",
+            f:column {
+                spacing = 12,
+                unpack(gridRows),
+            },
+        }
+
+        peopleListBlock = f:group_box {
+            title = LOC "$$$/LrGeniusAI/People/TableGroupTitle=People",
+            fill_horizontal = 1,
+            listScroller,
+        }
+    end
 
     local contents = f:column {
         bind_to_object = props,
@@ -156,36 +216,11 @@ local function showPeopleDialog(ctx, persons, loadError)
         },
 
         f:static_text {
-            title = LOC "$$$/LrGeniusAI/People/ListTitle=Persons (select one to set name or show in Library):",
+            title = LOC "$$$/LrGeniusAI/People/ListTitle=Choose Library on a tile, then Show in Library; or Set name on each tile:",
             font = "<system/bold>",
         },
 
-        listScroller,
-
-        f:row {
-            spacing = f:control_spacing(),
-            f:push_button {
-                title = LOC "$$$/LrGeniusAI/People/SetName=Set name...",
-                enabled = bind {
-                    key = "selectedPersonIndex",
-                    transform = function(value)
-                        return value and props.persons and #props.persons > 0 and value >= 1 and value <= #props.persons
-                    end,
-                },
-                action = function()
-                    local idx = props.selectedPersonIndex
-                    if not props.persons or idx < 1 or idx > #props.persons then return end
-                    local person = props.persons[idx]
-                    local personId = person.person_id
-                    if not personId or personId == "" then return end
-                    pendingSetNamePayload = {
-                        person_id = personId,
-                        currentName = person.name or "",
-                    }
-                    LrDialogs.stopModalWithResult(listScroller, "set_name")
-                end,
-            },
-        },
+        peopleListBlock,
     }
 
     local dialogResult = LrDialogs.presentModalDialog {
