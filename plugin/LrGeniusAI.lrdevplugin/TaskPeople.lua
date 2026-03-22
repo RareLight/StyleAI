@@ -63,34 +63,8 @@ local function loadPersonsFromServer()
     return persons, nil
 end
 
-local function showSetNameDialog(currentName)
-    local resultName
-    LrFunctionContext.callWithContext("showSetNameDialog", function(context)
-        local f = LrView.osFactory()
-        local bind = LrView.bind
-        local nameProps = LrBinding.makePropertyTable(context)
-        nameProps.name = currentName
-        local result = LrDialogs.presentModalDialog {
-            title = LOC "$$$/LrGeniusAI/People/SetNameTitle=Set name for person",
-            contents = f:column {
-                bind_to_object = nameProps,
-                f:row {
-                    f:static_text { title = LOC "$$$/LrGeniusAI/People/Name=Name:", width = 80 },
-                    f:edit_field { value = bind "name", width_in_chars = 25 },
-                },
-            },
-            actionVerb = LOC "$$$/LrGeniusAI/common/Save=Save",
-            cancelVerb = LOC "$$$/LrGeniusAI/common/Cancel=Cancel",
-        }
-        if result == "ok" then
-            resultName = nameProps.name or ""
-        end
-    end)
-    return resultName
-end
-
 --- Zeigt den Personen-Dialog. persons ohne Thumbnails; Thumbnails per GET /faces/persons/<id>/thumbnail (Lazy-Load im Hintergrund).
--- Kein DataGrid im SDK: Raster aus f:row / f:column; je Zelle Thumbnail, Name, Foto-Anzahl, "Name setzen".
+-- Footer: actionVerb=Save, cancelVerb=Cancel, otherVerb=Reset (Felder zurück auf Snapshot). Namen speichern bei "ok".
 local function showPeopleDialog(ctx, persons, loadError)
     local f = LrView.osFactory()
     local bind = LrView.bind
@@ -100,17 +74,37 @@ local function showPeopleDialog(ctx, persons, loadError)
 
     local props = LrBinding.makePropertyTable(ctx)
     props.persons = persons
-    props.selectedPersonIndex = (#persons > 0) and 1 or 0
+    props.libraryMatchMode = "union"
 
+    local nameSnapshot = {}
     if #persons > 0 then
         local ph = ensureThumbPlaceholderPath()
         for idx = 1, #persons do
             props["personThumb_" .. idx] = ph
+            local p = persons[idx]
+            local nm = (p and type(p.name) == "string") and p.name or ""
+            nameSnapshot[idx] = nm
+            props["personName_" .. idx] = nm
+            if p and p.person_id and p.person_id ~= "" then
+                props["librarySel_" .. idx] = false
+            end
         end
     end
 
-    -- Muss vor Aufbau der Zellen existieren (Buttons in jeder Zelle).
-    local pendingSetNamePayload = nil
+    local pendingShowInLibrary = nil
+
+    local function buildLibrarySelection()
+        local list = {}
+        for idx = 1, #persons do
+            local p = persons[idx]
+            if p and p.person_id and p.person_id ~= "" and props["librarySel_" .. idx] then
+                local nm = props["personName_" .. idx]
+                local personName = (type(nm) == "string" and nm ~= "") and nm or nil
+                list[#list + 1] = { person_id = p.person_id, person_name = personName }
+            end
+        end
+        return list
+    end
 
     local GRID_COLS = 4
     local THUMB_SIZE = 96
@@ -136,44 +130,47 @@ local function showPeopleDialog(ctx, persons, loadError)
                 local idx = startIdx + c
                 if idx <= #persons then
                     local p = persons[idx]
-                    local displayName = (p.name and p.name ~= "") and p.name or LOC "$$$/LrGeniusAI/People/Unnamed=Unnamed"
                     local thumbKey = "personThumb_" .. idx
+                    local nameKey = "personName_" .. idx
                     local thumbView = f:picture {
                         value = bind(thumbKey),
                         width = THUMB_SIZE,
                         height = THUMB_SIZE,
                     }
+                    local nameRow
+                    if p and p.person_id and p.person_id ~= "" then
+                        nameRow = f:edit_field {
+                            value = bind(nameKey),
+                            width_in_chars = 14,
+                            immediate = true,
+                        }
+                    else
+                        nameRow = f:static_text {
+                            title = LOC "$$$/LrGeniusAI/People/Unnamed=Unnamed",
+                            alignment = "center",
+                        }
+                    end
+                    local libRow
+                    if p and p.person_id and p.person_id ~= "" then
+                        libRow = f:checkbox {
+                            value = bind("librarySel_" .. idx),
+                            title = LOC "$$$/LrGeniusAI/People/SelectForLibrary=Library",
+                        }
+                    else
+                        libRow = f:spacer { height = 1 }
+                    end
                     rowCells[#rowCells + 1] = f:column {
                         spacing = 6,
                         width = share "personCell",
                         alignment = "center",
                         thumbView,
-                        f:static_text {
-                            title = displayName,
-                            alignment = "center",
-                        },
+                        nameRow,
                         f:static_text {
                             title = photoCountLabel(p.photo_count),
                             size = "small",
                             alignment = "center",
                         },
-                        f:push_button {
-                            title = LOC "$$$/LrGeniusAI/People/SetName=Set name...",
-                            action = function()
-                                local person = props.persons[idx]
-                                if not person or not person.person_id or person.person_id == "" then return end
-                                pendingSetNamePayload = {
-                                    person_id = person.person_id,
-                                    currentName = person.name or "",
-                                }
-                                LrDialogs.stopModalWithResult(listScroller, "set_name")
-                            end,
-                        },
-                        f:radio_button {
-                            value = bind "selectedPersonIndex",
-                            checked_value = idx,
-                            title = LOC "$$$/LrGeniusAI/People/SelectForLibrary=Library",
-                        },
+                        libRow,
                     }
                 else
                     rowCells[#rowCells + 1] = f:spacer { width = share "personCell" }
@@ -211,6 +208,7 @@ local function showPeopleDialog(ctx, persons, loadError)
         fill_horizontal = 1,
 
         f:row {
+            spacing = f:control_spacing(),
             f:push_button {
                 title = LOC "$$$/LrGeniusAI/People/ClusterFaces=Cluster faces",
                 action = function()
@@ -223,10 +221,50 @@ local function showPeopleDialog(ctx, persons, loadError)
                         LOC("$$$/LrGeniusAI/People/ClusterSummaryAndReopen=^1 persons, ^2 faces. Close this dialog and open 'People...' again to see the updated list.", tostring(clusterResp and clusterResp.person_count or 0), tostring(clusterResp and clusterResp.face_count or 0)))
                 end,
             },
+            f:push_button {
+                title = LOC "$$$/LrGeniusAI/People/ShowInLibrary=Show in Library",
+                action = function()
+                    local sel = buildLibrarySelection()
+                    if #sel == 0 then
+                        LrDialogs.message(
+                            LOC "$$$/LrGeniusAI/People/NoLibrarySelectionTitle=No people selected",
+                            LOC "$$$/LrGeniusAI/People/NoLibrarySelectionMessage=Check Library on one or more people, then try again."
+                        )
+                        return
+                    end
+                    pendingShowInLibrary = {
+                        entries = sel,
+                        matchMode = props.libraryMatchMode or "union",
+                    }
+                    LrDialogs.stopModalWithResult(listScroller, "show_library")
+                end,
+            },
+        },
+
+        f:row {
+            spacing = f:control_spacing(),
+            f:static_text {
+                title = LOC "$$$/LrGeniusAI/People/LibraryMatchLabel=When several people are selected:",
+                width_in_chars = 34,
+                alignment = "right",
+            },
+            f:popup_menu {
+                value = bind "libraryMatchMode",
+                items = {
+                    {
+                        title = LOC "$$$/LrGeniusAI/People/LibraryMatchOneOf=Photos with any selected person",
+                        value = "union",
+                    },
+                    {
+                        title = LOC "$$$/LrGeniusAI/People/LibraryMatchAll=Photos with all selected people",
+                        value = "intersection",
+                    },
+                },
+            },
         },
 
         f:static_text {
-            title = LOC "$$$/LrGeniusAI/People/ListTitle=Choose Library on a tile, then Show in Library; or Set name on each tile:",
+            title = LOC "$$$/LrGeniusAI/People/ListTitle=Check Library for people to include, then Show in Library. Edit names; Save (OK) writes to the server, Reset reverts edits, Cancel closes without saving.",
             font = "<system/bold>",
         },
 
@@ -253,53 +291,175 @@ local function showPeopleDialog(ctx, persons, loadError)
         end)
     end
 
+    -- Lightroom SDK: actionVerb = primary OK (Save); cancelVerb; otherVerb (Reset).
     local dialogResult = LrDialogs.presentModalDialog {
         title = LOC "$$$/LrGeniusAI/People/WindowTitle=People",
         contents = contents,
-        actionVerb = LOC "$$$/LrGeniusAI/common/Close=Close",
-        otherVerb = LOC "$$$/LrGeniusAI/People/ShowInLibrary=Show in Library",
+        actionVerb = LOC "$$$/LrGeniusAI/common/Save=Save",
+        cancelVerb = LOC "$$$/LrGeniusAI/common/Cancel=Cancel",
+        otherVerb = LOC "$$$/LrGeniusAI/People/Reset=Reset",
     }
     thumbLoaderDone = true
-    if dialogResult == "set_name" and pendingSetNamePayload then
-        local payload = pendingSetNamePayload
-        pendingSetNamePayload = nil
-        return "set_name", nil, payload
+
+    if dialogResult == "show_library"
+        and type(pendingShowInLibrary) == "table"
+        and type(pendingShowInLibrary.entries) == "table"
+        and #pendingShowInLibrary.entries > 0
+    then
+        return "show_library", pendingShowInLibrary
     end
-    -- Wenn User "Show in Library" (otherVerb) geklickt hat: Auswahl aus props auslesen
-    local pendingShowInLibrary = nil
+
+    if dialogResult == "ok" then
+        for i = 1, #persons do
+            local per = persons[i]
+            if per and per.person_id and per.person_id ~= "" then
+                local newName = props["personName_" .. i] or ""
+                local oldName = nameSnapshot[i] or ""
+                if newName ~= oldName then
+                    local nameOk, nameErr = SearchIndexAPI.setPersonName(per.person_id, newName)
+                    if not nameOk then
+                        ErrorHandler.handleError(LOC "$$$/LrGeniusAI/People/SetNameError=Could not set name", nameErr)
+                    else
+                        per.name = newName
+                        nameSnapshot[i] = newName
+                    end
+                end
+            end
+        end
+        return "ok"
+    end
+
     if dialogResult == "other" then
-        local idx = props.selectedPersonIndex
-        if type(props.persons) == "table" and idx and idx >= 1 and idx <= #props.persons then
-            local person = props.persons[idx]
-            if type(person) == "table" and person.person_id and person.person_id ~= "" then
-                local name = (type(person.name) == "string" and person.name ~= "") and person.name or nil
-                pendingShowInLibrary = { person_id = person.person_id, person_name = name }
+        return "reset"
+    end
+
+    return "cancel"
+end
+
+--- Baut sortierte Foto-ID-Liste aus API-Antwort.
+local function photoIdsFromPersonResponse(resp)
+    if type(resp) ~= "table" then return {} end
+    return type(resp.photo_ids) == "table" and resp.photo_ids or (type(resp.photo_uuids) == "table" and resp.photo_uuids or {})
+end
+
+--- Union: jedes Foto, das mindestens eine der Personen enthält (Reihenfolge: erstes Auftreten).
+local function unionPhotoIdsForEntries(entries)
+    local seen = {}
+    local photoIdsOrdered = {}
+    for _, ent in ipairs(entries) do
+        local pid = ent and ent.person_id
+        if pid and pid ~= "" then
+            local resp, err = SearchIndexAPI.getPhotosForPerson(pid)
+            if err or type(resp) ~= "table" then
+                ErrorHandler.handleError(LOC "$$$/LrGeniusAI/People/GetPhotosError=Could not get photos for person", err or "No data")
+                return nil
+            end
+            local ids = photoIdsFromPersonResponse(resp)
+            for _, photoId in ipairs(ids) do
+                if not seen[photoId] then
+                    seen[photoId] = true
+                    table.insert(photoIdsOrdered, photoId)
+                end
             end
         end
     end
-    return dialogResult, pendingShowInLibrary, nil
+    return photoIdsOrdered
 end
 
---- Führt "Show in Library" aus: Fotos laden, Collection anlegen, Ansicht wechseln. Läuft im Async-Task (Yielding erlaubt).
-local function doShowInLibrary(person_id, person_name)
-    local resp, err = SearchIndexAPI.getPhotosForPerson(person_id)
-    if err or type(resp) ~= "table" then
-        ErrorHandler.handleError(LOC "$$$/LrGeniusAI/People/GetPhotosError=Could not get photos for person", err or "No data")
+--- Schnittmenge: Fotos, in denen alle Personen gemeinsam vorkommen (Reihenfolge wie erste Person).
+local function intersectPhotoIdsForEntries(entries)
+    if #entries == 0 then return {} end
+    local sets = {}
+    local firstIds = nil
+    for _, ent in ipairs(entries) do
+        local pid = ent and ent.person_id
+        if not pid or pid == "" then return {} end
+        local resp, err = SearchIndexAPI.getPhotosForPerson(pid)
+        if err or type(resp) ~= "table" then
+            ErrorHandler.handleError(LOC "$$$/LrGeniusAI/People/GetPhotosError=Could not get photos for person", err or "No data")
+            return nil
+        end
+        local ids = photoIdsFromPersonResponse(resp)
+        if not firstIds then firstIds = ids end
+        local t = {}
+        for _, id in ipairs(ids) do
+            t[id] = true
+        end
+        sets[#sets + 1] = t
+    end
+    if #sets == 0 then return {} end
+    local acc = sets[1]
+    for i = 2, #sets do
+        local nxt = sets[i]
+        local newAcc = {}
+        for id in pairs(acc) do
+            if nxt[id] then
+                newAcc[id] = true
+            end
+        end
+        acc = newAcc
+    end
+    local ordered = {}
+    for _, id in ipairs(firstIds) do
+        if acc[id] then
+            table.insert(ordered, id)
+        end
+    end
+    return ordered
+end
+
+--- Führt "Show in Library" aus. entries: { person_id, person_name? }[]; matchMode: "union" | "intersection".
+local function doShowInLibrary(entries, matchMode)
+    if not entries or #entries == 0 then
+        LrDialogs.message(LOC "$$$/LrGeniusAI/People/NoLibrarySelectionTitle=No people selected", LOC "$$$/LrGeniusAI/People/NoLibrarySelectionMessage=Check Library on one or more people, then try again.")
         return
     end
-    local photoIds = type(resp.photo_ids) == "table" and resp.photo_ids or (type(resp.photo_uuids) == "table" and resp.photo_uuids or {})
-    if #photoIds == 0 then
-        LrDialogs.message(LOC "$$$/LrGeniusAI/People/NoPhotos=No photos", LOC "$$$/LrGeniusAI/People/NoPhotosForPerson=No photos found for this person.")
+
+    local mode = (matchMode == "intersection") and "intersection" or "union"
+    local photoIdsOrdered
+    if mode == "intersection" and #entries >= 2 then
+        photoIdsOrdered = intersectPhotoIdsForEntries(entries)
+    else
+        photoIdsOrdered = unionPhotoIdsForEntries(entries)
+    end
+
+    if photoIdsOrdered == nil then
         return
     end
+
+    if #photoIdsOrdered == 0 then
+        if mode == "intersection" and #entries >= 2 then
+            LrDialogs.message(
+                LOC "$$$/LrGeniusAI/People/NoPhotos=No photos",
+                LOC "$$$/LrGeniusAI/People/NoPhotosIntersection=No photos contain all selected people together."
+            )
+        else
+            LrDialogs.message(LOC "$$$/LrGeniusAI/People/NoPhotos=No photos", LOC "$$$/LrGeniusAI/People/NoPhotosForPerson=No photos found for this person.")
+        end
+        return
+    end
+
     local catalog = LrApplication.activeCatalog()
-    local photos = SearchIndexAPI.findPhotosByPhotoIds(photoIds)
+    local photos = SearchIndexAPI.findPhotosByPhotoIds(photoIdsOrdered)
     if #photos == 0 then
         LrDialogs.message(LOC "$$$/LrGeniusAI/People/NoPhotosInCatalog=Not in catalog", LOC "$$$/LrGeniusAI/People/PersonPhotosNotInCatalog=Photos for this person are not in the current catalog.")
         return
     end
-    local personDisplayName = (type(person_name) == "string" and person_name ~= "") and person_name or (LOC "$$$/LrGeniusAI/People/Unnamed=Unnamed")
-    local collectionName = string.format("%s @ %s", tostring(personDisplayName), LrDate.timeToW3CDate(LrDate.currentTime()))
+
+    local nameParts = {}
+    for _, ent in ipairs(entries) do
+        local n = ent and ent.person_name
+        if type(n) == "string" and n ~= "" then
+            nameParts[#nameParts + 1] = n
+        elseif ent and ent.person_id and ent.person_id ~= "" then
+            nameParts[#nameParts + 1] = ent.person_id
+        end
+    end
+    local label = table.concat(nameParts, ", ")
+    if #label > 100 then
+        label = string.format("%s (%d)", LOC "$$$/LrGeniusAI/People/MultiPeopleLabel=People", #entries)
+    end
+    local collectionName = string.format("%s @ %s", label, LrDate.timeToW3CDate(LrDate.currentTime()))
 
     local collectionSet, collection
     catalog:withWriteAccessDo("Create Collection Set", function()
@@ -332,26 +492,17 @@ LrTasks.startAsyncTask(function()
         if not Util.waitForServerDialog() then return end
         local persons, loadError = loadPersonsFromServer()
         while true do
-            local ok, r, pending, setPayload = LrTasks.pcall(showPeopleDialog, context, persons, loadError)
+            local ok, r, pending = LrTasks.pcall(showPeopleDialog, context, persons, loadError)
             if not ok then
                 ErrorHandler.handleError(LOC "$$$/LrGeniusAI/People/ErrorTitle=Error", tostring(r))
                 return
             end
-            if r == "other" and pending and type(pending) == "table" and pending.person_id then
-                doShowInLibrary(pending.person_id, pending.person_name)
+            if r == "show_library" and type(pending) == "table" and type(pending.entries) == "table" and #pending.entries > 0 then
+                doShowInLibrary(pending.entries, pending.matchMode)
                 return
             end
-            if r == "set_name" and type(setPayload) == "table" and setPayload.person_id then
-                local newName = showSetNameDialog(setPayload.currentName)
-                if newName ~= nil then
-                    local nameOk, nameErr = SearchIndexAPI.setPersonName(setPayload.person_id, newName)
-                    if not nameOk then
-                        ErrorHandler.handleError(LOC "$$$/LrGeniusAI/People/SetNameError=Could not set name", nameErr)
-                    end
-                end
-                LrTasks.yield()
-                persons, loadError = loadPersonsFromServer()
-                -- Reopen main People dialog with fresh list (name line includes server data).
+            if r == "reset" then
+                -- Dialog erneut öffnen; Namen kommen weiter aus persons (nur nach Save geändert).
             else
                 break
             end
