@@ -2,33 +2,36 @@
     People: list face clusters (persons), assign names, and show photos in Library.
 ]]
 
---- Speichert Base64-Thumbnail einer Person in eine Temp-Datei. Setzt person.thumbnail_path.
-local function savePersonThumbnail(person, index)
-    local thumb = person and person.thumbnail
-    if not thumb or thumb == "" then
-        person.thumbnail_path = nil
-        return
-    end
+--- Decodiert Base64-JPEG in eine Temp-Datei (für Lazy-Load). Gibt Pfad oder nil zurück.
+local function writePersonThumbnailFile(base64Thumb, personId, index)
+    if not base64Thumb or base64Thumb == "" then return nil end
     local tempDir = LrPathUtils.getStandardFilePath('temp')
-    local safeId = (person.person_id and person.person_id ~= "") and person.person_id or ("person_" .. tostring(index))
+    local safeId = (personId and personId ~= "") and personId or ("person_" .. tostring(index))
     local safeIdClean = safeId:gsub("[^%w_-]", "_")
     local tempFile = LrPathUtils.child(tempDir, "lrgenius_person_" .. safeIdClean .. ".jpg")
-    local f = io.open(tempFile, "wb")
-    if f then
-        f:write(LrStringUtils.decodeBase64(thumb))
-        f:close()
-        person.thumbnail_path = tempFile
-    else
-        person.thumbnail_path = nil
+    local fh = io.open(tempFile, "wb")
+    if fh then
+        fh:write(LrStringUtils.decodeBase64(base64Thumb))
+        fh:close()
+        return tempFile
     end
+    return nil
 end
 
---- Schreibt für alle Personen mit Thumbnail-Daten die Temp-Dateien und setzt thumbnail_path.
-local function savePersonThumbnails(persons)
-    if not persons then return end
-    for i, p in ipairs(persons) do
-        savePersonThumbnail(p, i)
+--- Minimal 1×1-JPEG als Platzhalter, bis echte Thumbnails geladen sind (gebunden an f:picture).
+local _thumbPlaceholderPath
+local function ensureThumbPlaceholderPath()
+    if _thumbPlaceholderPath then return _thumbPlaceholderPath end
+    local tempDir = LrPathUtils.getStandardFilePath('temp')
+    local path = LrPathUtils.child(tempDir, "lrgenius_person_thumb_placeholder.jpg")
+    local fh = io.open(path, "wb")
+    if fh then
+        local tiny = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA8A/9k="
+        fh:write(LrStringUtils.decodeBase64(tiny))
+        fh:close()
+        _thumbPlaceholderPath = path
     end
+    return _thumbPlaceholderPath or ""
 end
 
 --- Namen zuerst (nach photo_count absteigend), dann Unbenannte (nach photo_count absteigend).
@@ -49,7 +52,7 @@ local function sortPersonsForDisplay(persons)
     end)
 end
 
---- Lädt Personen vom Server, speichert Thumbnails in Temp-Dateien. Gibt persons (Tabelle), loadError (string|nil) zurück.
+--- Lädt Personenliste vom Server (ohne Thumbnails; die werden im Dialog per Lazy-Load geholt).
 local function loadPersonsFromServer()
     local resp, err = SearchIndexAPI.getPersons()
     if err then
@@ -57,7 +60,6 @@ local function loadPersonsFromServer()
     end
     local persons = (resp and resp.persons) and resp.persons or {}
     sortPersonsForDisplay(persons)
-    savePersonThumbnails(persons)
     return persons, nil
 end
 
@@ -87,7 +89,7 @@ local function showSetNameDialog(currentName)
     return resultName
 end
 
---- Zeigt den Personen-Dialog. persons müssen bereits geladen sein (Thumbnails in Temp-Dateien). loadError optional bei Ladefehler.
+--- Zeigt den Personen-Dialog. persons ohne Thumbnails; Thumbnails per GET /faces/persons/<id>/thumbnail (Lazy-Load im Hintergrund).
 -- Kein DataGrid im SDK: Raster aus f:row / f:column; je Zelle Thumbnail, Name, Foto-Anzahl, "Name setzen".
 local function showPeopleDialog(ctx, persons, loadError)
     local f = LrView.osFactory()
@@ -99,6 +101,13 @@ local function showPeopleDialog(ctx, persons, loadError)
     local props = LrBinding.makePropertyTable(ctx)
     props.persons = persons
     props.selectedPersonIndex = (#persons > 0) and 1 or 0
+
+    if #persons > 0 then
+        local ph = ensureThumbPlaceholderPath()
+        for idx = 1, #persons do
+            props["personThumb_" .. idx] = ph
+        end
+    end
 
     -- Muss vor Aufbau der Zellen existieren (Buttons in jeder Zelle).
     local pendingSetNamePayload = nil
@@ -128,11 +137,12 @@ local function showPeopleDialog(ctx, persons, loadError)
                 if idx <= #persons then
                     local p = persons[idx]
                     local displayName = (p.name and p.name ~= "") and p.name or LOC "$$$/LrGeniusAI/People/Unnamed=Unnamed"
-                    local thumbView = (p.thumbnail_path and p.thumbnail_path ~= "") and f:picture {
-                        value = p.thumbnail_path,
+                    local thumbKey = "personThumb_" .. idx
+                    local thumbView = f:picture {
+                        value = bind(thumbKey),
                         width = THUMB_SIZE,
                         height = THUMB_SIZE,
-                    } or f:spacer { width = THUMB_SIZE, height = THUMB_SIZE }
+                    }
                     rowCells[#rowCells + 1] = f:column {
                         spacing = 6,
                         width = share "personCell",
@@ -223,12 +233,33 @@ local function showPeopleDialog(ctx, persons, loadError)
         peopleListBlock,
     }
 
+    local thumbLoaderDone = false
+    if #persons > 0 then
+        LrTasks.startAsyncTask(function()
+            for idx = 1, #persons do
+                if thumbLoaderDone then return end
+                local p = persons[idx]
+                if p and p.person_id and p.person_id ~= "" then
+                    local resp = SearchIndexAPI.getPersonThumbnail(p.person_id)
+                    if not thumbLoaderDone and resp and type(resp.thumbnail) == "string" and resp.thumbnail ~= "" then
+                        local path = writePersonThumbnailFile(resp.thumbnail, p.person_id, idx)
+                        if path and not thumbLoaderDone then
+                            props["personThumb_" .. idx] = path
+                        end
+                    end
+                end
+                LrTasks.yield()
+            end
+        end)
+    end
+
     local dialogResult = LrDialogs.presentModalDialog {
         title = LOC "$$$/LrGeniusAI/People/WindowTitle=People",
         contents = contents,
         actionVerb = LOC "$$$/LrGeniusAI/common/Close=Close",
         otherVerb = LOC "$$$/LrGeniusAI/People/ShowInLibrary=Show in Library",
     }
+    thumbLoaderDone = true
     if dialogResult == "set_name" and pendingSetNamePayload then
         local payload = pendingSetNamePayload
         pendingSetNamePayload = nil
