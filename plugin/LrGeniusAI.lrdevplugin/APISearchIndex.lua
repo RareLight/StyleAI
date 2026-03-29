@@ -554,6 +554,8 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
         folder_names = options.folder_names,
         prompt = options.prompt,
         keyword_categories = options.keyword_categories and JSON:encode(options.keyword_categories) or "[]",
+        bilingual_keywords = tostring(options.bilingual_keywords or false),
+        keyword_secondary_language = options.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English",
         date_time = options.date_time,
         ollama_base_url = options.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
         lmstudio_base_url = options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
@@ -681,6 +683,8 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
     end
     
     table.insert(mimeChunks, { name = "keyword_categories", value = JSON:encode(options.keyword_categories or {}) })
+    table.insert(mimeChunks, { name = "bilingual_keywords", value = tostring(options.bilingual_keywords or false) })
+    table.insert(mimeChunks, { name = "keyword_secondary_language", value = options.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English" })
     
     if options.date_time then
         table.insert(mimeChunks, { name = "date_time", value = options.date_time })
