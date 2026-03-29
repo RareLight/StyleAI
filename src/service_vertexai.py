@@ -73,15 +73,69 @@ def _get_vertex_client_and_endpoint(vertex_project_id=None, vertex_location=None
         return None
 
 
-def _extract_embedding(prediction_value, field_name: str) -> Optional[List[float]]:
-    """Convert protobuf prediction value to dict and pull an embedding field."""
-    from google.protobuf import json_format
+def _to_plain_python(value):
+    """Best-effort conversion for proto-plus / protobuf values to native Python types."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {k: _to_plain_python(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_plain_python(v) for v in value]
 
-    as_dict = json_format.MessageToDict(prediction_value)
-    embedding = as_dict.get(field_name)
-    if isinstance(embedding, list) and embedding:
-        return embedding
-    return None
+    # google.protobuf.struct_pb2.Value
+    if hasattr(value, "WhichOneof"):
+        try:
+            kind = value.WhichOneof("kind")
+            if kind == "null_value":
+                return None
+            if kind == "number_value":
+                return float(value.number_value)
+            if kind == "string_value":
+                return value.string_value
+            if kind == "bool_value":
+                return bool(value.bool_value)
+            if kind == "struct_value":
+                return {k: _to_plain_python(v) for k, v in value.struct_value.fields.items()}
+            if kind == "list_value":
+                return [_to_plain_python(v) for v in value.list_value.values]
+        except Exception:
+            pass
+
+    # Generic protobuf message
+    if hasattr(value, "DESCRIPTOR"):
+        try:
+            from google.protobuf import json_format
+            return json_format.MessageToDict(value)
+        except Exception:
+            pass
+
+    # proto-plus map/list composites
+    if hasattr(value, "items"):
+        try:
+            return {k: _to_plain_python(v) for k, v in value.items()}
+        except Exception:
+            pass
+    try:
+        return [_to_plain_python(v) for v in value]
+    except Exception:
+        return value
+
+
+def _extract_embedding(prediction_value, field_name: str) -> Optional[List[float]]:
+    """Extract embedding list from prediction payload across response container types."""
+    payload = _to_plain_python(prediction_value)
+    if not isinstance(payload, dict):
+        return None
+
+    embedding = payload.get(field_name)
+    if isinstance(embedding, dict) and "values" in embedding:
+        embedding = embedding["values"]
+    if not isinstance(embedding, list) or not embedding:
+        return None
+    try:
+        return [float(v) for v in embedding]
+    except Exception:
+        return None
 
 
 def is_available(vertex_project_id=None, vertex_location=None) -> bool:
