@@ -1883,7 +1883,8 @@ function SearchIndexAPI.startServer(opts)
             startServerCmd = "start /b /d \"" .. serverDir .. "\" \"\" cmd /c \"" .. innerCmd .. "\""
         else
             local envPrefix = "KMP_DUPLICATE_LIB_OK=TRUE "
-            startServerCmd = envPrefix .. "\"" .. tostring(serverBinary) .. "\" --db-path \"" .. LrPathUtils.child(getServerControlDir(), "lrgenius.db") .. "\""
+            -- Use bash explicitly so startup does not depend on execute bits surviving ZIP extraction.
+            startServerCmd = envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. LrPathUtils.child(getServerControlDir(), "lrgenius.db") .. "\""
         end
 
         log:trace("Trying to start search index server with command: " .. tostring(startServerCmd))
