@@ -5,7 +5,27 @@ from typing import List, Optional, Tuple, Union
 import torch
 from torch import nn as nn
 from torch import _assert
-from torchvision.ops.misc import FrozenBatchNorm2d
+try:
+    from torchvision.ops.misc import FrozenBatchNorm2d
+except Exception:
+    class FrozenBatchNorm2d(nn.Module):
+        """Fallback when torchvision ops are unavailable at runtime."""
+
+        def __init__(self, num_features: int, eps: float = 1e-5):
+            super().__init__()
+            self.num_features = num_features
+            self.eps = eps
+            self.register_buffer("weight", torch.ones(num_features))
+            self.register_buffer("bias", torch.zeros(num_features))
+            self.register_buffer("running_mean", torch.zeros(num_features))
+            self.register_buffer("running_var", torch.ones(num_features))
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            scale = self.weight * torch.rsqrt(self.running_var + self.eps)
+            bias = self.bias - self.running_mean * scale
+            scale = scale.reshape(1, -1, 1, 1)
+            bias = bias.reshape(1, -1, 1, 1)
+            return x * scale + bias
 
 
 def freeze_batch_norm_2d(module, module_match={}, name=''):
