@@ -110,6 +110,102 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 end
 
 ---
+-- Returns an existing child keyword by name under the given parent.
+-- If parent is nil, searches top-level keywords.
+-- @param catalog The active LrCatalog object.
+-- @param parent Optional parent LrKeyword object.
+-- @param keywordName The keyword name to find.
+-- @return LrKeyword|nil
+local function findKeywordByNameInParent(catalog, parent, keywordName)
+    if not catalog or type(keywordName) ~= "string" then
+        return nil
+    end
+    local target = Util.trim(keywordName)
+    if target == "" then
+        return nil
+    end
+
+    local siblings = nil
+    if parent and parent.getChildren then
+        siblings = parent:getChildren()
+    else
+        siblings = catalog:getKeywords()
+    end
+
+    if type(siblings) ~= "table" then
+        return nil
+    end
+
+    for _, sibling in ipairs(siblings) do
+        if sibling and sibling.getName and sibling:getName() == target then
+            return sibling
+        end
+    end
+    return nil
+end
+
+---
+-- Adds incoming synonyms to an existing Lightroom keyword (additive-only).
+-- Existing synonyms are preserved; duplicates are removed case-insensitively.
+-- @param keywordObj LrKeyword
+-- @param incomingSynonyms table
+local function mergeKeywordSynonyms(keywordObj, incomingSynonyms)
+    if not keywordObj or type(incomingSynonyms) ~= "table" or #incomingSynonyms == 0 then
+        return
+    end
+    if not keywordObj.getSynonyms then
+        return
+    end
+
+    local keywordName = keywordObj:getName() or ""
+    local existing = keywordObj:getSynonyms() or {}
+    local merged = {}
+    local seen = {}
+
+    local function addSynonymIfValid(value)
+        if type(value) ~= "string" then
+            return
+        end
+        local synonym = Util.trim(value)
+        local lowered = string.lower(synonym)
+        if synonym == "" or lowered == string.lower(keywordName) or seen[lowered] then
+            return
+        end
+        seen[lowered] = true
+        table.insert(merged, synonym)
+    end
+
+    for _, synonym in ipairs(existing) do
+        addSynonymIfValid(synonym)
+    end
+
+    local addedIncoming = false
+    for _, synonym in ipairs(incomingSynonyms) do
+        local beforeCount = #merged
+        addSynonymIfValid(synonym)
+        if #merged > beforeCount then
+            addedIncoming = true
+        end
+    end
+
+    if not addedIncoming then
+        return
+    end
+
+    if not keywordObj.setSynonyms then
+        log:warn("Cannot merge synonyms for keyword '" .. tostring(keywordName) .. "': setSynonyms API unavailable")
+        return
+    end
+
+    local ok, err = LrTasks.pcall(function()
+        keywordObj:setSynonyms(merged)
+    end)
+    if not ok then
+        log:warn("Failed to merge synonyms for keyword '" .. tostring(keywordName) .. "': " .. tostring(err))
+    end
+end
+
+---
 -- Recursively adds keywords to a photo, creating parent keywords as needed.
 -- @param photo The LrPhoto object.
 -- @param keywordSubTable A table of keywords, possibly nested.
@@ -166,7 +262,13 @@ function MetadataManager.addKeywordRecursively(photo, keywordSubTable, parent, e
                     log:trace("Skipping keyword: " .. tostring(keywordName) .. " as it is reserved.")
                 else
                     local currentParent = prefs.useKeywordHierarchy and parent or nil
-                    keyword = photo.catalog:createKeyword(keywordName, keywordSynonyms, true, currentParent, true)
+                    keyword = findKeywordByNameInParent(photo.catalog, currentParent, keywordName)
+                    if keyword then
+                        mergeKeywordSynonyms(keyword, keywordSynonyms)
+                    else
+                        keyword = photo.catalog:createKeyword(keywordName, keywordSynonyms, true, currentParent, true)
+                        mergeKeywordSynonyms(keyword, keywordSynonyms)
+                    end
                     photo:addKeyword(keyword)
                     table.insert(addKeywords, keywordName)
                 end
