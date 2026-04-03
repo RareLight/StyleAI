@@ -35,11 +35,11 @@ local function buildModelItems()
     return items
 end
 
-local function showPhotoInstructionDialog(photo)
+local function showPhotoInstructionDialog(ctx, photo)
     local f = LrView.osFactory()
     local bind = LrView.bind
 
-    local props = LrBinding.makePropertyTable(nil)
+    local props = LrBinding.makePropertyTable(ctx)
     props.photoContextData = photo:getPropertyForPlugin(_PLUGIN, "photoContext") or ""
     props.skipFromHere = false
 
@@ -103,6 +103,16 @@ local function showAiEditDialog(ctx)
     props.editIntent = prefs.aiEditIntent or "Natural professional Lightroom edit"
     props.reviewBeforeApply = prefs.aiEditReviewBeforeApply ~= false
     props.applyMasks = prefs.aiEditApplyMasks ~= false
+    props.adjustWhiteBalance = prefs.aiEditAdjustWhiteBalance ~= false
+    props.adjustBasicTone = prefs.aiEditAdjustBasicTone ~= false
+    props.adjustPresence = prefs.aiEditAdjustPresence ~= false
+    props.adjustColorMix = prefs.aiEditAdjustColorMix ~= false
+    props.doColorGrading = prefs.aiEditDoColorGrading ~= false
+    props.useToneCurve = prefs.aiEditUseToneCurve ~= false
+    props.usePointCurve = prefs.aiEditUsePointCurve ~= false
+    props.adjustDetail = prefs.aiEditAdjustDetail ~= false
+    props.adjustEffects = prefs.aiEditAdjustEffects ~= false
+    props.adjustLensCorrections = prefs.aiEditAdjustLensCorrections ~= false
     props.submitGPS = prefs.aiEditSubmitGPS or false
     props.submitKeywords = prefs.aiEditSubmitKeywords ~= false
     props.submitFolderName = prefs.aiEditSubmitFolderName or false
@@ -300,6 +310,91 @@ local function showAiEditDialog(ctx)
             },
         },
         f:group_box {
+            title = "Creative Controls",
+            fill_horizontal = 1,
+            f:row {
+                f:checkbox {
+                    value = bind "adjustWhiteBalance",
+                },
+                f:static_text {
+                    title = "Adjust white balance",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = bind "adjustBasicTone",
+                },
+                f:static_text {
+                    title = "Adjust basic tone (exposure/contrast/highlights/shadows/whites/blacks)",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = bind "adjustPresence",
+                },
+                f:static_text {
+                    title = "Adjust presence (texture/clarity/dehaze)",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = bind "adjustColorMix",
+                },
+                f:static_text {
+                    title = "Adjust color mix (vibrance/saturation/HSL)",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = bind "doColorGrading",
+                },
+                f:static_text {
+                    title = "Do color grading",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = bind "useToneCurve",
+                },
+                f:static_text {
+                    title = "Use tone curve",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = bind "usePointCurve",
+                    enabled = bind "useToneCurve",
+                },
+                f:static_text {
+                    title = "Use point curve",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = bind "adjustDetail",
+                },
+                f:static_text {
+                    title = "Adjust detail (sharpening/noise reduction)",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = bind "adjustEffects",
+                },
+                f:static_text {
+                    title = "Adjust effects (vignette/grain)",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = bind "adjustLensCorrections",
+                },
+                f:static_text {
+                    title = "Adjust lens corrections",
+                },
+            },
+        },
+        f:group_box {
             title = "Context",
             fill_horizontal = 1,
             f:row {
@@ -347,6 +442,16 @@ local function showAiEditDialog(ctx)
     prefs.aiEditIntent = props.editIntent
     prefs.aiEditReviewBeforeApply = props.reviewBeforeApply
     prefs.aiEditApplyMasks = props.applyMasks
+    prefs.aiEditAdjustWhiteBalance = props.adjustWhiteBalance
+    prefs.aiEditAdjustBasicTone = props.adjustBasicTone
+    prefs.aiEditAdjustPresence = props.adjustPresence
+    prefs.aiEditAdjustColorMix = props.adjustColorMix
+    prefs.aiEditDoColorGrading = props.doColorGrading
+    prefs.aiEditUseToneCurve = props.useToneCurve
+    prefs.aiEditUsePointCurve = props.usePointCurve
+    prefs.aiEditAdjustDetail = props.adjustDetail
+    prefs.aiEditAdjustEffects = props.adjustEffects
+    prefs.aiEditAdjustLensCorrections = props.adjustLensCorrections
     prefs.aiEditSubmitGPS = props.submitGPS
     prefs.aiEditSubmitKeywords = props.submitKeywords
     prefs.aiEditSubmitFolderName = props.submitFolderName
@@ -372,6 +477,16 @@ local function showAiEditDialog(ctx)
         prompt = props.selectedPrompt,
         edit_intent = props.editIntent,
         include_masks = props.applyMasks,
+        adjust_white_balance = props.adjustWhiteBalance,
+        adjust_basic_tone = props.adjustBasicTone,
+        adjust_presence = props.adjustPresence,
+        adjust_color_mix = props.adjustColorMix,
+        do_color_grading = props.doColorGrading,
+        use_tone_curve = props.useToneCurve,
+        use_point_curve = props.usePointCurve,
+        adjust_detail = props.adjustDetail,
+        adjust_effects = props.adjustEffects,
+        adjust_lens_corrections = props.adjustLensCorrections,
         applyMasks = props.applyMasks,
         reviewBeforeApply = props.reviewBeforeApply,
         submit_gps = props.submitGPS,
@@ -447,7 +562,23 @@ LrTasks.startAsyncTask(function()
             log:info("AI Edit task canceled by user in options dialog")
             return
         end
-        log:trace("AI Edit options selected: scope=" .. tostring(options.scope) .. " provider=" .. tostring(options.provider) .. " model=" .. tostring(options.model) .. " review=" .. tostring(options.reviewBeforeApply) .. " masks=" .. tostring(options.applyMasks))
+        log:trace(
+            "AI Edit options selected: scope=" .. tostring(options.scope)
+            .. " provider=" .. tostring(options.provider)
+            .. " model=" .. tostring(options.model)
+            .. " review=" .. tostring(options.reviewBeforeApply)
+            .. " masks=" .. tostring(options.applyMasks)
+            .. " wb=" .. tostring(options.adjust_white_balance)
+            .. " basicTone=" .. tostring(options.adjust_basic_tone)
+            .. " presence=" .. tostring(options.adjust_presence)
+            .. " colorMix=" .. tostring(options.adjust_color_mix)
+            .. " grading=" .. tostring(options.do_color_grading)
+            .. " toneCurve=" .. tostring(options.use_tone_curve)
+            .. " pointCurve=" .. tostring(options.use_point_curve)
+            .. " detail=" .. tostring(options.adjust_detail)
+            .. " effects=" .. tostring(options.adjust_effects)
+            .. " lens=" .. tostring(options.adjust_lens_corrections)
+        )
 
         local photos, status = PhotoSelector.getPhotosInScope(options.scope)
         if not photos or #photos == 0 then
@@ -483,7 +614,7 @@ LrTasks.startAsyncTask(function()
             if options.showPhotoContextDialog then
                 if not reuseContext then
                     local result
-                    result, sharedContext, reuseContext = showPhotoInstructionDialog(photo)
+                    result, sharedContext, reuseContext = showPhotoInstructionDialog(ctx, photo)
                     if result == "cancel" then
                         progressScope:done()
                         return

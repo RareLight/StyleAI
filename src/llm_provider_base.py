@@ -110,6 +110,16 @@ class EditGenerationRequest:
     date_time: Optional[str]
     edit_intent: Optional[str] = None
     include_masks: bool = True
+    adjust_white_balance: bool = True
+    adjust_basic_tone: bool = True
+    adjust_presence: bool = True
+    adjust_color_mix: bool = True
+    do_color_grading: bool = True
+    use_tone_curve: bool = True
+    use_point_curve: bool = True
+    adjust_detail: bool = True
+    adjust_effects: bool = True
+    adjust_lens_corrections: bool = True
     ollama_base_url: Optional[str] = None
     lmstudio_base_url: Optional[str] = None
 
@@ -318,6 +328,7 @@ class LLMProviderBase(ABC):
             "\n\nEdit recipe rules:\n"
             "* Return only numeric Lightroom-friendly adjustments\n"
             "* Build edits in this order: white balance and exposure foundation -> tonal shaping -> color refinement -> detail/effects\n"
+            "* For white balance use global `temperature` and `tint` (or `white_balance.temperature` / `white_balance.tint`)\n"
             "* Use global controls first; add masks only when global edits cannot solve the problem cleanly\n"
             "* Use masks only for subject, sky, or background\n"
             "* Keep saturation and clarity moderate; avoid brittle or crunchy output\n"
@@ -330,6 +341,26 @@ class LLMProviderBase(ABC):
 
         if not request.include_masks:
             base_prompt += "* Do not return any masks; keep all edits global\n"
+        if not request.adjust_white_balance:
+            base_prompt += "* Do not adjust white balance (`temperature`, `tint`, `white_balance`)\n"
+        if not request.adjust_basic_tone:
+            base_prompt += "* Do not adjust global basic tone controls (`exposure`, `contrast`, `highlights`, `shadows`, `whites`, `blacks`)\n"
+        if not request.adjust_presence:
+            base_prompt += "* Do not adjust presence controls (`texture`, `clarity`, `dehaze`)\n"
+        if not request.adjust_color_mix:
+            base_prompt += "* Do not adjust color mix controls (`vibrance`, `saturation`, `hsl`)\n"
+        if not request.do_color_grading:
+            base_prompt += "* Do not use `color_grading`\n"
+        if not request.use_tone_curve:
+            base_prompt += "* Do not use `tone_curve` (neither parametric nor point curve)\n"
+        elif not request.use_point_curve:
+            base_prompt += "* Do not use `tone_curve.point_curve` or `tone_curve.extended_point_curve`; use only parametric tone curve sliders if needed\n"
+        if not request.adjust_detail:
+            base_prompt += "* Do not adjust detail controls (sharpening/noise reduction)\n"
+        if not request.adjust_effects:
+            base_prompt += "* Do not adjust effects controls (vignette/grain)\n"
+        if not request.adjust_lens_corrections:
+            base_prompt += "* Do not adjust `lens_corrections`\n"
 
         context_additions: List[str] = []
         if request.edit_intent:
