@@ -150,14 +150,6 @@ def _build_global_schema() -> Dict[str, Any]:
         "additionalProperties": False,
     }
     properties["color_grading"] = _build_color_grading_schema()
-    properties["lens_corrections"] = {
-        "type": "object",
-        "properties": {
-            "enable_profile_corrections": {"type": "boolean"},
-            "remove_chromatic_aberration": {"type": "boolean"},
-        },
-        "additionalProperties": False,
-    }
     properties["tone_curve"] = {
         "type": "object",
         "properties": {
@@ -453,16 +445,6 @@ def _normalize_global_settings(global_settings: Any) -> Dict[str, Any]:
         if normalized_grading:
             normalized["color_grading"] = normalized_grading
 
-    lens_corrections = global_settings.get("lens_corrections")
-    if isinstance(lens_corrections, dict):
-        normalized_lens: Dict[str, bool] = {}
-        for key in ("enable_profile_corrections", "remove_chromatic_aberration"):
-            value = lens_corrections.get(key)
-            if isinstance(value, bool):
-                normalized_lens[key] = value
-        if normalized_lens:
-            normalized["lens_corrections"] = normalized_lens
-
     return normalized
 
 
@@ -586,6 +568,8 @@ def filter_edit_recipe_by_controls(recipe: Dict[str, Any], controls: Dict[str, b
         for key in keys:
             global_settings.pop(key, None)
 
+    _drop(["lens_corrections"])
+
     if not controls.get("adjust_white_balance", True):
         _drop(["temperature", "tint", "white_balance"])
     if not controls.get("adjust_basic_tone", True):
@@ -634,8 +618,6 @@ def filter_edit_recipe_by_controls(recipe: Dict[str, Any], controls: Dict[str, b
                 "grain_roughness",
             ]
         )
-    if not controls.get("adjust_lens_corrections", True):
-        _drop(["lens_corrections"])
 
     masks = filtered.get("masks")
     if not controls.get("include_masks", True):

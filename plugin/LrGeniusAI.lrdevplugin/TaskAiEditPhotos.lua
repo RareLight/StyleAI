@@ -35,6 +35,38 @@ local function buildModelItems()
     return items
 end
 
+local function getEditIntentPresetInstruction(presetValue)
+    for _, preset in ipairs(Defaults.editIntentPresets or {}) do
+        if preset.value == presetValue then
+            return preset.instruction
+        end
+    end
+    return nil
+end
+
+local function hasEditIntentPresetValue(presetValue)
+    for _, preset in ipairs(Defaults.editIntentPresets or {}) do
+        if preset.value == presetValue then
+            return true
+        end
+    end
+    return false
+end
+
+local function buildEditIntentPresetItems()
+    local items = {}
+    for _, preset in ipairs(Defaults.editIntentPresets or {}) do
+        table.insert(items, { title = preset.title, value = preset.value })
+    end
+    if #items == 0 then
+        table.insert(items, {
+            title = "Custom",
+            value = Defaults.editIntentCustomValue or "custom",
+        })
+    end
+    return items
+end
+
 local function showPhotoInstructionDialog(ctx, photo)
     local f = LrView.osFactory()
     local bind = LrView.bind
@@ -100,7 +132,22 @@ local function showAiEditDialog(ctx)
     props.modelKey = prefs.aiEditModelKey or prefs.modelKey
     props.temperature = prefs.aiEditTemperature or prefs.temperature or 0.1
     props.language = prefs.aiEditLanguage or prefs.generateLanguage or "English"
-    props.editIntent = prefs.aiEditIntent or "Natural professional Lightroom edit"
+    props.styleStrength = prefs.aiEditStyleStrength or Defaults.defaultEditStyleStrength or 0.5
+    props.editIntentPresetItems = buildEditIntentPresetItems()
+    props.customEditIntentText = prefs.aiEditIntentCustomText or prefs.aiEditIntent or Defaults.defaultEditIntent
+    if type(props.customEditIntentText) ~= "string" or props.customEditIntentText == "" then
+        props.customEditIntentText = Defaults.defaultEditIntent
+    end
+    props.editIntentPreset = prefs.aiEditIntentPreset or Defaults.defaultEditIntentPresetValue or (Defaults.editIntentCustomValue or "custom")
+    if not hasEditIntentPresetValue(props.editIntentPreset) then
+        props.editIntentPreset = Defaults.editIntentCustomValue or "custom"
+    end
+    props.isCustomEditIntent = props.editIntentPreset == (Defaults.editIntentCustomValue or "custom")
+    if props.isCustomEditIntent then
+        props.editIntent = props.customEditIntentText
+    else
+        props.editIntent = getEditIntentPresetInstruction(props.editIntentPreset) or Defaults.defaultEditIntent
+    end
     props.reviewBeforeApply = prefs.aiEditReviewBeforeApply ~= false
     props.applyMasks = prefs.aiEditApplyMasks ~= false
     props.adjustWhiteBalance = prefs.aiEditAdjustWhiteBalance ~= false
@@ -112,7 +159,6 @@ local function showAiEditDialog(ctx)
     props.usePointCurve = prefs.aiEditUsePointCurve ~= false
     props.adjustDetail = prefs.aiEditAdjustDetail ~= false
     props.adjustEffects = prefs.aiEditAdjustEffects ~= false
-    props.adjustLensCorrections = prefs.aiEditAdjustLensCorrections ~= false
     props.submitGPS = prefs.aiEditSubmitGPS or false
     props.submitKeywords = prefs.aiEditSubmitKeywords ~= false
     props.submitFolderName = prefs.aiEditSubmitFolderName or false
@@ -149,6 +195,20 @@ local function showAiEditDialog(ctx)
     end)
     props:addObserver("selectedPrompt", function(properties, key, newValue)
         properties.prompts[properties.prompt] = newValue
+    end)
+    props:addObserver("editIntentPreset", function(properties, key, newValue)
+        local customValue = Defaults.editIntentCustomValue or "custom"
+        properties.isCustomEditIntent = newValue == customValue
+        if properties.isCustomEditIntent then
+            properties.editIntent = properties.customEditIntentText or Defaults.defaultEditIntent
+        else
+            properties.editIntent = getEditIntentPresetInstruction(newValue) or Defaults.defaultEditIntent
+        end
+    end)
+    props:addObserver("editIntent", function(properties, key, newValue)
+        if properties.isCustomEditIntent then
+            properties.customEditIntentText = newValue
+        end
     end)
 
     local modelItems = buildModelItems()
@@ -279,9 +339,38 @@ local function showAiEditDialog(ctx)
                     title = "Overall look:",
                     width = share "labelWidth",
                 },
+                f:popup_menu {
+                    value = bind "editIntentPreset",
+                    items = bind "editIntentPresetItems",
+                    width = 300,
+                },
+            },
+            f:row {
+                f:static_text {
+                    title = "Custom intent:",
+                    width = share "labelWidth",
+                },
                 f:edit_field {
                     value = bind "editIntent",
                     width_in_chars = 50,
+                    enabled = bind "isCustomEditIntent",
+                },
+            },
+            f:row {
+                f:static_text {
+                    title = "Style strength:",
+                    width = share "labelWidth",
+                },
+                f:slider {
+                    value = bind "styleStrength",
+                    min = 0.0,
+                    max = 1.0,
+                    integral = false,
+                    width = 300,
+                },
+                f:static_text {
+                    title = bind "styleStrength",
+                    width = 40,
                 },
             },
             f:row {
@@ -385,14 +474,6 @@ local function showAiEditDialog(ctx)
                     title = "Adjust effects (vignette/grain)",
                 },
             },
-            f:row {
-                f:checkbox {
-                    value = bind "adjustLensCorrections",
-                },
-                f:static_text {
-                    title = "Adjust lens corrections",
-                },
-            },
         },
         f:group_box {
             title = "Context",
@@ -439,7 +520,10 @@ local function showAiEditDialog(ctx)
     prefs.aiEditModelKey = props.modelKey
     prefs.aiEditTemperature = props.temperature
     prefs.aiEditLanguage = props.language
+    prefs.aiEditStyleStrength = props.styleStrength
     prefs.aiEditIntent = props.editIntent
+    prefs.aiEditIntentPreset = props.editIntentPreset
+    prefs.aiEditIntentCustomText = props.customEditIntentText
     prefs.aiEditReviewBeforeApply = props.reviewBeforeApply
     prefs.aiEditApplyMasks = props.applyMasks
     prefs.aiEditAdjustWhiteBalance = props.adjustWhiteBalance
@@ -451,7 +535,6 @@ local function showAiEditDialog(ctx)
     prefs.aiEditUsePointCurve = props.usePointCurve
     prefs.aiEditAdjustDetail = props.adjustDetail
     prefs.aiEditAdjustEffects = props.adjustEffects
-    prefs.aiEditAdjustLensCorrections = props.adjustLensCorrections
     prefs.aiEditSubmitGPS = props.submitGPS
     prefs.aiEditSubmitKeywords = props.submitKeywords
     prefs.aiEditSubmitFolderName = props.submitFolderName
@@ -476,6 +559,7 @@ local function showAiEditDialog(ctx)
         temperature = props.temperature,
         prompt = props.selectedPrompt,
         edit_intent = props.editIntent,
+        style_strength = props.styleStrength,
         include_masks = props.applyMasks,
         adjust_white_balance = props.adjustWhiteBalance,
         adjust_basic_tone = props.adjustBasicTone,
@@ -486,7 +570,6 @@ local function showAiEditDialog(ctx)
         use_point_curve = props.usePointCurve,
         adjust_detail = props.adjustDetail,
         adjust_effects = props.adjustEffects,
-        adjust_lens_corrections = props.adjustLensCorrections,
         applyMasks = props.applyMasks,
         reviewBeforeApply = props.reviewBeforeApply,
         submit_gps = props.submitGPS,
@@ -567,6 +650,7 @@ LrTasks.startAsyncTask(function()
             .. " provider=" .. tostring(options.provider)
             .. " model=" .. tostring(options.model)
             .. " review=" .. tostring(options.reviewBeforeApply)
+            .. " styleStrength=" .. tostring(options.style_strength)
             .. " masks=" .. tostring(options.applyMasks)
             .. " wb=" .. tostring(options.adjust_white_balance)
             .. " basicTone=" .. tostring(options.adjust_basic_tone)
@@ -577,7 +661,6 @@ LrTasks.startAsyncTask(function()
             .. " pointCurve=" .. tostring(options.use_point_curve)
             .. " detail=" .. tostring(options.adjust_detail)
             .. " effects=" .. tostring(options.adjust_effects)
-            .. " lens=" .. tostring(options.adjust_lens_corrections)
         )
 
         local photos, status = PhotoSelector.getPhotosInScope(options.scope)

@@ -36,10 +36,6 @@ class NormalizeEditRecipeTests(unittest.TestCase):
                         "red": [{"x": 0, "y": 0}, {"x": 512, "y": 490}],
                     },
                 },
-                "lens_corrections": {
-                    "enable_profile_corrections": True,
-                    "remove_chromatic_aberration": False,
-                },
             },
             "masks": [
                 {
@@ -81,7 +77,6 @@ class NormalizeEditRecipeTests(unittest.TestCase):
         # Top-level keys take precedence over white_balance object.
         self.assertEqual(recipe["global"]["temperature"], 5600.0)
         self.assertNotIn("white_balance", recipe["global"])
-        self.assertTrue(recipe["global"]["lens_corrections"]["enable_profile_corrections"])
         self.assertEqual(len(recipe["masks"]), 1)
         self.assertEqual(recipe["masks"][0]["kind"], "subject")
         self.assertEqual(recipe["masks"][0]["adjustments"]["clarity"], -100.0)
@@ -124,7 +119,6 @@ class NormalizeEditRecipeTests(unittest.TestCase):
                 },
                 "sharpening": 40,
                 "vignette": -25,
-                "lens_corrections": {"enable_profile_corrections": True},
             },
             "masks": [
                 {"kind": "subject", "adjustments": {"exposure": 0.3, "clarity": 10, "sharpness": 25}},
@@ -145,7 +139,6 @@ class NormalizeEditRecipeTests(unittest.TestCase):
                 "use_point_curve": False,
                 "adjust_detail": False,
                 "adjust_effects": False,
-                "adjust_lens_corrections": False,
             },
         )
 
