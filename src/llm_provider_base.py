@@ -109,6 +109,7 @@ class EditGenerationRequest:
     user_context: Optional[str]
     date_time: Optional[str]
     edit_intent: Optional[str] = None
+    style_strength: float = 0.5
     include_masks: bool = True
     adjust_white_balance: bool = True
     adjust_basic_tone: bool = True
@@ -119,7 +120,6 @@ class EditGenerationRequest:
     use_point_curve: bool = True
     adjust_detail: bool = True
     adjust_effects: bool = True
-    adjust_lens_corrections: bool = True
     ollama_base_url: Optional[str] = None
     lmstudio_base_url: Optional[str] = None
 
@@ -336,6 +336,7 @@ class LLMProviderBase(ABC):
             "* If a curve-shaped tone response is needed (e.g. subtle S-curve, matte blacks, gentle roll-off), prefer `tone_curve.point_curve` and/or `tone_curve.extended_point_curve` over faking it with only contrast sliders\n"
             "* When using point curves, provide valid point pairs per channel in ascending x order and keep endpoints anchored near black/white unless a deliberate fade is requested\n"
             "* Use advanced controls (vignette sub-controls, sharpen detail/masking, noise detail, color NR detail/smoothness) only when clearly justified by image content\n"
+            "* Do not include `lens_corrections`; lens profile and chromatic aberration are left to the photographer in Lightroom\n"
             "* Add warnings when something seems uncertain or unsupported\n"
         )
 
@@ -359,12 +360,29 @@ class LLMProviderBase(ABC):
             base_prompt += "* Do not adjust detail controls (sharpening/noise reduction)\n"
         if not request.adjust_effects:
             base_prompt += "* Do not adjust effects controls (vignette/grain)\n"
-        if not request.adjust_lens_corrections:
-            base_prompt += "* Do not adjust `lens_corrections`\n"
 
         context_additions: List[str] = []
         if request.edit_intent:
             context_additions.append(f"Requested editing intent: {request.edit_intent}")
+        strength = request.style_strength
+        if strength is None:
+            strength = 0.5
+        try:
+            strength = float(strength)
+        except (TypeError, ValueError):
+            strength = 0.5
+        if strength < 0.0:
+            strength = 0.0
+        if strength > 1.0:
+            strength = 1.0
+        if strength <= 0.25:
+            context_additions.append("Style strength: very subtle (minimal slider movement, preserve original character).")
+        elif strength <= 0.5:
+            context_additions.append("Style strength: subtle to moderate (clean refinement, avoid strong stylization).")
+        elif strength <= 0.75:
+            context_additions.append("Style strength: moderate to strong (noticeable look while staying plausible).")
+        else:
+            context_additions.append("Style strength: strong (bold look allowed, but avoid clipping and artifacts).")
         if request.user_context:
             context_additions.append(f"Per-photo instructions: {request.user_context}")
         if request.submit_keywords and request.existing_keywords:

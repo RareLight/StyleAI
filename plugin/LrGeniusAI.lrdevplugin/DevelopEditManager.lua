@@ -352,20 +352,6 @@ local function buildToneCurveSettings(toneCurve)
     return settings
 end
 
-local function buildLensCorrectionSettings(lensCorrections, warnings)
-    local settings = {}
-    if type(lensCorrections) ~= "table" then
-        return settings
-    end
-    if lensCorrections.enable_profile_corrections ~= nil then
-        settings.EnableLensCorrections = lensCorrections.enable_profile_corrections
-    end
-    if lensCorrections.remove_chromatic_aberration ~= nil then
-        settings.AutoLateralCA = lensCorrections.remove_chromatic_aberration
-    end
-    return settings
-end
-
 local function mergeSettings(target, source)
     for key, value in pairs(source or {}) do
         target[key] = value
@@ -429,9 +415,6 @@ local function formatGlobalSettings(globalSettings)
     end
     if type(globalSettings.tone_curve) == "table" then
         table.insert(lines, "- tone_curve: enabled")
-    end
-    if type(globalSettings.lens_corrections) == "table" then
-        table.insert(lines, "- lens_corrections: enabled")
     end
     return lines
 end
@@ -572,7 +555,6 @@ local function buildDevelopSettings(recipe, warnings)
     mergeSettings(developSettings, buildHslDevelopSettings(globalSettings.hsl))
     mergeSettings(developSettings, buildColorGradingDevelopSettings(globalSettings.color_grading, warnings))
     mergeSettings(developSettings, buildToneCurveSettings(globalSettings.tone_curve))
-    mergeSettings(developSettings, buildLensCorrectionSettings(globalSettings.lens_corrections, warnings))
 
     return developSettings
 end

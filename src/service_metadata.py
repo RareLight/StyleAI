@@ -292,6 +292,7 @@ class AnalysisService:
             system_prompt=options.get('prompt'),
             date_time=options.get('date_time'),
             edit_intent=options.get('edit_intent'),
+            style_strength=options.get('style_strength', 0.5),
             include_masks=options.get('include_masks', True),
             adjust_white_balance=options.get('adjust_white_balance', True),
             adjust_basic_tone=options.get('adjust_basic_tone', True),
@@ -302,7 +303,6 @@ class AnalysisService:
             use_point_curve=options.get('use_point_curve', True),
             adjust_detail=options.get('adjust_detail', True),
             adjust_effects=options.get('adjust_effects', True),
-            adjust_lens_corrections=options.get('adjust_lens_corrections', True),
             ollama_base_url=options.get('ollama_base_url'),
             lmstudio_base_url=options.get('lmstudio_base_url'),
         )
@@ -323,7 +323,6 @@ class AnalysisService:
                         "use_point_curve": request.use_point_curve,
                         "adjust_detail": request.adjust_detail,
                         "adjust_effects": request.adjust_effects,
-                        "adjust_lens_corrections": request.adjust_lens_corrections,
                     },
                 )
             if not response.success:
