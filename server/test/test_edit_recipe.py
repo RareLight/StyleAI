@@ -176,5 +176,44 @@ class NormalizeEditRecipeTests(unittest.TestCase):
         self.assertNotIn("clarity", filtered["masks"][0]["adjustments"])
         self.assertNotIn("sharpness", filtered["masks"][0]["adjustments"])
 
+    def test_crop_xywh_shape_is_normalized(self):
+        recipe = normalize_edit_recipe({
+            "summary": "xywh crop",
+            "global": {
+                "crop": {
+                    "x": 0.1,
+                    "y": 0.2,
+                    "width": 0.7,
+                    "height": 0.6,
+                    "rotation": 12,
+                },
+            },
+            "masks": [],
+            "warnings": [],
+        })
+
+        self.assertIn("crop", recipe["global"])
+        self.assertEqual(recipe["global"]["crop"]["left"], 0.1)
+        self.assertEqual(recipe["global"]["crop"]["top"], 0.2)
+        self.assertEqual(recipe["global"]["crop"]["right"], 0.8)
+        self.assertEqual(recipe["global"]["crop"]["bottom"], 0.8)
+        self.assertEqual(recipe["global"]["crop"]["angle"], 12.0)
+
+    def test_invalid_crop_shape_adds_warning(self):
+        recipe = normalize_edit_recipe({
+            "summary": "bad crop",
+            "global": {
+                "crop": {
+                    "x": 0.3,
+                    "width": 0.4,
+                },
+            },
+            "masks": [],
+            "warnings": [],
+        })
+
+        self.assertNotIn("crop", recipe["global"])
+        self.assertTrue(any("Ignored crop" in warning for warning in recipe["warnings"]))
+
 if __name__ == "__main__":
     unittest.main()

@@ -348,7 +348,68 @@ def _normalize_warning_list(value: Any) -> List[str]:
     return warnings
 
 
-def _normalize_global_settings(global_settings: Any) -> Dict[str, Any]:
+def _normalize_crop_settings(crop: Any, warnings: List[str] | None = None) -> Dict[str, float]:
+    if not isinstance(crop, dict):
+        return {}
+
+    normalized_crop: Dict[str, float] = {}
+
+    # Canonical schema: left/right/top/bottom(+angle)
+    has_canonical_edges = False
+    for key in ("left", "right", "top", "bottom"):
+        clamped = _clamp_number(crop.get(key), 0.0, 1.0)
+        if clamped is not None:
+            normalized_crop[key] = clamped
+            has_canonical_edges = True
+
+    # Compatibility shape frequently produced by LLMs:
+    # x/y/width/height (+rotation) where x/y is top-left.
+    if not has_canonical_edges:
+        x = _clamp_number(crop.get("x"), 0.0, 1.0)
+        y = _clamp_number(crop.get("y"), 0.0, 1.0)
+        width = _clamp_number(crop.get("width"), 0.0, 1.0)
+        height = _clamp_number(crop.get("height"), 0.0, 1.0)
+        if x is not None and y is not None and width is not None and height is not None:
+            normalized_crop["left"] = x
+            normalized_crop["top"] = y
+            normalized_crop["right"] = min(1.0, round(x + width, 4))
+            normalized_crop["bottom"] = min(1.0, round(y + height, 4))
+
+    # Accept both angle and rotation synonyms.
+    clamped_angle = _clamp_number(crop.get("angle"), -45.0, 45.0)
+    if clamped_angle is None:
+        clamped_angle = _clamp_number(crop.get("rotation"), -45.0, 45.0)
+    if clamped_angle is not None:
+        normalized_crop["angle"] = clamped_angle
+
+    # Require a valid rectangle before returning crop edges.
+    left = normalized_crop.get("left")
+    right = normalized_crop.get("right")
+    top = normalized_crop.get("top")
+    bottom = normalized_crop.get("bottom")
+    if left is not None and right is not None and left >= right:
+        if warnings is not None:
+            warnings.append("Ignored crop: left edge was not smaller than right edge after normalization.")
+        normalized_crop.pop("left", None)
+        normalized_crop.pop("right", None)
+    if top is not None and bottom is not None and top >= bottom:
+        if warnings is not None:
+            warnings.append("Ignored crop: top edge was not smaller than bottom edge after normalization.")
+        normalized_crop.pop("top", None)
+        normalized_crop.pop("bottom", None)
+
+    # If only one side of an edge pair exists, drop it to avoid invalid partial crops.
+    if ("left" in normalized_crop) != ("right" in normalized_crop):
+        normalized_crop.pop("left", None)
+        normalized_crop.pop("right", None)
+    if ("top" in normalized_crop) != ("bottom" in normalized_crop):
+        normalized_crop.pop("top", None)
+        normalized_crop.pop("bottom", None)
+
+    return normalized_crop
+
+
+def _normalize_global_settings(global_settings: Any, warnings: List[str] | None = None) -> Dict[str, Any]:
     if not isinstance(global_settings, dict):
         return {}
 
@@ -373,16 +434,11 @@ def _normalize_global_settings(global_settings: Any) -> Dict[str, Any]:
 
     crop = global_settings.get("crop")
     if isinstance(crop, dict):
-        normalized_crop: Dict[str, float] = {}
-        for key in ("left", "right", "top", "bottom"):
-            clamped = _clamp_number(crop.get(key), 0.0, 1.0)
-            if clamped is not None:
-                normalized_crop[key] = clamped
-        clamped_angle = _clamp_number(crop.get("angle"), -45.0, 45.0)
-        if clamped_angle is not None:
-            normalized_crop["angle"] = clamped_angle
+        normalized_crop = _normalize_crop_settings(crop, warnings=warnings)
         if normalized_crop:
             normalized["crop"] = normalized_crop
+        elif warnings is not None:
+            warnings.append("Ignored crop: no supported crop fields were returned by the model.")
 
     tone_curve = global_settings.get("tone_curve")
     if isinstance(tone_curve, dict):
@@ -568,7 +624,7 @@ def normalize_edit_recipe(parsed_data: Any) -> Dict[str, Any]:
     warnings.extend(_normalize_warning_list(parsed_data.get("warnings")))
     normalized = {
         "summary": _normalize_text(parsed_data.get("summary")),
-        "global": _normalize_global_settings(parsed_data.get("global")),
+        "global": _normalize_global_settings(parsed_data.get("global"), warnings),
         "masks": _normalize_masks(parsed_data.get("masks"), warnings),
         "warnings": warnings,
     }
