@@ -160,6 +160,11 @@ local DEVELOP_VALUE_BOUNDS = {
     ParametricShadowSplit = { min = 0, max = 100 },
     ParametricMidtoneSplit = { min = 0, max = 100 },
     ParametricHighlightSplit = { min = 0, max = 100 },
+    CropLeft = { min = 0, max = 1 },
+    CropRight = { min = 0, max = 1 },
+    CropTop = { min = 0, max = 1 },
+    CropBottom = { min = 0, max = 1 },
+    CropAngle = { min = -45, max = 45 },
 }
 
 for _, label in pairs(HSL_LABELS) do
@@ -352,6 +357,51 @@ local function buildToneCurveSettings(toneCurve)
     return settings
 end
 
+local function buildLensCorrectionSettings(lensCorrections)
+    local settings = {}
+    if type(lensCorrections) ~= "table" then
+        return settings
+    end
+    if lensCorrections.enable_profile_corrections ~= nil then
+        settings.EnableLensCorrections = lensCorrections.enable_profile_corrections
+    end
+    if lensCorrections.remove_chromatic_aberration ~= nil then
+        settings.AutoLateralCA = lensCorrections.remove_chromatic_aberration
+    end
+    return settings
+end
+
+local function buildCropSettings(crop, warnings)
+    local settings = {}
+    if type(crop) ~= "table" then
+        return settings
+    end
+
+    local left = crop.left
+    local right = crop.right
+    local top = crop.top
+    local bottom = crop.bottom
+
+    if left ~= nil and right ~= nil and left >= right then
+        appendWarning(warnings, "Crop was ignored because left >= right.")
+        return settings
+    end
+    if top ~= nil and bottom ~= nil and top >= bottom then
+        appendWarning(warnings, "Crop was ignored because top >= bottom.")
+        return settings
+    end
+
+    if left ~= nil then settings.CropLeft = left end
+    if right ~= nil then settings.CropRight = right end
+    if top ~= nil then settings.CropTop = top end
+    if bottom ~= nil then settings.CropBottom = bottom end
+    if crop.angle ~= nil then settings.CropAngle = crop.angle end
+    if next(settings) ~= nil then
+        settings.HasCrop = true
+    end
+    return settings
+end
+
 local function mergeSettings(target, source)
     for key, value in pairs(source or {}) do
         target[key] = value
@@ -403,7 +453,7 @@ end
 local function formatGlobalSettings(globalSettings)
     local lines = {}
     for _, key in ipairs(sortedKeys(globalSettings or {})) do
-        if key ~= "hsl" and key ~= "color_grading" and key ~= "tone_curve" and key ~= "lens_corrections" then
+        if key ~= "hsl" and key ~= "color_grading" and key ~= "tone_curve" and key ~= "lens_corrections" and key ~= "crop" then
             table.insert(lines, "- " .. tostring(key) .. ": " .. tostring(globalSettings[key]))
         end
     end
@@ -415,6 +465,12 @@ local function formatGlobalSettings(globalSettings)
     end
     if type(globalSettings.tone_curve) == "table" then
         table.insert(lines, "- tone_curve: enabled")
+    end
+    if type(globalSettings.lens_corrections) == "table" then
+        table.insert(lines, "- lens_corrections: enabled")
+    end
+    if type(globalSettings.crop) == "table" then
+        table.insert(lines, "- crop: enabled")
     end
     return lines
 end
@@ -555,6 +611,8 @@ local function buildDevelopSettings(recipe, warnings)
     mergeSettings(developSettings, buildHslDevelopSettings(globalSettings.hsl))
     mergeSettings(developSettings, buildColorGradingDevelopSettings(globalSettings.color_grading, warnings))
     mergeSettings(developSettings, buildToneCurveSettings(globalSettings.tone_curve))
+    mergeSettings(developSettings, buildLensCorrectionSettings(globalSettings.lens_corrections))
+    mergeSettings(developSettings, buildCropSettings(globalSettings.crop, warnings))
 
     return developSettings
 end

@@ -303,6 +303,8 @@ class AnalysisService:
             use_point_curve=options.get('use_point_curve', True),
             adjust_detail=options.get('adjust_detail', True),
             adjust_effects=options.get('adjust_effects', True),
+            adjust_lens_corrections=options.get('adjust_lens_corrections', True),
+            allow_auto_crop=options.get('allow_auto_crop', True),
             ollama_base_url=options.get('ollama_base_url'),
             lmstudio_base_url=options.get('lmstudio_base_url'),
         )
@@ -323,6 +325,8 @@ class AnalysisService:
                         "use_point_curve": request.use_point_curve,
                         "adjust_detail": request.adjust_detail,
                         "adjust_effects": request.adjust_effects,
+                        "adjust_lens_corrections": request.adjust_lens_corrections,
+                        "allow_auto_crop": request.allow_auto_crop,
                     },
                 )
             if not response.success:

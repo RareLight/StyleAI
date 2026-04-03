@@ -120,6 +120,8 @@ class EditGenerationRequest:
     use_point_curve: bool = True
     adjust_detail: bool = True
     adjust_effects: bool = True
+    adjust_lens_corrections: bool = True
+    allow_auto_crop: bool = True
     ollama_base_url: Optional[str] = None
     lmstudio_base_url: Optional[str] = None
 
@@ -336,7 +338,7 @@ class LLMProviderBase(ABC):
             "* If a curve-shaped tone response is needed (e.g. subtle S-curve, matte blacks, gentle roll-off), prefer `tone_curve.point_curve` and/or `tone_curve.extended_point_curve` over faking it with only contrast sliders\n"
             "* When using point curves, provide valid point pairs per channel in ascending x order and keep endpoints anchored near black/white unless a deliberate fade is requested\n"
             "* Use advanced controls (vignette sub-controls, sharpen detail/masking, noise detail, color NR detail/smoothness) only when clearly justified by image content\n"
-            "* Do not include `lens_corrections`; lens profile and chromatic aberration are left to the photographer in Lightroom\n"
+            "* Use `lens_corrections` and `crop` only when they clearly improve the result\n"
             "* Add warnings when something seems uncertain or unsupported\n"
         )
 
@@ -360,6 +362,10 @@ class LLMProviderBase(ABC):
             base_prompt += "* Do not adjust detail controls (sharpening/noise reduction)\n"
         if not request.adjust_effects:
             base_prompt += "* Do not adjust effects controls (vignette/grain)\n"
+        if not request.adjust_lens_corrections:
+            base_prompt += "* Do not use `lens_corrections`\n"
+        if not request.allow_auto_crop:
+            base_prompt += "* Do not use `crop`\n"
 
         context_additions: List[str] = []
         if request.edit_intent:

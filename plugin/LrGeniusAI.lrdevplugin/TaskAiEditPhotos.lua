@@ -159,6 +159,8 @@ local function showAiEditDialog(ctx)
     props.usePointCurve = prefs.aiEditUsePointCurve ~= false
     props.adjustDetail = prefs.aiEditAdjustDetail ~= false
     props.adjustEffects = prefs.aiEditAdjustEffects ~= false
+    props.adjustLensCorrections = prefs.aiEditAdjustLensCorrections ~= false
+    props.allowAutoCrop = prefs.aiEditAllowAutoCrop ~= false
     props.submitGPS = prefs.aiEditSubmitGPS or false
     props.submitKeywords = prefs.aiEditSubmitKeywords ~= false
     props.submitFolderName = prefs.aiEditSubmitFolderName or false
@@ -474,6 +476,22 @@ local function showAiEditDialog(ctx)
                     title = "Adjust effects (vignette/grain)",
                 },
             },
+            f:row {
+                f:checkbox {
+                    value = bind "adjustLensCorrections",
+                },
+                f:static_text {
+                    title = "Adjust lens corrections",
+                },
+            },
+            f:row {
+                f:checkbox {
+                    value = bind "allowAutoCrop",
+                },
+                f:static_text {
+                    title = "Allow AI auto crop",
+                },
+            },
         },
         f:group_box {
             title = "Context",
@@ -535,6 +553,8 @@ local function showAiEditDialog(ctx)
     prefs.aiEditUsePointCurve = props.usePointCurve
     prefs.aiEditAdjustDetail = props.adjustDetail
     prefs.aiEditAdjustEffects = props.adjustEffects
+    prefs.aiEditAdjustLensCorrections = props.adjustLensCorrections
+    prefs.aiEditAllowAutoCrop = props.allowAutoCrop
     prefs.aiEditSubmitGPS = props.submitGPS
     prefs.aiEditSubmitKeywords = props.submitKeywords
     prefs.aiEditSubmitFolderName = props.submitFolderName
@@ -570,6 +590,8 @@ local function showAiEditDialog(ctx)
         use_point_curve = props.usePointCurve,
         adjust_detail = props.adjustDetail,
         adjust_effects = props.adjustEffects,
+        adjust_lens_corrections = props.adjustLensCorrections,
+        allow_auto_crop = props.allowAutoCrop,
         applyMasks = props.applyMasks,
         reviewBeforeApply = props.reviewBeforeApply,
         submit_gps = props.submitGPS,
@@ -661,6 +683,8 @@ LrTasks.startAsyncTask(function()
             .. " pointCurve=" .. tostring(options.use_point_curve)
             .. " detail=" .. tostring(options.adjust_detail)
             .. " effects=" .. tostring(options.adjust_effects)
+            .. " lens=" .. tostring(options.adjust_lens_corrections)
+            .. " crop=" .. tostring(options.allow_auto_crop)
         )
 
         local photos, status = PhotoSelector.getPhotosInScope(options.scope)
