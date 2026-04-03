@@ -381,6 +381,20 @@ local function buildCropSettings(crop, warnings)
     local right = crop.right
     local top = crop.top
     local bottom = crop.bottom
+    local angle = crop.angle
+
+    -- Compatibility with alternate crop payload shape frequently used by LLMs.
+    -- If canonical edges are absent, map x/y/width/height into edge coordinates.
+    if (left == nil and right == nil and top == nil and bottom == nil)
+        and crop.x ~= nil and crop.y ~= nil and crop.width ~= nil and crop.height ~= nil then
+        left = crop.x
+        top = crop.y
+        right = crop.x + crop.width
+        bottom = crop.y + crop.height
+    end
+    if angle == nil and crop.rotation ~= nil then
+        angle = crop.rotation
+    end
 
     if left ~= nil and right ~= nil and left >= right then
         appendWarning(warnings, "Crop was ignored because left >= right.")
@@ -395,7 +409,7 @@ local function buildCropSettings(crop, warnings)
     if right ~= nil then settings.CropRight = right end
     if top ~= nil then settings.CropTop = top end
     if bottom ~= nil then settings.CropBottom = bottom end
-    if crop.angle ~= nil then settings.CropAngle = crop.angle end
+    if angle ~= nil then settings.CropAngle = angle end
     if next(settings) ~= nil then
         settings.HasCrop = true
     end
@@ -649,6 +663,23 @@ end
 local function applyGlobalDevelopSettings(photo, recipe, warnings)
     log:trace("DevelopEditManager.applyGlobalDevelopSettings: start")
     local developSettings = buildDevelopSettings(recipe, warnings)
+    local cropInRecipe = recipe and recipe.global and recipe.global.crop
+    if type(cropInRecipe) == "table" then
+        log:trace(
+            "DevelopEditManager.applyGlobalDevelopSettings: crop recipe left=" .. tostring(cropInRecipe.left)
+            .. " right=" .. tostring(cropInRecipe.right)
+            .. " top=" .. tostring(cropInRecipe.top)
+            .. " bottom=" .. tostring(cropInRecipe.bottom)
+            .. " x=" .. tostring(cropInRecipe.x)
+            .. " y=" .. tostring(cropInRecipe.y)
+            .. " width=" .. tostring(cropInRecipe.width)
+            .. " height=" .. tostring(cropInRecipe.height)
+            .. " angle=" .. tostring(cropInRecipe.angle)
+            .. " rotation=" .. tostring(cropInRecipe.rotation)
+        )
+    else
+        log:trace("DevelopEditManager.applyGlobalDevelopSettings: no crop in recipe")
+    end
     if next(developSettings) == nil then
         log:trace("DevelopEditManager.applyGlobalDevelopSettings: nothing to apply")
         return true
@@ -675,6 +706,21 @@ local function applyGlobalDevelopSettings(photo, recipe, warnings)
         appendWarning(warnings, "Failed to apply global develop settings: " .. tostring(err))
         log:error("DevelopEditManager.applyGlobalDevelopSettings failed: " .. tostring(err))
         return false
+    end
+    local okReadBack, afterOrErr = LrTasks.pcall(function()
+        return photo:getDevelopSettings()
+    end)
+    if okReadBack and type(afterOrErr) == "table" then
+        log:trace(
+            "DevelopEditManager.applyGlobalDevelopSettings crop readback HasCrop=" .. tostring(afterOrErr.HasCrop)
+            .. " CropLeft=" .. tostring(afterOrErr.CropLeft)
+            .. " CropRight=" .. tostring(afterOrErr.CropRight)
+            .. " CropTop=" .. tostring(afterOrErr.CropTop)
+            .. " CropBottom=" .. tostring(afterOrErr.CropBottom)
+            .. " CropAngle=" .. tostring(afterOrErr.CropAngle)
+        )
+    else
+        log:trace("DevelopEditManager.applyGlobalDevelopSettings crop readback unavailable: " .. tostring(afterOrErr))
     end
     log:trace("DevelopEditManager.applyGlobalDevelopSettings: success")
     return true
