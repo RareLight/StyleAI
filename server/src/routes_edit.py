@@ -13,12 +13,25 @@ from service_metadata import get_analysis_service
 edit_bp = Blueprint("edit", __name__)
 
 
+def _has_items(values) -> bool:
+    if values is None:
+        return False
+    try:
+        return len(values) > 0
+    except TypeError:
+        return False
+
+
 def _persist_edit_recipe(photo_id: str, filename: str | None, recipe: dict, options: dict) -> None:
     catalog_id = options.get("catalog_id")
     existing = chroma_service.get_image(photo_id)
-    existing_meta = dict(existing["metadatas"][0]) if existing and existing.get("ids") and existing.get("metadatas") else {}
+    existing_has_ids = existing is not None and _has_items(existing.get("ids"))
+    existing_has_metadatas = existing is not None and _has_items(existing.get("metadatas"))
+    existing_has_embeddings = existing is not None and _has_items(existing.get("embeddings"))
+
+    existing_meta = dict(existing["metadatas"][0]) if existing_has_ids and existing_has_metadatas else {}
     existing_embedding = None
-    if existing and existing.get("ids") and existing.get("embeddings"):
+    if existing_has_ids and existing_has_embeddings:
         try:
             existing_embedding = existing["embeddings"][0]
         except (IndexError, KeyError, TypeError):
@@ -38,7 +51,7 @@ def _persist_edit_recipe(photo_id: str, filename: str | None, recipe: dict, opti
     metadata.setdefault("model", options.get("model"))
     metadata.setdefault("has_embedding", bool(existing_meta.get("has_embedding", False)))
 
-    if existing and existing.get("ids"):
+    if existing_has_ids:
         chroma_service.update_image(photo_id, metadata, embedding=existing_embedding, catalog_id=catalog_id)
     else:
         chroma_service.add_image(photo_id, existing_embedding, metadata, catalog_id=catalog_id)
