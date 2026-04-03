@@ -15,6 +15,13 @@ class NormalizeEditRecipeTests(unittest.TestCase):
                     "temperature": 6200,
                     "tint": 13,
                 },
+                "crop": {
+                    "left": -0.1,
+                    "right": 1.2,
+                    "top": 0.05,
+                    "bottom": 0.95,
+                    "angle": 60,
+                },
                 "vignette": -40,
                 "vignette_feather": 120,
                 "sharpen_radius": 4.0,
@@ -59,6 +66,11 @@ class NormalizeEditRecipeTests(unittest.TestCase):
         self.assertEqual(recipe["global"]["exposure"], 5.0)
         self.assertEqual(recipe["global"]["contrast"], -100.0)
         self.assertEqual(recipe["global"]["temperature"], 5600.0)
+        self.assertEqual(recipe["global"]["crop"]["left"], 0.0)
+        self.assertEqual(recipe["global"]["crop"]["right"], 1.0)
+        self.assertEqual(recipe["global"]["crop"]["top"], 0.05)
+        self.assertEqual(recipe["global"]["crop"]["bottom"], 0.95)
+        self.assertEqual(recipe["global"]["crop"]["angle"], 45.0)
         self.assertEqual(recipe["global"]["vignette"], -40.0)
         self.assertEqual(recipe["global"]["vignette_feather"], 100.0)
         self.assertEqual(recipe["global"]["sharpen_radius"], 3.0)
@@ -117,8 +129,10 @@ class NormalizeEditRecipeTests(unittest.TestCase):
                     "highlights": 25,
                     "point_curve": {"master": [0, 0, 128, 140, 255, 255]},
                 },
+                "crop": {"left": 0.02, "right": 0.98, "top": 0.03, "bottom": 0.97},
                 "sharpening": 40,
                 "vignette": -25,
+                "lens_corrections": {"enable_profile_corrections": True},
             },
             "masks": [
                 {"kind": "subject", "adjustments": {"exposure": 0.3, "clarity": 10, "sharpness": 25}},
@@ -139,6 +153,8 @@ class NormalizeEditRecipeTests(unittest.TestCase):
                 "use_point_curve": False,
                 "adjust_detail": False,
                 "adjust_effects": False,
+                "adjust_lens_corrections": False,
+                "allow_auto_crop": False,
             },
         )
 
@@ -150,6 +166,7 @@ class NormalizeEditRecipeTests(unittest.TestCase):
         self.assertNotIn("sharpening", filtered["global"])
         self.assertNotIn("vignette", filtered["global"])
         self.assertNotIn("lens_corrections", filtered["global"])
+        self.assertNotIn("crop", filtered["global"])
         self.assertIn("tone_curve", filtered["global"])
         self.assertNotIn("point_curve", filtered["global"]["tone_curve"])
 

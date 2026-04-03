@@ -149,6 +149,17 @@ def _build_global_schema() -> Dict[str, Any]:
         },
         "additionalProperties": False,
     }
+    properties["crop"] = {
+        "type": "object",
+        "properties": {
+            "left": _number_schema(0.0, 1.0),
+            "right": _number_schema(0.0, 1.0),
+            "top": _number_schema(0.0, 1.0),
+            "bottom": _number_schema(0.0, 1.0),
+            "angle": _number_schema(-45.0, 45.0),
+        },
+        "additionalProperties": False,
+    }
     properties["color_grading"] = _build_color_grading_schema()
     properties["tone_curve"] = {
         "type": "object",
@@ -360,6 +371,19 @@ def _normalize_global_settings(global_settings: Any) -> Dict[str, Any]:
             if clamped_tint is not None:
                 normalized["tint"] = clamped_tint
 
+    crop = global_settings.get("crop")
+    if isinstance(crop, dict):
+        normalized_crop: Dict[str, float] = {}
+        for key in ("left", "right", "top", "bottom"):
+            clamped = _clamp_number(crop.get(key), 0.0, 1.0)
+            if clamped is not None:
+                normalized_crop[key] = clamped
+        clamped_angle = _clamp_number(crop.get("angle"), -45.0, 45.0)
+        if clamped_angle is not None:
+            normalized_crop["angle"] = clamped_angle
+        if normalized_crop:
+            normalized["crop"] = normalized_crop
+
     tone_curve = global_settings.get("tone_curve")
     if isinstance(tone_curve, dict):
         normalized_curve: Dict[str, Any] = {}
@@ -568,8 +592,6 @@ def filter_edit_recipe_by_controls(recipe: Dict[str, Any], controls: Dict[str, b
         for key in keys:
             global_settings.pop(key, None)
 
-    _drop(["lens_corrections"])
-
     if not controls.get("adjust_white_balance", True):
         _drop(["temperature", "tint", "white_balance"])
     if not controls.get("adjust_basic_tone", True):
@@ -618,6 +640,10 @@ def filter_edit_recipe_by_controls(recipe: Dict[str, Any], controls: Dict[str, b
                 "grain_roughness",
             ]
         )
+    if not controls.get("adjust_lens_corrections", True):
+        _drop(["lens_corrections"])
+    if not controls.get("allow_auto_crop", True):
+        _drop(["crop"])
 
     masks = filtered.get("masks")
     if not controls.get("include_masks", True):
