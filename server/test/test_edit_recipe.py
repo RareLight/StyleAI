@@ -1,6 +1,6 @@
 import unittest
 
-from src.edit_recipe import normalize_edit_recipe
+from src.edit_recipe import normalize_edit_recipe, filter_edit_recipe_by_controls
 
 
 class NormalizeEditRecipeTests(unittest.TestCase):
@@ -11,6 +11,10 @@ class NormalizeEditRecipeTests(unittest.TestCase):
                 "exposure": 9,
                 "contrast": -120,
                 "temperature": "5600",
+                "white_balance": {
+                    "temperature": 6200,
+                    "tint": 13,
+                },
                 "vignette": -40,
                 "vignette_feather": 120,
                 "sharpen_radius": 4.0,
@@ -74,6 +78,9 @@ class NormalizeEditRecipeTests(unittest.TestCase):
         self.assertNotIn("blue", recipe["global"]["tone_curve"]["point_curve"])
         self.assertEqual(recipe["global"]["tone_curve"]["extended_point_curve"]["master"], [0, 0, 84, 68, 130, 147, 183, 193, 448, 448])
         self.assertEqual(recipe["global"]["tone_curve"]["extended_point_curve"]["red"], [0, 0, 512, 490])
+        # Top-level keys take precedence over white_balance object.
+        self.assertEqual(recipe["global"]["temperature"], 5600.0)
+        self.assertNotIn("white_balance", recipe["global"])
         self.assertTrue(recipe["global"]["lens_corrections"]["enable_profile_corrections"])
         self.assertEqual(len(recipe["masks"]), 1)
         self.assertEqual(recipe["masks"][0]["kind"], "subject")
@@ -86,6 +93,77 @@ class NormalizeEditRecipeTests(unittest.TestCase):
         self.assertEqual(recipe["global"], {})
         self.assertEqual(recipe["masks"], [])
         self.assertTrue(recipe["warnings"])
+
+    def test_white_balance_object_maps_to_temperature_and_tint(self):
+        recipe = normalize_edit_recipe({
+            "summary": "WB tweak",
+            "global": {
+                "white_balance": {
+                    "temperature": 70000,
+                    "tint": -200,
+                },
+            },
+            "masks": [],
+            "warnings": [],
+        })
+        self.assertEqual(recipe["global"]["temperature"], 50000.0)
+        self.assertEqual(recipe["global"]["tint"], -150.0)
+
+    def test_filter_recipe_by_category_controls(self):
+        recipe = normalize_edit_recipe({
+            "summary": "Category control test",
+            "global": {
+                "exposure": 0.5,
+                "temperature": 5600,
+                "clarity": 20,
+                "vibrance": 15,
+                "color_grading": {"shadows": {"hue": 220, "saturation": 20}},
+                "tone_curve": {
+                    "highlights": 25,
+                    "point_curve": {"master": [0, 0, 128, 140, 255, 255]},
+                },
+                "sharpening": 40,
+                "vignette": -25,
+                "lens_corrections": {"enable_profile_corrections": True},
+            },
+            "masks": [
+                {"kind": "subject", "adjustments": {"exposure": 0.3, "clarity": 10, "sharpness": 25}},
+            ],
+            "warnings": [],
+        })
+
+        filtered = filter_edit_recipe_by_controls(
+            recipe,
+            {
+                "include_masks": True,
+                "adjust_white_balance": False,
+                "adjust_basic_tone": True,
+                "adjust_presence": False,
+                "adjust_color_mix": False,
+                "do_color_grading": False,
+                "use_tone_curve": True,
+                "use_point_curve": False,
+                "adjust_detail": False,
+                "adjust_effects": False,
+                "adjust_lens_corrections": False,
+            },
+        )
+
+        self.assertIn("exposure", filtered["global"])
+        self.assertNotIn("temperature", filtered["global"])
+        self.assertNotIn("clarity", filtered["global"])
+        self.assertNotIn("vibrance", filtered["global"])
+        self.assertNotIn("color_grading", filtered["global"])
+        self.assertNotIn("sharpening", filtered["global"])
+        self.assertNotIn("vignette", filtered["global"])
+        self.assertNotIn("lens_corrections", filtered["global"])
+        self.assertIn("tone_curve", filtered["global"])
+        self.assertNotIn("point_curve", filtered["global"]["tone_curve"])
+
+        self.assertEqual(len(filtered["masks"]), 1)
+        self.assertIn("exposure", filtered["masks"][0]["adjustments"])
+        self.assertNotIn("clarity", filtered["masks"][0]["adjustments"])
+        self.assertNotIn("sharpness", filtered["masks"][0]["adjustments"])
 
 if __name__ == "__main__":
     unittest.main()

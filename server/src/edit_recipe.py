@@ -141,6 +141,14 @@ def _build_global_schema() -> Dict[str, Any]:
         for field_name, bounds in GLOBAL_FIELD_RANGES.items()
     }
     properties["hsl"] = _build_hsl_schema()
+    properties["white_balance"] = {
+        "type": "object",
+        "properties": {
+            "temperature": _number_schema(2000.0, 50000.0),
+            "tint": _number_schema(-150.0, 150.0),
+        },
+        "additionalProperties": False,
+    }
     properties["color_grading"] = _build_color_grading_schema()
     properties["lens_corrections"] = {
         "type": "object",
@@ -349,6 +357,17 @@ def _normalize_global_settings(global_settings: Any) -> Dict[str, Any]:
         if clamped is not None:
             normalized[field_name] = clamped
 
+    white_balance = global_settings.get("white_balance")
+    if isinstance(white_balance, dict):
+        if "temperature" not in normalized:
+            clamped_temp = _clamp_number(white_balance.get("temperature"), 2000.0, 50000.0)
+            if clamped_temp is not None:
+                normalized["temperature"] = clamped_temp
+        if "tint" not in normalized:
+            clamped_tint = _clamp_number(white_balance.get("tint"), -150.0, 150.0)
+            if clamped_tint is not None:
+                normalized["tint"] = clamped_tint
+
     tone_curve = global_settings.get("tone_curve")
     if isinstance(tone_curve, dict):
         normalized_curve: Dict[str, Any] = {}
@@ -551,3 +570,102 @@ def normalize_edit_recipe(parsed_data: Any) -> Dict[str, Any]:
     if not normalized["summary"]:
         normalized["summary"] = "AI-generated Lightroom edit recipe"
     return normalized
+
+
+def filter_edit_recipe_by_controls(recipe: Dict[str, Any], controls: Dict[str, bool]) -> Dict[str, Any]:
+    if not isinstance(recipe, dict):
+        return recipe
+
+    filtered = deepcopy(recipe)
+    global_settings = filtered.get("global")
+    if not isinstance(global_settings, dict):
+        global_settings = {}
+        filtered["global"] = global_settings
+
+    def _drop(keys: List[str]) -> None:
+        for key in keys:
+            global_settings.pop(key, None)
+
+    if not controls.get("adjust_white_balance", True):
+        _drop(["temperature", "tint", "white_balance"])
+    if not controls.get("adjust_basic_tone", True):
+        _drop(["exposure", "contrast", "highlights", "shadows", "whites", "blacks"])
+    if not controls.get("adjust_presence", True):
+        _drop(["texture", "clarity", "dehaze"])
+    if not controls.get("adjust_color_mix", True):
+        _drop(["vibrance", "saturation", "hsl"])
+    if not controls.get("do_color_grading", True):
+        _drop(["color_grading"])
+    if not controls.get("use_tone_curve", True):
+        _drop(["tone_curve"])
+    else:
+        if not controls.get("use_point_curve", True):
+            tone_curve = global_settings.get("tone_curve")
+            if isinstance(tone_curve, dict):
+                tone_curve.pop("point_curve", None)
+                tone_curve.pop("extended_point_curve", None)
+                if not tone_curve:
+                    global_settings.pop("tone_curve", None)
+    if not controls.get("adjust_detail", True):
+        _drop(
+            [
+                "sharpening",
+                "sharpen_radius",
+                "sharpen_detail",
+                "sharpen_masking",
+                "noise_reduction",
+                "noise_reduction_detail",
+                "noise_reduction_contrast",
+                "color_noise_reduction",
+                "color_noise_reduction_detail",
+                "color_noise_reduction_smoothness",
+            ]
+        )
+    if not controls.get("adjust_effects", True):
+        _drop(
+            [
+                "vignette",
+                "vignette_midpoint",
+                "vignette_roundness",
+                "vignette_feather",
+                "vignette_highlights",
+                "grain",
+                "grain_size",
+                "grain_roughness",
+            ]
+        )
+    if not controls.get("adjust_lens_corrections", True):
+        _drop(["lens_corrections"])
+
+    masks = filtered.get("masks")
+    if not controls.get("include_masks", True):
+        filtered["masks"] = []
+    elif isinstance(masks, list):
+        allowed_mask_adjustments = set(MASK_ADJUSTMENT_RANGES.keys())
+        if not controls.get("adjust_white_balance", True):
+            allowed_mask_adjustments -= {"temperature", "tint"}
+        if not controls.get("adjust_basic_tone", True):
+            allowed_mask_adjustments -= {"exposure", "contrast", "highlights", "shadows", "whites", "blacks"}
+        if not controls.get("adjust_presence", True):
+            allowed_mask_adjustments -= {"texture", "clarity", "dehaze"}
+        if not controls.get("adjust_color_mix", True):
+            allowed_mask_adjustments -= {"saturation"}
+        if not controls.get("adjust_detail", True):
+            allowed_mask_adjustments -= {"sharpness", "noise", "moire"}
+
+        kept_masks: List[Dict[str, Any]] = []
+        for mask in masks:
+            if not isinstance(mask, dict):
+                continue
+            adjustments = mask.get("adjustments")
+            if not isinstance(adjustments, dict):
+                continue
+            kept_adjustments = {k: v for k, v in adjustments.items() if k in allowed_mask_adjustments}
+            if not kept_adjustments:
+                continue
+            next_mask = deepcopy(mask)
+            next_mask["adjustments"] = kept_adjustments
+            kept_masks.append(next_mask)
+        filtered["masks"] = kept_masks
+
+    return filtered
