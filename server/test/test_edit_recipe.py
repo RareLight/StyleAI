@@ -1,0 +1,56 @@
+import unittest
+
+from src.edit_recipe import normalize_edit_recipe
+
+
+class NormalizeEditRecipeTests(unittest.TestCase):
+    def test_clamps_global_values_and_discards_invalid_mask(self):
+        recipe = normalize_edit_recipe({
+            "summary": "  Brighten portrait  ",
+            "global": {
+                "exposure": 9,
+                "contrast": -120,
+                "temperature": "5600",
+                "lens_corrections": {
+                    "enable_profile_corrections": True,
+                    "remove_chromatic_aberration": False,
+                },
+            },
+            "masks": [
+                {
+                    "kind": "subject",
+                    "adjustments": {
+                        "exposure": 2.3,
+                        "clarity": -150,
+                    },
+                },
+                {
+                    "kind": "person",
+                    "adjustments": {
+                        "exposure": 1,
+                    },
+                },
+            ],
+            "warnings": ["  keep skin natural  "],
+        })
+
+        self.assertEqual(recipe["summary"], "Brighten portrait")
+        self.assertEqual(recipe["global"]["exposure"], 5.0)
+        self.assertEqual(recipe["global"]["contrast"], -100.0)
+        self.assertEqual(recipe["global"]["temperature"], 5600.0)
+        self.assertTrue(recipe["global"]["lens_corrections"]["enable_profile_corrections"])
+        self.assertEqual(len(recipe["masks"]), 1)
+        self.assertEqual(recipe["masks"][0]["kind"], "subject")
+        self.assertEqual(recipe["masks"][0]["adjustments"]["clarity"], -100.0)
+        self.assertIn("keep skin natural", recipe["warnings"])
+        self.assertTrue(any("unsupported kind" in warning for warning in recipe["warnings"]))
+
+    def test_handles_invalid_payload(self):
+        recipe = normalize_edit_recipe("invalid")
+        self.assertEqual(recipe["global"], {})
+        self.assertEqual(recipe["masks"], [])
+        self.assertTrue(recipe["warnings"])
+
+
+if __name__ == "__main__":
+    unittest.main()

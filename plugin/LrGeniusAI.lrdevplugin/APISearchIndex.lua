@@ -20,8 +20,10 @@ end
 
 local ENDPOINTS = {
     INDEX = "/index",
+    EDIT = "/edit",
     INDEX_BY_REFERENCE = "/index_by_reference",
     INDEX_BASE64 = "/index_base64",
+    EDIT_BASE64 = "/edit_base64",
     GROUP_SIMILAR = "/group_similar",
     CULL = "/cull",
     FIND_SIMILAR = "/find_similar",
@@ -613,6 +615,94 @@ end
 -- @return boolean success, table|string response - Returns success status and response data or error message
 ---
 
+
+function SearchIndexAPI.generateEditRecipePhoto(photoId, filepath, options)
+    if filepath == nil then
+        log:error("generateEditRecipePhoto: JPEG is nil")
+        return false, "No image data provided"
+    end
+    if not photoId or photoId == "" then
+        log:error("generateEditRecipePhoto: Photo ID is missing")
+        return false, "No photo ID provided"
+    end
+
+    local filename = LrPathUtils.leafName(filepath)
+    options = options or {}
+    local url = getBaseUrl() .. ENDPOINTS.EDIT
+    local mimeChunks = {}
+
+    table.insert(mimeChunks, { name = "photo_id", value = photoId })
+    local cid = getCatalogId()
+    if cid then
+        table.insert(mimeChunks, { name = "catalog_id", value = cid })
+    end
+    if options.provider then
+        table.insert(mimeChunks, { name = "provider", value = options.provider })
+    end
+    if options.model then
+        table.insert(mimeChunks, { name = "model", value = options.model })
+    end
+    if options.api_key then
+        table.insert(mimeChunks, { name = "api_key", value = options.api_key })
+    end
+
+    table.insert(mimeChunks, { name = "language", value = options.language or prefs.generateLanguage or "English" })
+    table.insert(mimeChunks, { name = "temperature", value = tostring(options.temperature or prefs.temperature or 0.2) })
+    table.insert(mimeChunks, { name = "submit_gps", value = tostring(options.submit_gps or false) })
+    table.insert(mimeChunks, { name = "submit_keywords", value = tostring(options.submit_keywords or false) })
+    table.insert(mimeChunks, { name = "submit_folder_names", value = tostring(options.submit_folder_names or false) })
+    table.insert(mimeChunks, { name = "include_masks", value = tostring(options.include_masks ~= false) })
+    if options.user_context then
+        table.insert(mimeChunks, { name = "user_context", value = options.user_context })
+    end
+    if options.edit_intent then
+        table.insert(mimeChunks, { name = "edit_intent", value = options.edit_intent })
+    end
+    if options.gps_coordinates then
+        table.insert(mimeChunks, { name = "gps_coordinates", value = JSON:encode(options.gps_coordinates) })
+    end
+    if options.existing_keywords then
+        table.insert(mimeChunks, { name = "existing_keywords", value = JSON:encode(options.existing_keywords) })
+    end
+    if options.folder_names then
+        table.insert(mimeChunks, { name = "folder_names", value = options.folder_names })
+    end
+    if options.prompt then
+        table.insert(mimeChunks, { name = "prompt", value = options.prompt })
+    end
+    if options.date_time then
+        table.insert(mimeChunks, { name = "date_time", value = options.date_time })
+    end
+    if options.ollama_base_url or (prefs and prefs.ollamaBaseUrl) then
+        table.insert(mimeChunks, { name = "ollama_base_url", value = options.ollama_base_url or prefs.ollamaBaseUrl })
+    end
+    if options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl) then
+        table.insert(mimeChunks, { name = "lmstudio_base_url", value = options.lmstudio_base_url or prefs.lmstudioBaseUrl })
+    end
+
+    table.insert(mimeChunks, {
+        name = "image",
+        fileName = filename,
+        filePath = filepath,
+        contentType = "image/jpeg"
+    })
+
+    log:trace("Generating AI edit recipe for photo: " .. filename .. " with id " .. photoId)
+    local response, err = _requestMultipart(url, mimeChunks, 720)
+    if not response then
+        log:error("Failed to generate AI edit recipe: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+    if type(response) ~= "table" then
+        log:error("AI edit recipe response has unexpected type: " .. tostring(type(response)) .. " value=" .. tostring(response))
+        return false, "Invalid response type from /edit endpoint: " .. tostring(type(response))
+    end
+    if response.status == "success" then
+        return true, response
+    end
+    log:error("Unexpected response status for AI edit recipe: " .. tostring(response.status))
+    return false, response.error or "Unexpected response status"
+end
 
 function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
     if filepath == nil then 
@@ -1917,23 +2007,37 @@ function SearchIndexAPI.startServer(opts)
 end
 
 _requestMultipart = function(url, mimeChunks, timeout)
+    log:trace("_requestMultipart start: url=" .. tostring(url) .. " timeout=" .. tostring(timeout) .. " chunks=" .. tostring(type(mimeChunks) == "table" and #mimeChunks or "n/a"))
     local result, hdrs = LrHttp.postMultipart(url, mimeChunks, nil, timeout)
+    log:trace("_requestMultipart raw return: resultType=" .. tostring(type(result)) .. " resultLen=" .. tostring(type(result) == "string" and #result or "n/a") .. " hdrsType=" .. tostring(type(hdrs)))
     
     -- hdrs kann Tabelle mit .status oder (in einigen LR-Versionen) direkt die Status-Nummer sein
     local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
+    log:trace("_requestMultipart interpreted status: " .. tostring(status))
     if status ~= nil and status >= 200 and status < 300 then
         if result and #result > 0 then
-            return JSON:decode(result)
+            local ok, decodedOrErr = LrTasks.pcall(function()
+                return JSON:decode(result)
+            end)
+            if not ok then
+                log:error("_requestMultipart JSON decode failed: " .. tostring(decodedOrErr))
+                return nil, "Invalid JSON response from server"
+            end
+            log:trace("_requestMultipart decode success: decodedType=" .. tostring(type(decodedOrErr)) .. " hasStatus=" .. tostring(type(decodedOrErr) == "table" and decodedOrErr.status or "n/a"))
+            return decodedOrErr
         end
+        log:trace("_requestMultipart success with empty body")
         return {} -- Return an empty table for successful but empty responses
     else
         local err_msg = "API request failed. HTTP status: " .. httpStatusForLog(status, hdrs)
         if result and #result > 0 then
-            local decoded_err = JSON:decode(result)
-            if type(decoded_err) == "table" and decoded_err.error then
+            local ok, decoded_err = LrTasks.pcall(function()
+                return JSON:decode(result)
+            end)
+            if ok and type(decoded_err) == "table" and decoded_err.error then
                 err_msg = err_msg .. " - " .. decoded_err.error
             else
-                err_msg = err_msg .. " Response: " .. result
+                err_msg = err_msg .. " Response: " .. tostring(result)
             end
         end
         log:error(err_msg)

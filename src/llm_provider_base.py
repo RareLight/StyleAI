@@ -8,6 +8,7 @@ import io
 
 # Import prompts from config
 from config import METADATA_GENERATION_SYSTEM_PROMPT
+from edit_recipe import OPENAI_EDIT_RECIPE_SCHEMA, normalize_edit_recipe
 
 @dataclass
 class MetadataGenerationRequest:
@@ -81,6 +82,49 @@ class MetadataGenerationResponse:
     error: Optional[str] = None
 
 
+@dataclass
+class EditGenerationRequest:
+    """Request structure for Lightroom edit recipe generation."""
+    image_data: bytes
+    uuid: str
+
+    provider: str
+    model: str
+    api_key: Optional[str]
+
+    language: str
+    temperature: float
+    max_tokens: Optional[int]
+
+    system_prompt: Optional[str]
+    user_prompt: Optional[str]
+
+    submit_gps: bool
+    submit_keywords: bool
+    submit_folder_names: bool
+
+    existing_keywords: Optional[List[str]]
+    gps_coordinates: Optional[Dict[str, float]]
+    folder_names: Optional[str]
+    user_context: Optional[str]
+    date_time: Optional[str]
+    edit_intent: Optional[str] = None
+    include_masks: bool = True
+    ollama_base_url: Optional[str] = None
+    lmstudio_base_url: Optional[str] = None
+
+
+@dataclass
+class EditGenerationResponse:
+    """Structured Lightroom edit recipe response."""
+    uuid: str
+    success: bool
+    recipe: Optional[Dict[str, Any]] = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    error: Optional[str] = None
+
+
 class LLMProviderBase(ABC):
     """
     Abstract base class for all LLM providers.
@@ -117,6 +161,13 @@ class LLMProviderBase(ABC):
         
         Returns:
             True if provider can be used, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def generate_edit_recipe(self, request: EditGenerationRequest) -> EditGenerationResponse:
+        """
+        Generate a Lightroom edit recipe for a single image.
         """
         pass
     
@@ -235,6 +286,69 @@ class LLMProviderBase(ABC):
         if context_additions:
             base_prompt += "\n\n" + "\n".join(context_additions)
         
+        return base_prompt
+
+    def _prepare_edit_system_prompt(self, request: EditGenerationRequest) -> str:
+        if request.system_prompt:
+            return request.system_prompt
+
+        return (
+            "You are an expert Lightroom Classic retoucher. "
+            "Return only a structured Lightroom edit recipe. "
+            "Do not describe how to edit in prose, do not return a rendered image, and do not invent unsupported controls. "
+            "Prefer subtle, professional edits. Only include controls that should change. "
+            "Use masks only when they materially improve the image and keep them limited to subject, sky, or background."
+        )
+
+    def _prepare_edit_user_prompt(self, request: EditGenerationRequest) -> str:
+        if request.user_prompt:
+            base_prompt = request.user_prompt
+        else:
+            base_prompt = (
+                "Analyze the uploaded photo and return a Lightroom edit recipe.\n"
+                "* Add a short summary of the intended look\n"
+                "* Put global develop adjustments in `global`\n"
+                "* Put local adjustments in `masks`\n"
+                "* Keep the result natural unless the context asks for a stylized look\n"
+                "* Do not include unchanged controls"
+            )
+
+        base_prompt += (
+            "\n\nEdit recipe rules:\n"
+            "* Return only numeric Lightroom-friendly adjustments\n"
+            "* Use global controls for broad corrections first\n"
+            "* Use masks only for subject, sky, or background\n"
+            "* Add warnings when something seems uncertain or unsupported\n"
+        )
+
+        if not request.include_masks:
+            base_prompt += "* Do not return any masks; keep all edits global\n"
+
+        context_additions: List[str] = []
+        if request.edit_intent:
+            context_additions.append(f"Requested editing intent: {request.edit_intent}")
+        if request.user_context:
+            context_additions.append(f"Per-photo instructions: {request.user_context}")
+        if request.submit_keywords and request.existing_keywords:
+            keywords_str = ", ".join(str(k).strip() for k in request.existing_keywords if str(k).strip())
+            if keywords_str:
+                context_additions.append(f"Existing keywords: {keywords_str}")
+        if request.submit_folder_names and request.folder_names:
+            context_additions.append(f"Folder context: {request.folder_names}")
+        if request.submit_gps and isinstance(request.gps_coordinates, dict):
+            lat = request.gps_coordinates.get("latitude")
+            lon = request.gps_coordinates.get("longitude")
+            if lat is not None and lon is not None:
+                context_additions.append(f"Photo coordinates: {lat}, {lon}")
+        if request.date_time:
+            context_additions.append(f"Capture time: {request.date_time}")
+        if request.language:
+            context_additions.append(
+                f"Write `summary` and `warnings` in {request.language}, but keep field names exactly as specified by the schema."
+            )
+
+        if context_additions:
+            base_prompt += "\n\n" + "\n".join(context_additions)
         return base_prompt
     
     def _build_nested_keyword_schema(self, categories: Dict[str, Any], bilingual: bool = False) -> Dict[str, Any]:
@@ -423,6 +537,12 @@ class LLMProviderBase(ABC):
 
         normalized_leaf = self._normalize_keyword_leaf(value)
         return normalized_leaf
+
+    def _prepare_edit_response_structure(self) -> Dict[str, Any]:
+        return OPENAI_EDIT_RECIPE_SCHEMA
+
+    def _normalize_edit_recipe(self, value: Any) -> Dict[str, Any]:
+        return normalize_edit_recipe(value)
     
     def _image_to_base64(self, image_data: bytes) -> str:
         """

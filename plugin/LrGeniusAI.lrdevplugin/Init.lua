@@ -22,6 +22,7 @@ _G.LrLocalization = import 'LrLocalization'
 _G.LrShell = import 'LrShell'
 _G.LrSystemInfo = import 'LrSystemInfo'
 _G.LrApplicationView = import 'LrApplicationView'
+_G.LrDevelopController = import 'LrDevelopController'
 
 _G.JSON = require "JSON"
 
@@ -136,6 +137,14 @@ end
 
 if _G.prefs.prompt == nil then
     _G.prefs.prompt = Defaults.defaultPromptName
+end
+
+if _G.prefs.editPrompts == nil then
+    _G.prefs.editPrompts = { Default = Defaults.defaultEditSystemInstruction }
+end
+
+if _G.prefs.editPrompt == nil then
+    _G.prefs.editPrompt = Defaults.defaultEditPromptName
 end
 
 if _G.prefs.ollamaBaseUrl == nil then

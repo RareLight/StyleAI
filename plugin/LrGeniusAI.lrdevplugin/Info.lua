@@ -29,6 +29,10 @@ return {
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
+			title = "AI Edit Photos...",
+			file = "TaskAiEditPhotos.lua",
+		},
+		{
 			title = LOC "$$$/LrGeniusAI/Menu/AdvancedSearch=Advanced Search...",
 			file = "TaskSemanticSearch.lua",
 		},
@@ -62,6 +66,10 @@ return {
 		{
 			title = LOC "$$$/LrGeniusAI/Menu/AnalyzeAndIndex=Analyze & Index Photos...",
 			file = "TaskAnalyzeAndIndex.lua",
+		},
+		{
+			title = "AI Edit Photos...",
+			file = "TaskAiEditPhotos.lua",
 		},
 		{
 			title = LOC "$$$/LrGeniusAI/Menu/AdvancedSearch=Advanced Search...",
