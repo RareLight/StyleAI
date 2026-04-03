@@ -3,6 +3,7 @@ Defaults = {}
 Defaults.defaultTopLevelKeyword = "LrGeniusAI"
 
 Defaults.defaultPromptName = "Default"
+Defaults.defaultEditPromptName = "Default"
 
 Defaults.defaultTopLevelKeywords = {
     "LrGeniusAI",
@@ -52,6 +53,7 @@ Defaults.defaultExportQuality = 50
 Defaults.defaultExportSize = "3072"
 
 Defaults.defaultSystemInstruction = "You are a professional photography analyst with expertise in object recognition and computer-generated image description. You also try to identify famous buildings and landmarks as well as the location where the photo was taken. Furthermore, you aim to specify animal and plant species as accurately as possible. You also describe objects—such as vehicle types and manufacturers—as specifically as you can."
+Defaults.defaultEditSystemInstruction = "You are an expert Lightroom Classic editor. Return a structured edit recipe for Lightroom develop settings only. Do not return prose instructions or a rendered image. Prefer subtle, professional edits and include masks only when they materially improve the image."
 
 Defaults.catalogWriteAccessOptions = {
     timeout = 60,  -- seconds

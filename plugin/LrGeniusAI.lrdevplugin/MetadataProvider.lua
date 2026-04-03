@@ -18,6 +18,54 @@ return {
             browsable = true,
         },
         {
+            id = 'aiEditLastRun',
+            title = "Last AI edit run",
+            dataType = 'string',
+            readOnly = true,
+            searchable = true,
+            browsable = true,
+        },
+        {
+            id = 'aiEditModel',
+            title = "AI edit model",
+            dataType = 'string',
+            readOnly = true,
+            searchable = true,
+            browsable = true,
+        },
+        {
+            id = 'aiEditStatus',
+            title = "AI edit status",
+            dataType = 'string',
+            readOnly = true,
+            searchable = true,
+            browsable = true,
+        },
+        {
+            id = 'aiEditSummary',
+            title = "AI edit summary",
+            dataType = 'string',
+            readOnly = true,
+            searchable = true,
+            browsable = true,
+        },
+        {
+            id = 'aiEditWarnings',
+            title = "AI edit warnings",
+            dataType = 'string',
+            readOnly = true,
+            searchable = true,
+            browsable = true,
+        },
+        {
+            id = 'aiEditRecipe',
+            title = "AI edit recipe JSON",
+            dataType = 'string',
+            readOnly = true,
+            searchable = false,
+            browsable = false,
+        },
+        {
             id = 'photoContext',
             title = LOC "$$$/lrc-ai-assistant/AIMetadataProvider/photoContext=Photo context",
             dataType = 'string',
@@ -236,7 +284,7 @@ return {
         },
     },
 
-    schemaVersion = 30,
+    schemaVersion = 31,
     updateFromEarlierSchemaVersion = function (catalog, previousSchemaVersion, progressScope)
             catalog:assertHasPrivateWriteAccess("AIMetadataProvider.updateFromEarlierSchemaVersion")
             if previousSchemaVersion ~= nil and previousSchemaVersion < 23 then

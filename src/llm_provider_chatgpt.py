@@ -3,7 +3,13 @@ ChatGPT/OpenAI Provider for metadata generation using OpenAI API
 """
 import json
 from typing import Dict, Any
-from llm_provider_base import LLMProviderBase, MetadataGenerationRequest, MetadataGenerationResponse
+from llm_provider_base import (
+    LLMProviderBase,
+    EditGenerationRequest,
+    EditGenerationResponse,
+    MetadataGenerationRequest,
+    MetadataGenerationResponse,
+)
 from config import logger
 
 
@@ -179,6 +185,77 @@ class ChatGPTProvider(LLMProviderBase):
                 success=False,
                 error=str(e)
             )
+
+    def generate_edit_recipe(self, request: EditGenerationRequest) -> EditGenerationResponse:
+        if not self.is_available():
+            if request.api_key:
+                self.api_key = request.api_key
+                self._initialize_client()
+                if not self.is_available():
+                    return EditGenerationResponse(
+                        uuid=request.uuid,
+                        success=False,
+                        error="OpenAI API initialization failed with provided API key",
+                    )
+            else:
+                return EditGenerationResponse(uuid=request.uuid, success=False, error="OpenAI API not configured")
+
+        try:
+            image_b64 = self._image_to_base64(request.image_data)
+            data_uri = f"data:image/jpeg;base64,{image_b64}"
+            system_prompt = self._prepare_edit_system_prompt(request)
+            user_prompt = self._prepare_edit_user_prompt(request)
+            response_format = self._prepare_openai_edit_response_format()
+            temperature = 1.0 if request.model.startswith("gpt-5") else request.temperature
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": data_uri},
+                        }
+                    ],
+                },
+            ]
+            completion_params = {
+                "model": request.model,
+                "messages": messages,
+                "response_format": response_format,
+                "temperature": temperature,
+            }
+            if request.model.startswith("gpt-5"):
+                completion_params["reasoning_effort"] = "low"
+
+            response = self.client.chat.completions.create(**completion_params)
+            choice = response.choices[0]
+            if choice.finish_reason != "stop":
+                return EditGenerationResponse(
+                    uuid=request.uuid,
+                    success=False,
+                    error=f"OpenAI generation failed: {choice.finish_reason}",
+                    input_tokens=response.usage.prompt_tokens if response.usage else 0,
+                    output_tokens=response.usage.completion_tokens if response.usage else 0,
+                )
+
+            parsed_data = json.loads(choice.message.content)
+            recipe = self._normalize_edit_recipe(parsed_data)
+            return EditGenerationResponse(
+                uuid=request.uuid,
+                success=True,
+                recipe=recipe,
+                input_tokens=response.usage.prompt_tokens if response.usage else 0,
+                output_tokens=response.usage.completion_tokens if response.usage else 0,
+            )
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse edit JSON from OpenAI response: {e}")
+            return EditGenerationResponse(uuid=request.uuid, success=False, error=f"JSON parsing error: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error generating edit recipe with OpenAI: {e}", exc_info=True)
+            return EditGenerationResponse(uuid=request.uuid, success=False, error=str(e))
     
     def _prepare_openai_response_format(self, request: MetadataGenerationRequest) -> Dict[str, Any]:
         """Prepare OpenAI-style response format with JSON schema"""
@@ -189,6 +266,18 @@ class ChatGPTProvider(LLMProviderBase):
             "type": "json_schema",
             "json_schema": {
                 "name": "metadata_response",
+                "schema": schema,
+                "strict": True
+            }
+        }
+
+    def _prepare_openai_edit_response_format(self) -> Dict[str, Any]:
+        schema = self._prepare_edit_response_structure()
+        schema["additionalProperties"] = False
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "lightroom_edit_recipe",
                 "schema": schema,
                 "strict": True
             }

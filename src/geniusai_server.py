@@ -18,6 +18,7 @@ logger.info("Imported server_lifecycle")
 
 # Import blueprints only (services are imported by routes when needed)
 from routes_index import index_bp
+from routes_edit import edit_bp
 from routes_search import search_bp
 from routes_server import server_bp
 from routes_db import db_bp
@@ -33,6 +34,7 @@ logger.info("Flask app created")
 
 # Register blueprints
 app.register_blueprint(index_bp)
+app.register_blueprint(edit_bp)
 app.register_blueprint(search_bp)
 app.register_blueprint(server_bp)
 app.register_blueprint(db_bp)

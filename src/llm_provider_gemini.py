@@ -4,8 +4,15 @@ Gemini Provider for metadata generation using Google Generative AI API
 import json
 import time
 from typing import Dict, Any, Union, List
-from llm_provider_base import LLMProviderBase, MetadataGenerationRequest, MetadataGenerationResponse
+from llm_provider_base import (
+    LLMProviderBase,
+    EditGenerationRequest,
+    EditGenerationResponse,
+    MetadataGenerationRequest,
+    MetadataGenerationResponse,
+)
 from config import logger
+from edit_recipe import GEMINI_EDIT_RECIPE_SCHEMA
 
 class GeminiProvider(LLMProviderBase):
     """
@@ -238,6 +245,92 @@ class GeminiProvider(LLMProviderBase):
                 success=False,
                 error=str(e)
             )
+
+    def generate_edit_recipe(self, request: EditGenerationRequest) -> EditGenerationResponse:
+        if request.api_key:
+            self.api_key = request.api_key
+            self._initialize_client()
+            if not self.is_available():
+                return EditGenerationResponse(
+                    uuid=request.uuid,
+                    success=False,
+                    error="Gemini API not configured with provided API key",
+                )
+        else:
+            return EditGenerationResponse(uuid=request.uuid, success=False, error="Gemini API not configured")
+
+        try:
+            system_instruction = self._prepare_edit_system_prompt(request)
+            user_prompt = self._prepare_edit_user_prompt(request)
+            generation_config = self._prepare_gemini_edit_generation_config(request)
+            model_name = request.model
+
+            from google.genai import types
+
+            thinking_config = None
+            if model_name == "gemini-2.5-pro":
+                thinking_config = types.ThinkingConfig(thinking_budget=128)
+            elif model_name == "gemini-2.5-flash" or model_name == "gemini-2.5-flash-lite":
+                thinking_config = types.ThinkingConfig(thinking_budget=0)
+            elif model_name == "gemini-3-pro-preview":
+                thinking_config = types.ThinkingConfig(thinking_level="low")
+
+            config = types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type=generation_config.get("response_mime_type"),
+                response_schema=generation_config.get("response_schema"),
+                temperature=generation_config.get("temperature"),
+                thinking_config=thinking_config if thinking_config else None,
+            )
+
+            response = self.client.models.generate_content(
+                model=model_name,
+                contents=[user_prompt, types.Part.from_bytes(data=request.image_data, mime_type="image/jpeg")],
+                config=config,
+            )
+
+            if not getattr(response, "text", None):
+                parsed = getattr(response, "parsed", None)
+                if parsed:
+                    text = json.dumps(parsed) if not isinstance(parsed, str) else parsed
+                else:
+                    raise ValueError("Gemini returned no usable text in response")
+            else:
+                text = response.text
+
+            parsed_data = json.loads(self._clean_gemini_response(text))
+            recipe = self._normalize_edit_recipe(parsed_data)
+            usage_metadata = getattr(response, "usage", None) or getattr(response, "metadata", None) or getattr(response, "usage_metadata", None)
+            input_tokens = getattr(usage_metadata, "prompt_token_count", None) or getattr(usage_metadata, "input_tokens", None) or getattr(usage_metadata, "input_token_count", 0)
+            output_tokens = getattr(usage_metadata, "candidates_token_count", None) or getattr(usage_metadata, "output_tokens", None) or getattr(usage_metadata, "output_token_count", 0)
+            self.rate_limit_hit = 0
+            return EditGenerationResponse(
+                uuid=request.uuid,
+                success=True,
+                recipe=recipe,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse edit JSON from Gemini response: {e}")
+            return EditGenerationResponse(uuid=request.uuid, success=False, error=f"JSON parsing error: {str(e)}")
+        except Exception as e:
+            error_str = str(e)
+            error_type = type(e).__name__
+            if "DeadlineExceeded" in error_type or "504" in error_str:
+                return EditGenerationResponse(
+                    uuid=request.uuid,
+                    success=False,
+                    error="Gemini API timeout (504 Deadline Exceeded). Try again later or use a different provider."
+                )
+            if "429" in error_str or "RATE_LIMIT" in error_str or "quota" in error_str.lower():
+                self.rate_limit_hit += 1
+                if self.rate_limit_hit >= 10:
+                    return EditGenerationResponse(uuid=request.uuid, success=False, error="Rate limit exhausted after 10 retries")
+                time.sleep(5)
+                return self.generate_edit_recipe(request)
+            logger.error(f"Error generating edit recipe with Gemini: {e}", exc_info=True)
+            return EditGenerationResponse(uuid=request.uuid, success=False, error=str(e))
     
     def _prepare_gemini_generation_config(self, request: MetadataGenerationRequest) -> Dict[str, Any]:
         """Prepare Gemini-specific generation config"""
@@ -246,6 +339,13 @@ class GeminiProvider(LLMProviderBase):
         return {
             "response_mime_type": "application/json",
             "response_schema": schema,
+            "temperature": request.temperature,
+        }
+
+    def _prepare_gemini_edit_generation_config(self, request: EditGenerationRequest) -> Dict[str, Any]:
+        return {
+            "response_mime_type": "application/json",
+            "response_schema": GEMINI_EDIT_RECIPE_SCHEMA,
             "temperature": request.temperature,
         }
     

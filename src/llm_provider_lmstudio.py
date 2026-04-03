@@ -4,7 +4,13 @@ LM Studio Provider for metadata generation using the lmstudio-python library
 import json
 import lmstudio as lms
 from typing import Dict, Any
-from llm_provider_base import LLMProviderBase, MetadataGenerationRequest, MetadataGenerationResponse
+from llm_provider_base import (
+    LLMProviderBase,
+    EditGenerationRequest,
+    EditGenerationResponse,
+    MetadataGenerationRequest,
+    MetadataGenerationResponse,
+)
 from config import logger, LMSTUDIO_HOST
 
 
@@ -109,6 +115,38 @@ class LMStudioProvider(LLMProviderBase):
         except Exception as e:
             logger.error(f"Error generating metadata with LM Studio: {e}", exc_info=True)
             return MetadataGenerationResponse(uuid=request.uuid, success=False, error=str(e))
+
+    def generate_edit_recipe(self, request: EditGenerationRequest) -> EditGenerationResponse:
+        try:
+            host = getattr(request, "lmstudio_base_url", None) or self.host
+            with lms.Client(host) as client:
+                image_handle = client.files.prepare_image(request.image_data)
+                model = client.llm.model(request.model)
+                system_prompt = self._prepare_edit_system_prompt(request)
+                user_prompt = self._prepare_edit_user_prompt(request)
+                response_schema = self._prepare_openai_edit_response_format()
+
+                chat = lms.Chat(system_prompt)
+                chat.add_user_message(user_prompt, images=[image_handle])
+                response = model.respond(chat, response_format=response_schema, config={"temperature": request.temperature})
+
+            content = response.parsed
+            if isinstance(content, str):
+                content = json.loads(content)
+            if not isinstance(content, dict):
+                raise ValueError(f"Unexpected response type from LM Studio: {type(content)}")
+
+            recipe = self._normalize_edit_recipe(content)
+            return EditGenerationResponse(
+                uuid=request.uuid,
+                success=True,
+                recipe=recipe,
+                input_tokens=0,
+                output_tokens=0,
+            )
+        except Exception as e:
+            logger.error(f"Error generating edit recipe with LM Studio: {e}", exc_info=True)
+            return EditGenerationResponse(uuid=request.uuid, success=False, error=str(e))
     
     def _prepare_openai_response_format(self, request: MetadataGenerationRequest) -> Dict[str, Any]:
         """Prepare OpenAI-style response format with JSON schema"""
@@ -118,6 +156,17 @@ class LMStudioProvider(LLMProviderBase):
             "type": "json_schema",
             "json_schema": {
                 "name": "metadata_response",
+                "schema": schema,
+                "strict": True
+            }
+        }
+
+    def _prepare_openai_edit_response_format(self) -> Dict[str, Any]:
+        schema = self._prepare_edit_response_structure()
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "lightroom_edit_recipe",
                 "schema": schema,
                 "strict": True
             }

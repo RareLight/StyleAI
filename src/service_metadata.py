@@ -7,6 +7,8 @@ from typing import Dict, List, Optional, Any
 import os
 from llm_provider_base import (
     LLMProviderBase, 
+    EditGenerationRequest,
+    EditGenerationResponse,
     MetadataGenerationRequest, 
     MetadataGenerationResponse,
 )
@@ -251,6 +253,57 @@ class AnalysisService:
         except Exception as e:
             logger.error(f"Unexpected error during metadata generation for {uuid}: {e}", exc_info=True)
             return MetadataGenerationResponse(uuid=uuid, success=False, error=str(e))
+
+    def generate_edit_recipe_single(
+        self,
+        uuid: str,
+        image_data: bytes,
+        options: dict
+    ) -> EditGenerationResponse:
+        provider = options.get('provider') or DEFAULT_METADATA_PROVIDER
+
+        if provider not in self.providers:
+            if not self.providers:
+                return EditGenerationResponse(uuid=uuid, success=False, error="No LLM providers available")
+            provider = list(self.providers.keys())[0]
+            logger.warning(f"Requested provider '{provider}' not available, using fallback: {provider}")
+
+        selected_provider = self.providers[provider]
+        logger.info(f"Generating edit recipe for {uuid} using {provider}")
+
+        request = EditGenerationRequest(
+            image_data=image_data,
+            uuid=uuid,
+            provider=provider,
+            model=options['model'],
+            api_key=options.get('api_key'),
+            language=options.get('language', DEFAULT_METADATA_LANGUAGE),
+            temperature=options.get('temperature', 0.2),
+            max_tokens=options.get('max_tokens'),
+            user_prompt=options.get('user_prompt'),
+            submit_gps=options.get('submit_gps', False),
+            submit_keywords=options.get('submit_keywords', False),
+            submit_folder_names=options.get('submit_folder_names', False),
+            existing_keywords=options.get('existing_keywords'),
+            gps_coordinates=options.get('gps_coordinates'),
+            folder_names=options.get('folder_names'),
+            user_context=options.get('user_context'),
+            system_prompt=options.get('prompt'),
+            date_time=options.get('date_time'),
+            edit_intent=options.get('edit_intent'),
+            include_masks=options.get('include_masks', True),
+            ollama_base_url=options.get('ollama_base_url'),
+            lmstudio_base_url=options.get('lmstudio_base_url'),
+        )
+
+        try:
+            response = selected_provider.generate_edit_recipe(request)
+            if not response.success:
+                logger.error(f"✗ Failed to generate edit recipe for {uuid}: {response.error}")
+            return response
+        except Exception as e:
+            logger.error(f"Unexpected error during edit generation for {uuid}: {e}", exc_info=True)
+            return EditGenerationResponse(uuid=uuid, success=False, error=str(e))
 
     def get_available_models(
         self,

@@ -228,6 +228,7 @@ def delete_image(photo_id, *, legacy_uuid=None):
 AI_METADATA_KEYS = frozenset({
     "title", "caption", "keywords", "alt_text",
     "model", "run_date", "tokens_used", "flattened_keywords",
+    "edit_recipe", "edit_summary", "edit_warnings", "edit_model", "edit_provider", "edit_run_date",
 })
 
 

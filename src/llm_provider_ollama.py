@@ -11,6 +11,8 @@ except Exception:  # ImportError or runtime issues
 
 from llm_provider_base import (
     LLMProviderBase,
+    EditGenerationRequest,
+    EditGenerationResponse,
     MetadataGenerationRequest,
     MetadataGenerationResponse,
 )
@@ -150,6 +152,59 @@ class OllamaProvider(LLMProviderBase):
                 success=False,
                 error=str(e),
             )
+
+    def generate_edit_recipe(self, request: EditGenerationRequest) -> EditGenerationResponse:
+        try:
+            if Client is None:
+                return EditGenerationResponse(
+                    uuid=request.uuid,
+                    success=False,
+                    error="Ollama SDK not installed. Please install the 'ollama' Python package.",
+                )
+            client = self._get_client(getattr(request, "ollama_base_url", None))
+            image_b64 = self._image_to_base64(request.image_data)
+            system_prompt = self._prepare_edit_system_prompt(request)
+            user_prompt = self._prepare_edit_user_prompt(request)
+            response_schema = self._prepare_edit_response_structure()
+
+            result = client.chat(
+                model=request.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt, "images": [image_b64]},
+                ],
+                format=response_schema,
+                options={
+                    "temperature": request.temperature,
+                    "top_p": 0.9,
+                    "num_keep": -1,
+                },
+                stream=False,
+            )
+
+            if isinstance(result, dict):
+                message = result.get("message") or {}
+                content = message.get("content")
+            else:
+                message = getattr(result, "message", None)
+                content = getattr(message, "content", None) if message is not None else None
+            if not content:
+                return EditGenerationResponse(uuid=request.uuid, success=False, error="Empty response content from Ollama")
+
+            recipe = self._normalize_edit_recipe(json.loads(content))
+            return EditGenerationResponse(
+                uuid=request.uuid,
+                success=True,
+                recipe=recipe,
+                input_tokens=0,
+                output_tokens=0,
+            )
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse edit JSON from Ollama response: {e}")
+            return EditGenerationResponse(uuid=request.uuid, success=False, error=f"JSON parsing error: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error generating edit recipe with Ollama: {e}", exc_info=True)
+            return EditGenerationResponse(uuid=request.uuid, success=False, error=str(e))
 
     def list_available_models(self) -> list:
         """

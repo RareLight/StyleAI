@@ -1,6 +1,10 @@
 # geniusai-server – für lokalen oder Remote-Betrieb als Container
 # Build: docker build -t geniusai-server .
 # Run:   docker run -p 19819:19819 -v /pfad/zu/daten:/data -e GENIUSAI_HOST=0.0.0.0 geniusai-server
+#
+# API surface is everything under COPY src/ (index, search, clip, faces, import, db, server, …).
+# AI Lightroom edit recipes: POST /edit (multipart) and POST /edit_base64 (JSON) – same image,
+# no extra Dockerfile COPY beyond src/.
 
 FROM python:3.12-slim
 
