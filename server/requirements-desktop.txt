@@ -19,7 +19,6 @@ google-cloud-aiplatform
 openai
 requests
 chromadb
-opentelemetry-api>=1.24.0
 numpy
 psutil
 flask
