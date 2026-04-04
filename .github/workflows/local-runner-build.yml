@@ -6,12 +6,12 @@ on:
       run_smoke_tests:
         description: "Run backend smoke/API tests (slower)"
         required: false
-        default: false
+        default: true
         type: boolean
       upload_artifact:
         description: "Upload build artifact"
         required: false
-        default: true
+        default: false
         type: boolean
       python_version:
         description: "Python version for uv venv"
@@ -46,20 +46,39 @@ jobs:
           mkdir -p "$SERVER_APP_DIR"
 
           uv python install "${{ inputs.python_version }}"
-          UV_MANAGED_PY="$(uv python find "${{ inputs.python_version }}")"
+          UV_MANAGED_PY="$(uv python find --managed-python --resolve-links "${{ inputs.python_version }}")"
           echo "Using uv-managed Python: $UV_MANAGED_PY"
           uv venv --python "$UV_MANAGED_PY" --relocatable "$SERVER_ENV_DIR"
           PY_EXE="$SERVER_ENV_DIR/bin/python"
 
-          # Bundle libpython dylib for portable artifact startup.
-          PY_DYLIB="$("$PY_EXE" -c "import os, sysconfig; print(os.path.join(sysconfig.get_config_var('LIBDIR') or '', sysconfig.get_config_var('LDLIBRARY') or ''))")"
-          if [ -z "${PY_DYLIB}" ] || [ ! -f "${PY_DYLIB}" ]; then
-            echo "Error: could not locate libpython dylib from interpreter metadata."
-            exit 1
+          # Bundle libpython dylib only when python links it via @rpath.
+          LIBPY_REF="$(otool -L "$PY_EXE" | awk '/libpython[0-9.]+\.dylib/{print $1; exit}')"
+          if [[ -n "${LIBPY_REF}" && "${LIBPY_REF}" == @rpath/* ]]; then
+            LIBPY_NAME="${LIBPY_REF#@rpath/}"
+            PY_DYLIB="$("$PY_EXE" -c "import os, sys, sysconfig; c=[]; ldlib=sysconfig.get_config_var('LDLIBRARY') or ''; libdir=sysconfig.get_config_var('LIBDIR') or ''; libpl=sysconfig.get_config_var('LIBPL') or ''; [c.append(os.path.join(d, ldlib)) for d in (libdir, libpl) if d and ldlib]; c.append(os.path.join(sys.base_prefix, 'lib', ldlib)) if ldlib else None; [print(p) for p in c if p and os.path.isfile(p)]")"
+            PY_DYLIB="$(printf '%s\n' "${PY_DYLIB}" | awk 'NF{print; exit}')"
+            if [ -z "${PY_DYLIB}" ] || [ ! -f "${PY_DYLIB}" ]; then
+              for CAND in \
+                "$(dirname "$(dirname "$UV_MANAGED_PY")")/lib/${LIBPY_NAME}" \
+                "$("$PY_EXE" -c 'import sys; print(sys.base_prefix)')/lib/${LIBPY_NAME}"
+              do
+                if [ -f "${CAND}" ]; then
+                  PY_DYLIB="${CAND}"
+                  break
+                fi
+              done
+            fi
+            if [ -z "${PY_DYLIB}" ] || [ ! -f "${PY_DYLIB}" ]; then
+              echo "Error: ${LIBPY_NAME} required by ${PY_EXE}, but no source dylib was found."
+              otool -L "$PY_EXE"
+              exit 1
+            fi
+            mkdir -p "$SERVER_ENV_DIR/lib"
+            cp -f "${PY_DYLIB}" "$SERVER_ENV_DIR/lib/"
+            echo "Bundled libpython dylib: $(basename "${PY_DYLIB}")"
+          else
+            echo "No @rpath libpython dependency detected; skipping dylib bundle."
           fi
-          mkdir -p "$SERVER_ENV_DIR/lib"
-          cp -f "${PY_DYLIB}" "$SERVER_ENV_DIR/lib/"
-          echo "Bundled libpython dylib: $(basename "${PY_DYLIB}")"
 
           # Fast-fail if linked against Framework Python.
           if otool -L "$PY_EXE" | grep -E -q '/Library/Frameworks/Python\.framework/Versions/.+/Python'; then
