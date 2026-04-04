@@ -74,6 +74,11 @@ jobs:
               echo "Error: bundled libpython missing at $SERVER_ENV_DIR/lib/${LIBPY_NAME}"
               exit 1
             fi
+            for PY_BIN in "$SERVER_ENV_DIR/bin/python" "$SERVER_ENV_DIR/bin/python3" "$SERVER_ENV_DIR/bin/python3.12"; do
+              if [ -f "${PY_BIN}" ]; then
+                install_name_tool -change "${LIBPY_REF}" "@executable_path/../lib/${LIBPY_NAME}" "${PY_BIN}" 2>/dev/null || true
+              fi
+            done
             if ! otool -L "$PY_EXE" | grep -F -q "@executable_path/../lib/${LIBPY_NAME}"; then
               echo "Error: packaged python is not linked to bundled libpython at env/lib/${LIBPY_NAME}"
               otool -L "$PY_EXE"
