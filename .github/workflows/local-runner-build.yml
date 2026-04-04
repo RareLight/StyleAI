@@ -61,10 +61,10 @@ jobs:
           uv venv --python "$UV_MANAGED_PY" --relocatable "$SERVER_ENV_DIR"
           PY_EXE="$SERVER_ENV_DIR/bin/python"
 
-          # Bundle libpython dylib only when python links it via @rpath.
+          # Bundle libpython dylib whenever python links any libpython*.dylib.
           LIBPY_REF="$(otool -L "$PY_EXE" | awk '/libpython[0-9.]+\.dylib/{print $1; exit}')"
-          if [[ -n "${LIBPY_REF}" && "${LIBPY_REF}" == @rpath/* ]]; then
-            LIBPY_NAME="${LIBPY_REF#@rpath/}"
+          if [ -n "${LIBPY_REF}" ]; then
+            LIBPY_NAME="$(basename "${LIBPY_REF}")"
             PY_DYLIB="$("$PY_EXE" -c "import os, sys, sysconfig; c=[]; ldlib=sysconfig.get_config_var('LDLIBRARY') or ''; libdir=sysconfig.get_config_var('LIBDIR') or ''; libpl=sysconfig.get_config_var('LIBPL') or ''; [c.append(os.path.join(d, ldlib)) for d in (libdir, libpl) if d and ldlib]; c.append(os.path.join(sys.base_prefix, 'lib', ldlib)) if ldlib else None; [print(p) for p in c if p and os.path.isfile(p)]")"
             PY_DYLIB="$(printf '%s\n' "${PY_DYLIB}" | awk 'NF{print; exit}')"
             if [ -z "${PY_DYLIB}" ] || [ ! -f "${PY_DYLIB}" ]; then
@@ -84,10 +84,24 @@ jobs:
               exit 1
             fi
             mkdir -p "$SERVER_ENV_DIR/lib"
-            cp -f "${PY_DYLIB}" "$SERVER_ENV_DIR/lib/"
+            cp -f "${PY_DYLIB}" "$SERVER_ENV_DIR/lib/${LIBPY_NAME}"
+            for PY_BIN in "$SERVER_ENV_DIR/bin/python" "$SERVER_ENV_DIR/bin/python3" "$SERVER_ENV_DIR/bin/python3.12"; do
+              if [ -f "${PY_BIN}" ]; then
+                install_name_tool -change "${LIBPY_REF}" "@executable_path/../lib/${LIBPY_NAME}" "${PY_BIN}" 2>/dev/null || true
+              fi
+            done
+            if [ ! -f "$SERVER_ENV_DIR/lib/${LIBPY_NAME}" ]; then
+              echo "Error: expected bundled dylib missing at $SERVER_ENV_DIR/lib/${LIBPY_NAME}"
+              exit 1
+            fi
+            if ! otool -L "$PY_EXE" | grep -F -q "@executable_path/../lib/${LIBPY_NAME}"; then
+              echo "Error: packaged python is not linked to bundled libpython at env/lib/${LIBPY_NAME}"
+              otool -L "$PY_EXE"
+              exit 1
+            fi
             echo "Bundled libpython dylib: $(basename "${PY_DYLIB}")"
           else
-            echo "No @rpath libpython dependency detected; skipping dylib bundle."
+            echo "No libpython dylib dependency detected; skipping dylib bundle."
           fi
 
           # Fast-fail if linked against Framework Python.
