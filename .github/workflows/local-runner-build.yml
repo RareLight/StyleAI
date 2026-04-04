@@ -13,6 +13,16 @@ on:
         required: false
         default: false
         type: boolean
+      save_local_artifact:
+        description: "Save build zip on runner filesystem"
+        required: false
+        default: true
+        type: boolean
+      local_artifact_dir:
+        description: "Runner-local directory for test artifacts"
+        required: false
+        default: "~/lrgenius-local-artifacts"
+        type: string
       python_version:
         description: "Python version for uv venv"
         required: false
@@ -177,6 +187,23 @@ jobs:
             --iterations 60 \
             --timeout 5
           curl -sf -X POST "http://127.0.0.1:19819/shutdown" || true
+
+      - name: Save local test artifact
+        if: ${{ inputs.save_local_artifact }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOCAL_DIR="${{ inputs.local_artifact_dir }}"
+          LOCAL_DIR="${LOCAL_DIR/#\~/$HOME}"
+          mkdir -p "$LOCAL_DIR"
+          ARTIFACT_NAME="LrGeniusAI-local-macos-arm64-${GITHUB_RUN_NUMBER}.zip"
+          ARTIFACT_PATH="$LOCAL_DIR/$ARTIFACT_NAME"
+          (
+            cd build
+            zip -r "$ARTIFACT_PATH" .
+          )
+          echo "Local artifact saved:"
+          echo "$ARTIFACT_PATH"
 
       - name: Upload artifact
         if: ${{ inputs.upload_artifact }}
