@@ -1,13 +1,14 @@
 # geniusai-server using the published GHCR image (same backend as a GitHub release).
-# Tag format matches CI: <release-tag>-x64 or <release-tag>-aarch64
-# (see .github/workflows/build.yml → build-docker-images).
+#
+# Default: :latest (multi-arch; CI publishes it on each release tag — see publish-docker-manifest).
+# Override in .env, e.g. LRGENIUS_IMAGE=ghcr.io/lrgenius/lrgeniusai:v1.2.3-x64
 #
 # Stop:  docker compose down
 # Logs:  docker compose logs -f geniusai-server
 
 services:
   geniusai-server:
-    image: ghcr.io/lrgenius/lrgeniusai:latest
+    image: ${LRGENIUS_IMAGE:-ghcr.io/lrgenius/lrgeniusai:latest}
     container_name: geniusai-server
     restart: unless-stopped
     ports:
