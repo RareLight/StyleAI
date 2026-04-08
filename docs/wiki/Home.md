@@ -18,6 +18,7 @@ Welcome to the project wiki.
 - [Project README](Project-README)
 - [Plugin README](Plugin-README)
 - [Server README](Server-README)
+- [Troubleshooting](Troubleshooting)
 
 ## Important note
 
