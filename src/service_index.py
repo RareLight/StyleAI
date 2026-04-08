@@ -374,7 +374,7 @@ def get_photo_ids_needing_processing(photo_ids: list[str], options: dict) -> lis
 def process_image_task(
     image_triplets: list[tuple[bytes, str, str]], 
     options: dict
-) -> tuple[int, int]:
+) -> tuple[int, int, list[str]]:
     """
     Process a batch of images for indexing.
     
@@ -383,10 +383,11 @@ def process_image_task(
         options: Dictionary with all processing options
         
     Returns:
-        Tuple of (success_count, failure_count)
+        Tuple of (success_count, failure_count, error_messages)
     """
     success_count = 0
     failure_count = 0
+    error_messages = []
     total_images = len(image_triplets)
 
     try:
@@ -465,7 +466,7 @@ def process_image_task(
                 and len(images_needing_metadata) == 0
                 and len(images_needing_cull_phash) == 0):
             logger.info("No generation required (regenerate_metadata=False and all fields present). Returning success without changes.")
-            return len(image_triplets), 0
+            return len(image_triplets), 0, []
 
     
         analysis_service = get_analysis_service()
@@ -476,14 +477,20 @@ def process_image_task(
         siglip_processor = server_lifecycle.get_processor()
 
         # Convert lists to sets for faster lookup in analyze_batch
-        embeddings, metadata_results = analysis_service.analyze_batch(
-            image_triplets, options, siglip_model, siglip_processor,
-            set(images_needing_embeddings), set(images_needing_metadata)
-        )
+        try:
+            embeddings, metadata_results = analysis_service.analyze_batch(
+                image_triplets, options, siglip_model, siglip_processor,
+                set(images_needing_embeddings), set(images_needing_metadata)
+            )
+        except Exception as e:
+            logger.error(f"Error in analyze_batch: {str(e)}", exc_info=True)
+            error_messages.append(str(e))
+            return 0, total_images, error_messages
 
         # Only fail batch when we actually needed embeddings but got none
         if embeddings is None and len(images_needing_embeddings) > 0:
-            return 0, total_images
+            error_messages.append("Failed to generate required embeddings")
+            return 0, total_images, error_messages
 
         # Vertex AI embeddings (optional, parallel to SigLIP2): generate for images_needing_vertexai
         vertex_project_id = options.get('vertex_project_id')
@@ -498,12 +505,16 @@ def process_image_task(
                     vertex_bytes.append(image_bytes)
             if vertex_bytes:
                 logger.info(f"Generating Vertex AI embeddings for {len(vertex_bytes)} images...")
-                vertex_results = vertexai_service.get_image_embeddings(
-                    vertex_bytes, vertex_project_id=vertex_project_id, vertex_location=vertex_location
-                )
-                for uid, emb in zip(vertex_uuids, vertex_results):
-                    if emb is not None:
-                        vertex_embeddings_by_uuid[uid] = emb
+                try:
+                    vertex_results = vertexai_service.get_image_embeddings(
+                        vertex_bytes, vertex_project_id=vertex_project_id, vertex_location=vertex_location
+                    )
+                    for uid, emb in zip(vertex_uuids, vertex_results):
+                        if emb is not None:
+                            vertex_embeddings_by_uuid[uid] = emb
+                except Exception as e:
+                    logger.error(f"vertexai failed: {e}", exc_info=True)
+                    error_messages.append(f"Vertex AI error: {e}")
 
         for i, (image_bytes, uuid, filename) in enumerate(image_triplets):
             try:
@@ -519,11 +530,14 @@ def process_image_task(
                 # Validate that required new data was generated if needed
                 if need_embedding and embedding is None:
                     logger.error(f"Embedding generation failed for {uuid}. Skipping.")
+                    error_messages.append(f"{filename}: Embedding generation failed")
                     failure_count += 1
                     continue
 
                 if need_metadata and (not metadata_data or not metadata_data.success):
-                    logger.error(f"Metadata generation failed for {uuid}. Skipping.")
+                    error_txt = metadata_data.error if metadata_data and metadata_data.error else "Unknown error"
+                    logger.error(f"Metadata generation failed for {uuid}. Reason: {error_txt}")
+                    error_messages.append(f"{filename}: {error_txt}")
                     failure_count += 1
                     continue
 
@@ -682,6 +696,7 @@ def process_image_task(
                                 logger.debug(f"UUID {uuid}: no faces detected (marked as checked).")
                         except Exception as e:
                             logger.warning(f"Face detection/indexing failed for {uuid}: {e}", exc_info=True)
+                            error_messages.append(f"{filename} faces: {e}")
 
                 # Vertex AI embeddings (optional, separate Chroma collection)
                 if uuid in vertex_embeddings_by_uuid:
@@ -692,9 +707,11 @@ def process_image_task(
 
             except Exception as e:
                 logger.error(f"Error processing image {uuid}: {str(e)}", exc_info=True)
+                error_messages.append(f"{filename}: {str(e)}")
                 failure_count += 1
 
-        return success_count, failure_count
+        return success_count, failure_count, error_messages
     except Exception as e:
         logger.error(f"Error during batch processing task: {str(e)}", exc_info=True)
-        return 0, total_images
+        error_messages.append(f"Batch processing error: {str(e)}")
+        return 0, total_images, error_messages
