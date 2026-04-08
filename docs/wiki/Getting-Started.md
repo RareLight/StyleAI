@@ -1,82 +1,68 @@
 # Getting Started
 
-## 1. Install plugin and server
+Welcome to LrGeniusAI! This guide will walk you through setting up the plugin, indexing your first batch of photos, and starting your AI-powered Lightroom workflow.
 
-Follow installation in:
+## 1. Install Plugin and Server
 
-- root `README.md`
-- `plugin/README.md`
+To begin, you must install both the Lightroom Classic plugin frontend and the Python backend server. These components communicate locally to process your images without freezing the Lightroom UI. 
+Please refer to the high-level installation instructions on the [root `README.md`](Project-README) or the detailed steps in the [`plugin/README.md`](Plugin-README).
 
-## 2. Configure plugin
+## 2. Configure Plugin
 
-In Lightroom Plug-in Manager:
+Once installed, open the **Lightroom Plug-in Manager** (`File -> Plug-in Manager`) and locate LrGeniusAI. Here you need to:
+- **Set the Backend Server URL:** This defaults to `http://127.0.0.1:8000` but if you're running the backend on a different machine (e.g. via Docker), update the address here.
+- **Configure Provider/API Keys:** If you plan to use cloud providers like OpenAI or Google Gemini, enter your API keys. For local providers like Ollama or LM Studio, ensure their respective base URLs are correctly configured.
+- **Set Vertex AI Details:** If using Google Cloud's Vertex AI, provide your project ID and preferred location.
 
-- set backend server URL
-- configure provider/API keys
-- set Vertex project/location if needed
+*Having trouble? Refer to the [Troubleshooting](Troubleshooting) guide for connectivity and API issues.*
 
-## 3. Index photos
+## 3. Index Photos
 
-Run:
+Before semantic search or AI-assisted culling can work, the backend needs to process ("index") your photos.
+1. Select one or more photos in your Lightroom Library grid.
+2. Navigate to `Library -> Plug-in Extras -> Analyze & Index Photos`.
+3. The plugin will pass the photos to the backend, generate descriptions, tags, and AI embeddings, and store them.
 
-- `Library -> Plug-in Extras -> Analyze & Index Photos`
+Once indexing finishes, try out **Advanced Search**, the **People** workflows, or use **Retrieve Metadata** to inject the generated tags straight back into your catalog.
 
-Then use:
+## 4. Run One-Time ID Migration (Upgrade Path)
 
-- Advanced Search
-- People
-- Retrieve Metadata
+*Note: This step is only relevant if you are upgrading from an older version of LrGeniusAI.*
 
-## 4. Run one-time ID migration (upgrade path)
+If your previous database relied on Lightroom catalog UUIDs, you must migrate to the new `photo_id` system:
+1. Open `File -> Plug-in Manager`.
+2. Open LrGeniusAI settings.
+3. In the `Backend Server` section, click **Migrate existing DB IDs to photo_id**.
+4. Wait for the progress dialog to complete. This ensures you do not lose any previously generated metadata or semantic search indexes.
 
-If you upgraded from an older release with UUID-based backend IDs:
+## 5. Run Culling on Similar Photos
 
-1. Open `File -> Plug-in Manager`
-2. Open LrGeniusAI settings
-3. In `Backend Server`, click **Migrate existing DB IDs to photo_id**
-4. Wait until the progress scope finishes
-
-This is a one-time step.
-
-## 5. Run culling on similar photos
-
-After indexing, you can run the image culling workflow to quickly review bursts and near-duplicates:
-
-1. Select photos or use the current view in Lightroom.
+After indexing your photos, you can automate the process of picking the best shots from bursts or removing near-duplicates:
+1. Select the group of photos you want to cull, or leave it empty to use the current folder view.
 2. Open `Library -> Plug-in Extras -> Cull Similar Photos`.
-3. Choose the desired culling preset (for example `default` or `sports`) and scope.
-4. Wait for the backend to group and rank your photos.
-5. Review the created collection set with:
-   - `Picks`
-   - `Alternates`
-   - `Reject Candidates`
-   - optional `Duplicates / Near Duplicates`
+3. Choose a culling preset (e.g., `default` or `sports`) depending on how aggressive you want the AI to be.
+4. Wait for the backend to group and analyze your photos. 
+5. LrGeniusAI will rapidly create a time-stamped Collection Set in Lightroom containing `Picks`, `Alternates`, `Reject Candidates`, and `Duplicates`. Your view will automatically switch to the `Picks` collection so you can review the best shots right away.
 
-Each run creates a timestamped collection set and switches Lightroom to the Picks collection for immediate review.
+## 6. Create a DB Backup
 
-## 6. Create a DB backup
+We highly recommend creating regular backups of your backend data, especially before migrations, moving to a new server, or performing maintenance.
+1. Open `File -> Plug-in Manager`.
+2. Navigate to `Backend Server` and click **Download DB backup**.
+3. Save the resulting `.zip` file somewhere safe. The backup contains the full persistent backend directory including your embeddings and metadata databases.
 
-Before migrations, server moves, or larger backend maintenance, create a backup from Lightroom:
+## 7. Vertex AI Login
 
-1. Open `File -> Plug-in Manager`
-2. Open LrGeniusAI settings
-3. In `Backend Server`, click `Download DB backup`
-4. Save the generated `.zip` file to a safe location
+For users of Google's Vertex AI, you need to use Google Cloud ADC (Application Default Credentials) on the host running the server.
 
-The backup contains the full persistent backend DB directory, including Chroma data as well as SQLite and JSON files.
-
-## 7. Vertex AI login
-
-Use gcloud ADC on the server host:
-
+From your server terminal:
 ```bash
 gcloud init
 gcloud config set project YOUR_PROJECT_ID
 gcloud auth application-default login
 ```
 
-If the backend runs in Docker Compose on a remote server, run the login inside the container instead:
-
+If your backend is running in the remote Docker Compose environment:
 ```bash
 mkdir -p gcloud
 docker compose up -d --build
@@ -84,18 +70,15 @@ docker compose exec geniusai-server gcloud config set project YOUR_PROJECT_ID
 docker compose exec geniusai-server gcloud auth application-default login
 ```
 
-For headless SSH hosts without a browser:
-
+For headless servers without a GUI/browser:
 ```bash
 docker compose exec geniusai-server gcloud auth application-default login --no-browser
 ```
+The `./gcloud:/root/.config/gcloud` bind mount keeps your ADC credentials intact between container restarts.
 
-The bind mount `./gcloud:/root/.config/gcloud` keeps ADC and the active gcloud project persistent across container restarts and rebuilds.
+## 8. Imported Help Pages
 
-## 8. Imported help pages
-
-Curated pages migrated from `lrgenius.com/help`:
-
+For further reading, we've migrated several curated guides from the project website:
 - [Help: Analyze and Index](Help-Analyze-and-Index)
 - [Help: Advanced Search](Help-Advanced-Search)
 - [Help: Choosing AI Model](Help-Choosing-AI-Model)
