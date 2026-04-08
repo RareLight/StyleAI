@@ -229,6 +229,11 @@ local function showAnalyzeAndIndexDialog(ctx)
                     title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/EnableEmbeddings=Create search embeddings",
                     enabled = props.clipReady,
                 },
+                f:static_text {
+                    title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ClipNotReady=(OpenCLIP model is missing. Please download it in the Plugin Manager)",
+                    text_color = LrColor(1, 0, 0),
+                    visible = not props.clipReady,
+                },
             },
             f:row {
                 f:checkbox {
