@@ -29,7 +29,7 @@ return {
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
-			title = "AI Edit Photos...",
+			title = LOC "$$$/LrGeniusAI/Info/AiEditPhotosTitle=AI Edit Photos...",
 			file = "TaskAiEditPhotos.lua",
 		},
 		{
@@ -60,6 +60,11 @@ return {
 			title = LOC "$$$/LrGeniusAI/Menu/FindSimilarImages=Find Similar Images...",
 			file = "TaskFindSimilarImages.lua",
 		},
+		{ separator = true },
+		{
+			title = "Developer: Run Automated Tests...",
+			file = "TaskAutomatedTests.lua",
+		},
 	},
 
 	LrExportMenuItems = {
@@ -68,7 +73,7 @@ return {
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
-			title = "AI Edit Photos...",
+			title = LOC "$$$/LrGeniusAI/Info/AiEditPhotosTitle=AI Edit Photos...",
 			file = "TaskAiEditPhotos.lua",
 		},
 		{

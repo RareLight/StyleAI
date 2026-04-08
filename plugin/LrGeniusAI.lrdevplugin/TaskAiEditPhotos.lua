@@ -60,7 +60,7 @@ local function buildEditIntentPresetItems()
     end
     if #items == 0 then
         table.insert(items, {
-            title = "Custom",
+            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/Custom=Custom",
             value = Defaults.editIntentCustomValue or "custom",
         })
     end

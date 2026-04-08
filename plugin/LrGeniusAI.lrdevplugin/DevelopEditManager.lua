@@ -1180,14 +1180,14 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
         },
         f:row {
             f:checkbox { value = bind "applyGlobal" },
-            f:static_text { title = "Apply global develop settings" },
+            f:static_text { title = LOC "$$$/LrGeniusAI/DevelopEdit/ApplyGlobal=Apply global develop settings" },
         },
         f:row {
             f:checkbox {
                 value = bind "applyMasks",
                 enabled = (recipe.masks and #recipe.masks > 0) or false,
             },
-            f:static_text { title = "Apply masks when possible" },
+            f:static_text { title = LOC "$$$/LrGeniusAI/DevelopEdit/ApplyMasks=Apply masks when possible" },
         },
         f:row {
             f:edit_field {
@@ -1199,7 +1199,7 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
     }
 
     local result = LrDialogs.presentModalDialog({
-        title = "Review AI Lightroom Edit",
+        title = LOC "$$$/LrGeniusAI/DevelopEdit/ReviewTitle=Review AI Lightroom Edit",
         contents = dialogView,
         actionVerb = "Apply",
     })
