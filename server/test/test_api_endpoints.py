@@ -3,8 +3,7 @@ import os
 import pytest
 from unittest.mock import MagicMock
 
-# Monkeypatch sys.argv BEFORE importing app to satisfy argparse in config.py
-sys.argv = ["geniusai_server.py", "--db-path", "/tmp/mock_db_path"]
+
 
 from geniusai_server import app
 

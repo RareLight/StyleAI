@@ -233,7 +233,12 @@ def get_available_culling_presets() -> list[str]:
 CULLING_CONFIG = get_culling_config("default")
 
 # --- Logger Setup ---
-LOG_PATH = os.path.join(os.path.dirname(DB_PATH), "lrgenius-server.log")
+LOG_PATH = os.path.join(os.path.dirname(DB_PATH) or ".", "lrgenius-server.log")
+
+try:
+    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+except Exception:
+    pass
 
 log_level = logging.DEBUG if args.debug else logging.INFO
 
