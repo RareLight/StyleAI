@@ -46,7 +46,7 @@ LrTasks.startAsyncTask(function()
 
         local function runTest(testName, testFunc)
             log:info("Running test: " .. testName)
-            local status, err = pcall(testFunc)
+            local status, err = LrTasks.pcall(testFunc)
             if status then
                 testsPassed = testsPassed + 1
             else
@@ -60,8 +60,8 @@ LrTasks.startAsyncTask(function()
         -- TEST CASES
         ---------------------------------------------------------
 
-        runTest("Util.split string operation", function()
-            local res = Util.split("a,b,c", ",")
+        runTest("Util.string_split string operation", function()
+            local res = Util.string_split("a,b,c", ",")
             assertEqual(3, #res, "Should return 3 elements")
             assertEqual("a", res[1], "First element should be 'a'")
         end)
@@ -72,7 +72,7 @@ LrTasks.startAsyncTask(function()
         end)
 
         runTest("JSON array decoding", function()
-            local decoded = JSON.decode('["a", "b", "c"]')
+            local decoded = JSON:decode('["a", "b", "c"]')
             assertTrue(decoded ~= nil, "Decoded object should not be nil")
             assertEqual(3, #decoded, "Array should have 3 elements")
             assertEqual("b", decoded[2], "Second element should be 'b'")
@@ -80,7 +80,7 @@ LrTasks.startAsyncTask(function()
 
         runTest("JSON object encoding", function()
             local obj = { success = true, meta = { value = 1 } }
-            local encoded = JSON.encode(obj)
+            local encoded = JSON:encode(obj)
             assertTrue(string.find(encoded, "success") ~= nil, "Encoded string should contain success")
             assertTrue(string.find(encoded, "true") ~= nil, "Encoded string should contain true")
         end)
@@ -90,9 +90,9 @@ LrTasks.startAsyncTask(function()
             assertTrue(isUp, "The backend server should be online and reachable.")
         end)
 
-        runTest("Backend Connectivity - APISearchIndex.getDatabaseStats", function()
+        runTest("Backend Connectivity - APISearchIndex.getStats", function()
             -- Relies on the server being up
-            local stats = SearchIndexAPI.getDatabaseStats(nil)
+            local stats = SearchIndexAPI.getStats()
             assertTrue(stats ~= nil, "Should retrieve stats object")
             assertTrue(stats.photos ~= nil, "Stats should contain 'photos' property")
         end)
