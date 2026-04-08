@@ -55,7 +55,7 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
     return {
         {
             bind_to_object = propertyTable,
-            title = "Logging",
+            title = LOC "$$$/LrGeniusAI/PluginInfo/Logging=Logging",
 
             f:row {
                 f:static_text {
@@ -105,7 +105,7 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
             },
         },
         {
-            title = "CREDITS",
+            title = LOC "$$$/LrGeniusAI/PluginInfo/Credits=CREDITS",
             f:row {
                 f:static_text {
                     title = Defaults.copyrightString,
@@ -238,7 +238,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                 },
                 f:row {
                     f:push_button {
-                        title = "Generate hash-based photo IDs (catalog only)",
+                        title = LOC "$$$/LrGeniusAI/PluginInfo/GeneratePhotoIds=Generate hash-based photo IDs (catalog only)",
                         action = function(button)
                             LrTasks.startAsyncTask(function()
                                 local ok, msg = SearchIndexAPI.generateGlobalPhotoIdsForCatalog()
@@ -251,7 +251,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                         end,
                     },
                     f:push_button {
-                        title = "Show DB stats",
+                        title = LOC "$$$/LrGeniusAI/PluginInfo/ShowDbStats=Show DB stats",
                         action = function(button)
                             LrTasks.startAsyncTask(function()
                                 local stats, err = SearchIndexAPI.getStats()
@@ -264,7 +264,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                         end,
                     },
                     f:push_button {
-                        title = "Download DB backup",
+                        title = LOC "$$$/LrGeniusAI/PluginInfo/DownloadDbBackup=Download DB backup",
                         action = function(button)
                             LrTasks.startAsyncTask(function()
                                 local result, path = SearchIndexAPI.downloadDatabaseBackup()
@@ -280,7 +280,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                 },
                 f:row {
                     f:push_button {
-                        title = "Claim photos for this catalog",
+                        title = LOC "$$$/LrGeniusAI/PluginInfo/ClaimPhotos=Claim photos for this catalog",
                         action = function(button)
                             LrTasks.startAsyncTask(function()
                                 local progressScope = LrProgressScope({
@@ -299,7 +299,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                         end,
                     },
                     f:push_button {
-                        title = "Migrate existing DB IDs to photo_id",
+                        title = LOC "$$$/LrGeniusAI/PluginInfo/MigratePhotoIds=Migrate existing DB IDs to photo_id",
                         action = function(button)
                             LrTasks.startAsyncTask(function()
                                 local status, ok, msg
@@ -324,7 +324,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                         end,
                     },
                     f:push_button {
-                        title = "Check Plugin/Backend versions",
+                        title = LOC "$$$/LrGeniusAI/PluginInfo/CheckVersions=Check Plugin/Backend versions",
                         action = function(button)
                             LrTasks.startAsyncTask(function()
                                 local result, err = SearchIndexAPI.checkVersionCompatibility()
@@ -392,10 +392,10 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
             },
             f:group_box {
                 width = share 'groupBoxWidth',
-                title = "LM Studio Settings",
+                title = LOC "$$$/LrGeniusAI/PluginInfo/LmStudioSettings=LM Studio Settings",
                 f:row {
                     f:static_text {
-                        title = "LM Studio Base URL (host:port)",
+                        title = LOC "$$$/LrGeniusAI/PluginInfo/LmStudioUrl=LM Studio Base URL (host:port)",
                         width = share 'labelWidth'
                     },
                     f:edit_field {
@@ -404,7 +404,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                         width_in_chars = 35,
                     },
                     f:push_button {
-                        title = "Setup LM Studio",
+                        title = LOC "$$$/LrGeniusAI/PluginInfo/SetupLmStudio=Setup LM Studio",
                         action = function(button)
                             LrHttp.openUrlInBrowser("https://lrgenius.com/help/lm-studio-setup/")
                         end,
@@ -413,7 +413,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                 },
                 f:row {
                     f:static_text {
-                        title = "For local LM Studio leave default. Use host:port to connect to LM Studio on another machine (e.g. 192.168.1.50:1234).",
+                        title = LOC "$$$/LrGeniusAI/PluginInfo/LmStudioUrlDesc=For local LM Studio leave default. Use host:port to connect to LM Studio on another machine (e.g. 192.168.1.50:1234).",
                         width_in_chars = 60,
                         wrap = true,
                     },
@@ -500,19 +500,19 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                 width = share 'groupBoxWidth',
                 f:checkbox {
                     value = bind 'useClip',
-                    title = "Use OpenCLIP AI model for advanced search",
+                    title = LOC "$$$/LrGeniusAI/PluginInfo/UseOpenClip=Use OpenCLIP AI model for advanced search",
                 },
                 f:group_box {
                     width = share 'groupBoxWidth',
-                    title = LOC "Advanced search",
+                    title = LOC "$$$/LrGeniusAI/PluginInfo/AdvancedSearchTitle=Advanced search",
                     f:row {
                         f:checkbox {
                             value = bind 'clipReady',
                             enabled = false,
-                            title = "OpenCLIP AI model is ready",
+                            title = LOC "$$$/LrGeniusAI/PluginInfo/OpenClipReady=OpenCLIP AI model is ready",
                         },
                         f:push_button {
-                            title = "Download now",
+                            title = LOC "$$$/LrGeniusAI/PluginInfo/DownloadNow=Download now",
                             action = function (button)
                                 LrTasks.startAsyncTask(function ()
                                     SearchIndexAPI.startClipDownload()

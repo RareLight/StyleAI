@@ -19,7 +19,7 @@ return {
         },
         {
             id = 'aiEditLastRun',
-            title = "Last AI edit run",
+            title = LOC "$$$/LrGeniusAI/AIMetadataProvider/AiEditLastRun=Last AI edit run",
             dataType = 'string',
             readOnly = true,
             searchable = true,
@@ -27,7 +27,7 @@ return {
         },
         {
             id = 'aiEditModel',
-            title = "AI edit model",
+            title = LOC "$$$/LrGeniusAI/AIMetadataProvider/AiEditModel=AI edit model",
             dataType = 'string',
             readOnly = true,
             searchable = true,
@@ -35,7 +35,7 @@ return {
         },
         {
             id = 'aiEditStatus',
-            title = "AI edit status",
+            title = LOC "$$$/LrGeniusAI/AIMetadataProvider/AiEditStatus=AI edit status",
             dataType = 'string',
             readOnly = true,
             searchable = true,
@@ -43,7 +43,7 @@ return {
         },
         {
             id = 'aiEditSummary',
-            title = "AI edit summary",
+            title = LOC "$$$/LrGeniusAI/AIMetadataProvider/AiEditSummary=AI edit summary",
             dataType = 'string',
             readOnly = true,
             searchable = true,
@@ -51,7 +51,7 @@ return {
         },
         {
             id = 'aiEditWarnings',
-            title = "AI edit warnings",
+            title = LOC "$$$/LrGeniusAI/AIMetadataProvider/AiEditWarnings=AI edit warnings",
             dataType = 'string',
             readOnly = true,
             searchable = true,
@@ -59,7 +59,7 @@ return {
         },
         {
             id = 'aiEditRecipe',
-            title = "AI edit recipe JSON",
+            title = LOC "$$$/LrGeniusAI/AIMetadataProvider/AiEditRecipeJson=AI edit recipe JSON",
             dataType = 'string',
             readOnly = true,
             searchable = false,
@@ -251,7 +251,7 @@ return {
         },
         {
             id = 'globalPhotoId',
-            title = "Global Photo ID",
+            title = LOC "$$$/LrGeniusAI/AIMetadataProvider/GlobalPhotoId=Global Photo ID",
             dataType = 'string',
             readOnly = true,
             searchable = true,
@@ -260,7 +260,7 @@ return {
         },
         {
             id = 'globalPhotoIdFileSize',
-            title = "Global Photo ID File Size",
+            title = LOC "$$$/LrGeniusAI/AIMetadataProvider/GlobalPhotoIdFileSize=Global Photo ID File Size",
             dataType = 'string',
             readOnly = true,
             searchable = false,
@@ -268,7 +268,7 @@ return {
         },
         {
             id = 'globalPhotoIdFileModificationDate',
-            title = "Global Photo ID File Modification Date",
+            title = LOC "$$$/LrGeniusAI/AIMetadataProvider/GlobalPhotoIdModificationDate=Global Photo ID File Modification Date",
             dataType = 'string',
             readOnly = true,
             searchable = false,
@@ -276,7 +276,7 @@ return {
         },
         {
             id = 'globalPhotoIdAlgorithm',
-            title = "Global Photo ID Algorithm",
+            title = LOC "$$$/LrGeniusAI/AIMetadataProvider/GlobalPhotoIdAlgorithm=Global Photo ID Algorithm",
             dataType = 'string',
             readOnly = true,
             searchable = false,
