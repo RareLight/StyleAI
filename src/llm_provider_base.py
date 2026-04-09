@@ -125,6 +125,7 @@ class EditGenerationRequest:
     composition_mode: str = "subtle"
     ollama_base_url: Optional[str] = None
     lmstudio_base_url: Optional[str] = None
+    training_examples: Optional[List[Dict[str, Any]]] = None
 
 
 @dataclass
@@ -314,6 +315,38 @@ class LLMProviderBase(ABC):
             "When local edits are useful, use only supported mask kinds: subject, sky, background."
         )
 
+    def _format_training_example(self, idx: int, example: Dict[str, Any]) -> str:
+        """Serialise one training example into a compact prompt-friendly string."""
+        dev = example.get("develop_settings", {})
+        label = example.get("label") or example.get("filename") or f"Example {idx}"
+        summary = example.get("summary")
+
+        # Keep only numeric develop values to avoid cluttering the prompt.
+        CANONICAL_KEYS = {
+            "Exposure2012", "Contrast2012", "Highlights2012", "Shadows2012",
+            "Whites2012", "Blacks2012", "Temp", "Tint", "Texture", "Clarity2012",
+            "Dehaze", "Vibrance", "Saturation", "Sharpness", "LuminanceSmoothing",
+            "ColorNoiseReduction", "PostCropVignetteAmount", "GrainAmount",
+            "SplitToningShadowHue", "SplitToningShadowSaturation",
+            "SplitToningHighlightHue", "SplitToningHighlightSaturation",
+            "SplitToningBalance", "ParametricHighlights", "ParametricLights",
+            "ParametricDarks", "ParametricShadows",
+        }
+        compact = {
+            k: round(v, 2) if isinstance(v, float) else v
+            for k, v in dev.items()
+            if k in CANONICAL_KEYS and isinstance(v, (int, float))
+        }
+        lines = [f"  [{idx}] {label}"]
+        if summary:
+            lines.append(f"      Summary: {summary}")
+        if compact:
+            params = ", ".join(f"{k}={v}" for k, v in sorted(compact.items()))
+            lines.append(f"      Settings: {params}")
+        else:
+            lines.append("      Settings: (no numeric develop settings captured)")
+        return "\n".join(lines)
+
     def _prepare_edit_user_prompt(self, request: EditGenerationRequest) -> str:
         if request.user_prompt:
             base_prompt = request.user_prompt
@@ -420,6 +453,19 @@ class LLMProviderBase(ABC):
 
         if context_additions:
             base_prompt += "\n\n" + "\n".join(context_additions)
+
+        # Inject few-shot training examples from the user's own edits.
+        examples = request.training_examples
+        if examples and isinstance(examples, list) and len(examples) > 0:
+            base_prompt += "\n\n--- YOUR PERSONAL EDIT STYLE (few-shot examples) ---\n"
+            base_prompt += (
+                "The following examples are from your own Lightroom edits on visually similar photos. "
+                "Study the slider values and replicate this editing style for the current photo.\n"
+            )
+            for i, ex in enumerate(examples, start=1):
+                base_prompt += self._format_training_example(i, ex) + "\n"
+            base_prompt += "--- END OF STYLE EXAMPLES ---\n"
+
         return base_prompt
     
     def _build_nested_keyword_schema(self, categories: Dict[str, Any], bilingual: bool = False) -> Dict[str, Any]:

@@ -179,6 +179,7 @@ local function showAiEditDialog(ctx)
     props.submitKeywords = prefs.aiEditSubmitKeywords ~= false
     props.submitFolderName = prefs.aiEditSubmitFolderName or false
     props.showPhotoContextDialog = prefs.aiEditShowPhotoContextDialog ~= false
+    props.useTrainingStyle = prefs.aiEditUseTrainingStyle ~= false
     props.promptTitles = {}
     props.prompts = safePromptTable(prefs.editPrompts or { Default = Defaults.defaultEditSystemInstruction })
     log:trace("showAiEditDialog: prompt source type=" .. tostring(type(props.prompts)))
@@ -545,6 +546,14 @@ local function showAiEditDialog(ctx)
                     title = "Send folder names",
                 },
             },
+            f:row {
+                f:checkbox {
+                    value = bind "useTrainingStyle",
+                },
+                f:static_text {
+                    title = LOC "$$$/LrGeniusAI/Training/UseTrainingCheckbox=Apply my saved edit style (training examples)",
+                },
+            },
         },
     }
 
@@ -585,6 +594,7 @@ local function showAiEditDialog(ctx)
     prefs.aiEditSubmitKeywords = props.submitKeywords
     prefs.aiEditSubmitFolderName = props.submitFolderName
     prefs.aiEditShowPhotoContextDialog = props.showPhotoContextDialog
+    prefs.aiEditUseTrainingStyle = props.useTrainingStyle
     prefs.editPrompts = props.prompts
     prefs.editPrompt = props.prompt
 
@@ -625,6 +635,7 @@ local function showAiEditDialog(ctx)
         submit_keywords = props.submitKeywords,
         submit_folder_names = props.submitFolderName,
         showPhotoContextDialog = props.showPhotoContextDialog,
+        use_training_style = props.useTrainingStyle ~= false,
     }
 
     if providerFromKey == "chatgpt" then

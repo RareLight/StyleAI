@@ -51,6 +51,11 @@ local ENDPOINTS = {
     DB_BACKUP = "/db/backup",
     SYNC_CLEANUP = "/sync/cleanup",
     SYNC_CLAIM = "/sync/claim",
+    TRAINING_ADD = "/training/add",
+    TRAINING_LIST = "/training/list",
+    TRAINING_COUNT = "/training/count",
+    TRAINING_DELETE = "/training",  -- DELETE /training/<photo_id>
+    TRAINING_CLEAR = "/training",   -- DELETE /training (all)
 }
 
 local EXPORT_SETTINGS = {
@@ -2735,4 +2740,124 @@ function SearchIndexAPI.isClipReady()
     end
     log:error("isClipReady: Unknown error")
     return false, "Unknown error"
+end
+
+-- ---------------------------------------------------------------------------
+-- Training API functions
+-- ---------------------------------------------------------------------------
+
+---
+-- Add or update a training example on the backend.
+-- @param photoId string        Stable photo identifier.
+-- @param filepath string       Path to an exported JPEG for this photo.
+-- @param developSettings table Lightroom develop settings (from photo:getDevelopSettings()).
+-- @param options table         Optional: label, summary.
+-- @return boolean success, table|string response or error message
+---
+function SearchIndexAPI.addTrainingExample(photoId, filepath, developSettings, options)
+    if not photoId or photoId == "" then
+        log:error("addTrainingExample: photo_id is missing")
+        return false, "No photo ID provided"
+    end
+    options = options or {}
+    local url = getBaseUrl() .. ENDPOINTS.TRAINING_ADD
+    local mimeChunks = {}
+
+    table.insert(mimeChunks, { name = "photo_id", value = photoId })
+    table.insert(mimeChunks, { name = "develop_settings", value = JSON:encode(developSettings or {}) })
+
+    if options.label and options.label ~= "" then
+        table.insert(mimeChunks, { name = "label", value = options.label })
+    end
+    if options.summary and options.summary ~= "" then
+        table.insert(mimeChunks, { name = "summary", value = options.summary })
+    end
+
+    if filepath and LrFileUtils.exists(filepath) then
+        local filename = LrPathUtils.leafName(filepath)
+        table.insert(mimeChunks, {
+            name = "image",
+            fileName = filename,
+            filePath = filepath,
+            contentType = "image/jpeg",
+        })
+    end
+
+    log:trace("addTrainingExample: uploading photo_id=" .. tostring(photoId))
+    local response, err = _requestMultipart(url, mimeChunks, 120)
+    if not response then
+        log:error("addTrainingExample failed: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" then
+        return true, response
+    end
+    log:error("addTrainingExample unexpected status: " .. tostring(response.status))
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- Fetch the list of all training examples from the backend.
+-- @return boolean success, table|string examples list or error message
+---
+function SearchIndexAPI.listTrainingExamples()
+    local url = getBaseUrl() .. ENDPOINTS.TRAINING_LIST
+    local response, err = _request('GET', url)
+    if not response then
+        log:error("listTrainingExamples failed: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+    return true, response.examples or {}
+end
+
+---
+-- Get the count of stored training examples.
+-- @return number|nil count, string|nil error
+---
+function SearchIndexAPI.getTrainingCount()
+    local url = getBaseUrl() .. ENDPOINTS.TRAINING_COUNT
+    local response, err = _request('GET', url)
+    if not response then
+        log:error("getTrainingCount failed: " .. tostring(err))
+        return nil, err or "Unknown error"
+    end
+    return tonumber(response.count) or 0, nil
+end
+
+---
+-- Delete one training example by photo_id.
+-- @param photoId string
+-- @return boolean success, string|nil error
+---
+function SearchIndexAPI.deleteTrainingExample(photoId)
+    if not photoId or photoId == "" then
+        return false, "No photo ID provided"
+    end
+    local url = getBaseUrl() .. ENDPOINTS.TRAINING_DELETE .. "/" .. photoId
+    local response, err = _request('DELETE', url)
+    if not response then
+        log:error("deleteTrainingExample failed: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" then
+        return true, nil
+    end
+    return false, response.error or "Not found"
+end
+
+---
+-- Clear ALL training examples from the backend.
+-- @return boolean success, string|nil error
+---
+function SearchIndexAPI.clearAllTrainingExamples()
+    local url = getBaseUrl() .. ENDPOINTS.TRAINING_CLEAR
+    local response, err = _request('DELETE', url)
+    if not response then
+        log:error("clearAllTrainingExamples failed: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" then
+        return true, nil
+    end
+    return false, response.error or "Unexpected response"
 end

@@ -18,6 +18,7 @@ from llm_provider_chatgpt import ChatGPTProvider
 from llm_provider_gemini import GeminiProvider
 from edit_recipe import filter_edit_recipe_by_controls
 from config import logger, DEFAULT_METADATA_PROVIDER, DEFAULT_METADATA_LANGUAGE, DEFAULT_KEYWORD_CATEGORIES
+import service_training as training_service
 from PIL import Image, ExifTags
 import io
 from datetime import datetime
@@ -309,6 +310,38 @@ class AnalysisService:
             ollama_base_url=options.get('ollama_base_url'),
             lmstudio_base_url=options.get('lmstudio_base_url'),
         )
+
+        # Query similar training examples for few-shot style injection.
+        training_examples = None
+        use_training = options.get('use_training_style', True)
+        if use_training:
+            try:
+                # Re-use the CLIP embedding of the current photo from the main collection
+                # (best-effort: skip if not available).
+                import service_chroma as chroma_service
+                existing = chroma_service.get_image(uuid)
+                embedding = None
+                if existing and existing.get("ids") and existing.get("embeddings"):
+                    raw_emb = existing["embeddings"][0]
+                    if raw_emb is not None:
+                        import numpy as np
+                        emb_arr = np.asarray(raw_emb, dtype=np.float32)
+                        if emb_arr.size > 0 and not np.allclose(emb_arr, 0.0):
+                            embedding = emb_arr.tolist()
+                if embedding is not None:
+                    training_examples = training_service.query_similar_training_examples(
+                        embedding, n_results=3
+                    )
+                    if training_examples:
+                        logger.info(
+                            "Injecting %d training example(s) for uuid=%s",
+                            len(training_examples),
+                            uuid,
+                        )
+            except Exception as exc:
+                logger.warning("Could not retrieve training examples for uuid=%s: %s", uuid, exc)
+
+        request.training_examples = training_examples or []
 
         try:
             response = selected_provider.generate_edit_recipe(request)
