@@ -46,6 +46,13 @@ function PluginInfoDialogSections.startDialog(propertyTable)
     propertyTable.backendServerUrl = prefs.backendServerUrl or Defaults.defaultBackendServerUrl
     propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
     propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
+
+    -- Training examples count (loaded asynchronously).
+    propertyTable.trainingCount = 0
+    LrTasks.startAsyncTask(function()
+        local count, err = SearchIndexAPI.getTrainingCount()
+        propertyTable.trainingCount = count or 0
+    end)
 end
 
 function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
@@ -522,6 +529,67 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                         }
                     },
                 }
+            },
+            f:group_box {
+                width = share 'groupBoxWidth',
+                title = LOC "$$$/LrGeniusAI/Training/SectionTitle=Edit Style Training",
+                f:row {
+                    f:static_text {
+                        title = LOC "$$$/LrGeniusAI/Training/CountPrefix=Saved training examples:",
+                    },
+                    f:static_text {
+                        title = bind { key = 'trainingCount', transform = function(v) return tostring(v or 0) end },
+                        font = "<system/bold>",
+                    },
+                },
+                f:row {
+                    f:static_text {
+                        title = LOC "$$$/LrGeniusAI/Training/SectionHint=Use the Library menu \u2192 Plug-in Extras \u2192 Save Edits as AI Training Examples to capture your own edit style.",
+                        width_in_chars = 70,
+                        wrap = true,
+                    },
+                },
+                f:row {
+                    f:push_button {
+                        title = LOC "$$$/LrGeniusAI/Training/RefreshCount=Refresh count",
+                        action = function(button)
+                            LrTasks.startAsyncTask(function()
+                                local count, err = SearchIndexAPI.getTrainingCount()
+                                propertyTable.trainingCount = count or 0
+                            end)
+                        end,
+                    },
+                    f:push_button {
+                        title = LOC "$$$/LrGeniusAI/Training/ClearAll=Clear all training examples",
+                        action = function(button)
+                            local confirm = LrDialogs.confirm(
+                                LOC "$$$/LrGeniusAI/Training/ClearConfirmTitle=Clear Training Examples",
+                                LOC "$$$/LrGeniusAI/Training/ClearConfirmMsg=This will permanently delete all saved training examples. The AI will no longer use your personal edit style. Continue?",
+                                LOC "$$$/LrGeniusAI/Training/ClearConfirmOk=Delete All",
+                                LOC "$$$/LrGeniusAI/Training/ClearConfirmCancel=Cancel"
+                            )
+                            if confirm == "ok" then
+                                LrTasks.startAsyncTask(function()
+                                    local ok, err = SearchIndexAPI.clearAllTrainingExamples()
+                                    if ok then
+                                        propertyTable.trainingCount = 0
+                                        LrDialogs.message(
+                                            LOC "$$$/LrGeniusAI/Training/ClearedTitle=Training Data Cleared",
+                                            LOC "$$$/LrGeniusAI/Training/ClearedMsg=All training examples have been removed.",
+                                            "info"
+                                        )
+                                    else
+                                        LrDialogs.message(
+                                            LOC "$$$/LrGeniusAI/Training/ClearFailedTitle=Clear Failed",
+                                            tostring(err or "Unknown error"),
+                                            "critical"
+                                        )
+                                    end
+                                end)
+                            end
+                        end,
+                    },
+                },
             },
         },
     }

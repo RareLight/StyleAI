@@ -450,6 +450,14 @@ end
 
 local function mergeGlobalDevelopSettings(currentSettings, aiSettings)
     local merged = {}
+    -- Start with existing settings to preserve all state, including linked keys
+    -- like crop coordinates and tone curves that aren't being touched by the AI.
+    if type(currentSettings) == "table" then
+        for k, v in pairs(currentSettings) do
+            merged[k] = v
+        end
+    end
+
     for key, value in pairs(aiSettings or {}) do
         if ADDITIVE_GLOBAL_KEYS[key] and type(value) == "number" then
             local baseValue = currentSettings and currentSettings[key]
@@ -697,6 +705,12 @@ local function applyGlobalDevelopSettings(photo, recipe, warnings)
     end
 
     local catalog = LrApplication.activeCatalog()
+
+    if type(cropInRecipe) == "table" or developSettings.HasCrop then
+        log:trace("DevelopEditManager.applyGlobalDevelopSettings: crop detected, ensuring Develop module for refresh")
+        focusPhotoInDevelop(photo, warnings)
+    end
+
     local ok, err = LrTasks.pcall(function()
         catalog:withWriteAccessDo("Apply AI Lightroom develop settings", function()
             photo:applyDevelopSettings(mergedSettings)

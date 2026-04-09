@@ -60,6 +60,10 @@ return {
 			title = LOC "$$$/LrGeniusAI/Menu/FindSimilarImages=Find Similar Images...",
 			file = "TaskFindSimilarImages.lua",
 		},
+		{
+			title = LOC "$$$/LrGeniusAI/Training/MenuItem=Save Edits as AI Training Examples...",
+			file = "TaskTrainFromEdits.lua",
+		},
 	},
 
 	LrExportMenuItems = {
@@ -98,6 +102,10 @@ return {
 		{
 			title = LOC "$$$/LrGeniusAI/Menu/FindSimilarImages=Find Similar Images...",
 			file = "TaskFindSimilarImages.lua",
+		},
+		{
+			title = LOC "$$$/LrGeniusAI/Training/MenuItem=Save Edits as AI Training Examples...",
+			file = "TaskTrainFromEdits.lua",
 		},
 	},
 
