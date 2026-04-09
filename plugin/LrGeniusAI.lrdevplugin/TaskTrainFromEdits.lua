@@ -50,6 +50,12 @@ local function showTrainDialog(ctx, photoCount)
                 ),
             },
         },
+        f:row {
+            f:static_text {
+                title = LOC "$$$/LrGeniusAI/Training/DialogHint=Hint: Only select photos that you have manually edited. The AI will learn your style from these examples.",
+                font = "italic",
+            },
+        },
     }
 
     local result = LrDialogs.presentModalDialog({
@@ -82,11 +88,31 @@ LrTasks.startAsyncTask(function()
         end
 
         local catalog = LrApplication.activeCatalog()
-        local photos = catalog:getTargetPhotos()
-        if not photos or #photos == 0 then
+        local selectedPhotos = catalog:getTargetPhotos()
+        if not selectedPhotos or #selectedPhotos == 0 then
             LrDialogs.message(
                 LOC "$$$/LrGeniusAI/Training/NoPhotosTitle=No Photos",
                 LOC "$$$/LrGeniusAI/Training/NoPhotosMsg=Please select one or more photos first.",
+                "info"
+            )
+            return
+        end
+
+        -- Filter photos: only RAW or DNG formats.
+        local photos = {}
+        for _, photo in ipairs(selectedPhotos) do
+            local fmt = photo:getRawMetadata("fileFormat")
+            
+            -- Only include RAW or DNG.
+            if (fmt == "RAW" or fmt == "DNG") then
+                table.insert(photos, photo)
+            end
+        end
+
+        if #photos == 0 then
+            LrDialogs.message(
+                LOC "$$$/LrGeniusAI/Training/NoValidPhotosTitle=No Valid Training Photos",
+                LOC "$$$/LrGeniusAI/Training/NoValidPhotosMsg=None of the selected photos match the training criteria (must be RAW/DNG format and have manual adjustments). JPEGs, TIFFs, and unedited photos are excluded.",
                 "info"
             )
             return

@@ -543,3 +543,6 @@
 "$$$/LrGeniusAI/Training/ClearedMsg=All training examples have been removed."
 "$$$/LrGeniusAI/Training/ClearFailedTitle=Clear Failed"
 "$$$/LrGeniusAI/Training/UseTrainingCheckbox=Apply my saved edit style (training examples)"
+"$$$/LrGeniusAI/Training/NoValidPhotosTitle=No Valid Training Photos"
+"$$$/LrGeniusAI/Training/NoValidPhotosMsg=None of the selected photos match the training criteria (must be RAW or DNG format). JPEGs, TIFFs, and other formats are excluded."
+"$$$/LrGeniusAI/Training/DialogHint=Hint: Only select photos that you have manually edited. The AI will learn your style from these examples."

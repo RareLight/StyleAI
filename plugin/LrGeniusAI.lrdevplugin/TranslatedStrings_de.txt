@@ -514,3 +514,5 @@
 "$$$/LrGeniusAI/Training/ClearedMsg=Alle Trainingsbeispiele wurden entfernt."
 "$$$/LrGeniusAI/Training/ClearFailedTitle=Löschen fehlgeschlagen"
 "$$$/LrGeniusAI/Training/UseTrainingCheckbox=Gespeicherten Bearbeitungsstil anwenden (Trainingsbeispiele)"
+"$$$/LrGeniusAI/Training/NoValidPhotosTitle=Keine gültigen Trainingsfotos"
+"$$$/LrGeniusAI/Training/NoValidPhotosMsg=Keines der ausgewählten Fotos entspricht den Trainingskriterien (muss das RAW/DNG-Format haben und manuelle Anpassungen aufweisen). JPEGs, TIFFs und unbearbeitete Fotos sind ausgeschlossen."
