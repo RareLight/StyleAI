@@ -400,3 +400,6 @@
 "$$$/LrGeniusAI/Training/ClearedMsg=Tous les exemples d'entraînement ont été supprimés."
 "$$$/LrGeniusAI/Training/ClearFailedTitle=Échec de la suppression"
 "$$$/LrGeniusAI/Training/UseTrainingCheckbox=Appliquer mon style de retouche enregistré (exemples d'entraînement)"
+"$$$/LrGeniusAI/Training/NoValidPhotosTitle=Aucune photo d'entraînement valide"
+"$$$/LrGeniusAI/Training/NoValidPhotosMsg=Aucune des photos sélectionnées ne correspond aux critères d'entraînement (doit être au format RAW ou DNG). Les fichiers JPEG, TIFF et autres formats sont exclus."
+"$$$/LrGeniusAI/Training/DialogHint=Astuce : ne sélectionnez que des photos que vous avez retouchées manuellement. L'IA apprendra votre style à partir de ces exemples."
