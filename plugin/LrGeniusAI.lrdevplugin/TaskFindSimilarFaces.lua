@@ -200,6 +200,14 @@ LrTasks.startAsyncTask(function()
             ErrorHandler.handleError(LOC "$$$/LrGeniusAI/FindSimilarFaces/QueryError=Search failed", err)
             return
         end
+        if queryResp and queryResp.warning then
+            LrDialogs.message(
+                LOC "$$$/LrGeniusAI/common/BackendWarning=Backend Warning",
+                queryResp.warning,
+                "warning"
+            )
+        end
+
         local results = (queryResp and queryResp.results) and queryResp.results or {}
         if #results == 0 then
             LrDialogs.message(LOC "$$$/LrGeniusAI/FindSimilarFaces/NoResultsTitle=No similar faces", LOC "$$$/LrGeniusAI/FindSimilarFaces/NoResultsMessage=No similar faces found in the index. Run 'Analyze & Index' with face detection enabled.")

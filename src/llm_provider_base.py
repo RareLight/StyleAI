@@ -80,6 +80,7 @@ class MetadataGenerationResponse:
     
     # Error information
     error: Optional[str] = None
+    warning: Optional[str] = None
 
 
 @dataclass
@@ -137,6 +138,7 @@ class EditGenerationResponse:
     input_tokens: int = 0
     output_tokens: int = 0
     error: Optional[str] = None
+    warning: Optional[str] = None
 
 
 class LLMProviderBase(ABC):

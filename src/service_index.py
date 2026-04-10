@@ -486,12 +486,12 @@ def process_image_task(
         except Exception as e:
             logger.error(f"Error in analyze_batch: {str(e)}", exc_info=True)
             error_messages.append(str(e))
-            return 0, total_images, error_messages, []
+            return 0, total_images, error_messages, warnings
 
         # Only fail batch when we actually needed embeddings but got none
         if embeddings is None and len(images_needing_embeddings) > 0:
             error_messages.append("Failed to generate required embeddings")
-            return 0, total_images, error_messages, []
+            return 0, total_images, error_messages, warnings
 
         vertex_embeddings_by_uuid = {}
         if images_needing_vertexai:
@@ -542,6 +542,9 @@ def process_image_task(
                     error_messages.append(f"{filename}: {error_txt}")
                     failure_count += 1
                     continue
+                
+                if metadata_data and metadata_data.warning:
+                    warnings.append(f"{filename}: {metadata_data.warning}")
 
                 # If nothing needed for this UUID (already complete) and no face processing, skip
                 # When compute_faces is True we must not skip - we need to reach face detection

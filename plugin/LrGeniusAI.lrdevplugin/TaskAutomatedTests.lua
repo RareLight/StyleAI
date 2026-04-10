@@ -30,10 +30,10 @@ LrTasks.startAsyncTask(function()
     LrFunctionContext.callWithContext('automatedTestsTask', function(ctx)
         
         local confirm = LrDialogs.confirm(
-            "Run Automated Tests?",
-            "This will run a series of integrity checks for JSON parsers, utilities, and backend connectivity. Do you want to proceed?",
-            "Yes, Run Tests",
-            "Cancel"
+            LOC "$$$/LrGeniusAI/TaskAutomatedTests/RunConfirmTitle=Run Automated Tests?",
+            LOC "$$$/LrGeniusAI/TaskAutomatedTests/RunConfirmMsg=This will run a series of integrity checks for JSON parsers, utilities, and backend connectivity. Do you want to proceed?",
+            LOC "$$$/LrGeniusAI/TaskAutomatedTests/RunConfirmOk=Yes, Run Tests",
+            LOC "$$$/LrGeniusAI/common/Cancel=Cancel"
         )
         
         if confirm == "cancel" then
@@ -104,17 +104,24 @@ LrTasks.startAsyncTask(function()
         local summary = string.format("Automated Tests Completed.\n\nPassed: %d\nFailed: %d\n", testsPassed, testsFailed)
         
         if testsFailed > 0 then
-            local maxErrorsToShow = 5
-            summary = summary .. "\nErrors:\n"
-            for i = 1, math.min(#errorMessages, maxErrorsToShow) do
-                summary = summary .. "- " .. errorMessages[i] .. "\n"
+            local combinedError = ""
+            for i = 1, math.min(#errorMessages, 5) do
+                combinedError = combinedError .. errorMessages[i] .. "\n"
             end
-            if #errorMessages > maxErrorsToShow then
-                summary = summary .. string.format("\n...and %d more errors.", #errorMessages - maxErrorsToShow)
+            if #errorMessages > 5 then
+                combinedError = combinedError .. LOC("$$$/LrGeniusAI/common/MoreErrors=... and ^1 more errors", #errorMessages - 5)
             end
-            LrDialogs.message("Some Tests Failed", summary, "critical")
+
+            ErrorHandler.handleError(
+                LOC "$$$/LrGeniusAI/TaskAutomatedTests/FailedTitle=Some Tests Failed",
+                combinedError
+            )
         else
-            LrDialogs.message("All Tests Passed", summary, "info")
+            LrDialogs.message(
+                LOC "$$$/LrGeniusAI/TaskAutomatedTests/PassedTitle=All Tests Passed",
+                summary,
+                "info"
+            )
         end
 
     end)

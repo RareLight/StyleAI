@@ -301,12 +301,10 @@ return {
 
             if previousSchemaVersion ~= nil and previousSchemaVersion < 24 then
                 local migrationChoice = LrDialogs.confirm(
-                    "Backend ID migration required",
-                    "This update introduces file-based photo_id values (breaking change).\n\n" ..
-                    "If you already have an indexed backend database from older versions, " ..
-                    "run the one-time migration now.",
-                    "Run migration now",
-                    "Later"
+                    LOC "$$$/LrGeniusAI/MetadataProvider/MigrationRequiredTitle=Backend ID migration required",
+                    LOC "$$$/LrGeniusAI/MetadataProvider/MigrationRequiredMsg=This update introduces file-based photo_id values (breaking change).\n\nIf you already have an indexed backend database from older versions, run the one-time migration now.",
+                    LOC "$$$/LrGeniusAI/MetadataProvider/RunMigrationNow=Run migration now",
+                    LOC "$$$/LrGeniusAI/common/Later=Later"
                 )
 
                 if migrationChoice == "ok" then
@@ -323,18 +321,17 @@ return {
 
                         if not status then
                             log:error("Photo-ID migration crashed during schema upgrade.")
-                            LrDialogs.message("Photo-ID Migration failed", tostring(ok), "critical")
+                            LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed", tostring(ok), "critical")
                         elseif ok then
-                            LrDialogs.message("Photo-ID Migration", msg or "Migration completed.")
+                            LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateTitle=Photo-ID Migration", msg or LOC "$$$/LrGeniusAI/common/MigrationCompleted=Migration completed.")
                         else
-                            LrDialogs.message("Photo-ID Migration failed", msg or "Unknown error", "critical")
+                            LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed", msg or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error", "critical")
                         end
                     end)
                 else
                     LrDialogs.message(
-                        "Migration reminder",
-                        "Please run 'Migrate existing DB IDs to photo_id' later from:\n" ..
-                        "Plug-in Manager -> LrGeniusAI -> Backend Server.",
+                        LOC "$$$/LrGeniusAI/MetadataProvider/MigrationReminderTitle=Migration reminder",
+                        LOC "$$$/LrGeniusAI/MetadataProvider/MigrationReminderMsg=Please run 'Migrate existing DB IDs to photo_id' later from:\nPlug-in Manager -> LrGeniusAI -> Backend Server.",
                         "info"
                     )
                 end
@@ -342,11 +339,10 @@ return {
 
             if previousSchemaVersion ~= nil and previousSchemaVersion < 25 then
                 local migrationChoice = LrDialogs.confirm(
-                    "Backend ID migration recommended",
-                    "The photo_id algorithm was updated to remain stable when metadata is written to files (for example DNG updates).\n\n" ..
-                    "Please run the backend ID migration once so existing indexed data matches the new stable IDs.",
-                    "Run migration now",
-                    "Later"
+                    LOC "$$$/LrGeniusAI/MetadataProvider/MigrationRecommendedTitle=Backend ID migration recommended",
+                    LOC "$$$/LrGeniusAI/MetadataProvider/MigrationRecommendedMsg=The photo_id algorithm was updated to remain stable when metadata is written to files (for example DNG updates).\n\nPlease run the backend ID migration once so existing indexed data matches the new stable IDs.",
+                    LOC "$$$/LrGeniusAI/MetadataProvider/RunMigrationNow=Run migration now",
+                    LOC "$$$/LrGeniusAI/common/Later=Later"
                 )
 
                 if migrationChoice == "ok" then
@@ -363,11 +359,11 @@ return {
 
                         if not status then
                             log:error("Photo-ID migration crashed during schema upgrade to 25.")
-                            LrDialogs.message("Photo-ID Migration failed", tostring(ok), "critical")
+                            LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed", tostring(ok), "critical")
                         elseif ok then
-                            LrDialogs.message("Photo-ID Migration", msg or "Migration completed.")
+                            LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateTitle=Photo-ID Migration", msg or LOC "$$$/LrGeniusAI/common/MigrationCompleted=Migration completed.")
                         else
-                            LrDialogs.message("Photo-ID Migration failed", msg or "Unknown error", "critical")
+                            LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed", msg or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error", "critical")
                         end
                     end)
                 end

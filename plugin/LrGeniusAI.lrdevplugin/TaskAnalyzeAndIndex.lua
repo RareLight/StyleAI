@@ -379,7 +379,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                     width = share 'checkboxWidth',
                 },
                 f:static_text {
-                    title = "GPS Coordinates",
+                    title = LOC "$$$/LrGeniusAI/MetadataProvider/GPS=GPS Coordinates",
                 },
                 f:checkbox {
                     value = bind 'submitKeywords',
@@ -695,7 +695,7 @@ LrTasks.startAsyncTask(function()
                 log:trace("No photos found to process in scope: " .. props.scope .. " errorStatus: " .. (errorStatus or "nil"))
                 LrDialogs.message(
                     LOC "$$$/LrGeniusAI/common/NoPhotosTitle=No Photos Found",
-                    LOC "$$$/LrGeniusAI/common/NoPhotosMessage=No photos found in the selected scope."
+                    LOC "$$$/LrGeniusAI/common/NoPhotosInScope=No photos found in the selected scope."
                 )
             end
             return

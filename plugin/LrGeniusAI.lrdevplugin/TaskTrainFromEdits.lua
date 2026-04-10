@@ -146,6 +146,7 @@ LrTasks.startAsyncTask(function()
         local successCount = 0
         local errorCount = 0
         local errorMessages = {}
+        local backendWarnings = {}
 
         for index, photo in ipairs(photos) do
             if progressScope:isCanceled() then
@@ -204,6 +205,9 @@ LrTasks.startAsyncTask(function()
                 if ok then
                     successCount = successCount + 1
                     log:info("Saved training example for " .. fileName)
+                    if resp and resp.warning then
+                        table.insert(backendWarnings, fileName .. ": " .. tostring(resp.warning))
+                    end
                 else
                     errorCount = errorCount + 1
                     table.insert(errorMessages, fileName .. ": " .. tostring(resp))
@@ -217,26 +221,45 @@ LrTasks.startAsyncTask(function()
         progressScope:done()
 
         -- Summary dialog.
-        if errorCount == 0 then
-            LrDialogs.message(
-                LOC "$$$/LrGeniusAI/Training/DoneTitle=Training Examples Saved",
-                string.format(
-                    LOC "$$$/LrGeniusAI/Training/DoneMsg=%d training example(s) were saved successfully.\n\nAI Edit Photos will use your style when editing visually similar photos.",
-                    successCount
-                ),
-                "info"
-            )
+        if errorCount > 0 or #backendWarnings > 0 then
+            local uniqueErrors = {}
+            local errorList = {}
+            for _, msg in ipairs(errorMessages) do
+                if not uniqueErrors[msg] then
+                    uniqueErrors[msg] = true
+                    table.insert(errorList, "- " .. msg)
+                    if #errorList >= 5 then break end
+                end
+            end
+
+            local combinedReport = LOC("$$$/LrGeniusAI/Training/Summary=Saved ^1 training example(s).", tostring(successCount))
+            if errorCount > 0 then
+                combinedReport = combinedReport .. "\n" .. LOC("$$$/LrGeniusAI/common/Errors=Errors: ^1", tostring(errorCount))
+            end
+
+            if #errorList > 0 then
+                combinedReport = combinedReport .. "\n\n" .. LOC "$$$/LrGeniusAI/common/ErrorDetails=Error details:" .. "\n" .. table.concat(errorList, "\n")
+                if #errorMessages > 5 then
+                    combinedReport = combinedReport .. "\n" .. LOC("$$$/LrGeniusAI/common/MoreErrors=... and ^1 more errors", tostring(#errorMessages - 5))
+                end
+            end
+
+            if #backendWarnings > 0 then
+                combinedReport = combinedReport .. "\n\n" .. LOC "$$$/LrGeniusAI/common/BackendWarnings=Backend Warnings:" .. "\n"
+                for i = 1, math.min(5, #backendWarnings) do
+                    combinedReport = combinedReport .. "- " .. backendWarnings[i] .. "\n"
+                end
+                if #backendWarnings > 5 then
+                    combinedReport = combinedReport .. LOC("$$$/LrGeniusAI/common/MoreWarnings=... and ^1 more warnings", tostring(#backendWarnings - 5))
+                end
+            end
+
+            ErrorHandler.handleError(LOC "$$$/LrGeniusAI/Training/CompletionTitle=Training Examples Saved", combinedReport)
         else
-            local errText = table.concat(errorMessages, "\n")
             LrDialogs.message(
-                LOC "$$$/LrGeniusAI/Training/DoneWithErrorsTitle=Training Examples – Partial Success",
-                string.format(
-                    LOC "$$$/LrGeniusAI/Training/DoneWithErrorsMsg=%d saved, %d failed:\n%s",
-                    successCount,
-                    errorCount,
-                    errText
-                ),
-                "warning"
+                LOC "$$$/LrGeniusAI/Training/SuccessTitle=Training Examples Saved",
+                LOC("$$$/LrGeniusAI/Training/SuccessSummary=Successfully saved ^1 training example(s).\nAI Edit Photos will use your style when editing visually similar photos.", tostring(successCount)),
+                "info"
             )
         end
     end)

@@ -57,9 +57,9 @@ def _persist_edit_recipe(photo_id: str, filename: str | None, recipe: dict, opti
         chroma_service.add_image(photo_id, existing_embedding, metadata, catalog_id=catalog_id)
 
 
-def _success_payload(photo_id: str, recipe: dict, options: dict) -> dict:
+def _success_payload(photo_id: str, recipe: dict, options: dict, warning: str | None = None) -> dict:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return {
+    payload = {
         "status": "success",
         "photo_id": photo_id,
         "uuid": photo_id,
@@ -69,6 +69,9 @@ def _success_payload(photo_id: str, recipe: dict, options: dict) -> dict:
         "edit_model": options.get("model"),
         "edit_rundate": now,
     }
+    if warning:
+        payload["warning"] = warning
+    return payload
 
 
 @edit_bp.route("/edit", methods=["POST"])
@@ -94,7 +97,7 @@ def generate_edit_recipe():
         return jsonify({"status": "error", "error": response.error or "Edit generation failed"}), 500
 
     _persist_edit_recipe(photo_id, file.filename, response.recipe, options)
-    payload = _success_payload(photo_id, response.recipe, options)
+    payload = _success_payload(photo_id, response.recipe, options, warning=response.warning)
     payload["input_tokens"] = response.input_tokens
     payload["output_tokens"] = response.output_tokens
     return jsonify(payload), 200
@@ -118,7 +121,7 @@ def generate_edit_recipe_base64():
         return jsonify({"status": "error", "error": response.error or "Edit generation failed"}), 500
 
     _persist_edit_recipe(photo_id, filename, response.recipe, options)
-    payload = _success_payload(photo_id, response.recipe, options)
+    payload = _success_payload(photo_id, response.recipe, options, warning=response.warning)
     payload["input_tokens"] = response.input_tokens
     payload["output_tokens"] = response.output_tokens
     return jsonify(payload), 200

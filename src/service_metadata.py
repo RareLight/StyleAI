@@ -230,7 +230,8 @@ class AnalysisService:
             if not self.providers:
                 return MetadataGenerationResponse(uuid=uuid, success=False, error="No LLM providers available")
             provider = list(self.providers.keys())[0]
-            logger.warning(f"Requested provider '{provider}' not available, using fallback: {provider}")
+            warning_msg = f"Requested provider not available, using fallback: {provider}"
+            logger.warning(warning_msg)
         
         selected_provider = self.providers[provider]
         logger.info(f"Generating metadata for {uuid} using {provider}")
@@ -269,6 +270,8 @@ class AnalysisService:
             response = selected_provider.generate_metadata(request)
             if not response.success:
                 logger.error(f"✗ Failed to generate metadata for {uuid}: {response.error}")
+            if 'warning_msg' in locals():
+                response.warning = warning_msg
             return response
         except Exception as e:
             logger.error(f"Unexpected error during metadata generation for {uuid}: {e}", exc_info=True)
@@ -286,7 +289,8 @@ class AnalysisService:
             if not self.providers:
                 return EditGenerationResponse(uuid=uuid, success=False, error="No LLM providers available")
             provider = list(self.providers.keys())[0]
-            logger.warning(f"Requested provider '{provider}' not available, using fallback: {provider}")
+            warning_msg = f"Requested provider '{provider}' not available, using fallback: {provider}"
+            logger.warning(warning_msg)
 
         selected_provider = self.providers[provider]
         logger.info(f"Generating edit recipe for {uuid} using {provider}")
@@ -357,7 +361,8 @@ class AnalysisService:
                             uuid,
                         )
             except Exception as exc:
-                logger.warning("Could not retrieve training examples for uuid=%s: %s", uuid, exc)
+                training_warning = f"Could not retrieve training examples for uuid={uuid}: {exc}"
+                logger.warning(training_warning)
 
         request.training_examples = training_examples or []
 
@@ -384,6 +389,16 @@ class AnalysisService:
                 )
             if not response.success:
                 logger.error(f"✗ Failed to generate edit recipe for {uuid}: {response.error}")
+            
+            # Aggregate warnings
+            warnings = []
+            if 'warning_msg' in locals():
+                warnings.append(warning_msg)
+            if 'training_warning' in locals():
+                warnings.append(training_warning)
+            if warnings:
+                response.warning = " | ".join(warnings)
+                
             return response
         except Exception as e:
             logger.error(f"Unexpected error during edit generation for {uuid}: {e}", exc_info=True)

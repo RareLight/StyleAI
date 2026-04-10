@@ -16,7 +16,7 @@ function UpdateCheck.checkForNewVersion()
                 if decoded.tag_name ~= UpdateCheck.releaseTagName then
                     LrHttp.openUrlInBrowser(UpdateCheck.latestReleaseUrl)
                 else
-                    LrDialogs.message("You're on the latest plugin version: " .. UpdateCheck.releaseTagName)
+                    LrDialogs.message(LOC "$$$/LrGeniusAI/UpdateCheck/LatestVersion=You're on the latest plugin version: ^1", UpdateCheck.releaseTagName)
                 end
             end
         else
@@ -39,7 +39,11 @@ function UpdateCheck.checkForNewVersionInBackground()
             local decoded = JSON:decode(response)
             if decoded ~= nil then
                 if decoded.tag_name ~= UpdateCheck.releaseTagName then
-                    LrDialogs.message("A new version of LrGeniusAI is available: " .. decoded.tag_name .. ". Please visit the releases page to download the latest version.", "New Version Available", "info")
+                    LrDialogs.message(
+                        LOC "$$$/LrGeniusAI/UpdateCheck/NewVersionAvailableMsg=A new version of LrGeniusAI is available: ^1. Please visit the releases page to download the latest version.",
+                        LOC "$$$/LrGeniusAI/UpdateCheck/NewVersionAvailableTitle=New Version Available",
+                        "info"
+                    )
                 else
                     -- LrDialogs.message("You're on the latest plugin version: " .. UpdateCheck.releaseTagName)
                 end

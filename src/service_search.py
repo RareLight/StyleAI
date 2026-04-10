@@ -98,6 +98,7 @@ def search_images(term, quality_sort, photo_ids_to_search, search_sources=None, 
 
     sorted_semantic_results = []
     semantic_photo_ids = set()
+    warning = None
 
     # 1. Semantic Search (SigLIP2)
     if sources["semantic_siglip"]:
@@ -128,7 +129,8 @@ def search_images(term, quality_sort, photo_ids_to_search, search_sources=None, 
             sorted_semantic_results = _transform_and_sort_results(relevant_results, quality_sort)
             semantic_photo_ids = {res['photo_id'] for res in sorted_semantic_results}
         else:
-            logger.info("CLIP model not loaded, skipping semantic search (SigLIP).")
+            warning = "SigLIP model not loaded. Semantic search results will be missing. Download the model in the plugin manager."
+            logger.info(warning)
 
     # 1b. Vertex AI semantic search (use vertex_project_id/vertex_location from request so plugin prefs are used)
     vertex_semantic_results = []
@@ -159,7 +161,12 @@ def search_images(term, quality_sort, photo_ids_to_search, search_sources=None, 
                     vertex_semantic_results = _transform_vertex_results(vertex_results)
                     logger.info(f"Vertex AI semantic search returned {len(vertex_semantic_results)} results.")
         except Exception as e:
-            logger.warning("Vertex AI search failed: %s", e, exc_info=True)
+            msg = f"Vertex AI search failed: {str(e)}"
+            logger.warning(msg, exc_info=True)
+            if not warning:
+                warning = msg
+            else:
+                warning += f" | {msg}"
     if vertex_semantic_results:
         sorted_semantic_results = _merge_semantic_results(sorted_semantic_results, vertex_semantic_results)
         semantic_photo_ids = {res['photo_id'] for res in sorted_semantic_results}
@@ -202,7 +209,7 @@ def search_images(term, quality_sort, photo_ids_to_search, search_sources=None, 
     
     logger.info(f"Total results: {len(final_results)} ({len(sorted_semantic_results)} semantic, {len(metadata_only_results)} metadata-only)")
     
-    return final_results
+    return final_results, warning
 
     
 def group_similar_images(photo_ids, phash_threshold, clip_threshold, time_delta, culling_preset="default"):
@@ -216,6 +223,11 @@ def group_similar_images(photo_ids, phash_threshold, clip_threshold, time_delta,
         culling_preset,
     )
 
+    warning = None
+    if not server_lifecycle.get_model():
+        warning = "SigLIP model not loaded. Similarity grouping based on visual content will be disabled (pHASH only). Download the model in the plugin manager."
+        logger.warning(warning)
+
     try:
         grouped_results = chroma_service.group_and_sort_images(
             photo_ids,
@@ -224,7 +236,7 @@ def group_similar_images(photo_ids, phash_threshold, clip_threshold, time_delta,
             time_delta,
             culling_preset=culling_preset,
         )
-        return grouped_results
+        return grouped_results, warning
     except Exception as e:
         logger.error(f"Error during similarity grouping: {str(e)}")
         raise e
@@ -235,7 +247,7 @@ def cull_images(photo_ids, phash_threshold, clip_threshold, time_delta, culling_
     High-level culling wrapper around grouping/ranking.
     Returns grouped results plus a compact summary for UI/reporting.
     """
-    groups = group_similar_images(
+    groups, warning = group_similar_images(
         photo_ids,
         phash_threshold,
         clip_threshold,
@@ -261,6 +273,7 @@ def cull_images(photo_ids, phash_threshold, clip_threshold, time_delta, culling_
 
     return {
         "status": "success",
+        "warning": warning,
         "summary": {
             "group_count": len(groups),
             "pick_count": picks,

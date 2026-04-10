@@ -214,6 +214,14 @@ LrTasks.startAsyncTask(function()
             return
         end
 
+        if cullResult and cullResult.warning then
+            LrDialogs.message(
+                LOC "$$$/LrGeniusAI/common/BackendWarning=Backend Warning",
+                cullResult.warning,
+                "warning"
+            )
+        end
+
         if #groups == 0 then
             LrDialogs.message(
                 LOC "$$$/LrGeniusAI/CullTask/NoGroupsTitle=No groups found",
