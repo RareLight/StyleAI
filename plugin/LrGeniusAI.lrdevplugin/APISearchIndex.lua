@@ -2100,7 +2100,7 @@ _request = function(method, url, body, timeout, options)
     local ok, err = LrTasks.pcall(function()
         if method == 'GET' then
             if timeout ~= nil then
-                result, hdrs = LrHttp.get(tostring(url), timeout)
+                result, hdrs = LrHttp.get(tostring(url), nil, timeout)
             else
                 result, hdrs = LrHttp.get(tostring(url))
             end
