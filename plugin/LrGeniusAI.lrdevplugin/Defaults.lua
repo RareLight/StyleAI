@@ -99,6 +99,14 @@ Defaults.credits = {
     { name = "OpenAI SDK", author = "OpenAI", url = "https://github.com/openai/openai-python" },
     { name = "Ollama SDK", author = "Ollama", url = "https://github.com/ollama/ollama-python" },
     { name = "LM Studio SDK", author = "LM Studio", url = "https://lmstudio.ai/" },
+    { name = "InsightFace", author = "DeepInsight", url = "https://github.com/deepinsight/insightface" },
+    { name = "ONNX Runtime", author = "Microsoft", url = "https://onnxruntime.ai/" },
+    { name = "Scikit-learn", author = "scikit-learn developers", url = "https://scikit-learn.org/" },
+    { name = "Psutil", author = "Giampaolo Rodola", url = "https://github.com/giampaolo/psutil" },
+    { name = "Requests", author = "Kenneth Reitz & Contributors", url = "https://requests.readthedocs.io/" },
+    { name = "Vertex AI SDK (Google Cloud)", author = "Google", url = "https://cloud.google.com/vertex-ai" },
+    { name = "Torchvision", author = "PyTorch Team", url = "https://pytorch.org/vision/" },
+    { name = "Tokenizers", author = "Hugging Face", url = "https://github.com/huggingface/tokenizers" },
 }
 
 Defaults.copyrightString = ""

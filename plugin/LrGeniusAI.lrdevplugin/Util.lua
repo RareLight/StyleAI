@@ -471,41 +471,71 @@ function Util.copyLogfilesToDesktop(extraInfo)
 
     -- Fetch remote logs from backend
     LrTasks.pcall(function()
-        local remoteLogs = SearchIndexAPI.getRemoteLogs()
+        local remoteLogs, err = SearchIndexAPI.getRemoteLogs()
         if remoteLogs then
+            log:trace("Successfully fetched remote logs from backend")
             if remoteLogs.backend then
-                local remoteBackendPath = LrPathUtils.child(folder, 'remote-backend.log')
+                local filename = "lrgenius-server.log"
+                -- If it's a remote server, prefix the filename with the hostname to be clear
+                local url = prefs.backendServerUrl or ""
+                local host = url:match("://([^:/]+)") or url:match("^([^:/]+)")
+                if host and host ~= "127.0.0.1" and host ~= "localhost" then
+                    filename = host .. "-lrgenius-server.log"
+                end
+
+                local remoteBackendPath = LrPathUtils.child(folder, filename)
                 local f = io.open(remoteBackendPath, "w")
                 if f then
                     f:write(remoteLogs.backend)
                     f:close()
+                    log:trace("Saved remote backend logs to: " .. filename .. " (" .. tostring(#remoteLogs.backend) .. " bytes)")
                 end
             end
             if remoteLogs.ollama then
-                local remoteOllamaPath = LrPathUtils.child(folder, 'remote-ollama.log')
+                local filename = "remote-ollama.log"
+                local url = prefs.backendServerUrl or ""
+                local host = url:match("://([^:/]+)") or url:match("^([^:/]+)")
+                if host and host ~= "127.0.0.1" and host ~= "localhost" then
+                    filename = host .. "-ollama.log"
+                end
+                
+                local remoteOllamaPath = LrPathUtils.child(folder, filename)
                 local f = io.open(remoteOllamaPath, "w")
                 if f then
                     f:write(remoteLogs.ollama)
                     f:close()
+                    log:trace("Saved remote Ollama logs to: " .. filename .. " (" .. tostring(#remoteLogs.ollama) .. " bytes)")
                 end
             end
             if remoteLogs.lmstudio then
-                local remoteLmStudioPath = LrPathUtils.child(folder, 'remote-lmstudio.log')
+                local filename = "remote-lmstudio.log"
+                local url = prefs.backendServerUrl or ""
+                local host = url:match("://([^:/]+)") or url:match("^([^:/]+)")
+                if host and host ~= "127.0.0.1" and host ~= "localhost" then
+                    filename = host .. "-lmstudio.log"
+                end
+
+                local remoteLmStudioPath = LrPathUtils.child(folder, filename)
                 local f = io.open(remoteLmStudioPath, "w")
                 if f then
                     f:write(remoteLogs.lmstudio)
                     f:close()
+                    log:trace("Saved remote LM Studio logs to: " .. filename .. " (" .. tostring(#remoteLogs.lmstudio) .. " bytes)")
                 end
             end
+        else
+            log:warn("Could not fetch remote logs: " .. (err or "unknown error"))
         end
     end)
 
-    if prefs.enableOpenClip then
+    -- Local server log (only if backend is likely local or setting is specific)
+    local isLocalBackend = SearchIndexAPI.isBackendOnLocalhost()
+    if isLocalBackend then
         local lrgeniusClipLogfilePath = LrPathUtils.child(LrPathUtils.parent(LrApplication.activeCatalog():getPath()), "lrgenius-server.log")
         if LrFileUtils.exists(lrgeniusClipLogfilePath) then
-            LrFileUtils.copy(lrgeniusClipLogfilePath, LrPathUtils.child(folder, 'lrgenius-server.log'))
+            LrFileUtils.copy(lrgeniusClipLogfilePath, LrPathUtils.child(folder, 'local-lrgenius-server.log'))
         else
-            log:trace("lrgenius-server log file not found at: " .. lrgeniusClipLogfilePath)
+            log:trace("Local lrgenius-server log file not found at: " .. lrgeniusClipLogfilePath)
         end
     end
 
