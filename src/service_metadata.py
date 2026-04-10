@@ -57,6 +57,7 @@ class AnalysisService:
         logger.info("Checking available LLM providers (lazy loading enabled)...")
         
         # Ollama (local) - Always register, availability checked dynamically
+        try:
             ollama = OllamaProvider({})
             self.providers['ollama'] = ollama
             if ollama.is_available():
