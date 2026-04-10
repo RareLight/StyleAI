@@ -47,12 +47,42 @@ function PluginInfoDialogSections.startDialog(propertyTable)
     propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
     propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
 
-    -- Training examples count (loaded asynchronously).
+    -- Training/Style Profile stats (loaded asynchronously).
     propertyTable.trainingCount = 0
-    LrTasks.startAsyncTask(function()
-        local count, err = SearchIndexAPI.getTrainingCount()
-        propertyTable.trainingCount = count or 0
-    end)
+    propertyTable.styleStats = nil
+    propertyTable.styleReadiness = "cold_start"
+    propertyTable.styleReadyText = LOC "$$$/LrGeniusAI/Training/Status/ColdStart=Cold Start (0 examples)"
+    propertyTable.styleReadyColor = { 0.7, 0.7, 0.7 }
+
+    local function updateStats()
+        LrTasks.startAsyncTask(function()
+            local stats, err = SearchIndexAPI.getTrainingStats()
+            if stats then
+                propertyTable.styleStats = stats
+                propertyTable.trainingCount = stats.count or 0
+                
+                local readiness = stats.readiness or "cold_start"
+                propertyTable.styleReadiness = readiness
+                
+                if readiness == "active" then
+                    propertyTable.styleReadyText = LOC "$$$/LrGeniusAI/Training/Status/Active=ACTIVE - High precision matching"
+                    propertyTable.styleReadyColor = { 0.2, 0.8, 0.2 }
+                elseif readiness == "limited" then
+                    propertyTable.styleReadyText = LOC "$$$/LrGeniusAI/Training/Status/Limited=LIMITED - Good matching"
+                    propertyTable.styleReadyColor = { 0.8, 0.8, 0.2 }
+                elseif readiness == "warming_up" then
+                    propertyTable.styleReadyText = LOC("$$$/LrGeniusAI/Training/Status/WarmingUp=WARMING UP (^1/10 examples)", tostring(stats.count))
+                    propertyTable.styleReadyColor = { 0.8, 0.4, 0.1 }
+                else
+                    propertyTable.styleReadyText = LOC "$$$/LrGeniusAI/Training/Status/ColdStart=COLD START (Add examples to begin)"
+                    propertyTable.styleReadyColor = { 0.7, 0.7, 0.7 }
+                end
+            end
+        end)
+    end
+    
+    updateStats()
+    propertyTable.refreshStyleStats = updateStats
 end
 
 function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
@@ -532,31 +562,80 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
             },
             f:group_box {
                 width = share 'groupBoxWidth',
-                title = LOC "$$$/LrGeniusAI/Training/SectionTitle=Edit Style Training",
+                title = LOC "$$$/LrGeniusAI/Training/SectionTitle=My Style Profile",
                 f:row {
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Training/CountPrefix=Saved training examples:",
+                        title = LOC "$$$/LrGeniusAI/Training/EngineStatus=Style Engine Status:",
+                        width = share 'labelWidth',
                     },
                     f:static_text {
-                        title = bind { key = 'trainingCount', transform = function(v) return tostring(v or 0) end },
+                        title = bind 'styleReadyText',
+                        text_color = bind 'styleReadyColor',
                         font = "<system/bold>",
                     },
                 },
                 f:row {
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Training/SectionHint=Use the Library menu \u2192 Plug-in Extras \u2192 Save Edits as AI Training Examples to capture your own edit style.",
+                        title = LOC "$$$/LrGeniusAI/Training/SavedExamples=Saved training examples:",
+                        width = share 'labelWidth'
+                    },
+                    f:static_text {
+                        title = bind { key = 'trainingCount', transform = function(v) return tostring(v or 0) end },
+                    },
+                },
+                f:row {
+                    f:static_text {
+                        title = LOC "$$$/LrGeniusAI/Training/TopScenes=Top Scene Types:",
+                        width = share 'labelWidth'
+                    },
+                    f:static_text {
+                        title = bind { key = 'styleStats', transform = function(s)
+                            if not s or not s.scene_distribution then return "..." end
+                            local sorted = {}
+                            for k, v in pairs(s.scene_distribution) do
+                                table.insert(sorted, { name = k, count = v })
+                            end
+                            table.sort(sorted, function(a, b) return a.count > b.count end)
+                            local top = {}
+                            for i = 1, math.min(3, #sorted) do
+                                local name = sorted[i].name:gsub("^scene_", ""):gsub("_", " ")
+                                table.insert(top, name:sub(1,1):upper() .. name:sub(2))
+                            end
+                            return #top > 0 and table.concat(top, ", ") or "None yet"
+                        end },
+                        font = "<system/italic>",
+                    },
+                },
+                f:row {
+                    f:static_text {
+                        title = LOC "$$$/LrGeniusAI/Training/StyleDNA=Style DNA (Average):",
+                        width = share 'labelWidth'
+                    },
+                    f:static_text {
+                        title = bind { key = 'styleStats', transform = function(s)
+                            if not s or not s.exposure then return "..." end
+                            local e = s.exposure
+                            local parts = {}
+                            if e.mean_luminance then table.insert(parts, string.format("Lum: %.0f%%", e.mean_luminance * 100)) end
+                            if e.mean_contrast then table.insert(parts, string.format("Con: %.0f%%", e.mean_contrast * 100)) end
+                            if e.mean_colorfulness then table.insert(parts, string.format("Color: %.0f%%", e.mean_colorfulness * 100)) end
+                            return #parts > 0 and table.concat(parts, " | ") or "..."
+                        end },
+                    },
+                },
+                f:row {
+                    f:static_text {
+                        title = LOC "$$$/LrGeniusAI/Training/SectionHint=The Style Engine learns your aesthetic from your own edits. Save 10+ examples to activate high-precision matching.",
                         width_in_chars = 70,
                         wrap = true,
+                        size = "small",
                     },
                 },
                 f:row {
                     f:push_button {
-                        title = LOC "$$$/LrGeniusAI/Training/RefreshCount=Refresh count",
+                        title = LOC "$$$/LrGeniusAI/common/Refresh=Refresh",
                         action = function(button)
-                            LrTasks.startAsyncTask(function()
-                                local count, err = SearchIndexAPI.getTrainingCount()
-                                propertyTable.trainingCount = count or 0
-                            end)
+                            propertyTable.refreshStyleStats()
                         end,
                     },
                     f:push_button {
@@ -564,7 +643,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                         action = function(button)
                             local confirm = LrDialogs.confirm(
                                 LOC "$$$/LrGeniusAI/Training/ClearConfirmTitle=Clear Training Examples",
-                                LOC "$$$/LrGeniusAI/Training/ClearConfirmMsg=This will permanently delete all saved training examples. The AI will no longer use your personal edit style. Continue?",
+                                LOC "$$$/LrGeniusAI/Training/ClearConfirmMsg=This will permanently delete all saved training examples. The Style Engine will be reset to Cold Start. Continue?",
                                 LOC "$$$/LrGeniusAI/Training/ClearConfirmOk=Delete All",
                                 LOC "$$$/LrGeniusAI/Training/ClearConfirmCancel=Cancel"
                             )
@@ -572,18 +651,14 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                                 LrTasks.startAsyncTask(function()
                                     local ok, err = SearchIndexAPI.clearAllTrainingExamples()
                                     if ok then
-                                        propertyTable.trainingCount = 0
+                                        propertyTable.refreshStyleStats()
                                         LrDialogs.message(
                                             LOC "$$$/LrGeniusAI/Training/ClearedTitle=Training Data Cleared",
                                             LOC "$$$/LrGeniusAI/Training/ClearedMsg=All training examples have been removed.",
                                             "info"
                                         )
                                     else
-                                        LrDialogs.message(
-                                            LOC "$$$/LrGeniusAI/Training/ClearFailedTitle=Clear Failed",
-                                            tostring(err or "Unknown error"),
-                                            "critical"
-                                        )
+                                        ErrorHandler.handleError(LOC "$$$/LrGeniusAI/Training/ClearFailedTitle=Clear Failed", tostring(err or "Unknown error"))
                                     end
                                 end)
                             end

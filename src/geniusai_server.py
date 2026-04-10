@@ -26,6 +26,7 @@ from routes_import import import_bp
 from routes_clip import clip_bp
 from routes_faces import faces_bp
 from routes_training import training_bp
+from routes_style_edit import style_edit_bp
 import service_chroma
 import service_persons
 import service_db
@@ -43,6 +44,7 @@ app.register_blueprint(clip_bp)
 app.register_blueprint(import_bp)
 app.register_blueprint(faces_bp)
 app.register_blueprint(training_bp)
+app.register_blueprint(style_edit_bp)
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
