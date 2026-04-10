@@ -2093,11 +2093,11 @@ _requestMultipart = function(url, mimeChunks, timeout)
 end
 
 _request = function(method, url, body, timeout, options)
-    local ok, res, err = pcall(function()
-        options = options or {}
-        local result, hdrs
-        local bodyString = (body and type(body) == 'table') and JSON:encode(body) or nil
+    options = options or {}
+    local result, hdrs
+    local bodyString = (body and type(body) == 'table') and JSON:encode(body) or nil
 
+    local ok, err = LrTasks.pcall(function()
         if method == 'GET' then
             if timeout ~= nil then
                 result, hdrs = LrHttp.get(tostring(url), timeout)
@@ -2107,47 +2107,53 @@ _request = function(method, url, body, timeout, options)
         else
             result, hdrs = LrHttp.post(tostring(url), bodyString or "", { { field = "Content-Type", value = "application/json" } }, method, timeout)
         end
-
-        local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
-        if status ~= nil and status >= 200 and status < 300 then
-            if options.raw then
-                return result, hdrs
-            end
-            if result and #result > 0 then
-                log:trace("_request: decoding JSON result of length " .. #result)
-                return JSON:decode(result)
-            end
-            return {}
-        else
-            log:trace("_request: status=" .. tostring(status) .. " type(hdrs)=" .. type(hdrs))
-            local statusStr = httpStatusForLog(status, hdrs)
-            local err_msg
-            if status == nil then
-                local urlFixed = tostring(url):gsub("%%?.*", "")
-                err_msg = "API request failed (no response). URL: " .. urlFixed
-                if type(hdrs) == "string" and hdrs ~= "" then
-                    err_msg = err_msg .. " - error: " .. hdrs
-                end
-            else
-                err_msg = "API request failed. HTTP status: " .. statusStr
-                if result and #result > 0 then
-                    local ok2, decoded_err = pcall(JSON.decode, JSON, result)
-                    if ok2 and type(decoded_err) == "table" and decoded_err.error then
-                        err_msg = err_msg .. " - " .. decoded_err.error
-                    else
-                        err_msg = err_msg .. " Response: " .. result
-                    end
-                end
-            end
-            log:error(err_msg)
-            return nil, err_msg
-        end
     end)
+
     if not ok then
-        log:error("_request internal error: " .. tostring(res))
-        return nil, tostring(res)
+        log:error("_request network error: " .. tostring(err))
+        return nil, tostring(err)
     end
-    return res, err
+
+    local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
+    if status ~= nil and status >= 200 and status < 300 then
+        if options.raw then
+            return result, hdrs
+        end
+        if result and #result > 0 then
+            log:trace("_request: decoding JSON result of length " .. #result)
+            local ok2, decoded = LrTasks.pcall(JSON.decode, JSON, result)
+            if ok2 then
+                return decoded
+            else
+                log:error("_request: JSON decode failed: " .. tostring(decoded))
+                return nil, "JSON decode failed"
+            end
+        end
+        return {}
+    else
+        log:trace("_request: status=" .. tostring(status) .. " type(hdrs)=" .. type(hdrs))
+        local statusStr = httpStatusForLog(status, hdrs)
+        local err_msg
+        if status == nil then
+            local urlFixed = tostring(url):gsub("%%?.*", "")
+            err_msg = "API request failed (no response). URL: " .. urlFixed
+            if type(hdrs) == "string" and hdrs ~= "" then
+                err_msg = err_msg .. " - error: " .. hdrs
+            end
+        else
+            err_msg = "API request failed. HTTP status: " .. statusStr
+            if result and #result > 0 then
+                local ok2, decoded_err = LrTasks.pcall(JSON.decode, JSON, result)
+                if ok2 and type(decoded_err) == "table" and decoded_err.error then
+                    err_msg = err_msg .. " - " .. decoded_err.error
+                else
+                    err_msg = err_msg .. " Response: " .. result
+                end
+            end
+        end
+        log:error(err_msg)
+        return nil, err_msg
+    end
 end
 
 
