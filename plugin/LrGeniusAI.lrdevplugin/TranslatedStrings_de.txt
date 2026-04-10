@@ -204,6 +204,7 @@
 "$$$/LrGeniusAI/FindSimilarImages/WindowTitle" = "Ähnliche Fotos suchen"
 "$$$/LrGeniusAI/Health/ClipFailed" = "KI-Suchmodell konnte nicht geladen werden."
 "$$$/LrGeniusAI/Health/NoProviders" = "Keine KI-Metadaten-Provider verfügbar."
+"$$$/LrGeniusAI/Health/NoProvidersDetail" = "Bitte konfigurieren Sie Ollama, LM Studio, ChatGPT oder Gemini in den Zusatzmodul-Einstellungen."
 "$$$/LrGeniusAI/ImportMetadata/AllFailedMessage" = "Alle ^1 Fotos konnten nicht importiert werden."
 "$$$/LrGeniusAI/ImportMetadata/Processing" = "Importiere Metadaten... ^1/^2 (^3 fehlgeschlagen)"
 "$$$/LrGeniusAI/ImportMetadata/ProgressTitle" = "Importiere Metadaten für Fotos..."

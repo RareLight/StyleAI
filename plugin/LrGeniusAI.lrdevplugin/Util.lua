@@ -428,7 +428,7 @@ function Util.table_size(table)
     return count
 end
 
-function Util.copyLogfilesToDesktop()
+function Util.copyLogfilesToDesktop(extraInfo)
 
     local folder = LrPathUtils.child(LrPathUtils.getStandardFilePath('desktop'), "LrGenius_" .. LrDate.timeToIsoDate(LrDate.currentTime()))
     if not LrFileUtils.exists(folder) then
@@ -437,6 +437,22 @@ function Util.copyLogfilesToDesktop()
     end
     log:trace("Creating report folder: " .. folder)
     LrFileUtils.createDirectory(folder)
+
+    if extraInfo then
+        local reportPath = LrPathUtils.child(folder, 'report.txt')
+        local f = io.open(reportPath, "w")
+        if f then
+            f:write("LrGeniusAI Error Report\n")
+            f:write("======================\n\n")
+            f:write("Date: " .. LrDate.timeToIsoDate(LrDate.currentTime()) .. "\n")
+            if extraInfo.error then f:write("Error: " .. tostring(extraInfo.error) .. "\n") end
+            if extraInfo.details then f:write("Details: " .. tostring(extraInfo.details) .. "\n") end
+            f:write("\nSystem Info:\n")
+            f:write("Lightroom Version: " .. tostring(LrApplication.versionString()) .. "\n")
+            f:write("OS: " .. (MAC_ENV and "macOS" or "Windows") .. "\n")
+            f:close()
+        end
+    end
 
     local filePath = LrPathUtils.child(folder, 'LrGeniusAI.log')
     local logFilePath = Util.getLogfilePath()
@@ -452,6 +468,37 @@ function Util.copyLogfilesToDesktop()
     else
         log:trace("Ollama log file not found at: " .. ollamaLogfilePath)
     end
+
+    -- Fetch remote logs from backend
+    LrTasks.pcall(function()
+        local remoteLogs = SearchIndexAPI.getRemoteLogs()
+        if remoteLogs then
+            if remoteLogs.backend then
+                local remoteBackendPath = LrPathUtils.child(folder, 'remote-backend.log')
+                local f = io.open(remoteBackendPath, "w")
+                if f then
+                    f:write(remoteLogs.backend)
+                    f:close()
+                end
+            end
+            if remoteLogs.ollama then
+                local remoteOllamaPath = LrPathUtils.child(folder, 'remote-ollama.log')
+                local f = io.open(remoteOllamaPath, "w")
+                if f then
+                    f:write(remoteLogs.ollama)
+                    f:close()
+                end
+            end
+            if remoteLogs.lmstudio then
+                local remoteLmStudioPath = LrPathUtils.child(folder, 'remote-lmstudio.log')
+                local f = io.open(remoteLmStudioPath, "w")
+                if f then
+                    f:write(remoteLogs.lmstudio)
+                    f:close()
+                end
+            end
+        end
+    end)
 
     if prefs.enableOpenClip then
         local lrgeniusClipLogfilePath = LrPathUtils.child(LrPathUtils.parent(LrApplication.activeCatalog():getPath()), "lrgenius-server.log")
