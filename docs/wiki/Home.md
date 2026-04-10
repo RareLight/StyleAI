@@ -19,6 +19,7 @@ Welcome to the project wiki.
 - [Plugin README](Plugin-README)
 - [Server README](Server-README)
 - [Troubleshooting](Troubleshooting)
+- [Credits & Dependencies](Credits)
 
 ## Important note
 

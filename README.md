@@ -173,9 +173,11 @@ Then follow the remote bootstrap flow shown by `gcloud` on a second trusted mach
 ## 🛠️ Tech Stack
 
 - **Frontend / Lightroom Plugin:** Lua
-- **Backend / Server:** Python (`geniusai-server`)
-- **AI & Embedding:** Open-CLIP
-- **Supported Interfaces:** Gemini, Vertex AI, Ollama, LM-Studio
+- **Backend / Server:** Python (`geniusai-server`) / FastAPI / Flask
+- **AI & Embedding:** Open-CLIP (SigLIP2), PyTorch, ONNX
+- **Identity & Faces:** InsightFace
+- **Database:** ChromaDB (Vector), SQLite (Metadata)
+- **Supported Interfaces:** Google Gemini, Vertex AI, ChatGPT/OpenAI, Ollama, LM-Studio
 
 ---
 
@@ -185,5 +187,7 @@ Developed with a passion for photography and IT by:
 
 - **Bastian Machek (LrGenius / Fokuspunk)** – *Creator & Lead Developer*
 - **AI agents**
+
+This project leverages many incredible open-source libraries, including **InsightFace**, **OpenCLIP**, **PyTorch**, **Hugging Face Transformers**, **ChromaDB**, and **Flask**. 
 
 A huge thank you to the open-source community and the developers of the underlying AI frameworks that make this integration possible!
