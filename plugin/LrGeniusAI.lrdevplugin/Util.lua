@@ -470,14 +470,14 @@ function Util.copyLogfilesToDesktop(extraInfo)
         if remoteLogs and type(remoteLogs) == 'table' then
             log:trace("Successfully fetched server-side logs")
             
-            local url = prefs.backendServerUrl or ""
+            local url = tostring(prefs.backendServerUrl or "")
             local host = url:match("://([^:/]+)") or url:match("^([^:/]+)")
             local prefix = ""
             if host and host ~= "127.0.0.1" and host ~= "localhost" then
-                prefix = host .. "-"
+                prefix = tostring(host) .. "-"
             end
 
-            if remoteLogs.backend then
+            if type(remoteLogs) == 'table' and remoteLogs.backend then
                 local filename = prefix .. "lrgenius-server.log"
                 local path = LrPathUtils.child(folder, filename)
                 local f = io.open(path, "w")
