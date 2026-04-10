@@ -470,12 +470,20 @@ function Util.table_size(table)
 end
 
 function Util.copyLogfilesToDesktop(extraInfo)
+    local progressScope = LrProgressScope({
+        title = LOC "$$$/LrGeniusAI/PluginInfo/CopyingLogs=Copying log files to Desktop...",
+        canCancel = true,
+    })
 
     local folder = LrPathUtils.child(LrPathUtils.getStandardFilePath('desktop'), "LrGenius_" .. LrDate.timeToIsoDate(LrDate.currentTime()))
-    if not LrFileUtils.exists(folder) then
+    if LrFileUtils.exists(folder) then
         log:trace("Removing pre-existing report folder: " .. folder)
         LrFileUtils.moveToTrash(folder)
     end
+    
+    if progressScope:isCanceled() then progressScope:done() return end
+    progressScope:setPortionComplete(0.1, 1)
+    
     log:trace("Creating report folder: " .. folder)
     LrFileUtils.createDirectory(folder)
 
@@ -495,13 +503,21 @@ function Util.copyLogfilesToDesktop(extraInfo)
         end
     end
 
+    if progressScope:isCanceled() then progressScope:done() return end
+    progressScope:setPortionComplete(0.3, 1)
+
     local filePath = LrPathUtils.child(folder, 'LrGeniusAI.log')
     local logFilePath = Util.getLogfilePath()
     if LrFileUtils.exists(logFilePath) then
+        log:trace("Copying local logfile: " .. logFilePath)
         LrFileUtils.copy(logFilePath, filePath)
     else
-        ErrorHandler.showError(LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/logfileNotFound=Logfile not found", logFilePath)
+        log:warn("Logfile not found: " .. tostring(logFilePath))
+        -- Don't show error here, just continue as we might have server logs
     end
+
+    if progressScope:isCanceled() then progressScope:done() return end
+    progressScope:setPortionComplete(0.5, 1)
 
     -- Server logs (backend, Ollama, LM Studio) are ALWAYS fetched via API
     local status, err2 = LrTasks.pcall(function()
@@ -518,7 +534,7 @@ function Util.copyLogfilesToDesktop(extraInfo)
                 prefix = tostring(host) .. "-"
             end
 
-            if type(remoteLogs) == 'table' and remoteLogs.backend then
+            if remoteLogs.backend then
                 local filename = prefix .. "lrgenius-server.log"
                 local path = LrPathUtils.child(folder, filename)
                 local f = io.open(path, "w")
@@ -555,13 +571,16 @@ function Util.copyLogfilesToDesktop(extraInfo)
         end
     end)
     if not status then
-        log:error("Error in copyLogfilesToDesktop async task: " .. tostring(err2))
+        log:error("Error in copyLogfilesToDesktop server log retrieval: " .. tostring(err2))
     end
 
-    if LrFileUtils.exists(filePath) then
-        LrShell.revealInShell(filePath)
+    progressScope:setPortionComplete(1.0, 1)
+    progressScope:done()
+
+    if LrFileUtils.exists(folder) then
+        LrShell.revealInShell(folder)
     else
-        ErrorHandler.showError(LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/logfileCopyFailed=Logfile copy failed", filePath)
+        ErrorHandler.showError(LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/logfileCopyFailed=Logfile copy failed", folder)
     end
 end
 
