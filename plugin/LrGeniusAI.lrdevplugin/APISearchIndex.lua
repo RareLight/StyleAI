@@ -2093,65 +2093,61 @@ _requestMultipart = function(url, mimeChunks, timeout)
 end
 
 _request = function(method, url, body, timeout, options)
-    options = options or {}
-    local result, hdrs
-    local bodyString = (body and type(body) == 'table') and JSON:encode(body) or nil
+    local ok, res, err = pcall(function()
+        options = options or {}
+        local result, hdrs
+        local bodyString = (body and type(body) == 'table') and JSON:encode(body) or nil
 
-    if method == 'GET' then
-        -- Einige LR-Versionen crashen bei LrHttp.get(url, number); nur mit einem Argument aufrufen wenn kein Timeout.
-        if timeout ~= nil then
-            result, hdrs = LrHttp.get(url, timeout)
-        else
-            result, hdrs = LrHttp.get(url)
-        end
-    elseif method == 'POST' then
-        result, hdrs = LrHttp.post(url, bodyString or "", { { field = "Content-Type", value = "application/json" } }, 'POST', timeout)
-    elseif method == 'PUT' then
-        result, hdrs = LrHttp.post(url, bodyString or "", { { field = "Content-Type", value = "application/json" } }, 'PUT', timeout)
-    elseif method == 'DELETE' then
-        result, hdrs = LrHttp.post(url, bodyString or "", { { field = "Content-Type", value = "application/json" } }, 'DELETE', timeout)
-    else
-        local err = "Unsupported HTTP method: " .. method
-        log:error(err)
-        return nil, err
-    end
-
-    -- hdrs kann Tabelle mit .status oder (in einigen LR-Versionen) direkt die Status-Nummer sein. Bei Verbindungsfehlern kann hdrs ein Fehlerstring sein.
-    local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
-    if status ~= nil and status >= 200 and status < 300 then
-        if options.raw then
-            return result, hdrs
-        end
-        if result and #result > 0 then
-            log:trace("_request: decoding JSON result of length " .. #result)
-            return JSON:decode(result)
-        end
-        return {} -- Return an empty table for successful but empty responses
-    else
-        log:trace("_request: status=" .. tostring(status) .. " type(hdrs)=" .. type(hdrs))
-        local statusStr = httpStatusForLog(status, hdrs)
-        local err_msg
-        if status == nil then
-            -- No HTTP response: connection refused, timeout, DNS, or LrHttp returned error string in hdrs
-            if type(hdrs) == "string" and hdrs ~= "" then
-                err_msg = "API request failed (no response): " .. tostring(hdrs)
+        if method == 'GET' then
+            if timeout ~= nil then
+                result, hdrs = LrHttp.get(tostring(url), timeout)
             else
-                err_msg = "API request failed (no response). Check backend URL and that the server is running. URL: " .. tostring(url and url:gsub("%?.*", "") or "nil")
+                result, hdrs = LrHttp.get(tostring(url))
             end
         else
-            err_msg = "API request failed. HTTP status: " .. statusStr
+            result, hdrs = LrHttp.post(tostring(url), bodyString or "", { { field = "Content-Type", value = "application/json" } }, method, timeout)
+        end
+
+        local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
+        if status ~= nil and status >= 200 and status < 300 then
+            if options.raw then
+                return result, hdrs
+            end
             if result and #result > 0 then
-                local decoded_err = JSON:decode(result)
-                if type(decoded_err) == "table" and decoded_err.error then
-                    err_msg = err_msg .. " - " .. decoded_err.error
-                else
-                    err_msg = err_msg .. " Response: " .. result
+                log:trace("_request: decoding JSON result of length " .. #result)
+                return JSON:decode(result)
+            end
+            return {}
+        else
+            log:trace("_request: status=" .. tostring(status) .. " type(hdrs)=" .. type(hdrs))
+            local statusStr = httpStatusForLog(status, hdrs)
+            local err_msg
+            if status == nil then
+                local urlFixed = tostring(url):gsub("%%?.*", "")
+                err_msg = "API request failed (no response). URL: " .. urlFixed
+                if type(hdrs) == "string" and hdrs ~= "" then
+                    err_msg = err_msg .. " - error: " .. hdrs
+                end
+            else
+                err_msg = "API request failed. HTTP status: " .. statusStr
+                if result and #result > 0 then
+                    local ok2, decoded_err = pcall(JSON.decode, JSON, result)
+                    if ok2 and type(decoded_err) == "table" and decoded_err.error then
+                        err_msg = err_msg .. " - " .. decoded_err.error
+                    else
+                        err_msg = err_msg .. " Response: " .. result
+                    end
                 end
             end
+            log:error(err_msg)
+            return nil, err_msg
         end
-        log:error(err_msg)
-        return nil, err_msg
+    end)
+    if not ok then
+        log:error("_request internal error: " .. tostring(res))
+        return nil, tostring(res)
     end
+    return res, err
 end
 
 

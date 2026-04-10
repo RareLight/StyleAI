@@ -141,6 +141,8 @@
 "$$$/LrGeniusAI/Defaults/EditIntent/VibrantNaturalLandscape" = "Paysage - Vibrant Naturel"
 "$$$/LrGeniusAI/DevelopEdit/ApplyGlobal" = "Appliquer les réglages de développement globaux"
 "$$$/LrGeniusAI/DevelopEdit/ApplyMasks" = "Appliquer les masques si possible"
+"$$$/LrGeniusAI/DevelopEdit/BaseProfile" = "Profil de Base :"
+"$$$/LrGeniusAI/DevelopEdit/EngineType" = "Moteur IA :"
 "$$$/LrGeniusAI/DevelopEdit/NoRecipe" = "Aucune recette d'édition disponible."
 "$$$/LrGeniusAI/DevelopEdit/ReviewTitle" = "Vérifier l'édition IA"
 "$$$/LrGeniusAI/ErrorHandler/Details" = "Détails"

@@ -141,6 +141,8 @@
 "$$$/LrGeniusAI/Defaults/EditIntent/VibrantNaturalLandscape" = "Landschaft - Lebendig & Natürlich"
 "$$$/LrGeniusAI/DevelopEdit/ApplyGlobal" = "Globale Entwicklungseinstellungen anwenden"
 "$$$/LrGeniusAI/DevelopEdit/ApplyMasks" = "Masken anwenden wenn möglich"
+"$$$/LrGeniusAI/DevelopEdit/BaseProfile" = "Basisprofil:"
+"$$$/LrGeniusAI/DevelopEdit/EngineType" = "KI-Modell:"
 "$$$/LrGeniusAI/DevelopEdit/NoRecipe" = "Keine Bearbeitungsrezeptur verfügbar."
 "$$$/LrGeniusAI/DevelopEdit/ReviewTitle" = "KI-Lightroom-Bearbeitung prüfen"
 "$$$/LrGeniusAI/ErrorHandler/Details" = "Details"

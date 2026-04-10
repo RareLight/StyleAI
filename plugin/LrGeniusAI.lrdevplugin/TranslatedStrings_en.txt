@@ -141,6 +141,8 @@
 "$$$/LrGeniusAI/Defaults/EditIntent/VibrantNaturalLandscape" = "Landscape - Vibrant Natural"
 "$$$/LrGeniusAI/DevelopEdit/ApplyGlobal" = "Apply global develop settings"
 "$$$/LrGeniusAI/DevelopEdit/ApplyMasks" = "Apply masks when possible"
+"$$$/LrGeniusAI/DevelopEdit/BaseProfile" = "Base Profile:"
+"$$$/LrGeniusAI/DevelopEdit/EngineType" = "AI Engine:"
 "$$$/LrGeniusAI/DevelopEdit/NoRecipe" = "No edit recipe available."
 "$$$/LrGeniusAI/DevelopEdit/ReviewTitle" = "Review AI Lightroom Edit"
 "$$$/LrGeniusAI/ErrorHandler/Details" = "Details"

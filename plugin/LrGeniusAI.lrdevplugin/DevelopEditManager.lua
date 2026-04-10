@@ -647,6 +647,11 @@ local function buildDevelopSettings(recipe, warnings)
         end
     end
 
+    -- Respect the RAW profile (Adobe Adaptive, etc.) to ensure baseline parity
+    if globalSettings.profile then
+        developSettings["CameraConfig"] = globalSettings.profile
+    end
+
     mergeSettings(developSettings, buildHslDevelopSettings(globalSettings.hsl))
     mergeSettings(developSettings, buildColorGradingDevelopSettings(globalSettings.color_grading, warnings))
     mergeSettings(developSettings, buildToneCurveSettings(globalSettings.tone_curve))
@@ -1200,6 +1205,8 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
     props.applyGlobal = next(recipe.global or {}) ~= nil
     props.applyMasks = (options and options.applyMasks ~= false) and ((recipe.masks and #recipe.masks > 0) or false)
     props.details = DevelopEditManager.formatRecipeDetails(response)
+    props.engineTypeDisplay = recipe.engine_type or "Style Engine"
+    props.baseProfileName = (recipe.global and recipe.global.profile) or "Adobe Standard"
 
     -- Style prediction metadata for the UI
     props.hasConfidence = response and response.confidence ~= nil
@@ -1258,6 +1265,24 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
                 enabled = (recipe.masks and #recipe.masks > 0) or false,
             },
             f:static_text { title = LOC "$$$/LrGeniusAI/DevelopEdit/ApplyMasks=Apply masks when possible" },
+        },
+        f:row {
+            f:static_text {
+                title = LOC "$$$/LrGeniusAI/DevelopEdit/EngineType=AI Engine:",
+                width = share 'labelWidth'
+            },
+            f:static_text {
+                title = bind 'engineTypeDisplay',
+                font = "<system/bold>",
+            },
+            f:spacer { width = 10 },
+            f:static_text {
+                title = LOC "$$$/LrGeniusAI/DevelopEdit/BaseProfile=Base Profile:",
+            },
+            f:static_text {
+                title = bind 'baseProfileName',
+                font = "<system/italic>",
+            },
         },
         f:row {
             f:edit_field {
