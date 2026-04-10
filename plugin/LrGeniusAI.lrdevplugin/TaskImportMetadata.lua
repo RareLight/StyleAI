@@ -89,20 +89,21 @@ LrTasks.startAsyncTask(function()
                 LOC "$$$/LrGeniusAI/common/TaskCanceled/Message=The task was canceled by the user."
             )
         elseif status == "allfailed" then
-            LrDialogs.message(
+            ErrorHandler.handleError(
                 LOC "$$$/LrGeniusAI/common/TaskFailed/Title=Task Failed",
-                LOC("$$$/LrGeniusAI/ImportMetadata/AllFailedMessage=All ^1 photos failed to import.", processed)
+                LOC("$$$/LrGeniusAI/ImportMetadata/AllFailedMessage=All ^1 photos failed to import.", tostring(processed))
             )
         elseif status == "somefailed" then
             local successCount = processed - failed
-            LrDialogs.message(
+            ErrorHandler.handleError(
                 LOC "$$$/LrGeniusAI/common/TaskCompleted/Title=Task Completed with Errors",
-                LOC("$$$/LrGeniusAI/ImportMetadata/SomeFailedMessage=^1 of ^2 photos imported successfully. ^3 failed.", successCount, processed, failed)
+                LOC("$$$/LrGeniusAI/ImportMetadata/SomeFailedMessage=^1 of ^2 photos imported successfully. ^3 failed.", tostring(successCount), tostring(processed), tostring(failed))
             )
         else -- success
             LrDialogs.message(
                 LOC "$$$/LrGeniusAI/common/TaskCompleted/Title=Task Completed",
-                LOC("$$$/LrGeniusAI/ImportMetadata/SuccessMessage=Successfully imported metadata for ^1 photos.", processed)
+                LOC("$$$/LrGeniusAI/ImportMetadata/SuccessMessage=Successfully imported metadata for ^1 photos.", tostring(processed)),
+                "info"
             )
         end
 

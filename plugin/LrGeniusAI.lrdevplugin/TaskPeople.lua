@@ -485,7 +485,10 @@ local function doShowInLibrary(entries, matchMode)
 
     catalog:setActiveSources({collection})
     LrApplicationView.gridView()
-    LrDialogs.message(LOC "$$$/LrGeniusAI/People/Done=Done", LOC("$$$/LrGeniusAI/People/CollectionCreated=^1 photo(s) added to collection \"^2\".", tostring(#photos), collectionName))
+    LrDialogs.message(
+        LOC "$$$/LrGeniusAI/People/Done=Done", 
+        LOC("$$$/LrGeniusAI/People/CollectionCreated=^1 photo(s) added to collection \"^2\".", tostring(#photos), collectionName)
+    )
 end
 
 LrTasks.startAsyncTask(function()

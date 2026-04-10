@@ -220,6 +220,8 @@ LrTasks.startAsyncTask(function()
         local successCount = 0
         local skipCount = 0
         local errorCount = 0
+        local errorMessages = {}
+        local backendWarnings = {}
         local skipValidation = false
 
         for i, photo in ipairs(photos) do
@@ -246,11 +248,18 @@ LrTasks.startAsyncTask(function()
                 end
                 -- Retrieve data from backend
                 log:trace("Retrieving data for photo_id: " .. photoId)
-                local retrievedData = SearchIndexAPI.getPhotoData(photoId)
+                local retrievedData, err = SearchIndexAPI.getPhotoData(photoId)
 
                 log:trace("Retrieved data: " .. Util.dumpTable(retrievedData))
                 
-                if retrievedData and retrievedData.status == "success" then
+                if err then
+                    log:error("Error retrieving metadata for " .. fileName .. ": " .. tostring(err))
+                    table.insert(errorMessages, fileName .. ": " .. tostring(err))
+                    errorCount = errorCount + 1
+                elseif retrievedData and retrievedData.status == "success" then
+                    if retrievedData.warning then
+                        table.insert(backendWarnings, fileName .. ": " .. tostring(retrievedData.warning))
+                    end
                     -- Validate if requested and not skipped
                     local shouldApply = true
                     local validatedData = nil
@@ -289,15 +298,62 @@ LrTasks.startAsyncTask(function()
                     end
                 else
                     log:warn("No data found in backend for photo: " .. fileName)
+                    table.insert(errorMessages, fileName .. ": " .. LOC "$$$/LrGeniusAI/RetrieveMetadata/ErrorNoData=No data found")
                     errorCount = errorCount + 1
                 end
             else
                 log:warn("Photo has no usable photo_id, skipping: " .. fileName .. " (" .. tostring(photoIdErr) .. ")")
+                table.insert(errorMessages, fileName .. ": " .. tostring(photoIdErr))
                 errorCount = errorCount + 1
             end
         end
 
         progressScope:done()
+
+        if errorCount > 0 or #backendWarnings > 0 then
+            local uniqueErrors = {}
+            local errorList = {}
+            for _, msg in ipairs(errorMessages) do
+                if not uniqueErrors[msg] then
+                    uniqueErrors[msg] = true
+                    table.insert(errorList, "- " .. msg)
+                    if #errorList >= 5 then break end
+                end
+            end
+
+            local combinedReport = LOC("$$$/LrGeniusAI/RetrieveMetadata/Summary=Retrieved metadata for ^1 photo(s).", tostring(successCount))
+            if skipCount > 0 then
+                combinedReport = combinedReport .. "\n" .. LOC("$$$/LrGeniusAI/common/Skipped=Skipped: ^1", tostring(skipCount))
+            end
+            if errorCount > 0 then
+                combinedReport = combinedReport .. "\n" .. LOC("$$$/LrGeniusAI/common/Errors=Errors: ^1", tostring(errorCount))
+            end
+
+            if #errorList > 0 then
+                combinedReport = combinedReport .. "\n\n" .. LOC "$$$/LrGeniusAI/common/ErrorDetails=Error details:" .. "\n" .. table.concat(errorList, "\n")
+                if #errorMessages > 5 then
+                    combinedReport = combinedReport .. "\n" .. LOC("$$$/LrGeniusAI/common/MoreErrors=... and ^1 more errors", tostring(#errorMessages - 5))
+                end
+            end
+
+            if #backendWarnings > 0 then
+                combinedReport = combinedReport .. "\n\n" .. LOC "$$$/LrGeniusAI/common/BackendWarnings=Backend Warnings:" .. "\n"
+                for i = 1, math.min(5, #backendWarnings) do
+                    combinedReport = combinedReport .. "- " .. backendWarnings[i] .. "\n"
+                end
+                if #backendWarnings > 5 then
+                    combinedReport = combinedReport .. LOC("$$$/LrGeniusAI/common/MoreWarnings=... and ^1 more warnings", tostring(#backendWarnings - 5))
+                end
+            end
+
+            ErrorHandler.handleError(LOC "$$$/LrGeniusAI/RetrieveMetadata/CompletionTitle=Metadata Retrieval Completed", combinedReport)
+        else
+            LrDialogs.message(
+                LOC "$$$/LrGeniusAI/RetrieveMetadata/SuccessTitle=Metadata Retrieval",
+                LOC("$$$/LrGeniusAI/RetrieveMetadata/SuccessSummary=Successfully retrieved metadata for ^1 photo(s).\nSkipped: ^2", tostring(successCount), tostring(skipCount)),
+                "info"
+            )
+        end
 
         log:info(string.format("Retrieve metadata task complete. Success: %d, Skipped: %d, Errors: %d", 
             successCount, skipCount, errorCount))

@@ -250,9 +250,9 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                             LrTasks.startAsyncTask(function()
                                 local ok, msg = SearchIndexAPI.generateGlobalPhotoIdsForCatalog()
                                 if ok then
-                                    LrDialogs.message("Photo-ID Generation", msg or "Generation completed.")
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/PhotoIdGenTitle=Photo-ID Generation", msg or LOC "$$$/LrGeniusAI/common/GenerationCompleted=Generation completed.")
                                 else
-                                    LrDialogs.message("Photo-ID Generation failed", msg or "Unknown error", "critical")
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/PhotoIdGenFailed=Photo-ID Generation failed", msg or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error", "critical")
                                 end
                             end)
                         end,
@@ -263,9 +263,9 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                             LrTasks.startAsyncTask(function()
                                 local stats, err = SearchIndexAPI.getStats()
                                 if stats then
-                                    LrDialogs.message("Database statistics", SearchIndexAPI.formatStats(stats), "info")
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/DbStatsTitle=Database statistics", SearchIndexAPI.formatStats(stats), "info")
                                 else
-                                    LrDialogs.message("Database statistics failed", tostring(err or "Unknown error"), "critical")
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/DbStatsFailed=Database statistics failed", tostring(err or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error"), "critical")
                                 end
                             end)
                         end,
@@ -277,9 +277,9 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                                 local result, path = SearchIndexAPI.downloadDatabaseBackup()
                                 if result then
                                     LrShell.revealInShell(path)
-                                    LrDialogs.message("Database backup downloaded.", path)
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/DbBackupDownloaded=Database backup downloaded.", path)
                                 else
-                                    LrDialogs.message("Database backup failed", tostring(result or "Unknown error"), "critical")
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/DbBackupFailed=Database backup failed", tostring(result or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error"), "critical")
                                 end
                             end)
                         end,
@@ -297,10 +297,10 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                                 local ok, err, result = SearchIndexAPI.claimPhotosForCatalog(progressScope)
                                 progressScope:done()
                                 if ok then
-                                    local msg = result and ("Claimed: " .. tostring(result.claimed) .. (result.errors and result.errors > 0 and ("; errors: " .. tostring(result.errors)) or "")) or "Done."
-                                    LrDialogs.message("Claim photos", msg)
+                                    local msg = result and (LOC "$$$/LrGeniusAI/PluginInfo/ClaimedPrefix=Claimed: " .. tostring(result.claimed) .. (result.errors and result.errors > 0 and (LOC "$$$/LrGeniusAI/PluginInfo/ClaimedErrors=; errors: " .. tostring(result.errors)) or "")) or LOC "$$$/LrGeniusAI/common/Done=Done."
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/ClaimPhotosTitle=Claim photos", msg)
                                 else
-                                    LrDialogs.message("Claim photos failed", tostring(err or "Unknown error"), "critical")
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/ClaimPhotosFailed=Claim photos failed", tostring(err or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error"), "critical")
                                 end
                             end)
                         end,
@@ -321,11 +321,11 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 
                                 if not status then
                                     log:error("Photo-ID migration crashed.")
-                                    LrDialogs.message("Photo-ID Migration failed", tostring(ok), "critical")
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed", tostring(ok), "critical")
                                 elseif ok then
-                                    LrDialogs.message("Photo-ID Migration", msg or "Migration completed.")
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateTitle=Photo-ID Migration", msg or LOC "$$$/LrGeniusAI/common/MigrationCompleted=Migration completed.")
                                 else
-                                    LrDialogs.message("Photo-ID Migration failed", msg or "Unknown error", "critical")
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed", msg or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error", "critical")
                                 end
                             end)
                         end,
@@ -336,32 +336,32 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                             LrTasks.startAsyncTask(function()
                                 local result, err = SearchIndexAPI.checkVersionCompatibility()
                                 if result then
-                                    local backendTag = tostring(result.backend_release_tag or ("v" .. tostring(result.backend_version or "unknown")))
-                                    local pluginTag = tostring(result.plugin_release_tag or ("v" .. tostring(result.plugin_version or "unknown")))
-                                    local buildInfo = "Plugin build: " .. tostring(result.plugin_build or "n/a") ..
-                                        "\nBackend build: " .. tostring(result.backend_build or "n/a")
+                                    local backendTag = tostring(result.backend_release_tag or ("v" .. tostring(result.backend_version or LOC "$$$/LrGeniusAI/common/Unknown=unknown")))
+                                    local pluginTag = tostring(result.plugin_release_tag or ("v" .. tostring(result.plugin_version or LOC "$$$/LrGeniusAI/common/Unknown=unknown")))
+                                    local buildInfo = LOC "$$$/LrGeniusAI/PluginInfo/PluginBuild=Plugin build: " .. tostring(result.plugin_build or "n/a") ..
+                                        "\n" .. LOC "$$$/LrGeniusAI/PluginInfo/BackendBuild=Backend build: " .. tostring(result.backend_build or "n/a")
 
                                     if result.compatible then
                                         LrDialogs.message(
-                                            "Version check passed",
-                                            "Plugin and backend versions match.\n" ..
-                                            "Plugin: " .. pluginTag .. "\n" ..
-                                            "Backend: " .. backendTag .. "\n\n" ..
+                                            LOC "$$$/LrGeniusAI/PluginInfo/VersionCheckPassed=Version check passed",
+                                            LOC "$$$/LrGeniusAI/PluginInfo/VersionMatch=Plugin and backend versions match.\n" ..
+                                            LOC "$$$/LrGeniusAI/PluginInfo/PluginPrefix=Plugin: " .. pluginTag .. "\n" ..
+                                            LOC "$$$/LrGeniusAI/PluginInfo/BackendPrefix=Backend: " .. backendTag .. "\n\n" ..
                                             buildInfo
                                         )
                                     else
                                         LrDialogs.message(
-                                            "Version mismatch",
-                                            "Plugin and backend versions differ.\n" ..
-                                            "Plugin: " .. pluginTag .. "\n" ..
-                                            "Backend: " .. backendTag .. "\n" ..
-                                            "Reason: " .. tostring(result.reason or "unknown") .. "\n\n" ..
+                                            LOC "$$$/LrGeniusAI/PluginInfo/VersionMismatch=Version mismatch",
+                                            LOC "$$$/LrGeniusAI/PluginInfo/VersionDiffer=Plugin and backend versions differ.\n" ..
+                                            LOC "$$$/LrGeniusAI/PluginInfo/PluginPrefix=Plugin: " .. pluginTag .. "\n" ..
+                                            LOC "$$$/LrGeniusAI/PluginInfo/BackendPrefix=Backend: " .. backendTag .. "\n" ..
+                                            LOC "$$$/LrGeniusAI/PluginInfo/ReasonPrefix=Reason: " .. tostring(result.reason or LOC "$$$/LrGeniusAI/common/Unknown=unknown") .. "\n\n" ..
                                             buildInfo,
                                             "warning"
                                         )
                                     end
                                 else
-                                    LrDialogs.message("Version check failed", tostring(err or "Unknown error"), "critical")
+                                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/VersionCheckFailed=Version check failed", tostring(err or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error"), "critical")
                                 end
                             end)
                         end,

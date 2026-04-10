@@ -206,6 +206,22 @@ LrTasks.startAsyncTask(function()
             return
         end
 
+        if err then
+            ErrorHandler.handleError(
+                LOC "$$$/LrGeniusAI/AdvancedSearchTask/SearchError=Search failed",
+                err
+            )
+            return
+        end
+
+        if results and results.warning then
+            LrDialogs.message(
+                LOC "$$$/LrGeniusAI/common/BackendWarning=Backend Warning",
+                results.warning,
+                "warning"
+            )
+        end
+
         if type(results) ~= "table" or #results == 0 then
             LrDialogs.message(LOC "$$$/LrGeniusAI/AdvancedSearchTask/noResults=No Results", LOC "$$$/LrGeniusAI/AdvancedSearchTask/noResultsMessage=No photos found matching the criteria.")
             return

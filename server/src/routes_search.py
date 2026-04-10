@@ -75,12 +75,15 @@ def search_route():
         if catalog_id is None:
             catalog_id = request.args.get('catalog_id')
 
-        sorted_results = service_search.search_images(
+        results, warning = service_search.search_images(
             term, quality_sort, photo_ids_to_search, search_sources,
             vertex_project_id=vertex_project_id, vertex_location=vertex_location,
             catalog_id=catalog_id
         )
-        return jsonify(sorted_results)
+        response = {"results": results}
+        if warning:
+            response["warning"] = warning
+        return jsonify(response)
     except Exception as e:
         logger.error(f"Error during search: {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred"}), 500
@@ -97,14 +100,17 @@ def group_similar_route():
         return error_response, error_code
 
     try:
-        grouped_results = service_search.group_similar_images(
+        grouped_results, warning = service_search.group_similar_images(
             params["photo_ids"],
             params["phash_threshold"],
             params["clip_threshold"],
             params["time_delta_seconds"],
             culling_preset=params["culling_preset"],
         )
-        return jsonify(grouped_results)
+        response = {"groups": grouped_results}
+        if warning:
+            response["warning"] = warning
+        return jsonify(response)
     except Exception as e:
         logger.error(f"Error during similarity grouping: {str(e)}")
         return jsonify({"error": str(e)}), 500

@@ -107,7 +107,7 @@ local CATALOG_DB_MIGRATIONS = {
         id = "claim_photos_v1",
         run = function(progressScope)
             local ok, err, result = SearchIndexAPI.claimPhotosForCatalog(progressScope)
-            local msg = (ok and result and (result.claimed or 0) >= 0) and (tostring(result.claimed or 0) .. " photos claimed for this catalog.") or nil
+            local msg = (ok and result and (result.claimed or 0) >= 0) and (LOC("$$$/LrGeniusAI/SearchIndexAPI/PhotosClaimedCount=^1 photos claimed for this catalog.", tostring(result.claimed or 0))) or nil
             return ok, err, msg
         end,
     },
@@ -191,12 +191,12 @@ local function ensureDbMigrationsDone()
                 end)
                 log:info("Catalog DB migration completed: " .. tostring(m.id))
                 if userMessage and userMessage ~= "" then
-                    LrDialogs.message("Claim photos", userMessage, "info")
+                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/ClaimPhotosTitle=Claim photos", userMessage, "info")
                 end
             else
                 log:warn("Catalog DB migration failed: " .. tostring(m.id) .. " - " .. tostring(err))
                 if m.id == "claim_photos_v1" then
-                    LrDialogs.message("Claim photos failed", tostring(err or "Unknown error") .. "\n\nYou can try again from Plug-in Manager → LrGeniusAI → Backend Server → Claim photos for this catalog.", "critical")
+                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/ClaimPhotosFailed=Claim photos failed", tostring(err or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error") .. "\n\n" .. LOC "$$$/LrGeniusAI/SearchIndexAPI/ClaimPhotosRetryHint=You can try again from Plug-in Manager → LrGeniusAI → Backend Server → Claim photos for this catalog.", "critical")
                 end
             end
             if progressScope then
