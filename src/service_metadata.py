@@ -41,6 +41,8 @@ class AnalysisService:
             lazy_load: If True, only check availability. Models are loaded on first use.
         """
         self.providers: Dict[str, LLMProviderBase] = {}
+        self.provider_status: Dict[str, str] = {}
+        self.provider_errors: Dict[str, str] = {}
         self.lazy_load = lazy_load
         self._initialize_providers()
     
@@ -55,14 +57,17 @@ class AnalysisService:
         logger.info("Checking available LLM providers (lazy loading enabled)...")
         
         # Ollama (local) - Always register, availability checked dynamically
-        try:
             ollama = OllamaProvider({})
             self.providers['ollama'] = ollama
             if ollama.is_available():
+                self.provider_status['ollama'] = 'available'
                 logger.info("✓ Ollama provider available")
             else:
+                self.provider_status['ollama'] = 'registered'
                 logger.info("○ Ollama provider registered (server not running, can be started later)")
         except Exception as e:
+            self.provider_status['ollama'] = 'failed'
+            self.provider_errors['ollama'] = str(e)
             logger.error(f"✗ Failed to initialize Ollama provider: {e}")
         
         # LM Studio (local) - Always register, availability checked dynamically
@@ -70,10 +75,14 @@ class AnalysisService:
             lmstudio = LMStudioProvider({})
             self.providers['lmstudio'] = lmstudio
             if lmstudio.is_available():
+                self.provider_status['lmstudio'] = 'available'
                 logger.info("✓ LM Studio provider initialized")
             else:
+                self.provider_status['lmstudio'] = 'registered'
                 logger.info("○ LM Studio provider registered (server not running, can be started later)")
         except Exception as e:
+            self.provider_status['lmstudio'] = 'failed'
+            self.provider_errors['lmstudio'] = str(e)
             logger.error(f"✗ Failed to initialize LM Studio provider: {e}")
         
         # ChatGPT (cloud) - Always add to providers, API key can be provided later
@@ -81,10 +90,14 @@ class AnalysisService:
             chatgpt = ChatGPTProvider({})
             self.providers['chatgpt'] = chatgpt
             if chatgpt.is_available():
+                self.provider_status['chatgpt'] = 'available'
                 logger.info("✓ ChatGPT provider initialized")
             else:
+                self.provider_status['chatgpt'] = 'registered'
                 logger.info("○ ChatGPT provider registered (API key not configured, can be provided later)")
         except Exception as e:
+            self.provider_status['chatgpt'] = 'failed'
+            self.provider_errors['chatgpt'] = str(e)
             logger.error(f"✗ Failed to initialize ChatGPT provider: {e}")
         
         # Gemini (cloud) - Always add to providers, API key can be provided later
@@ -92,10 +105,14 @@ class AnalysisService:
             gemini = GeminiProvider({})
             self.providers['gemini'] = gemini
             if gemini.is_available():
+                self.provider_status['gemini'] = 'available'
                 logger.info("✓ Gemini provider initialized")
             else:
+                self.provider_status['gemini'] = 'registered'
                 logger.info("○ Gemini provider registered (API key not configured, can be provided later)")
         except Exception as e:
+            self.provider_status['gemini'] = 'failed'
+            self.provider_errors['gemini'] = str(e)
             logger.error(f"✗ Failed to initialize Gemini provider: {e}")
         
         if not self.providers:
@@ -405,6 +422,13 @@ class AnalysisService:
                 logger.error(f"Error listing models for provider {provider_name}: {e}", exc_info=True)
                 result[provider_name] = []
         return result
+
+    def get_health_status(self) -> Dict[str, Any]:
+        """Return health status of LLM providers."""
+        return {
+            "llm_providers": self.provider_status,
+            "llm_errors": self.provider_errors
+        }
 
 # Global service instance
 _analysis_service: Optional[AnalysisService] = None

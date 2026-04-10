@@ -383,11 +383,12 @@ def process_image_task(
         options: Dictionary with all processing options
         
     Returns:
-        Tuple of (success_count, failure_count, error_messages)
+        Tuple of (success_count, failure_count, error_messages, warnings)
     """
     success_count = 0
     failure_count = 0
     error_messages = []
+    warnings = []
     total_images = len(image_triplets)
 
     try:
@@ -466,7 +467,7 @@ def process_image_task(
                 and len(images_needing_metadata) == 0
                 and len(images_needing_cull_phash) == 0):
             logger.info("No generation required (regenerate_metadata=False and all fields present). Returning success without changes.")
-            return len(image_triplets), 0, []
+            return len(image_triplets), 0, [], []
 
     
         analysis_service = get_analysis_service()
@@ -485,36 +486,37 @@ def process_image_task(
         except Exception as e:
             logger.error(f"Error in analyze_batch: {str(e)}", exc_info=True)
             error_messages.append(str(e))
-            return 0, total_images, error_messages
+            return 0, total_images, error_messages, []
 
         # Only fail batch when we actually needed embeddings but got none
         if embeddings is None and len(images_needing_embeddings) > 0:
             error_messages.append("Failed to generate required embeddings")
-            return 0, total_images, error_messages
+            return 0, total_images, error_messages, []
 
-        # Vertex AI embeddings (optional, parallel to SigLIP2): generate for images_needing_vertexai
-        vertex_project_id = options.get('vertex_project_id')
-        vertex_location = options.get('vertex_location')
         vertex_embeddings_by_uuid = {}
-        if images_needing_vertexai and vertexai_service.is_available(vertex_project_id, vertex_location):
-            vertex_uuids = []
-            vertex_bytes = []
-            for image_bytes, uuid, _ in image_triplets:
-                if uuid in set(images_needing_vertexai):
-                    vertex_uuids.append(uuid)
-                    vertex_bytes.append(image_bytes)
-            if vertex_bytes:
-                logger.info(f"Generating Vertex AI embeddings for {len(vertex_bytes)} images...")
-                try:
-                    vertex_results = vertexai_service.get_image_embeddings(
-                        vertex_bytes, vertex_project_id=vertex_project_id, vertex_location=vertex_location
-                    )
-                    for uid, emb in zip(vertex_uuids, vertex_results):
-                        if emb is not None:
-                            vertex_embeddings_by_uuid[uid] = emb
-                except Exception as e:
-                    logger.error(f"vertexai failed: {e}", exc_info=True)
-                    error_messages.append(f"Vertex AI error: {e}")
+        if images_needing_vertexai:
+            if vertexai_service.is_available(vertex_project_id, vertex_location):
+                vertex_uuids = []
+                vertex_bytes = []
+                for image_bytes, uuid, _ in image_triplets:
+                    if uuid in set(images_needing_vertexai):
+                        vertex_uuids.append(uuid)
+                        vertex_bytes.append(image_bytes)
+                if vertex_bytes:
+                    logger.info(f"Generating Vertex AI embeddings for {len(vertex_bytes)} images...")
+                    try:
+                        vertex_results = vertexai_service.get_image_embeddings(
+                            vertex_bytes, vertex_project_id=vertex_project_id, vertex_location=vertex_location
+                        )
+                        for uid, emb in zip(vertex_uuids, vertex_results):
+                            if emb is not None:
+                                vertex_embeddings_by_uuid[uid] = emb
+                    except Exception as e:
+                        logger.error(f"vertexai failed: {e}", exc_info=True)
+                        error_messages.append(f"Vertex AI error: {e}")
+            else:
+                logger.warning("Vertex AI requested but not available/configured.")
+                warnings.append("Vertex AI requested but not available or correctly configured (check Project ID and authentication).")
 
         for i, (image_bytes, uuid, filename) in enumerate(image_triplets):
             try:
@@ -640,21 +642,39 @@ def process_image_task(
                 
                 if existing and not regenerate_metadata:
                     logger.info(f"UUID {uuid} already exists. Updating (embedding: {update_embedding is not None}).")
-                    chroma_service.update_image(uuid, main_metadata, embedding=update_embedding, catalog_id=catalog_id)
+                    try:
+                        chroma_service.update_image(uuid, main_metadata, embedding=update_embedding, catalog_id=catalog_id)
+                    except Exception as e:
+                        logger.error(f"Failed to update image {uuid} in ChromaDB: {e}", exc_info=True)
+                        error_messages.append(f"{filename}: Database update failed: {str(e)}")
+                        failure_count += 1
+                        continue
                 elif regenerate_metadata:
                     logger.info(f"UUID {uuid} set to regenerate. Updating (embedding: {update_embedding is not None}).")
                     existing_in_chroma = chroma_service.get_image(uuid)
-                    if existing_in_chroma and existing_in_chroma.get("ids"):
-                        chroma_service.update_image(uuid, main_metadata, embedding=update_embedding, catalog_id=catalog_id)
-                    else:
-                        chroma_service.add_image(uuid, embedding, main_metadata, catalog_id=catalog_id)
+                    try:
+                        if existing_in_chroma and existing_in_chroma.get("ids"):
+                            chroma_service.update_image(uuid, main_metadata, embedding=update_embedding, catalog_id=catalog_id)
+                        else:
+                            chroma_service.add_image(uuid, embedding, main_metadata, catalog_id=catalog_id)
+                    except Exception as e:
+                        logger.error(f"Failed to regenerate image {uuid} in ChromaDB: {e}", exc_info=True)
+                        error_messages.append(f"{filename}: Database update failed: {str(e)}")
+                        failure_count += 1
+                        continue
                 else:
                     # New record
                     if embedding is not None:
                         logger.info(f"UUID {uuid} is new. Indexing with embeddings.")
                     else:
                         logger.info(f"UUID {uuid} is new. Indexing metadata-only entry (no embedding).")
-                    chroma_service.add_image(uuid, embedding, main_metadata, catalog_id=catalog_id)
+                    try:
+                        chroma_service.add_image(uuid, embedding, main_metadata, catalog_id=catalog_id)
+                    except Exception as e:
+                        logger.error(f"Failed to add image {uuid} to ChromaDB: {e}", exc_info=True)
+                        error_messages.append(f"{filename}: Database indexing failed: {str(e)}")
+                        failure_count += 1
+                        continue
 
                 # Face detection and indexing (second Chroma collection)
                 if compute_faces and image_bytes:
@@ -710,8 +730,8 @@ def process_image_task(
                 error_messages.append(f"{filename}: {str(e)}")
                 failure_count += 1
 
-        return success_count, failure_count, error_messages
+        return success_count, failure_count, error_messages, warnings
     except Exception as e:
         logger.error(f"Error during batch processing task: {str(e)}", exc_info=True)
         error_messages.append(f"Batch processing error: {str(e)}")
-        return 0, total_images, error_messages
+        return 0, total_images, error_messages, warnings

@@ -734,7 +734,8 @@ LrTasks.startAsyncTask(function()
 
         log:trace("Starting AnalyzeAndIndexTask with " .. #photosToProcess .. " photos")
 
-        status, processed, failed, processedPhotos, combinedError = SearchIndexAPI.analyzeAndIndexSelectedPhotos(photosToProcess, progressScope, options, false)
+        local status, processed, failed, processedPhotos, combinedError, combinedWarnings
+        status, processed, failed, processedPhotos, combinedError, combinedWarnings = SearchIndexAPI.analyzeAndIndexSelectedPhotos(photosToProcess, progressScope, options, false)
 
         if status ~= "allfailed" and props.enableMetadata and props.saveDataToCatalog then
             log:trace("Saving metadata for processed photos...")
@@ -867,10 +868,19 @@ LrTasks.startAsyncTask(function()
                 )
             end
         else -- success
-            LrDialogs.message(
-                LOC "$$$/LrGeniusAI/common/TaskCompleted/Title=Task Completed",
-                LOC("$$$/LrGeniusAI/AnalyzeAndIndex/SuccessMessage=Successfully processed ^1 photos.", processed)
-            )
+            local msg = LOC("$$$/LrGeniusAI/AnalyzeAndIndex/SuccessMessage=Successfully processed ^1 photos.", processed)
+            if combinedWarnings then
+                msg = msg .. "\n\nWarnings:\n" .. combinedWarnings
+                LrDialogs.message(
+                    LOC "$$$/LrGeniusAI/common/TaskCompleted/Title=Task Completed with Warnings",
+                    msg
+                )
+            else
+                LrDialogs.message(
+                    LOC "$$$/LrGeniusAI/common/TaskCompleted/Title=Task Completed",
+                    msg
+                )
+            end
         end
         
         log:trace("AnalyzeAndIndexTask completed: Status=" .. status .. ", Processed=" .. processed .. ", Failed=" .. failed)

@@ -16,6 +16,7 @@ from huggingface_hub import hf_hub_download
 model = None
 processor = None  # This will hold the image preprocessor
 tokenizer = None
+_model_load_error = None
 
 # Idle-unload handling
 # If the model hasn't been used for this many seconds, it will be unloaded to free memory.
@@ -161,6 +162,7 @@ def load_model():
                 logger.info("Loaded OpenCLIP model via hf-hub fallback")
 
         except Exception as e:
+            _model_load_error = str(e)
             logger.error(f"Failed to load OpenCLIP model (lazy): {e}", exc_info=True)
             raise
 
@@ -272,3 +274,16 @@ def request_shutdown():
     logger.info("Shutdown request received")
     time.sleep(1) # Give time for the response to be sent
     os.kill(os.getpid(), signal.SIGINT)
+
+def get_health_status():
+    """Return health status of the model."""
+    status = "not_loaded"
+    if model is not None:
+        status = "loaded"
+    elif _model_load_error is not None:
+        status = "failed"
+    
+    return {
+        "clip_model": status,
+        "clip_error": _model_load_error
+    }

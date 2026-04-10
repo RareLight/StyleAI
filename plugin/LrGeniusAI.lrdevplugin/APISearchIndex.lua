@@ -1320,6 +1320,7 @@ end
 -- @return number processed Number of photos processed.
 -- @return number failed Number of photos that failed.
 -- @return table responses Array of response data from the server for each photo.
+-- @return string|nil warnings Combined warnings from the server.
 --
 function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressScope, options, closeProgressScope)
     local numPhotos = #selectedPhotos
@@ -1359,6 +1360,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     }
     
     local errorMessages = {}
+    local warningsList = {}
 
     local analyzeWorker = function()
         while #photoToProcessStack > 0 do
@@ -1458,6 +1460,11 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
                     if success then
                         stats.success = stats.success + 1
+                        if indexResponse and indexResponse.warnings and #indexResponse.warnings > 0 then
+                            for _, w in ipairs(indexResponse.warnings) do
+                                table.insert(warningsList, w)
+                            end
+                        end
                     else
                         stats.failed = stats.failed + 1
                         table.insert(errorMessages, tostring(indexResponse or "Unknown"))
@@ -1543,10 +1550,20 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 if #errorList >= 5 then break end
             end
         end
-        combinedError = table.concat(errorList, "\n")
+    local combinedWarnings
+    if #warningsList > 0 then
+        local uniqueWarnings = {}
+        local warningListStrings = {}
+        for _, w in ipairs(warningsList) do
+            if not uniqueWarnings[w] then
+                uniqueWarnings[w] = true
+                table.insert(warningListStrings, w)
+            end
+        end
+        combinedWarnings = table.concat(warningListStrings, "\n")
     end
 
-    return status, stats.processed, stats.failed, processedPhotos, combinedError
+    return status, stats.processed, stats.failed, processedPhotos, combinedError, combinedWarnings
 end
 
 ---
@@ -2010,6 +2027,7 @@ function SearchIndexAPI.startServer(opts)
         while LrDate.currentTime() < deadline do
             if SearchIndexAPI.pingServer() then
                 log:trace("Search index server is running")
+                SearchIndexAPI.checkServerHealth()
                 return true
             end
             LrTasks.sleep(0.5)
@@ -2708,8 +2726,9 @@ function SearchIndexAPI.startClipDownload()
                     log:trace("CLIP model download completed")
                     progressScope:done()
                     break
-                elseif status.error ~= "null" then
-                    ErrorHandler.handleError("Error downloading CLIP model", status.error)
+                elseif status.status == "error" or (status.error and status.error ~= "null" and status.error ~= "") then
+                    local error_msg = status.error or "Unknown download error"
+                    ErrorHandler.handleError(LOC "$$$/LrGeniusAI/ClipDownload/ErrorTitle=Error downloading CLIP model", error_msg)
                     progressScope:done()
                     break
                 end
@@ -2740,6 +2759,57 @@ function SearchIndexAPI.isClipReady()
     end
     log:error("isClipReady: Unknown error")
     return false, "Unknown error"
+end
+
+---
+-- Checks the health of the backend server and its components (models, providers).
+-- Surfaces critical loading failures to the user.
+--
+function SearchIndexAPI.checkServerHealth()
+    local url = getBaseUrl() .. "/health"
+    local res, err = _request('GET', url)
+    if err then
+        log:warn("checkServerHealth failed (could not reach /health): " .. tostring(err))
+        return false, err
+    end
+
+    if res then
+        -- 1. Check CLIP model
+        if res.clip_model == "failed" then
+            ErrorHandler.handleError(
+                LOC "$$$/LrGeniusAI/Health/ClipFailed=AI search model failed to load.",
+                res.clip_error or "Unknown error loading CLIP model."
+            )
+        end
+
+        -- 2. Check Face model
+        if res.face_model == "failed" then
+            log:warn("Face detection model failed to load on server: " .. tostring(res.face_error))
+        end
+
+        -- 3. Check LLM providers
+        local providers = res.llm_providers or {}
+        local hasAvailable = false
+        local failedProviders = {}
+        for provider, status in pairs(providers) do
+            if status == "available" then
+                hasAvailable = true
+            elseif status == "failed" then
+                table.insert(failedProviders, provider .. ": " .. (res.llm_errors and res.llm_errors[provider] or "unknown error"))
+            end
+        end
+
+        if not hasAvailable and next(providers) ~= nil then
+            ErrorHandler.handleError(
+                LOC "$$$/LrGeniusAI/Health/NoProviders=No AI metadata providers are available.",
+                "Please configure Ollama, LM Studio, ChatGPT, or Gemini in the plugin preferences."
+            )
+        elseif #failedProviders > 0 then
+            log:warn("Some AI providers failed to initialize: " .. table.concat(failedProviders, ", "))
+        end
+    end
+
+    return true
 end
 
 -- ---------------------------------------------------------------------------
