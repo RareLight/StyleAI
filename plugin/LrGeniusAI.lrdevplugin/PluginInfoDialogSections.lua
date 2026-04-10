@@ -117,7 +117,9 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
                 f:push_button {
                     title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/CopyLogToDesktop=Copy logfiles to Desktop",
                     action = function (button)
-                        Util.copyLogfilesToDesktop()
+                        LrTasks.startAsyncTask(function()
+                            Util.copyLogfilesToDesktop()
+                        end)
                     end,
                 },
             },
