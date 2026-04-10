@@ -2123,10 +2123,12 @@ _request = function(method, url, body, timeout, options)
             return result, hdrs
         end
         if result and #result > 0 then
+            log:trace("_request: decoding JSON result of length " .. #result)
             return JSON:decode(result)
         end
         return {} -- Return an empty table for successful but empty responses
     else
+        log:trace("_request: status=" .. tostring(status) .. " type(hdrs)=" .. type(hdrs))
         local statusStr = httpStatusForLog(status, hdrs)
         local err_msg
         if status == nil then
