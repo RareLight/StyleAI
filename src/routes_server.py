@@ -93,3 +93,26 @@ def version_check():
     )
     return jsonify(result), 200
 
+@server_bp.route('/health', methods=['GET'])
+def health():
+    """Return health status of various backend components."""
+    health_data = {}
+    
+    # Model health (CLIP)
+    health_data.update(server_lifecycle.get_health_status())
+    
+    # LLM Provider health
+    health_data.update(get_analysis_service().get_health_status())
+    
+    # Add face model status (simplified for now)
+    import service_face
+    try:
+        service_face._get_face_app()
+        health_data["face_model"] = "loaded"
+        health_data["face_error"] = None
+    except Exception as e:
+        health_data["face_model"] = "failed"
+        health_data["face_error"] = str(e)
+
+    return jsonify(health_data)
+

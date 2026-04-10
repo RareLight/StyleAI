@@ -88,7 +88,8 @@ def add_training_example():
             image_bytes = image_file.read()
             embedding = _compute_clip_embedding(image_bytes)
         except Exception as exc:
-            logger.warning("Failed to read image for training embedding: %s", exc)
+            warning_msg = f"Failed to read image for training embedding: {exc}"
+            logger.warning(warning_msg)
 
     try:
         training_service.add_training_example(
@@ -100,7 +101,10 @@ def add_training_example():
             summary=summary,
         )
         count = training_service.get_training_count()
-        return jsonify({"status": "ok", "photo_id": photo_id, "total_count": count}), 200
+        response_data = {"status": "ok", "photo_id": photo_id, "total_count": count}
+        if image_file and embedding is None:
+            response_data["warning"] = "Could not compute CLIP embedding for training example. AI style prediction may be less accurate."
+        return jsonify(response_data), 200
     except Exception as exc:
         logger.error("Failed to add training example photo_id=%s: %s", photo_id, exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500

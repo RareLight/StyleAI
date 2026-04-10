@@ -225,9 +225,11 @@ if prefs.periodicalUpdateCheck then
 end
 
 LrTasks.startAsyncTask(function()
-    SearchIndexAPI.startServer()
-    if prefs.enableOpenClip then
-        SearchIndexAPI.isClipReady() -- To trigger load of the CLIP model.
+    if SearchIndexAPI.startServer() then
+        SearchIndexAPI.checkServerHealth()
+        if prefs.useClip then
+            SearchIndexAPI.isClipReady() -- To trigger load of the CLIP model.
+        end
     end
 end)
 
