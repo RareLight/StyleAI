@@ -52,6 +52,8 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
     })
 
     if result == "cancel" then
-        Util.copyLogfilesToDesktop({ error = errorMessage, details = detailedInfo })
+        LrTasks.startAsyncTask(function()
+            Util.copyLogfilesToDesktop({ error = errorMessage, details = detailedInfo })
+        end)
     end
 end
