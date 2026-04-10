@@ -204,6 +204,7 @@
 "$$$/LrGeniusAI/FindSimilarImages/WindowTitle" = "Trouver des Photos Similaires"
 "$$$/LrGeniusAI/Health/ClipFailed" = "Échec de chargement du modèle de recherche IA."
 "$$$/LrGeniusAI/Health/NoProviders" = "Aucun fournisseur de métadonnées IA disponible."
+"$$$/LrGeniusAI/Health/NoProvidersDetail" = "Veuillez configurer Ollama, LM Studio, ChatGPT ou Gemini dans les préférences du plugin."
 "$$$/LrGeniusAI/ImportMetadata/AllFailedMessage" = "Échec d'importation des ^1 photos."
 "$$$/LrGeniusAI/ImportMetadata/Processing" = "Importation... ^1/^2 (^3 échecs)"
 "$$$/LrGeniusAI/ImportMetadata/ProgressTitle" = "Importation des métadonnées..."

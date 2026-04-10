@@ -58,6 +58,7 @@ local ENDPOINTS = {
     TRAINING_CLEAR = "/training",   -- DELETE /training (all)
     TRAINING_STATS = "/training/stats",
     STYLE_EDIT = "/style_edit",
+    LOGS = "/logs",
 }
 
 local EXPORT_SETTINGS = {
@@ -2797,7 +2798,7 @@ function SearchIndexAPI.checkServerHealth()
         local hasAvailable = false
         local failedProviders = {}
         for provider, status in pairs(providers) do
-            if status == "available" then
+            if status == "available" or status == "registered" then
                 hasAvailable = true
             elseif status == "failed" then
                 table.insert(failedProviders, provider .. ": " .. (res.llm_errors and res.llm_errors[provider] or "unknown error"))
@@ -2807,7 +2808,7 @@ function SearchIndexAPI.checkServerHealth()
         if not hasAvailable and next(providers) ~= nil then
             ErrorHandler.handleError(
                 LOC "$$$/LrGeniusAI/Health/NoProviders=No AI metadata providers are available.",
-                "Please configure Ollama, LM Studio, ChatGPT, or Gemini in the plugin preferences."
+                LOC "$$$/LrGeniusAI/Health/NoProvidersDetail=Please configure Ollama, LM Studio, ChatGPT, or Gemini in the plugin preferences."
             )
         elseif #failedProviders > 0 then
             log:warn("Some AI providers failed to initialize: " .. table.concat(failedProviders, ", "))
@@ -2986,6 +2987,17 @@ end
 --                           iso, aperture, shutter_speed.
 -- @return boolean success, table|string response or error message
 ---
+function SearchIndexAPI.getRemoteLogs()
+    local url = getBaseUrl() .. ENDPOINTS.LOGS
+    log:trace("Fetching remote logs from: " .. url)
+    local response, err = _request('GET', url, nil, 30)
+    if not response then
+        log:error("Failed to fetch remote logs: " .. tostring(err))
+        return nil, err
+    end
+    return response
+end
+
 function SearchIndexAPI.styleEdit(photoId, filepath, options)
     if not photoId or photoId == "" then
         log:error("styleEdit: photo_id missing")

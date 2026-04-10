@@ -52,6 +52,6 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
     })
 
     if result == "cancel" then
-        Util.copyLogfilesToDesktop()
+        Util.copyLogfilesToDesktop({ error = errorMessage, details = detailedInfo })
     end
 end

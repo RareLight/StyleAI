@@ -1,7 +1,8 @@
-from flask import Blueprint, jsonify, request
+import os
+from flask import Blueprint, jsonify, request, send_file
 
 import server_lifecycle
-from config import logger
+from config import logger, LOG_PATH
 from service_metadata import get_analysis_service
 import service_version
 
@@ -115,4 +116,64 @@ def health():
         health_data["face_error"] = str(e)
 
     return jsonify(health_data)
+
+
+@server_bp.route('/logs', methods=['GET'])
+def get_logs():
+    """
+    Returns backend logs and optionally local Ollama logs if accessible.
+    """
+    logs = {}
+    
+    # 1. Backend logs
+    if os.path.isfile(LOG_PATH):
+        try:
+            with open(LOG_PATH, "r", encoding="utf-8", errors="ignore") as f:
+                # Return last 1MB of logs to avoid huge response
+                f.seek(0, 2)
+                size = f.tell()
+                f.seek(max(0, size - 1024 * 1024))
+                logs["backend"] = f.read()
+        except Exception as e:
+            logs["backend_error"] = str(e)
+            
+    # 2. Try to find Ollama logs on the server's machine
+    ollama_log_paths = [
+        os.path.expanduser("~/.ollama/logs/server.log"),
+        "/root/.ollama/logs/server.log",
+        r"C:\Users\%USERNAME%\AppData\Local\ollama\server.log",
+    ]
+    for p in ollama_log_paths:
+        p = os.path.expandvars(p)
+        if os.path.isfile(p):
+            try:
+                with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                    f.seek(0, 2)
+                    size = f.tell()
+                    f.seek(max(0, size - 512 * 1024)) # Last 512KB
+                    logs["ollama"] = f.read()
+                break
+            except Exception:
+                pass
+
+    # 3. Try to find LM Studio logs
+    lmstudio_log_paths = [
+        os.path.expanduser("~/Library/Logs/LM Studio/main.log"),
+        r"%APPDATA%\LM Studio\logs\main.log",
+    ]
+    for p in lmstudio_log_paths:
+        p = os.path.expandvars(p)
+        if os.path.isfile(p):
+            try:
+                with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                    f.seek(0, 2)
+                    size = f.tell()
+                    f.seek(max(0, size - 512 * 1024))
+                    logs["lmstudio"] = f.read()
+                break
+            except Exception:
+                pass
+
+    return jsonify(logs)
+
 

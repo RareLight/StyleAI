@@ -204,6 +204,7 @@
 "$$$/LrGeniusAI/FindSimilarImages/WindowTitle" = "Find Similar Images"
 "$$$/LrGeniusAI/Health/ClipFailed" = "AI search model failed to load."
 "$$$/LrGeniusAI/Health/NoProviders" = "No AI metadata providers are available."
+"$$$/LrGeniusAI/Health/NoProvidersDetail" = "Please configure Ollama, LM Studio, ChatGPT, or Gemini in the plugin preferences."
 "$$$/LrGeniusAI/ImportMetadata/AllFailedMessage" = "All ^1 photos failed to import."
 "$$$/LrGeniusAI/ImportMetadata/Processing" = "Importing metadata... ^1/^2 (^3 failed)"
 "$$$/LrGeniusAI/ImportMetadata/ProgressTitle" = "Importing metadata for photos..."
