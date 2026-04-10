@@ -53,13 +53,13 @@ def test_get_ids(client, mocker):
 # --- Search / Cull Endpoints ---
 
 def test_search(client, mocker):
-    mocker.patch('routes_search.service_search.search_images', return_value=[])
+    mocker.patch('routes_search.service_search.search_images', return_value=([], None))
     response = client.post('/search', json={
         "term": "test search",
         "max_results": 5
     })
     assert response.status_code == 200
-    assert response.get_json() == []
+    assert response.get_json() == {"results": []}
 
 def test_find_similar(client, mocker):
     mocker.patch('routes_search.service_search.find_similar_images', return_value=([], None))
@@ -72,7 +72,7 @@ def test_find_similar(client, mocker):
     assert response.get_json() == {"results": []}
 
 def test_group_similar(client, mocker):
-    mocker.patch('service_search.group_similar_images', return_value=[])
+    mocker.patch('routes_search.service_search.group_similar_images', return_value=([], None))
     response = client.post('/group_similar', json={
         "photo_ids": ["id1", "id2"]
     })
@@ -96,12 +96,14 @@ def test_edit(client, mocker):
     mock_response.input_tokens = 10
     mock_response.output_tokens = 20
     mock_service.generate_edit_recipe_single.return_value = mock_response
+    mock_response.warning = None
+    mock_response.error = None
     mocker.patch('routes_edit.get_analysis_service', return_value=mock_service)
     mocker.patch('routes_edit.chroma_service.get_image', return_value=None)
     mocker.patch('routes_edit.chroma_service.add_image')
 
     data = {
-        'photo_ids': ['id1'],
+        'photo_id': ['id1'],
         'options': '{}'
     }
     response = client.post('/edit', data={
@@ -118,6 +120,8 @@ def test_edit_base64(client, mocker):
     mock_response.input_tokens = 10
     mock_response.output_tokens = 20
     mock_service.generate_edit_recipe_single.return_value = mock_response
+    mock_response.warning = None
+    mock_response.error = None
     mocker.patch('routes_edit.get_analysis_service', return_value=mock_service)
     mocker.patch('routes_edit.chroma_service.get_image', return_value=None)
     mocker.patch('routes_edit.chroma_service.add_image')
@@ -151,7 +155,7 @@ def test_remove(client, mocker):
 # --- Faces Endpoints ---
 
 def test_faces_query(client, mocker):
-    mocker.patch('routes_faces.service_face.detect_faces', return_value=[{"embedding": [0.1, 0.2]}])
+    mocker.patch('routes_faces.face_service.detect_faces', return_value=[{"embedding": [0.1, 0.2]}])
     # Based on routes_faces implementation
     mocker.patch('routes_faces.chroma_service.query_faces', return_value={"ids": [["f1"]], "distances": [[0.5]], "metadatas": [[{"photo_id": "p1"}]]})
     
@@ -210,6 +214,8 @@ def test_training_delete(client, mocker):
 
 def test_db_backup(client, mocker):
     mocker.patch('routes_db.service_db.build_backup_zip', return_value=('fake_path.zip', 'backup.zip'))
+    # Mock send_file to avoid FileNotFoundError in test environment
+    mocker.patch('routes_db.send_file', return_value=app.response_class("fake content", mimetype="application/zip"))
     # Mock os.remove to avoid errors when the after_this_request handler runs
     mocker.patch('routes_db.os.remove')
     response = client.get('/db/backup')
