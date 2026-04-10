@@ -498,12 +498,29 @@ local function formatGlobalSettings(globalSettings)
 end
 
 function DevelopEditManager.formatRecipeDetails(response)
-    local recipe = getRecipeFromResponse(response)
     if not recipe then
-        return "No edit recipe available."
+        return LOC "$$$/LrGeniusAI/DevelopEdit/NoRecipe=No edit recipe available."
     end
 
     local lines = {}
+
+    -- Style Engine Metadata
+    if response and response.engine then
+        local engineName = response.engine == "style" and "Photographer Style Engine" or "LLM Style Fallback"
+        table.insert(lines, "Engine: " .. engineName)
+        if response.confidence then
+            local conf = math.floor(response.confidence * 100)
+            table.insert(lines, "Match Confidence: " .. tostring(conf) .. "%")
+        end
+        if response.matched_examples then
+            table.insert(lines, "Matched Examples: " .. tostring(response.matched_examples))
+        end
+        if response.matched_filenames and #response.matched_filenames > 0 then
+            table.insert(lines, "Source Styles: " .. table.concat(response.matched_filenames, ", "))
+        end
+        table.insert(lines, "")
+    end
+
     table.insert(lines, "Summary")
     table.insert(lines, recipe.summary or "AI-generated Lightroom edit recipe")
     table.insert(lines, "")
@@ -1184,12 +1201,51 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
     props.applyMasks = (options and options.applyMasks ~= false) and ((recipe.masks and #recipe.masks > 0) or false)
     props.details = DevelopEditManager.formatRecipeDetails(response)
 
+    -- Style prediction metadata for the UI
+    props.hasConfidence = response and response.confidence ~= nil
+    local confVal = (response and response.confidence) or 0
+    props.confidencePct = math.floor(confVal * 100)
+    props.confidenceLabel = string.format("%d%%", props.confidencePct)
+
+    local confColor = { 0.7, 0.7, 0.7 } -- gray
+    local qualityText = "Low Style Match"
+    if confVal >= 0.75 then
+        confColor = { 0.2, 0.8, 0.2 } -- green
+        qualityText = "Excellent Style Match"
+    elseif confVal >= 0.50 then
+        confColor = { 0.8, 0.8, 0.2 } -- yellow/gold
+        qualityText = "Good Style Match"
+    elseif confVal > 0 then
+        confColor = { 0.8, 0.4, 0.1 } -- orange
+        qualityText = "Weak Style Match"
+    end
+    props.qualityText = qualityText
+    props.confColor = confColor
+
     local dialogView = f:column {
         bind_to_object = props,
         spacing = f:control_spacing(),
         f:row {
             f:static_text {
                 title = photo:getFormattedMetadata("fileName") or "Photo",
+                font = "<system_bold>",
+            },
+            f:spacer { fill_horizontal = 1 },
+            -- Confidence Badge
+            f:row {
+                visible = bind "hasConfidence",
+                f:static_text {
+                    title = "Match:",
+                },
+                f:static_text {
+                    title = bind "confidenceLabel",
+                    text_color = bind "confColor",
+                    font = "<system_bold>",
+                },
+                f:static_text {
+                    title = string.format(" (%s)", qualityText),
+                    size = "small",
+                },
             },
         },
         f:row {

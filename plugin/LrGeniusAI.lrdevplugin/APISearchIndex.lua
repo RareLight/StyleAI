@@ -56,6 +56,8 @@ local ENDPOINTS = {
     TRAINING_COUNT = "/training/count",
     TRAINING_DELETE = "/training",  -- DELETE /training/<photo_id>
     TRAINING_CLEAR = "/training",   -- DELETE /training (all)
+    TRAINING_STATS = "/training/stats",
+    STYLE_EDIT = "/style_edit",
 }
 
 local EXPORT_SETTINGS = {
@@ -2846,6 +2848,29 @@ function SearchIndexAPI.addTrainingExample(photoId, filepath, developSettings, o
         table.insert(mimeChunks, { name = "summary", value = options.summary })
     end
 
+    -- Send EXIF fields for richer multi-criteria matching.
+    if options.focal_length and type(options.focal_length) == "number" then
+        table.insert(mimeChunks, { name = "focal_length", value = tostring(options.focal_length) })
+    end
+    if options.capture_time and type(options.capture_time) == "number" then
+        table.insert(mimeChunks, { name = "capture_time", value = tostring(options.capture_time) })
+    end
+    if options.camera_make and options.camera_make ~= "" then
+        table.insert(mimeChunks, { name = "camera_make", value = tostring(options.camera_make) })
+    end
+    if options.camera_model and options.camera_model ~= "" then
+        table.insert(mimeChunks, { name = "camera_model", value = tostring(options.camera_model) })
+    end
+    if options.iso and type(options.iso) == "number" then
+        table.insert(mimeChunks, { name = "iso", value = tostring(options.iso) })
+    end
+    if options.aperture and type(options.aperture) == "number" then
+        table.insert(mimeChunks, { name = "aperture", value = tostring(options.aperture) })
+    end
+    if options.shutter_speed and options.shutter_speed ~= "" then
+        table.insert(mimeChunks, { name = "shutter_speed", value = tostring(options.shutter_speed) })
+    end
+
     if filepath and LrFileUtils.exists(filepath) then
         local filename = LrPathUtils.leafName(filepath)
         table.insert(mimeChunks, {
@@ -2932,5 +2957,104 @@ function SearchIndexAPI.clearAllTrainingExamples()
     if response.status == "ok" then
         return true, nil
     end
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- Get aggregate style-profile statistics from the backend.
+-- @return table|nil { count, readiness, scene_distribution, exposure, focal_buckets, time_of_day, ... }
+-- @return string|nil error message
+---
+function SearchIndexAPI.getTrainingStats()
+    local url = getBaseUrl() .. ENDPOINTS.TRAINING_STATS
+    local response, err = _request('GET', url)
+    if not response then
+        log:error("getTrainingStats failed: " .. tostring(err))
+        return nil, err or "Unknown error"
+    end
+    return response, nil
+end
+
+---
+-- Generate a style-matched edit recipe using the LLM-free style engine.
+-- Falls back to LLM if use_llm_fallback=true and confidence is low.
+-- @param photoId   string  Stable photo ID.
+-- @param filepath  string  Path to an exported JPEG preview.
+-- @param options   table   Same options as generateEditRecipe; extra keys:
+--                           use_llm_fallback (bool), focal_length (number),
+--                           capture_time (number unix), camera_make, camera_model,
+--                           iso, aperture, shutter_speed.
+-- @return boolean success, table|string response or error message
+---
+function SearchIndexAPI.styleEdit(photoId, filepath, options)
+    if not photoId or photoId == "" then
+        log:error("styleEdit: photo_id missing")
+        return false, "No photo ID provided"
+    end
+    options = options or {}
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_EDIT
+    local mimeChunks = {}
+
+    table.insert(mimeChunks, { name = "photo_id", value = photoId })
+
+    -- Optional extra EXIF context for the style engine
+    local function addStr(key)
+        if options[key] and tostring(options[key]) ~= "" then
+            table.insert(mimeChunks, { name = key, value = tostring(options[key]) })
+        end
+    end
+    addStr("use_llm_fallback")
+    addStr("focal_length")
+    addStr("capture_time")
+    addStr("camera_make")
+    addStr("camera_model")
+    addStr("iso")
+    addStr("aperture")
+    addStr("shutter_speed")
+
+    -- Standard edit options forwarded for LLM fallback compatibility
+    local function addEditOpt(key, value)
+        if value ~= nil then
+            table.insert(mimeChunks, { name = key, value = tostring(value) })
+        end
+    end
+    addEditOpt("provider",  options.provider)
+    addEditOpt("model",     options.model)
+    addEditOpt("language",  options.language)
+    addEditOpt("temperature", options.temperature)
+    addEditOpt("include_masks", options.include_masks)
+    addEditOpt("adjust_white_balance", options.adjust_white_balance)
+    addEditOpt("adjust_basic_tone", options.adjust_basic_tone)
+    addEditOpt("adjust_presence", options.adjust_presence)
+    addEditOpt("adjust_color_mix", options.adjust_color_mix)
+    addEditOpt("do_color_grading", options.do_color_grading)
+    addEditOpt("use_tone_curve", options.use_tone_curve)
+    addEditOpt("adjust_detail", options.adjust_detail)
+    addEditOpt("adjust_effects", options.adjust_effects)
+    addEditOpt("allow_auto_crop", options.allow_auto_crop)
+
+    if filepath and LrFileUtils.exists(filepath) then
+        local filename = LrPathUtils.leafName(filepath)
+        table.insert(mimeChunks, {
+            name = "image",
+            fileName = filename,
+            filePath = filepath,
+            contentType = "image/jpeg",
+        })
+    end
+
+    log:trace("styleEdit: uploading photo_id=" .. tostring(photoId))
+    local response, err = _requestMultipart(url, mimeChunks, 180)
+    if not response then
+        log:error("styleEdit failed: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+    if response.status == "success" then
+        return true, response
+    end
+    if response.status == "error" then
+        return false, response.error or "Style engine error"
+    end
+    log:error("styleEdit unexpected status: " .. tostring(response.status))
     return false, response.error or "Unexpected response"
 end
