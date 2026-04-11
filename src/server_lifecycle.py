@@ -9,6 +9,8 @@ import datetime
 import gc
 import torch
 from huggingface_hub import hf_hub_download
+import service_face
+import service_chroma
 
 
 # Lazy-loadable global model instances
@@ -200,6 +202,34 @@ def unload_model():
             logger.info("Unloaded OpenCLIP model.")
         except Exception as e:
             logger.warning(f"Error while unloading model: {e}")
+
+
+def unload_all_resources():
+    """Unload all heavy models and resources from memory."""
+    logger.info("Unloading all resources (CLIP, InsightFace, ChromaDB)...")
+    
+    # 1. CLIP (OpenCLIP)
+    try:
+        unload_model()
+    except Exception as e:
+        logger.error(f"Failed to unload CLIP model: {e}")
+        
+    # 2. InsightFace
+    try:
+        service_face.unload_face_app()
+    except Exception as e:
+        logger.error(f"Failed to unload InsightFace model: {e}")
+        
+    # 3. ChromaDB
+    try:
+        service_chroma.unload_collections()
+    except Exception as e:
+        logger.error(f"Failed to unload ChromaDB: {e}")
+        
+    # 4. Final GC
+    import gc
+    gc.collect()
+    logger.info("All resources unloaded successfully.")
 
 
 def _idle_unloader_loop():

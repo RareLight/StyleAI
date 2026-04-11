@@ -36,6 +36,18 @@ def _get_face_app():
         raise
 
 
+def unload_face_app():
+    """Unload the InsightFace model to free memory."""
+    global _face_app
+    if _face_app is None:
+        return
+    logger.info("Unloading InsightFace FaceAnalysis model...")
+    _face_app = None
+    import gc
+    gc.collect()
+    logger.info("Unloaded InsightFace model.")
+
+
 def _compute_face_sharpness(crop_rgb: np.ndarray) -> float:
     if crop_rgb.size == 0:
         return 0.0

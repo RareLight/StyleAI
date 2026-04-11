@@ -221,8 +221,12 @@ if _G.prefs.searchInMetadataAltText == nil then
     _G.prefs.searchInMetadataAltText = true
 end
 
-function _G.JSON.assert(b, m)
-    LrDialogs.showError("Error decoding JSON response.")
+function _G.JSON.assert(v, message)
+    if not v then
+        log:error("JSON error: " .. (message or "assertion failed!"))
+        error(message or "assertion failed!")
+    end
+    return v
 end
 
 if prefs.periodicalUpdateCheck then

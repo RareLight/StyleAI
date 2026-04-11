@@ -20,6 +20,14 @@ def shutdown():
     return jsonify({"status": "Server is shutting down..."})
 
 
+@server_bp.route('/unload', methods=['POST'])
+def unload():
+    """ Unload models and collections from memory without stopping the server. """
+    logger.info("Unload request received via API")
+    server_lifecycle.unload_all_resources()
+    return jsonify({"status": "Resources unloaded successfully."})
+
+
 @server_bp.route('/restart', methods=['POST'])
 def restart():
     """ 
