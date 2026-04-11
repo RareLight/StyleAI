@@ -165,6 +165,21 @@ def reset_chroma_client():
     vertex_collection = None
 
 
+def unload_collections():
+    """Unload the ChromaDB collections and client to free memory."""
+    global chroma_client, collection, face_collection, vertex_collection
+    if chroma_client is None:
+        return
+    logger.info("Unloading ChromaDB collections...")
+    chroma_client = None
+    collection = None
+    face_collection = None
+    vertex_collection = None
+    import gc
+    gc.collect()
+    logger.info("Unloaded ChromaDB collections.")
+
+
 def add_image(photo_id, embedding, metadata, *, legacy_uuid=None, catalog_id=None):
     """Add a new image record to the Chroma collection.
 

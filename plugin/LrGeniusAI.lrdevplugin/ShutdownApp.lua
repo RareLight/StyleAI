@@ -1,14 +1,10 @@
 local function shutdownApp(doneFunc, progressFunc)
-    -- Only shut down the backend when it is running on localhost (we started it).
+    -- Instead of shutting down the backend, we now only unload models and collections from memory
+    -- to free up resources while keeping the service running.
     if SearchIndexAPI.isBackendOnLocalhost() then
         LrTasks.startAsyncTask(function()
             LrTasks.pcall(function()
-                SearchIndexAPI.shutdownServer({
-                    graceSeconds = 10,
-                    forceWaitSeconds = 10,
-                    pollIntervalSeconds = 0.5,
-                    shutdownRequestTimeoutSeconds = 5,
-                })
+                SearchIndexAPI.unloadResources()
             end)
             doneFunc()
         end)

@@ -37,6 +37,7 @@ local ENDPOINTS = {
     VERSION = "/version",
     VERSION_CHECK = "/version/check",
     SHUTDOWN = "/shutdown",
+    UNLOAD = "/unload",
     IMPORT_METADATA = "/import/metadata",
     START_CLIP_DOWNLOAD = "/clip/download/start",
     STATUS_CLIP_DOWNLOAD = "/clip/download/status",
@@ -1909,6 +1910,22 @@ function SearchIndexAPI.shutdownServer(opts)
     return SearchIndexAPI.killServer({ killMode = "force", forceWaitSeconds = opts.forceWaitSeconds or 10 })
 end
 
+function SearchIndexAPI.unloadResources(opts)
+    opts = opts or {}
+    local url = getBaseUrl() .. ENDPOINTS.UNLOAD
+    log:trace("Requesting backend model unload")
+    local status, response = LrTasks.pcall(function()
+        return _request("POST", url, {}, 10) -- 10s timeout
+    end)
+    if status and response then
+        log:trace("Backend models unloaded successfully")
+        return true
+    else
+        log:warn("Failed to unload backend models: " .. tostring(response))
+        return false
+    end
+end
+
 function SearchIndexAPI.restartBackend()
     local url = getBaseUrl() .. "/server/restart"
     log:info("Requesting backend restart via API")
@@ -2196,8 +2213,9 @@ _request = function(method, url, body, timeout, options)
             if ok2 then
                 return decoded
             else
-                log:error("_request: JSON decode failed: " .. tostring(decoded))
-                return nil, "JSON decode failed"
+                local snippet = tostring(result):sub(1, 1000)
+                log:error("_request: JSON decode failed: " .. tostring(decoded) .. " | URL: " .. tostring(url) .. " | Raw Snippet: " .. snippet)
+                return nil, "JSON decode failed: " .. tostring(decoded)
             end
         end
         return {}
@@ -2218,7 +2236,7 @@ _request = function(method, url, body, timeout, options)
                 if ok2 and type(decoded_err) == "table" and decoded_err.error then
                     err_msg = err_msg .. " - " .. decoded_err.error
                 else
-                    err_msg = err_msg .. " Response: " .. result
+                    err_msg = err_msg .. " Response: " .. tostring(result):sub(1, 400)
                 end
             end
         end
