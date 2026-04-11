@@ -702,7 +702,8 @@ LrTasks.startAsyncTask(function()
         LrDialogs.attachErrorDialogToFunctionContext(ctx)
         log:info("AI Edit task started")
 
-        if not Util.waitForServerDialog() then
+        -- Check server connection and health (ensure AI providers are configured)
+        if not Util.waitForServerDialog({ requireProviders = true }) then
             log:warn("AI Edit task aborted: backend server unavailable")
             return
         end

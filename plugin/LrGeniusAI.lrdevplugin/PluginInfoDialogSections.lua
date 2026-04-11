@@ -98,7 +98,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
             
             if not health.backend then
                 status = "critical"
-                table.insert(issues, LOC "$$$/LrGeniusAI/Health/BackendFailed")
+                table.insert(issues, LOC "$$$/LrGeniusAI/Health/BackendFailed=Backend server is not reachable.")
                 color = { 0.8, 0, 0 }
             end
             if not health.clip and prefs.useClip then
@@ -106,14 +106,14 @@ function PluginInfoDialogSections.startDialog(propertyTable)
                     status = "warning" 
                     color = { 0.8, 0.8, 0 }
                 end
-                table.insert(issues, LOC "$$$/LrGeniusAI/Health/ClipMissing")
+                table.insert(issues, LOC "$$$/LrGeniusAI/Health/ClipMissing=CLIP model for semantic search is missing.")
             end
             if not health.gemini and not health.chatgpt and not health.ollama and not health.lmstudio then
                 if status ~= "critical" then 
                     status = "warning" 
                     color = { 0.8, 0.8, 0 }
                 end
-                table.insert(issues, LOC "$$$/LrGeniusAI/Health/ApiKeysMissing")
+                table.insert(issues, LOC "$$$/LrGeniusAI/Health/ApiKeysMissing=No AI providers configured for AI generation.")
             end
             
             propertyTable.healthStatus = status
@@ -223,7 +223,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 
             f:row {
                 f:static_text {
-                    title = LOC "$$$/LrGeniusAI/Health/SummaryTitle",
+                    title = LOC "$$$/LrGeniusAI/Health/SummaryTitle=System Health",
                     font = "<system/bold>",
                     width = share 'labelWidth',
                 },
@@ -231,15 +231,15 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                     title = bind {
                         key = 'healthStatus',
                         transform = function(v)
-                            if v == "healthy" then return LOC "$$$/LrGeniusAI/Health/StatusHealthy" end
-                            if v == "warning" then return LOC "$$$/LrGeniusAI/Health/StatusWarning" end
-                            return LOC "$$$/LrGeniusAI/Health/StatusCritical"
+                            if v == "healthy" then return LOC "$$$/LrGeniusAI/Health/StatusHealthy=Everything looks good!" end
+                            if v == "warning" then return LOC "$$$/LrGeniusAI/Health/StatusWarning=Some features might not work correctly." end
+                            return LOC "$$$/LrGeniusAI/Health/StatusCritical=Critical issues detected. Plugin cannot function."
                         end
                     },
                     text_color = bind 'healthColor',
                 },
                 f:push_button {
-                    title = LOC "$$$/LrGeniusAI/Health/RunWizard",
+                    title = LOC "$$$/LrGeniusAI/Health/RunWizard=Run Setup Wizard",
                     action = function() OnboardingWizard.show(true) end,
                 },
             },

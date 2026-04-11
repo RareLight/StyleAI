@@ -24,20 +24,24 @@ _G.LrSystemInfo = import 'LrSystemInfo'
 _G.LrApplicationView = import 'LrApplicationView'
 _G.LrDevelopController = import 'LrDevelopController'
 
-_G.WIN_ENV = LrSystemInfo.osName() == 'windows'
-_G.MAC_ENV = LrSystemInfo.osName() == 'macintosh'
-
-
-_G.JSON = require "JSON"
-
-require "Util"
-require "Defaults"
-
--- Global initializations
+-- Global initializations (move early)
 _G.prefs = _G.LrPrefs.prefsForPlugin()
 _G.log = import 'LrLogger' ('LrGeniusAI')
 _G.prefs.logging = true
-_G.log:enable('logfile') -- Always enable logging to a file
+_G.log:enable('logfile')
+
+-- Load modules early
+_G.JSON = require "JSON"
+require "Util"
+require "Defaults"
+require "MetadataManager"
+require "KeywordConfigProvider"
+require "PromptConfigProvider"
+require "UpdateCheck"
+require "ErrorHandler"
+require "APISearchIndex"
+require "PhotoSelector"
+require "OnboardingWizard"
 
 if _G.prefs.ai == nil then
     _G.prefs.ai = ""
@@ -228,14 +232,6 @@ if prefs.periodicalUpdateCheck then
     end)
 end
 
-require "MetadataManager"
-require "KeywordConfigProvider"
-require "PromptConfigProvider"
-require "UpdateCheck"
-require "ErrorHandler"
-require "APISearchIndex"
-require "PhotoSelector"
-require "OnboardingWizard"
 
 if prefs.onboardingCompleted == nil then
     -- Do not set to false yet, let the wizard trigger
