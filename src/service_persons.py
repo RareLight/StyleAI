@@ -108,7 +108,12 @@ def run_clustering(
     # Cosine distance -> L2 for unit vectors: L2 = sqrt(2 * cos_dist)
     l2_threshold = math.sqrt(2.0 * float(distance_threshold))
     agg_linkage = "complete" if linkage != "average" else "average"
+    
     data = chroma_service.get_all_faces(include_embeddings=True)
+    if not data or not data.get("ids"):
+        logger.info("No faces to cluster (or service not initialized).")
+        return {"person_count": 0, "face_count": 0, "updated": 0, "unassigned": 0}
+        
     ids = data.get("ids", [])
     embeddings = data.get("embeddings", [])
     metadatas = data.get("metadatas", [])
@@ -220,6 +225,9 @@ def list_persons() -> List[Dict[str, Any]]:
     Thumbnails are not included; use GET /faces/persons/<person_id>/thumbnail.
     """
     data = chroma_service.get_all_faces(include_embeddings=False)
+    if not data or not data.get("ids"):
+        return []
+        
     ids = data.get("ids", [])
     metadatas = data.get("metadatas", [])
 
@@ -262,6 +270,9 @@ def get_person_thumbnail_b64(person_id: str) -> str:
 def get_photo_ids_for_person(person_id: str) -> List[str]:
     """Return list of photo IDs that contain this person (unique)."""
     data = chroma_service.get_all_faces(include_embeddings=False)
+    if not data or not data.get("ids"):
+        return []
+        
     metadatas = data.get("metadatas", [])
     photo_ids = set()
     for meta in metadatas or []:

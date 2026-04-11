@@ -360,6 +360,9 @@ def add_training_example(
         shutter_speed:    Shutter speed string (e.g. "1/250").
     """
     _ensure_initialized()
+    if _training_collection is None:
+        logger.warning("add_training_example skipped: service not initialized (DB_PATH missing).")
+        return
     if not photo_id:
         raise ValueError("photo_id is required")
 
@@ -381,7 +384,7 @@ def add_training_example(
 
     # EXIF categorical fields
     metadata["focal_length_bucket"] = focal_length_bucket(focal_length)
-    metadata["time_of_day_bucket"] = time_of_day_bucket(capture_time_unix)
+    metadata["time_of_day_bucket"] = time_of_day_bucket(capture_unix=capture_time_unix)
     if camera_make:
         metadata["camera_make"] = camera_make[:64]
     if camera_model:
@@ -420,6 +423,8 @@ def delete_training_example(photo_id: str) -> bool:
     Returns True when the item existed and was deleted, False otherwise.
     """
     _ensure_initialized()
+    if _training_collection is None:
+        return False
     if not photo_id:
         return False
     existing = _training_collection.get(ids=[photo_id], include=[])
@@ -433,6 +438,8 @@ def delete_training_example(photo_id: str) -> bool:
 def get_training_count() -> int:
     """Return the number of stored training examples."""
     _ensure_initialized()
+    if _training_collection is None:
+        return 0
     result = _training_collection.get(include=[], limit=1_000_000)
     return len(result.get("ids") or [])
 
@@ -440,6 +447,8 @@ def get_training_count() -> int:
 def list_training_examples() -> List[Dict[str, Any]]:
     """Return all training examples as a list of dicts (no embeddings)."""
     _ensure_initialized()
+    if _training_collection is None:
+        return []
     result = _training_collection.get(include=["metadatas"], limit=1_000_000)
     ids = result.get("ids") or []
     metadatas = result.get("metadatas") or []
@@ -476,6 +485,17 @@ def get_training_stats() -> Dict[str, Any]:
         }
     """
     _ensure_initialized()
+    if _training_collection is None:
+        return {
+            "count": 0,
+            "has_enough_examples": False,
+            "readiness": "cold_start",
+            "scene_distribution": {},
+            "focal_buckets": {},
+            "time_of_day": {},
+            "camera_distribution": {},
+            "exposure": {},
+        }
     result = _training_collection.get(include=["metadatas"], limit=1_000_000)
     ids = result.get("ids") or []
     metadatas = result.get("metadatas") or []
@@ -555,7 +575,7 @@ def query_similar_training_examples(
     Returns an empty list when no training examples exist or embedding is None.
     """
     _ensure_initialized()
-    if query_embedding is None:
+    if _training_collection is None or query_embedding is None:
         return []
 
     count = get_training_count()
@@ -616,6 +636,8 @@ def query_similar_training_examples(
 def clear_all_training_examples() -> int:
     """Delete every training example. Returns the number removed."""
     _ensure_initialized()
+    if _training_collection is None:
+        return 0
     result = _training_collection.get(include=[], limit=1_000_000)
     ids = result.get("ids") or []
     if not ids:

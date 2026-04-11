@@ -405,6 +405,8 @@ def query_vertex_images(query_embedding, n_results, where_clause=None, catalog_i
 def get_all_vertex_image_ids():
     """Return all image UUIDs that have a Vertex AI embedding (for search fallback)."""
     _ensure_initialized()
+    if vertex_collection is None:
+        return []
     return vertex_collection.get(include=[], limit=STATS_GET_LIMIT)["ids"]
 
 
@@ -443,12 +445,16 @@ def query_images(query_embedding, n_results, where_clause=None, catalog_id=None)
 def get_image_count():
     """Return total number of indexed images (photos) in the collection."""
     _ensure_initialized()
+    if collection is None:
+        return 0
     return len(collection.get(include=[], limit=STATS_GET_LIMIT)["ids"])
 
 
 def get_face_count():
     """Return total number of face embeddings in the face collection."""
     _ensure_initialized()
+    if face_collection is None:
+        return 0
     return len(face_collection.get(include=[], limit=STATS_GET_LIMIT)["ids"])
 
 
@@ -459,6 +465,15 @@ def get_image_metadata_stats(catalog_id=None):
     If catalog_id is set, only count photos whose catalog_ids contain that catalog.
     """
     _ensure_initialized()
+    if collection is None:
+        return {
+            "total": 0,
+            "with_embedding": 0,
+            "with_title": 0,
+            "with_caption": 0,
+            "with_keywords": 0,
+            "with_vertexai": 0,
+        }
     result = collection.get(include=["metadatas"], limit=STATS_GET_LIMIT)
     ids = result.get("ids", [])
     metadatas = result.get("metadatas", []) or []
@@ -507,6 +522,8 @@ def sync_claim(catalog_id, photo_ids):
     Deduplicates photo_ids so Chroma get() is not given duplicate IDs (e.g. virtual copies share file-based id).
     """
     _ensure_initialized()
+    if collection is None:
+        return {"claimed": 0, "errors": 0}
     if not catalog_id:
         return {"claimed": 0, "errors": 0}
     catalog_id_str = str(catalog_id).strip()
@@ -572,6 +589,8 @@ def sync_cleanup(catalog_id, active_photo_ids):
     Returns {"checked": N, "disassociated": M}.
     """
     _ensure_initialized()
+    if collection is None:
+        return {"checked": 0, "disassociated": 0}
     if not catalog_id:
         return {"checked": 0, "disassociated": 0}
     active = set(active_photo_ids) if active_photo_ids is not None else set()
@@ -605,6 +624,8 @@ def get_all_image_ids(has_embedding=None, catalog_id=None):
         catalog_id: If set, only return IDs whose catalog_ids metadata contains this catalog.
     """
     _ensure_initialized()
+    if collection is None:
+        return []
     need_metadata = has_embedding is not None or catalog_id is not None
     if not need_metadata:
         result = collection.get(include=[], limit=STATS_GET_LIMIT)
@@ -957,6 +978,8 @@ def group_and_sort_images(uuids, phash_threshold, clip_threshold, time_delta, cu
     image embedding similarity as a fallback/secondary duplicate signal.
     """
     _ensure_initialized()
+    if collection is None:
+        return []
 
     if not uuids:
         return []
@@ -1247,6 +1270,8 @@ def find_similar_to_photo(
           - warning: str if the reference photo could not be found/indexed, else None.
     """
     _ensure_initialized()
+    if collection is None:
+        return [], "Search index not initialized (DB_PATH missing)."
     photo_id = _normalize_photo_id(photo_id)
     if not photo_id:
         logger.warning("find_similar_to_photo: empty or invalid photo_id")
@@ -1329,6 +1354,8 @@ def find_similar_to_photo_by_clip(photo_id, scope_photo_ids=None, max_results=10
           - warning: str if the reference photo could not be found/indexed, else None.
     """
     _ensure_initialized()
+    if collection is None:
+        return [], "Search index not initialized (DB_PATH missing)."
     photo_id = _normalize_photo_id(photo_id)
     if not photo_id:
         logger.warning("find_similar_to_photo_by_clip: empty or invalid photo_id")
@@ -1392,6 +1419,8 @@ def add_face(face_id, embedding, photo_uuid, thumbnail_b64, person_id="", extra_
         person_id: Optional person cluster id (empty until clustering assigns one).
     """
     _ensure_initialized()
+    if face_collection is None:
+        return
     metadata = {"photo_id": photo_uuid, "photo_uuid": photo_uuid, "thumbnail": thumbnail_b64, "person_id": person_id}
     if extra_metadata:
         metadata.update(extra_metadata)
@@ -1404,6 +1433,8 @@ def add_faces_batch(face_ids, embeddings, photo_uuids, thumbnails_b64, person_id
     person_ids: optional list of person_id (default "" for each).
     """
     _ensure_initialized()
+    if face_collection is None:
+        return
     if not face_ids:
         return
     if person_ids is None:
@@ -1424,6 +1455,8 @@ def get_all_faces(include_embeddings=True):
     Get all face records. Returns dict with ids, embeddings (if requested), metadatas.
     """
     _ensure_initialized()
+    if face_collection is None:
+        return {"ids": [], "metadatas": [], "embeddings": []}
     include = ["metadatas"]
     if include_embeddings:
         include.append("embeddings")
@@ -1438,6 +1471,8 @@ def get_first_face_thumbnail_for_person(person_id: str) -> str:
     if not person_id:
         return ""
     _ensure_initialized()
+    if face_collection is None:
+        return ""
     try:
         result = face_collection.get(
             where={"person_id": person_id},
@@ -1464,6 +1499,8 @@ def update_face_metadatas(face_ids, metadatas):
     Processes in batches to respect ChromaDB's max batch size limit.
     """
     _ensure_initialized()
+    if face_collection is None:
+        return
     if not face_ids or len(face_ids) != len(metadatas):
         return
     for i in range(0, len(face_ids), FACE_UPDATE_BATCH_SIZE):
@@ -1475,6 +1512,8 @@ def update_face_metadatas(face_ids, metadatas):
 def has_faces_for_photo(photo_uuid):
     """Return True if the photo has any face embeddings in the collection."""
     _ensure_initialized()
+    if face_collection is None:
+        return False
     try:
         result = face_collection.get(where={"photo_id": photo_uuid}, include=[], limit=1)
         if len(result.get("ids", [])) > 0:
@@ -1490,6 +1529,8 @@ def faces_checked_for_photo(photo_uuid):
     """Return True if faces were already checked for this photo (found or not).
     Avoids re-running face detection on photos with no faces."""
     _ensure_initialized()
+    if collection is None or face_collection is None:
+        return False
     if has_faces_for_photo(photo_uuid):
         return True
     try:
@@ -1505,6 +1546,8 @@ def faces_checked_for_photo(photo_uuid):
 def set_faces_checked(photo_uuid):
     """Mark that face detection was run for this photo (e.g. no faces found)."""
     _ensure_initialized()
+    if collection is None:
+        return
     try:
         img = collection.get(ids=[photo_uuid], include=['metadatas'])
         if not img or not img.get('ids'):
@@ -1519,6 +1562,8 @@ def set_faces_checked(photo_uuid):
 def delete_faces_by_photo_uuid(photo_uuid):
     """Remove all face entries that belong to the given photo UUID."""
     _ensure_initialized()
+    if face_collection is None:
+        return
     try:
         face_collection.delete(where={"photo_id": photo_uuid})
     except Exception:
@@ -1537,6 +1582,15 @@ def migrate_photo_ids(id_mappings, *, update_faces=True, update_vertex=True, ove
         id_mappings: list of {"old_id": "...", "new_id": "..."} dicts.
     """
     _ensure_initialized()
+    if collection is None:
+        return {
+            "requested": len(id_mappings or []),
+            "migrated": 0,
+            "skipped": 0,
+            "missing_old": 0,
+            "conflicts": 0,
+            "errors": 0,
+        }
     total_requested = len(id_mappings or [])
     summary = {
         "requested": total_requested,
