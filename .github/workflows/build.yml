@@ -385,8 +385,6 @@ jobs:
           name: ${{ steps.release-meta.outputs.release_name }}
           body_path: release_notes.md
           files: |
-            artifacts/LrGeniusAI-windows-x64-${{ github.ref_name }}.zip
-            artifacts/LrGeniusAI-macos-arm64-${{ github.ref_name }}.zip
             artifacts/LrGeniusAI-plugin-docker-backend-${{ github.ref_name }}.zip
           draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
