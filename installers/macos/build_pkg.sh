@@ -33,10 +33,36 @@ cp installers/macos/com.lrgenius.server.plist "$ROOT_DIR/Library/LaunchAgents/"
 # 4. Create postinstall script to load the service
 cat > "$SCRIPTS_DIR/postinstall" <<EOF
 #!/bin/bash
-# Load the launchd agent for the current user
+# Detect current GUI user
 CURRENT_USER=\$(stat -f '%u' /dev/console)
+if [ -z "\$CURRENT_USER" ] || [ "\$CURRENT_USER" -eq 0 ]; then
+    # Fallback to the first non-root user if console info is missing
+    CURRENT_USER=\$(dscl . list /Users UniqueID | awk '\$2 > 500 {print \$2; exit}')
+fi
+
+# Setup log directory with correct permissions
+LOG_DIR="/Library/Logs/LrGeniusAI"
+mkdir -p "\$LOG_DIR"
+if [ -n "\$CURRENT_USER" ]; then
+    chown "\$CURRENT_USER" "\$LOG_DIR"
+    chmod 755 "\$LOG_DIR"
+fi
+
+# Load and start the service
+PLIST="/Library/LaunchAgents/com.lrgenius.server.plist"
+LABEL="com.lrgenius.server"
+
 if [ -n "\$CURRENT_USER" ] && [ "\$CURRENT_USER" -ne 0 ]; then
-    launchctl asuser \$CURRENT_USER launchctl load -w /Library/LaunchAgents/com.lrgenius.server.plist
+    echo "Loading service for user \$CURRENT_USER..."
+    # Attempt to unload first to handle upgrades cleanly
+    launchctl asuser "\$CURRENT_USER" launchctl unload "\$PLIST" 2>/dev/null || true
+    
+    # Load the agent with -w (enables it)
+    launchctl asuser "\$CURRENT_USER" launchctl load -w "\$PLIST"
+    
+    # Use kickstart to force-start the service immediately
+    # Targets gui/<uid>/<label> for LaunchAgents
+    launchctl asuser "\$CURRENT_USER" launchctl kickstart -k "gui/\$CURRENT_USER/\$LABEL"
 fi
 exit 0
 EOF
@@ -47,10 +73,11 @@ cat > "$SCRIPTS_DIR/preinstall" <<EOF
 #!/bin/bash
 CURRENT_USER=\$(stat -f '%u' /dev/console)
 if [ -n "\$CURRENT_USER" ] && [ "\$CURRENT_USER" -ne 0 ]; then
-    launchctl asuser \$CURRENT_USER launchctl unload /Library/LaunchAgents/com.lrgenius.server.plist 2>/dev/null || true
+    launchctl asuser "\$CURRENT_USER" launchctl unload /Library/LaunchAgents/com.lrgenius.server.plist 2>/dev/null || true
 fi
-# Also kill any stray processes
+# Kill any stray backend processes
 pkill -f "geniusai_server.py" || true
+pkill -f "lrgenius-server" || true
 exit 0
 EOF
 chmod +x "$SCRIPTS_DIR/preinstall"
