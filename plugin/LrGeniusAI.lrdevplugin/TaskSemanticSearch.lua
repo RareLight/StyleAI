@@ -122,8 +122,8 @@ end
 
 LrTasks.startAsyncTask(function()
     LrFunctionContext.callWithContext("showAdvancedSearchDialog", function(context)
-        -- Check server connection
-        if not Util.waitForServerDialog() then return end
+        -- Check server connection and health (ensure CLIP is ready for semantic search)
+        if not Util.waitForServerDialog({ requireClip = true }) then return end
 
         local props = showAdvancedSearchDialog(context)
         if props == nil then return end

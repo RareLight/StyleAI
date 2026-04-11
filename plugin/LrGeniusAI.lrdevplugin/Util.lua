@@ -904,10 +904,16 @@ function Util.get_keys(t)
   return keys
 end
 
-function Util.waitForServerDialog()
+function Util.waitForServerDialog(options)
+    options = options or {}
     if SearchIndexAPI.pingServer() then
         local compatible, versionMessage = SearchIndexAPI.ensureVersionCompatibility()
         if compatible then
+            -- Deep health check for soft warnings
+            local report = Util.checkPluginHealth(options)
+            if not report.healthy then
+                return Util.showHealthIssuesDialog(report)
+            end
             return true
         end
 
@@ -934,6 +940,11 @@ function Util.waitForServerDialog()
             if SearchIndexAPI.pingServer() then
                 local compatible2, versionMessage2 = SearchIndexAPI.ensureVersionCompatibility()
                 if compatible2 then
+                    -- Deep health check for soft warnings
+                    local report = Util.checkPluginHealth(options)
+                    if not report.healthy then
+                        return Util.showHealthIssuesDialog(report)
+                    end
                     return true
                 end
                 versionMessage = versionMessage2 or versionMessage
@@ -968,7 +979,13 @@ function Util.waitForServerDialog()
                 local compatible, versionMessage = SearchIndexAPI.ensureVersionCompatibility()
                 progressScope:done()
                 if compatible then
-                    result = true
+                    -- Deep health check for soft warnings
+                    local report = Util.checkPluginHealth(options)
+                    if not report.healthy then
+                        result = Util.showHealthIssuesDialog(report)
+                    else
+                        result = true
+                    end
                     return
                 end
 
@@ -995,7 +1012,13 @@ function Util.waitForServerDialog()
                     if SearchIndexAPI.pingServer() then
                         local compatible2, versionMessage2 = SearchIndexAPI.ensureVersionCompatibility()
                         if compatible2 then
-                            result = true
+                            -- Deep health check for soft warnings
+                            local report = Util.checkPluginHealth(options)
+                            if not report.healthy then
+                                result = Util.showHealthIssuesDialog(report)
+                            else
+                                result = true
+                            end
                             return
                         end
                         versionMessage = versionMessage2 or versionMessage
@@ -1015,16 +1038,168 @@ function Util.waitForServerDialog()
             progressScope:setPortionComplete(elapsedTime, timeout)
         end
 
+
         if elapsedTime >= timeout then
-            LrDialogs.message(
-                LOC "$$$/LrGeniusAI/common/ServerTimeout/Title=LrGeniusAI Database Timeout",
-                LOC "$$$/LrGeniusAI/common/ServerTimeout/Message=Timed out waiting for the LrGeniusAI server to respond. Please contact LrGeniusAI support for assistance."
-            )
+            progressScope:done()
+            -- Diagnose and show detailed error
+            local diag = SearchIndexAPI.diagnoseStartupFailure()
+            Util.showDiagnosticFailureDialog(diag)
+            result = false
         end
     end)
 
     return result
 end
+
+function Util.showDiagnosticFailureDialog(diag)
+    local f = LrView.osFactory()
+    
+    local message = LOC "$$$/LrGeniusAI/Health/BackendCritical=The local backend server is not running and could not be started."
+    local hint = ""
+    
+    if diag.binaryMissing then
+        hint = LOC "$$$/LrGeniusAI/Diagnostics/BinaryMissingHint=Please reinstall the LrGeniusAI plugin or check if your antivirus has quarantined the 'lrgenius-server' file."
+    elseif diag.portBusy then
+        hint = LOC "$$$/LrGeniusAI/Diagnostics/PortBusyHint=Please close other applications like Ollama or another instance of Lightroom that might be using this port."
+    else
+        hint = LOC "$$$/LrGeniusAI/Onboarding/BackendHint=If the server fails to start, check if another application is using port 19819 or if your firewall is blocking it."
+    end
+    
+    local contents = f:column {
+        spacing = f:control_spacing(),
+        f:static_text {
+            title = message,
+            font = "<system/bold>",
+            text_color = LrColor(1, 0, 0),
+        },
+        f:static_text {
+            title = LOC "$$$/LrGeniusAI/Health/FixIt=How to fix it:",
+            font = "<system/bold>",
+        },
+        f:static_text {
+            title = hint,
+            width_in_chars = 60,
+        },
+    }
+    
+    if diag.logSnippet then
+        table.insert(contents, f:spacer { height = 10 })
+        table.insert(contents, f:static_text { title = LOC "$$$/LrGeniusAI/Diagnostics/LogSnippet=Recent server errors:" })
+        table.insert(contents, f:edit_field {
+            value = diag.logSnippet,
+            width_in_chars = 60,
+            height_in_lines = 10,
+            enabled = false,
+        })
+    end
+    
+    local result = LrDialogs.presentModalDialog {
+        title = LOC "$$$/LrGeniusAI/Health/DialogTitle=LrGeniusAI System Check",
+        contents = contents,
+        actionVerb = LOC "$$$/LrGeniusAI/Health/OpenWizard=Run Setup Wizard",
+        cancelVerb = LOC "$$$/LrGeniusAI/common/Close=Close",
+    }
+    
+    if result == 'ok' then
+        OnboardingWizard.show(true)
+    end
+end
+
+function Util.checkPluginHealth(options)
+    options = options or {}
+    local health = SearchIndexAPI.getDetailedHealth()
+    local report = {
+        healthy = true,
+        critical = false,
+        issues = {},
+        diagnostics = nil
+    }
+    
+    if not health.backend then
+        report.healthy = false
+        report.critical = true
+        report.diagnostics = SearchIndexAPI.diagnoseStartupFailure()
+        table.insert(report.issues, { 
+            title = LOC "$$$/LrGeniusAI/Health/BackendFailed=Backend server is not reachable.", 
+            hint = LOC "$$$/LrGeniusAI/Health/BackendCritical=The local backend server is not running and could not be started.",
+            critical = true 
+        })
+    end
+    
+    if not health.clip and (options.requireClip or prefs.useClip) then
+        report.healthy = false
+        table.insert(report.issues, { 
+            title = LOC "$$$/LrGeniusAI/Health/ClipMissing=CLIP model for semantic search is missing.", 
+            hint = LOC "$$$/LrGeniusAI/Health/ClipMissingHint=Semantic search and some indexing features will be disabled. You can download the model in the Setup Wizard.",
+            critical = false 
+        })
+    end
+    
+    if not health.gemini and not health.chatgpt and not health.ollama and not health.lmstudio then
+        report.healthy = false
+        table.insert(report.issues, { 
+            title = LOC "$$$/LrGeniusAI/Health/ApiKeysMissing=No AI providers configured for AI generation.", 
+            hint = LOC "$$$/LrGeniusAI/Health/ApiKeysMissingHint=You need to configure Gemini or ChatGPT API keys (or a local provider) to generate keywords and descriptions.",
+            critical = options.requireProviders == true 
+        })
+        if options.requireProviders then report.critical = true end
+    end
+    
+    return report
+end
+
+function Util.showHealthIssuesDialog(report)
+    local f = LrView.osFactory()
+    
+    local contents = f:column {
+        spacing = f:control_spacing(),
+        f:static_text {
+            title = LOC "$$$/LrGeniusAI/Health/IssuesFound=We found some issues that might prevent the plugin from working correctly:",
+            font = "<system/bold>",
+        },
+    }
+    
+    for _, issue in ipairs(report.issues) do
+        table.insert(contents, f:row {
+            f:static_text {
+                title = "• " .. issue.title,
+                text_color = issue.critical and LrColor(1, 0, 0) or LrColor(0.8, 0.8, 0),
+                font = issue.critical and "<system/bold>" or "<system>",
+            }
+        })
+        table.insert(contents, f:row {
+            f:spacer { width = 20 },
+            f:static_text {
+                title = issue.hint,
+                width_in_chars = 60,
+                size = "small",
+            }
+        })
+    end
+    
+    local result = LrDialogs.presentModalDialog {
+        title = LOC "$$$/LrGeniusAI/Health/DialogTitle=LrGeniusAI System Check",
+        contents = contents,
+        actionVerb = report.critical and LOC "$$$/LrGeniusAI/Health/OpenWizard=Run Setup Wizard" or LOC "$$$/LrGeniusAI/Health/IgnoreAndContinue=Ignore & Continue",
+        cancelVerb = LOC "$$$/LrGeniusAI/common/Cancel=Cancel",
+        otherVerb = not report.critical and LOC "$$$/LrGeniusAI/Health/OpenWizard=Run Setup Wizard" or nil,
+    }
+    
+    if result == 'ok' then
+        if report.critical then
+            OnboardingWizard.show(true)
+            return false
+        else
+            return true -- Ignored and continue
+        end
+    elseif result == 'other' then
+        OnboardingWizard.show(true)
+        return false
+    end
+    
+    return false
+end
+
 
 ---
 -- Adds a photo to the "Rejected AI Descriptions" collection (under set "LrGeniusAI").

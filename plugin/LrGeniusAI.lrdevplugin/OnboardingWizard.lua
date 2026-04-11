@@ -1,23 +1,15 @@
 OnboardingWizard = {}
 
-local LrView = import 'LrView'
-local LrDialogs = import 'LrDialogs'
-local LrHttp = import 'LrHttp'
-local LrTasks = import 'LrTasks'
-local LrPrefs = import 'LrPrefs'
-local LrLocalization = import 'LrLocalization'
-local LrBinding = import 'LrBinding'
-
-local LOC = LrLocalization.LOC
 
 function OnboardingWizard.show(manualTrigger)
     LrTasks.startAsyncTask(function()
-        local propertyTable = LrBinding.makePropertyTable(LrFunctionContext.createContext())
+        LrFunctionContext.callWithContext("OnboardingWizard", function(context)
+            local propertyTable = LrBinding.makePropertyTable(context)
         
-        -- Initial states
+        -- Initial states with robust defaults
         propertyTable.currentPage = 1
-        propertyTable.backendRunning = SearchIndexAPI.pingServer()
-        propertyTable.clipReady = SearchIndexAPI.isClipReady()
+        propertyTable.backendRunning = SearchIndexAPI.pingServer() or false
+        propertyTable.clipReady = SearchIndexAPI.isClipReady() or false
         propertyTable.geminiApiKey = prefs.geminiApiKey or ""
         propertyTable.chatgptApiKey = prefs.chatgptApiKey or ""
         
@@ -43,12 +35,12 @@ function OnboardingWizard.show(manualTrigger)
                 return f:column {
                     spacing = f:label_spacing(),
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/WelcomeTitle",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/WelcomeTitle=Welcome to LrGeniusAI!",
                         font = "<system/bold>",
                         size = "large",
                     },
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/WelcomeMessage",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/WelcomeMessage=Thank you for choosing LrGeniusAI. This wizard will guide you through the initial setup to ensure everything is running smoothly.",
                         width_in_chars = 60,
                         wrap = true,
                     },
@@ -58,25 +50,25 @@ function OnboardingWizard.show(manualTrigger)
                 return f:column {
                     spacing = f:label_spacing(),
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/BackendTitle",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/BackendTitle=Backend Server",
                         font = "<system/bold>",
                     },
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/BackendDesc",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/BackendDesc=LrGeniusAI requires a local backend server to process your photos. We will attempt to start it now.",
                         width_in_chars = 60,
                         wrap = true,
                     },
                     f:row {
                         f:static_text {
-                            title = LOC "$$$/LrGeniusAI/Onboarding/BackendStatus",
+                            title = LOC "$$$/LrGeniusAI/Onboarding/BackendStatus=Server Status:",
                         },
                         f:static_text {
                             title = bind {
                                 key = 'backendRunning',
                                 transform = function(v)
-                                    if v == true then return LOC "$$$/LrGeniusAI/Onboarding/BackendRunning" end
-                                    if v == "starting" then return LOC "$$$/LrGeniusAI/Onboarding/BackendStarting" end
-                                    return LOC "$$$/LrGeniusAI/Onboarding/BackendError"
+                                    if v == true then return LOC "$$$/LrGeniusAI/Onboarding/BackendRunning=Running" end
+                                    if v == "starting" then return LOC "$$$/LrGeniusAI/Onboarding/BackendStarting=Starting..." end
+                                    return LOC "$$$/LrGeniusAI/Onboarding/BackendError=Failed to start"
                                 end
                             },
                             text_color = bind {
@@ -90,7 +82,7 @@ function OnboardingWizard.show(manualTrigger)
                         },
                     },
                     f:push_button {
-                        title = LOC "$$$/LrGeniusAI/common/Start",
+                        title = LOC "$$$/LrGeniusAI/common/Start=Start",
                         action = startBackend,
                         enabled = bind {
                             key = 'backendRunning',
@@ -98,7 +90,7 @@ function OnboardingWizard.show(manualTrigger)
                         }
                     },
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/BackendHint",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/BackendHint=If the server fails to start, check if another application is using port 19819 or if your firewall is blocking it.",
                         size = "small",
                         width_in_chars = 60,
                         wrap = true,
@@ -109,18 +101,18 @@ function OnboardingWizard.show(manualTrigger)
                 return f:column {
                     spacing = f:label_spacing(),
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/ProvidersTitle",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/ProvidersTitle=AI Providers",
                         font = "<system/bold>",
                     },
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/ProvidersDesc",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/ProvidersDesc=Choose which AI models you want to use for metadata generation and edits.",
                         width_in_chars = 60,
                         wrap = true,
                     },
                     f:group_box {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/GeminiTitle",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/GeminiTitle=Google Gemini (Recommended)",
                         f:row {
-                            f:static_text { title = LOC "$$$/LrGeniusAI/Onboarding/ApiKeyLabel", width = share 'label' },
+                            f:static_text { title = LOC "$$$/LrGeniusAI/Onboarding/ApiKeyLabel=API Key:", width = share 'label' },
                             f:edit_field { value = bind 'geminiApiKey', width_in_chars = 40 },
                             f:push_button {
                                 title = "?",
@@ -129,9 +121,9 @@ function OnboardingWizard.show(manualTrigger)
                         }
                     },
                     f:group_box {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/ChatGPTTitle",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/ChatGPTTitle=OpenAI ChatGPT",
                         f:row {
-                            f:static_text { title = LOC "$$$/LrGeniusAI/Onboarding/ApiKeyLabel", width = share 'label' },
+                            f:static_text { title = LOC "$$$/LrGeniusAI/Onboarding/ApiKeyLabel=API Key:", width = share 'label' },
                             f:edit_field { value = bind 'chatgptApiKey', width_in_chars = 40 },
                             f:push_button {
                                 title = "?",
@@ -141,7 +133,7 @@ function OnboardingWizard.show(manualTrigger)
                     },
                     f:row {
                         f:push_button {
-                            title = LOC "$$$/LrGeniusAI/Onboarding/LocalTitle",
+                            title = LOC "$$$/LrGeniusAI/Onboarding/LocalTitle=Local AI (Ollama / LM Studio)",
                             action = function() LrHttp.openUrlInBrowser("https://lrgenius.com/help/ollama-setup/") end
                         }
                     }
@@ -151,22 +143,22 @@ function OnboardingWizard.show(manualTrigger)
                 return f:column {
                     spacing = f:label_spacing(),
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/SemanticTitle",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/SemanticTitle=Semantic Search",
                         font = "<system/bold>",
                     },
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/SemanticDesc",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/SemanticDesc=To enable advanced search by content, you need the OpenCLIP AI model. This is a ~4GB download.",
                         width_in_chars = 60,
                         wrap = true,
                     },
                     f:row {
                         f:checkbox {
-                            title = LOC "$$$/LrGeniusAI/Onboarding/ClipAlreadyDownloaded",
+                            title = LOC "$$$/LrGeniusAI/Onboarding/ClipAlreadyDownloaded=OpenCLIP model is already available.",
                             value = bind 'clipReady',
                             enabled = false,
                         },
                         f:push_button {
-                            title = LOC "$$$/LrGeniusAI/Onboarding/DownloadClip",
+                            title = LOC "$$$/LrGeniusAI/Onboarding/DownloadClip=Download OpenCLIP Model",
                             action = function()
                                 LrTasks.startAsyncTask(function()
                                     SearchIndexAPI.startClipDownload()
@@ -185,12 +177,12 @@ function OnboardingWizard.show(manualTrigger)
                 return f:column {
                     spacing = f:label_spacing(),
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/FinishTitle",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/FinishTitle=All Set!",
                         font = "<system/bold>",
                         size = "large",
                     },
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/Onboarding/FinishDesc",
+                        title = LOC "$$$/LrGeniusAI/Onboarding/FinishDesc=Configuration complete. LrGeniusAI is ready to help you manage your Lightroom catalog.",
                         width_in_chars = 60,
                         wrap = true,
                     },
@@ -236,7 +228,7 @@ function OnboardingWizard.show(manualTrigger)
             f:row {
                 fill_horizontal = 1,
                 f:push_button {
-                    title = LOC "$$$/LrGeniusAI/Onboarding/Skip",
+                    title = LOC "$$$/LrGeniusAI/Onboarding/Skip=Skip Setup",
                     action = function(d) d:done("skip") end,
                     visible = bind {
                         key = 'currentPage',
@@ -245,7 +237,7 @@ function OnboardingWizard.show(manualTrigger)
                 },
                 f:spacer { fill_horizontal = 1 },
                 f:push_button {
-                    title = LOC "$$$/LrGeniusAI/Onboarding/Back",
+                    title = LOC "$$$/LrGeniusAI/Onboarding/Back=Back",
                     enabled = bind {
                         key = 'currentPage',
                         transform = function(v) return v > 1 end
@@ -260,8 +252,8 @@ function OnboardingWizard.show(manualTrigger)
                     title = bind {
                         key = 'currentPage',
                         transform = function(v)
-                            if v == 5 then return LOC "$$$/LrGeniusAI/Onboarding/Finish" end
-                            return LOC "$$$/LrGeniusAI/Onboarding/Next"
+                            if v == 5 then return LOC "$$$/LrGeniusAI/Onboarding/Finish=Finish" end
+                            return LOC "$$$/LrGeniusAI/Onboarding/Next=Next"
                         end
                     },
                     action = function(d)
@@ -276,7 +268,7 @@ function OnboardingWizard.show(manualTrigger)
         }
 
         local result = LrDialogs.presentModalDialog({
-            title = LOC "$$$/LrGeniusAI/Onboarding/WizardTitle",
+            title = LOC "$$$/LrGeniusAI/Onboarding/WizardTitle=LrGeniusAI Setup Wizard",
             contents = dialogContents,
             actionVerb = "OK", -- Overridden by my own buttons
             cancelVerb = "Cancel",
@@ -290,6 +282,7 @@ function OnboardingWizard.show(manualTrigger)
             prefs.chatgptApiKey = propertyTable.chatgptApiKey
             log:info("Onboarding wizard completed with result: " .. tostring(result))
         end
+    end)
     end)
 end
 

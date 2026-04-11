@@ -29,3 +29,9 @@ These rules ensure consistency across the Lightroom plugin and the Python backen
 - **Docker**: Always update `Dockerfile`, `docker-compose-dev.yml`, and `docker-compose-prod.yml` when changing dependencies or environment requirements.
 - **Smoke Tests**: Maintain and expand `TaskAutomatedTests.lua` to verify plugin-backend connectivity and core utility integrity.
 - **API Stability**: Ensure changes to the backend API are reflected in the plugin's `APISearchIndex.lua` and smoke tests.
+
+## Plugin platform detection
+- There are two globally defined booleans WIN_ENV and MAC_ENV.
+
+## Translations
+- Always update all three translation files: TranslatedString_*.txt

@@ -2044,12 +2044,12 @@ function SearchIndexAPI.startServer(opts)
         -- Diagnose failure
         local diag = SearchIndexAPI.diagnoseStartupFailure()
         if diag.binaryMissing then
-            log:error(LOC "$$$/LrGeniusAI/Diagnostics/BinaryMissing")
+            log:error(LOC "$$$/LrGeniusAI/Diagnostics/BinaryMissing=The backend server binary is missing from the plugin folder.")
         elseif diag.portBusy then
-            log:error(LOC "$$$/LrGeniusAI/Diagnostics/PortBusy")
+            log:error(LOC "$$$/LrGeniusAI/Diagnostics/PortBusy=Port 19819 is already in use by another application.")
         end
-        if diagnostics.logSnippet then
-            log:error(LOC "$$$/LrGeniusAI/Diagnostics/LogSnippet" .. "\n" .. diagnostics.logSnippet)
+        if diag.logSnippet then
+            log:error(LOC "$$$/LrGeniusAI/Diagnostics/LogSnippet=Recent server errors:" .. "\n" .. diag.logSnippet)
         end
         return false
     end)
