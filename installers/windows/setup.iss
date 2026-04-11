@@ -10,6 +10,7 @@ ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=admin
 SetupIconFile=plugin\LrGeniusAI.lrdevplugin\icon.ico
+SourceDir=..\..
 
 [Files]
 ; Backend files
