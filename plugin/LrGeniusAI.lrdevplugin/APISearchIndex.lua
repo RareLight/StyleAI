@@ -60,6 +60,9 @@ local ENDPOINTS = {
     TRAINING_STATS = "/training/stats",
     STYLE_EDIT = "/style_edit",
     LOGS = "/logs",
+    INITIALIZE = "/initialize",
+    RESTART = "/restart",
+    HEALTH = "/health",
 }
 
 local EXPORT_SETTINGS = {
@@ -1927,7 +1930,7 @@ function SearchIndexAPI.unloadResources(opts)
 end
 
 function SearchIndexAPI.restartBackend()
-    local url = getBaseUrl() .. "/server/restart"
+    local url = getBaseUrl() .. ENDPOINTS.RESTART
     log:info("Requesting backend restart via API")
     local response, err = _request("POST", url, {}, 5)
     if err then
@@ -1955,7 +1958,7 @@ function SearchIndexAPI.initializeCatalog(dbPath)
         dbPath = LrPathUtils.child(getServerControlDir(), "lrgenius.db")
     end
     
-    local url = getBaseUrl() .. "/server/initialize"
+    local url = getBaseUrl() .. ENDPOINTS.INITIALIZE
     log:info("Initializing catalog database at backend: " .. tostring(dbPath))
     local response, err = _request("POST", url, { db_path = dbPath }, 10)
     
@@ -2884,7 +2887,7 @@ end
 -- Surfaces critical loading failures to the user.
 --
 function SearchIndexAPI.checkServerHealth()
-    local url = getBaseUrl() .. "/health"
+    local url = getBaseUrl() .. ENDPOINTS.HEALTH
     local res, err = _request('GET', url)
     if err then
         log:warn("checkServerHealth failed (could not reach /health): " .. tostring(err))

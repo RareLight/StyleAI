@@ -62,14 +62,14 @@ class AnalysisService:
             self.providers['ollama'] = ollama
             if ollama.is_available():
                 self.provider_status['ollama'] = 'available'
-                logger.info("✓ Ollama provider available")
+                logger.info("[OK] Ollama provider available")
             else:
                 self.provider_status['ollama'] = 'registered'
-                logger.info("○ Ollama provider registered (server not running, can be started later)")
+                logger.info("[INFO] Ollama provider registered (server not running, can be started later)")
         except Exception as e:
             self.provider_status['ollama'] = 'failed'
             self.provider_errors['ollama'] = str(e)
-            logger.error(f"✗ Failed to initialize Ollama provider: {e}")
+            logger.error(f"[FAIL] Failed to initialize Ollama provider: {e}")
         
         # LM Studio (local) - Always register, availability checked dynamically
         try:
@@ -77,14 +77,14 @@ class AnalysisService:
             self.providers['lmstudio'] = lmstudio
             if lmstudio.is_available():
                 self.provider_status['lmstudio'] = 'available'
-                logger.info("✓ LM Studio provider initialized")
+                logger.info("[OK] LM Studio provider initialized")
             else:
                 self.provider_status['lmstudio'] = 'registered'
-                logger.info("○ LM Studio provider registered (server not running, can be started later)")
+                logger.info("[INFO] LM Studio provider registered (server not running, can be started later)")
         except Exception as e:
             self.provider_status['lmstudio'] = 'failed'
             self.provider_errors['lmstudio'] = str(e)
-            logger.error(f"✗ Failed to initialize LM Studio provider: {e}")
+            logger.error(f"[FAIL] Failed to initialize LM Studio provider: {e}")
         
         # ChatGPT (cloud) - Always add to providers, API key can be provided later
         try:
@@ -92,14 +92,14 @@ class AnalysisService:
             self.providers['chatgpt'] = chatgpt
             if chatgpt.is_available():
                 self.provider_status['chatgpt'] = 'available'
-                logger.info("✓ ChatGPT provider initialized")
+                logger.info("[OK] ChatGPT provider initialized")
             else:
                 self.provider_status['chatgpt'] = 'registered'
-                logger.info("○ ChatGPT provider registered (API key not configured, can be provided later)")
+                logger.info("[INFO] ChatGPT provider registered (API key not configured, can be provided later)")
         except Exception as e:
             self.provider_status['chatgpt'] = 'failed'
             self.provider_errors['chatgpt'] = str(e)
-            logger.error(f"✗ Failed to initialize ChatGPT provider: {e}")
+            logger.error(f"[FAIL] Failed to initialize ChatGPT provider: {e}")
         
         # Gemini (cloud) - Always add to providers, API key can be provided later
         try:
@@ -107,17 +107,17 @@ class AnalysisService:
             self.providers['gemini'] = gemini
             if gemini.is_available():
                 self.provider_status['gemini'] = 'available'
-                logger.info("✓ Gemini provider initialized")
+                logger.info("[OK] Gemini provider initialized")
             else:
                 self.provider_status['gemini'] = 'registered'
-                logger.info("○ Gemini provider registered (API key not configured, can be provided later)")
+                logger.info("[INFO] Gemini provider registered (API key not configured, can be provided later)")
         except Exception as e:
             self.provider_status['gemini'] = 'failed'
             self.provider_errors['gemini'] = str(e)
-            logger.error(f"✗ Failed to initialize Gemini provider: {e}")
+            logger.error(f"[FAIL] Failed to initialize Gemini provider: {e}")
         
         if not self.providers:
-            logger.error("⚠️  No LLM providers available! Metadata generation will not work.")
+            logger.error("[WARN] No LLM providers available! Metadata generation will not work.")
         else:
             logger.info(f"Metadata service ready with {len(self.providers)} provider(s): {', '.join(self.providers.keys())}")
     
@@ -269,7 +269,7 @@ class AnalysisService:
         try:
             response = selected_provider.generate_metadata(request)
             if not response.success:
-                logger.error(f"✗ Failed to generate metadata for {uuid}: {response.error}")
+                logger.error(f"[FAIL] Failed to generate metadata for {uuid}: {response.error}")
             if 'warning_msg' in locals():
                 response.warning = warning_msg
             return response
@@ -388,7 +388,7 @@ class AnalysisService:
                     },
                 )
             if not response.success:
-                logger.error(f"✗ Failed to generate edit recipe for {uuid}: {response.error}")
+                logger.error(f"[FAIL] Failed to generate edit recipe for {uuid}: {response.error}")
             
             # Aggregate warnings
             warnings = []

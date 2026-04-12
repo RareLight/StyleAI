@@ -68,7 +68,7 @@ def _ensure_initialized() -> None:
     import chromadb
     from chromadb.config import Settings
 
-    logger.info("Initializing edit_training ChromaDB collection (lazy at %s)…", config.DB_PATH)
+    logger.info("Initializing edit_training ChromaDB collection (lazy at %s)...", config.DB_PATH)
     _chroma_client = chromadb.PersistentClient(
         path=config.DB_PATH,
         settings=Settings(anonymized_telemetry=False),

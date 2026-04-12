@@ -1,5 +1,6 @@
 from config import logger, CULLING_CONFIG
 import service_chroma as chroma_service
+from service_chroma import DatabaseNotReadyError
 from service_metadata import get_analysis_service
 import server_lifecycle as server_lifecycle
 import service_face as face_service
@@ -734,6 +735,10 @@ def process_image_task(
                 failure_count += 1
 
         return success_count, failure_count, error_messages, warnings
+    except DatabaseNotReadyError as e:
+        logger.warning(f"Batch processing aborted: {str(e)}")
+        error_messages.append(str(e))
+        return 0, total_images, error_messages, warnings
     except Exception as e:
         logger.error(f"Error during batch processing task: {str(e)}", exc_info=True)
         error_messages.append(f"Batch processing error: {str(e)}")
