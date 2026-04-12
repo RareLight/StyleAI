@@ -17,12 +17,16 @@ MODEL_ID = "gemini-3.1-flash-lite-preview"
 
 # Static footer for the latest release notes (GitHub Release body)
 STATIC_FOOTER = """
-## Persistent Backend Service
+## Installers & System Integration
 - The backend now runs as a persistent system service (LaunchAgent on macOS, Startup Registry on Windows).
 - It starts automatically at login and remains active to manage background AI tasks even when Lightroom is closed.
 - Manual management (troubleshooting):
   - Windows: Run `{commonpf}\\LrGeniusAI\\backend\\lrgenius-server.cmd`
   - macOS: Service `com.lrgenius.server` (managed via `launchctl`)
+
+### Security & Permissions
+- **Windows**: You may see a SmartScreen warning ("Windows protected your PC") during installation because the installer is not signed. Click "More info" and "Run anyway" to proceed.
+- **macOS**: If Gatekeeper blocks the installer, go to **System Settings > Privacy & Security** and click **"Open Anyway"** under the Security section. Alternatively, run `xattr -d com.apple.quarantine <path-to-pkg>` in Terminal to clear the block.
 
 ## Docker Deployment
 - For containerized environments, use the `LrGeniusAI-plugin-docker-backend-<version>.zip` asset which includes the pre-configured plugin and Docker setup.
