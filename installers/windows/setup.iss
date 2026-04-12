@@ -29,11 +29,12 @@ Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 ; Start the backend immediately after installation
-Filename: "{app}\backend\lrgenius-server.cmd"; Description: "Start LrGeniusAI Backend"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\backend\lrgenius-server.cmd"; Description: "Start LrGeniusAI Backend"; Flags: nowait postinstall skipifsilent runhidden
 
 [UninstallRun]
 ; Stop existing backend process before uninstalling
 Filename: "taskkill"; Parameters: "/F /IM python.exe /T /FI ""WINDOWTITLE eq lrgenius-server*"""; Flags: runhidden; RunOnceId: "StopBackend"
+Filename: "taskkill"; Parameters: "/F /IM pythonw.exe /T /FI ""WINDOWTITLE eq lrgenius-server*"""; Flags: runhidden; RunOnceId: "StopBackendW"
 Filename: "taskkill"; Parameters: "/F /IM cmd.exe /T /FI ""WINDOWTITLE eq lrgenius-server*"""; Flags: runhidden; RunOnceId: "StopBackendCmd"
 
 [Code]
@@ -44,5 +45,6 @@ begin
   Result := True;
   // Try to stop the service/process before starting setup (for updates)
   Exec('taskkill', '/F /IM python.exe /T /FI "WINDOWTITLE eq lrgenius-server*"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill', '/F /IM pythonw.exe /T /FI "WINDOWTITLE eq lrgenius-server*"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill', '/F /IM cmd.exe /T /FI "WINDOWTITLE eq lrgenius-server*"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;

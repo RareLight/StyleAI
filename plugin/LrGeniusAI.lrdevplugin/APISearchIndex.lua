@@ -2089,9 +2089,8 @@ function SearchIndexAPI.startServer(opts)
         local startServerCmd = nil
         local serverDir = LrPathUtils.parent(serverBinary)
         if WIN_ENV then
-            local envCmd = "set KMP_DUPLICATE_LIB_OK=TRUE &&"
-            local innerCmd = envCmd .. " \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
-            startServerCmd = "start /b /d \"" .. serverDir .. "\" \"\" cmd /c \"" .. innerCmd .. "\""
+            -- The .cmd launcher handles environment variables and uses pythonw.exe for invisible execution.
+            startServerCmd = "start /b /d \"" .. serverDir .. "\" \"\" \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
         else
             local envPrefix = "KMP_DUPLICATE_LIB_OK=TRUE "
             startServerCmd = envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
