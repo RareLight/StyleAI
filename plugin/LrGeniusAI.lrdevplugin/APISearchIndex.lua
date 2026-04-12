@@ -18,6 +18,11 @@ local function getBaseUrl()
     return url
 end
 
+function SearchIndexAPI.isLocalBackend()
+    local url = getBaseUrl()
+    return url:match("^https?://127%.0%.0%.1:") or url:match("^https?://localhost:")
+end
+
 local ENDPOINTS = {
     INDEX = "/index",
     EDIT = "/edit",
@@ -1954,6 +1959,11 @@ function SearchIndexAPI.restartBackend()
 end
 
 function SearchIndexAPI.initializeCatalog(dbPath)
+    if not SearchIndexAPI.isLocalBackend() then
+        log:info("Skipping catalog initialization for remote backend.")
+        return true
+    end
+
     if not dbPath then
         dbPath = LrPathUtils.child(getServerControlDir(), "lrgenius.db")
     end
@@ -2040,9 +2050,8 @@ function SearchIndexAPI.startServer(opts)
         return false
     end
 
-    local url = getBaseUrl()
-    if not url:match("^https?://127%.0%.0%.1:") and not url:match("^https?://localhost:") then
-        log:trace("Backend URL points to remote server (" .. url .. "), skipping local server start")
+    if not SearchIndexAPI.isLocalBackend() then
+        log:trace("Backend URL points to remote server, skipping local server start")
         return false
     end
 
