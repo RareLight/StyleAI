@@ -12,6 +12,10 @@ collection = None
 face_collection = None
 vertex_collection = None
 
+class DatabaseNotReadyError(Exception):
+    """Raised when a database modification is attempted but the DB_PATH is not yet set."""
+    pass
+
 # InsightFace embeddings are 512-dimensional
 FACE_EMBEDDING_DIM = 512
 # Vertex AI Multimodal Embeddings (image) default dimension
@@ -51,6 +55,8 @@ def _add_catalog_id(photo_id, catalog_id):
     if not catalog_id or not photo_id:
         return
     _ensure_initialized()
+    if collection is None:
+        return
     data = collection.get(ids=[photo_id], include=["metadatas", "embeddings"])
     if not data or not data.get("ids"):
         return
@@ -71,6 +77,8 @@ def _remove_catalog_id(photo_id, catalog_id):
     if not catalog_id or not photo_id:
         return
     _ensure_initialized()
+    if collection is None:
+        return
     data = collection.get(ids=[photo_id], include=["metadatas", "embeddings"])
     if not data or not data.get("ids"):
         return
@@ -194,6 +202,8 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None, catalog_id=Non
     If catalog_id is provided, the photo is associated with that catalog (soft state).
     """
     _ensure_initialized()
+    if collection is None:
+        raise DatabaseNotReadyError("Cannot add image: database not initialized (DB_PATH missing).")
     photo_id = _normalize_photo_id(photo_id, legacy_uuid)
     if not photo_id:
         raise ValueError("photo_id is required")
@@ -216,6 +226,8 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None, catalog_id=Non
 
 def update_image(photo_id, metadata, embedding=None, *, legacy_uuid=None, catalog_id=None):
     _ensure_initialized()
+    if collection is None:
+        raise DatabaseNotReadyError("Cannot update image: database not initialized (DB_PATH missing).")
     photo_id = _normalize_photo_id(photo_id, legacy_uuid)
     if not photo_id:
         raise ValueError("photo_id is required")
@@ -230,6 +242,8 @@ def update_image(photo_id, metadata, embedding=None, *, legacy_uuid=None, catalo
 
 def get_image(photo_id, *, legacy_uuid=None, catalog_id=None):
     _ensure_initialized()
+    if collection is None:
+        return {"ids": [], "metadatas": [], "embeddings": []}
     photo_id = _normalize_photo_id(photo_id, legacy_uuid)
     if not photo_id:
         return {"ids": [], "metadatas": [], "embeddings": []}
@@ -244,6 +258,8 @@ def get_image(photo_id, *, legacy_uuid=None, catalog_id=None):
 
 def delete_image(photo_id, *, legacy_uuid=None):
     _ensure_initialized()
+    if collection is None:
+        return
     photo_id = _normalize_photo_id(photo_id, legacy_uuid)
     if not photo_id:
         return
@@ -270,6 +286,8 @@ def clear_image_metadata(photo_id, *, legacy_uuid=None):
     Returns True if the main collection had the photo (and metadata was cleared), False otherwise.
     """
     _ensure_initialized()
+    if collection is None:
+        return False
     photo_id = _normalize_photo_id(photo_id, legacy_uuid)
     if not photo_id:
         return False
@@ -310,6 +328,8 @@ def clear_image_metadata(photo_id, *, legacy_uuid=None):
 def add_vertex_image(photo_id, embedding, metadata=None, *, legacy_uuid=None):
     """Add or overwrite Vertex AI embedding for an image."""
     _ensure_initialized()
+    if vertex_collection is None:
+        raise DatabaseNotReadyError("Cannot add vertex image: database not initialized (DB_PATH missing).")
     photo_id = _normalize_photo_id(photo_id, legacy_uuid)
     if not photo_id:
         raise ValueError("photo_id is required")
@@ -326,6 +346,8 @@ def add_vertex_image(photo_id, embedding, metadata=None, *, legacy_uuid=None):
 def update_vertex_image(photo_id, embedding=None, metadata=None, *, legacy_uuid=None):
     """Update Vertex AI embedding and/or metadata for an existing document."""
     _ensure_initialized()
+    if vertex_collection is None:
+        raise DatabaseNotReadyError("Cannot update vertex image: database not initialized (DB_PATH missing).")
     photo_id = _normalize_photo_id(photo_id, legacy_uuid)
     if not photo_id:
         raise ValueError("photo_id is required")
@@ -342,6 +364,8 @@ def update_vertex_image(photo_id, embedding=None, metadata=None, *, legacy_uuid=
 def get_vertex_image(photo_id, *, legacy_uuid=None):
     """Get Vertex AI embedding record for an image. Returns Chroma get() result or empty."""
     _ensure_initialized()
+    if vertex_collection is None:
+        return {"ids": [], "metadatas": [], "embeddings": []}
     photo_id = _normalize_photo_id(photo_id, legacy_uuid)
     if not photo_id:
         return {"ids": [], "metadatas": [], "embeddings": []}
@@ -351,6 +375,8 @@ def get_vertex_image(photo_id, *, legacy_uuid=None):
 def delete_vertex_image(photo_id, *, legacy_uuid=None):
     """Remove Vertex AI embedding for an image."""
     _ensure_initialized()
+    if vertex_collection is None:
+        return
     photo_id = _normalize_photo_id(photo_id, legacy_uuid)
     if not photo_id:
         return
@@ -363,6 +389,8 @@ def delete_vertex_image(photo_id, *, legacy_uuid=None):
 def has_vertex_embedding(photo_id, *, legacy_uuid=None):
     """Return True if this image has a Vertex AI embedding in the vertex collection."""
     _ensure_initialized()
+    if vertex_collection is None:
+        return False
     photo_id = _normalize_photo_id(photo_id, legacy_uuid)
     if not photo_id:
         return False
@@ -378,6 +406,8 @@ def query_vertex_images(query_embedding, n_results, where_clause=None, catalog_i
     If catalog_id is set, results are filtered to photo_ids that belong to that catalog (main collection).
     """
     _ensure_initialized()
+    if vertex_collection is None:
+        return {"ids": [[]], "distances": [[]], "metadatas": [[]]}
     try:
         n_fetch = (int(n_results) * 2 + 100) if catalog_id else n_results
         result = vertex_collection.query(
@@ -412,6 +442,8 @@ def get_all_vertex_image_ids():
 
 def query_images(query_embedding, n_results, where_clause=None, catalog_id=None):
     _ensure_initialized()
+    if collection is None:
+        return {"ids": [[]], "distances": [[]], "metadatas": [[]]}
     try:
         # Over-fetch when filtering by catalog so we have enough after post-filter
         n_fetch = (int(n_results) * 2 + 100) if catalog_id else n_results
@@ -1222,6 +1254,8 @@ def group_and_sort_images(uuids, phash_threshold, clip_threshold, time_delta, cu
     ))
 
     if metadata_updates:
+        if collection is None:
+            raise DatabaseNotReadyError("Cannot update metadata: database not initialized (DB_PATH missing).")
         update_ids = [photo_id for photo_id, _ in metadata_updates]
         update_metadatas = [metadata for _, metadata in metadata_updates]
         collection.update(ids=update_ids, metadatas=update_metadatas)
@@ -1420,7 +1454,7 @@ def add_face(face_id, embedding, photo_uuid, thumbnail_b64, person_id="", extra_
     """
     _ensure_initialized()
     if face_collection is None:
-        return
+        raise DatabaseNotReadyError("Cannot add face: database not initialized (DB_PATH missing).")
     metadata = {"photo_id": photo_uuid, "photo_uuid": photo_uuid, "thumbnail": thumbnail_b64, "person_id": person_id}
     if extra_metadata:
         metadata.update(extra_metadata)
@@ -1434,7 +1468,7 @@ def add_faces_batch(face_ids, embeddings, photo_uuids, thumbnails_b64, person_id
     """
     _ensure_initialized()
     if face_collection is None:
-        return
+        raise DatabaseNotReadyError("Cannot add faces batch: database not initialized (DB_PATH missing).")
     if not face_ids:
         return
     if person_ids is None:
@@ -1500,7 +1534,7 @@ def update_face_metadatas(face_ids, metadatas):
     """
     _ensure_initialized()
     if face_collection is None:
-        return
+        raise DatabaseNotReadyError("Cannot update face metadatas: database not initialized (DB_PATH missing).")
     if not face_ids or len(face_ids) != len(metadatas):
         return
     for i in range(0, len(face_ids), FACE_UPDATE_BATCH_SIZE):
@@ -1547,7 +1581,7 @@ def set_faces_checked(photo_uuid):
     """Mark that face detection was run for this photo (e.g. no faces found)."""
     _ensure_initialized()
     if collection is None:
-        return
+        raise DatabaseNotReadyError("Cannot set faces checked: database not initialized (DB_PATH missing).")
     try:
         img = collection.get(ids=[photo_uuid], include=['metadatas'])
         if not img or not img.get('ids'):
@@ -1563,7 +1597,7 @@ def delete_faces_by_photo_uuid(photo_uuid):
     """Remove all face entries that belong to the given photo UUID."""
     _ensure_initialized()
     if face_collection is None:
-        return
+        raise DatabaseNotReadyError("Cannot delete faces: database not initialized (DB_PATH missing).")
     try:
         face_collection.delete(where={"photo_id": photo_uuid})
     except Exception:

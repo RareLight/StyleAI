@@ -5,6 +5,14 @@ import sys
 import os
 import torch
 
+# In windowless environments (like pythonw.exe on Windows), sys.stdout and sys.stderr are None.
+# We redirect them to devnull to prevent crashes in libraries (logging, traceback, etc.) 
+# that attempt to write to them.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w')
+
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser(description='LrGenius Server')
 parser.add_argument('--db-path', type=str, help='Path to the ChromaDB database folder', required=False)
@@ -296,13 +304,14 @@ def _file_log_handler():
     return logging.FileHandler(LOG_PATH, encoding="utf-8")
 
 # Configure logging with UTF-8 encoding to handle Unicode characters
+handlers = [_file_log_handler()]
+if sys.stdout is not None:
+    handlers.append(logging.StreamHandler(sys.stdout))
+
 logging.basicConfig(
     level=log_level,
     format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[
-        _file_log_handler(),
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=handlers,
 )
 logger = logging.getLogger("geniusai-server")
 if not _is_running_in_docker():
