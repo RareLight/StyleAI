@@ -18,14 +18,14 @@ SourceDir=..\..
 Source: "build\lrgenius-server\*"; DestDir: "{app}\backend"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Plugin files (Global location for Lightroom)
-Source: "build\LrGeniusAI.lrplugin\*"; DestDir: "{commonappdata}\Adobe\Lightroom\Modules\LrGeniusAI.lrplugin"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "build\LrGeniusAI.lrplugin\*"; DestDir: "{userappdata}\Adobe\Lightroom\Modules\LrGeniusAI.lrplugin"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\LrGeniusAI Backend"; Filename: "{app}\backend\lrgenius-server.cmd"; IconFilename: "{app}\backend\app\src\icon.ico"
 
 [Registry]
-; Run backend at system startup for all users
-Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "LrGeniusAIBackend"; ValueData: """{app}\backend\lrgenius-server.cmd"""; Flags: uninsdeletevalue
+; Run backend at system startup for current user
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "LrGeniusAIBackend"; ValueData: """{app}\backend\lrgenius-server.cmd"""; Flags: uninsdeletevalue
 
 [Run]
 ; Start the backend immediately after installation
