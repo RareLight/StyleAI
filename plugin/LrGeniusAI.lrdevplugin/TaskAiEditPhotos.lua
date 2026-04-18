@@ -334,7 +334,7 @@ local function showAiEditDialog(ctx)
                 f:edit_field {
                     value = bind "selectedPrompt",
                     width_in_chars = 50,
-                    height_in_lines = 8,
+                    height_in_lines = 4,
                 },
             },
             f:row {
@@ -419,92 +419,100 @@ local function showAiEditDialog(ctx)
             title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/CreativeControls=Creative Controls",
             fill_horizontal = 1,
             f:row {
-                f:checkbox {
-                    value = bind "adjustWhiteBalance",
+                f:column {
+                    spacing = f:control_spacing(),
+                    f:row {
+                        f:checkbox {
+                            value = bind "adjustWhiteBalance",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustWB=Adjust white balance",
+                        },
+                    },
+                    f:row {
+                        f:checkbox {
+                            value = bind "adjustBasicTone",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustBasicTone=Adjust basic tone (exposure/contrast/highlights/shadows/whites/blacks)",
+                        },
+                    },
+                    f:row {
+                        f:checkbox {
+                            value = bind "adjustPresence",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustPresence=Adjust presence (texture/clarity/dehaze)",
+                        },
+                    },
+                    f:row {
+                        f:checkbox {
+                            value = bind "adjustColorMix",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustColorMix=Adjust color mix (vibrance/saturation/HSL)",
+                        },
+                    },
+                    f:row {
+                        f:checkbox {
+                            value = bind "doColorGrading",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/DoColorGrading=Do color grading",
+                        },
+                    },
                 },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustWB=Adjust white balance",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "adjustBasicTone",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustBasicTone=Adjust basic tone (exposure/contrast/highlights/shadows/whites/blacks)",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "adjustPresence",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustPresence=Adjust presence (texture/clarity/dehaze)",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "adjustColorMix",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustColorMix=Adjust color mix (vibrance/saturation/HSL)",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "doColorGrading",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/DoColorGrading=Do color grading",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "useToneCurve",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/UseToneCurve=Use tone curve",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "usePointCurve",
-                    enabled = bind "useToneCurve",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/UsePointCurve=Use point curve",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "adjustDetail",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustDetail=Adjust detail (sharpening/noise reduction)",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "adjustEffects",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustEffects=Adjust effects (vignette/grain)",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "adjustLensCorrections",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustLens=Adjust lens corrections",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "allowAutoCrop",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AllowAutoCrop=Allow AI auto crop",
+                f:column {
+                    spacing = f:control_spacing(),
+                    f:row {
+                        f:checkbox {
+                            value = bind "useToneCurve",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/UseToneCurve=Use tone curve",
+                        },
+                    },
+                    f:row {
+                        f:checkbox {
+                            value = bind "usePointCurve",
+                            enabled = bind "useToneCurve",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/UsePointCurve=Use point curve",
+                        },
+                    },
+                    f:row {
+                        f:checkbox {
+                            value = bind "adjustDetail",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustDetail=Adjust detail (sharpening/noise reduction)",
+                        },
+                    },
+                    f:row {
+                        f:checkbox {
+                            value = bind "adjustEffects",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustEffects=Adjust effects (vignette/grain)",
+                        },
+                    },
+                    f:row {
+                        f:checkbox {
+                            value = bind "adjustLensCorrections",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AdjustLens=Adjust lens corrections",
+                        },
+                    },
+                    f:row {
+                        f:checkbox {
+                            value = bind "allowAutoCrop",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/AllowAutoCrop=Allow AI auto crop",
+                        },
+                    },
                 },
             },
             f:row {
@@ -523,35 +531,43 @@ local function showAiEditDialog(ctx)
             title = LOC "$$$/LrGeniusAI/common/Context=Context",
             fill_horizontal = 1,
             f:row {
-                f:checkbox {
-                    value = bind "submitKeywords",
+                f:column {
+                    spacing = f:control_spacing(),
+                    f:row {
+                        f:checkbox {
+                            value = bind "submitKeywords",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/SendKeywords=Send existing Lightroom keywords",
+                        },
+                    },
+                    f:row {
+                        f:checkbox {
+                            value = bind "submitGPS",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/SendGPS=Send GPS coordinates when available",
+                        },
+                    },
                 },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/SendKeywords=Send existing Lightroom keywords",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "submitGPS",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/SendGPS=Send GPS coordinates when available",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "submitFolderName",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/SendFolders=Send folder names",
-                },
-            },
-            f:row {
-                f:checkbox {
-                    value = bind "useTrainingStyle",
-                },
-                f:static_text {
-                    title = LOC "$$$/LrGeniusAI/Training/UseTrainingCheckbox=Apply my saved edit style (training examples)",
+                f:column {
+                    spacing = f:control_spacing(),
+                    f:row {
+                        f:checkbox {
+                            value = bind "submitFolderName",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/TaskAiEditPhotos/SendFolders=Send folder names",
+                        },
+                    },
+                    f:row {
+                        f:checkbox {
+                            value = bind "useTrainingStyle",
+                        },
+                        f:static_text {
+                            title = LOC "$$$/LrGeniusAI/Training/UseTrainingCheckbox=Apply my saved edit style (training examples)",
+                        },
+                    },
                 },
             },
         },
