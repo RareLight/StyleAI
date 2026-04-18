@@ -14,7 +14,7 @@ ROOT_DIR="pkg_root"
 SCRIPTS_DIR="pkg_scripts"
 rm -rf "$ROOT_DIR" "$SCRIPTS_DIR"
 mkdir -p "$ROOT_DIR/Applications/LrGeniusAI/Server"
-mkdir -p "$ROOT_DIR/Library/Application Support/Adobe/Lightroom/Modules"
+mkdir -p "$ROOT_DIR/Applications/LrGeniusAI/PluginInstallTemp"
 mkdir -p "$ROOT_DIR/Library/LaunchAgents"
 mkdir -p "$SCRIPTS_DIR"
 
@@ -22,9 +22,9 @@ mkdir -p "$SCRIPTS_DIR"
 echo "Copying backend..."
 cp -a build/lrgenius-server/. "$ROOT_DIR/Applications/LrGeniusAI/Server/"
 
-# 2. Copy Plugin
+# 2. Copy Plugin (to temporary location for postinstall relocation)
 echo "Copying plugin..."
-cp -a build/LrGeniusAI.lrplugin "$ROOT_DIR/Library/Application Support/Adobe/Lightroom/Modules/LrGeniusAI.lrplugin"
+cp -a build/LrGeniusAI.lrplugin "$ROOT_DIR/Applications/LrGeniusAI/PluginInstallTemp/LrGeniusAI.lrplugin"
 
 cp installers/macos/com.lrgenius.server.plist "$ROOT_DIR/Library/LaunchAgents/"
 
@@ -36,8 +36,9 @@ set currentUser to (do shell script \"stat -f '%u' /dev/console\")
 display dialog \"Are you sure you want to uninstall LrGeniusAI? This will remove the server, plugin, and all associated logs.\" with title \"Uninstall LrGeniusAI\" with icon caution buttons {\"Cancel\", \"Uninstall\"} default button \"Cancel\"
 if button returned of result is \"Uninstall\" then
     try
-        do shell script \"launchctl asuser \" & currentUser & \" launchctl unload /Library/LaunchAgents/com.lrgenius.server.plist 2>/dev/null || true; rm -f /Library/LaunchAgents/com.lrgenius.server.plist; rm -rf '/Library/Application Support/Adobe/Lightroom/Modules/LrGeniusAI.lrplugin'; rm -rf /Library/Logs/LrGeniusAI; rm -rf /Applications/LrGeniusAI\" with administrator privileges
-        display dialog \"LrGeniusAI has been successfully uninstalled.\" with title \"Uninstall LrGeniusAI\" buttons {\"OK\"} default button \"OK\"
+        set userHome to (do shell script "dscl . -read /Users/$(id -un " & currentUser & ") NFSHomeDirectory | awk '{print $2}'")
+        do shell script "launchctl asuser " & currentUser & " launchctl unload /Library/LaunchAgents/com.lrgenius.server.plist 2>/dev/null || true; rm -f /Library/LaunchAgents/com.lrgenius.server.plist; rm -rf '" & userHome & "/Library/Application Support/Adobe/Lightroom/Modules/LrGeniusAI.lrplugin'; rm -rf /Library/Logs/LrGeniusAI; rm -rf /Applications/LrGeniusAI" with administrator privileges
+        display dialog "LrGeniusAI has been successfully uninstalled." with title "Uninstall LrGeniusAI" buttons {"OK"} default button "OK"
     on error errMsg
         display dialog \"Uninstallation failed: \" & errMsg with title \"Uninstall LrGeniusAI\" buttons {\"OK\"} default button \"OK\" with icon stop
     end try
@@ -79,6 +80,21 @@ if [ -n "\$CURRENT_USER" ] && [ "\$CURRENT_USER" -ne 0 ]; then
     # Use kickstart to force-start the service immediately
     # Targets gui/<uid>/<label> for LaunchAgents
     launchctl asuser "\$CURRENT_USER" launchctl kickstart -k "gui/\$CURRENT_USER/\$LABEL"
+
+    # Relocate Plugin to current user's Library
+    CURRENT_USER_NAME=\$(id -un "\$CURRENT_USER")
+    CURRENT_USER_HOME=\$(dscl . -read "/Users/\$CURRENT_USER_NAME" NFSHomeDirectory | awk '{print \$2}')
+    if [ -d "\$CURRENT_USER_HOME" ]; then
+        PLUGIN_TARGET_DIR="\$CURRENT_USER_HOME/Library/Application Support/Adobe/Lightroom/Modules"
+        echo "Relocating plugin to \$PLUGIN_TARGET_DIR"
+        mkdir -p "\$PLUGIN_TARGET_DIR"
+        # Remove existing if any to ensure clean copy
+        rm -rf "\$PLUGIN_TARGET_DIR/LrGeniusAI.lrplugin"
+        cp -a "/Applications/LrGeniusAI/PluginInstallTemp/LrGeniusAI.lrplugin" "\$PLUGIN_TARGET_DIR/"
+        chown -R "\$CURRENT_USER" "\$PLUGIN_TARGET_DIR/LrGeniusAI.lrplugin"
+    fi
+    # Cleanup temp folder
+    rm -rf "/Applications/LrGeniusAI/PluginInstallTemp"
 fi
 exit 0
 EOF
