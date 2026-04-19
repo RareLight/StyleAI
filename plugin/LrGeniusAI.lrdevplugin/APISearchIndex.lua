@@ -2530,11 +2530,32 @@ function SearchIndexAPI.getModels(openaiApiKey, geminiApiKey)
         lmstudio_base_url = (prefs and prefs.lmstudioBaseUrl) or nil,
     }
     local result, err = _request('POST', url, body)
-    if err then
-        log:error("getModels failed: " .. err)
-        return nil
-    end
     return result
+end
+
+---
+-- Downloads a raw log file from the server directly to a local path on disk.
+-- Bypasses JSON parsing to avoid memory exhaustion for large logs.
+-- @param logType string 'backend', 'ollama', or 'lmstudio'
+-- @param targetPath string local file path to save to
+-- @return boolean success
+function SearchIndexAPI.downloadRawLog(logType, targetPath)
+    if not logType or not targetPath then return false end
+    
+    local url = getBaseUrl() .. "/logs/raw/" .. tostring(logType)
+    log:trace("Downloading raw " .. logType .. " log from: " .. url)
+    
+    local ok, hdrs = LrTasks.pcall(function()
+        return LrHttp.get(url, nil, 60, targetPath)
+    end)
+    
+    if ok and hdrs and (hdrs == 200 or (type(hdrs) == 'table' and hdrs.status == 200)) then
+        log:trace("Successfully downloaded raw log to: " .. targetPath)
+        return true
+    else
+        log:error("Failed to download raw log: " .. tostring(hdrs))
+        return false
+    end
 end
 
 ---
