@@ -540,3 +540,8 @@
 "$$$/LrGeniusAI/Health/IgnoreAndContinue" = "Ignorieren & Fortfahren"
 "$$$/LrGeniusAI/Health/ClipMissingHint" = "Die semantische Suche wird deaktiviert. Sie können das Modell im Einrichtungs-Assistenten herunterladen."
 "$$$/LrGeniusAI/Health/ApiKeysMissingHint" = "Sie müssen Gemini- oder ChatGPT-API-Schlüssel konfigurieren, um Metadaten zu generieren."
+"$$$/LrGeniusAI/MetadataManager/SkipRemaining" = "Folgende ohne Review speichern."
+"$$$/LrGeniusAI/MetadataManager/SelectAll" = "Alle auswählen"
+"$$$/LrGeniusAI/MetadataManager/DeselectAll" = "Alle abwählen"
+"$$$/LrGeniusAI/Keywords" = "Stichwörter"
+"$$$/LrGeniusAI/Metadata" = "Metadaten"

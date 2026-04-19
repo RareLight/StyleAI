@@ -552,3 +552,8 @@
 "$$$/LrGeniusAI/Health/ClipMissingHint" = "Semantic search and some indexing features will be disabled. You can download the model in the Setup Wizard."
 "$$$/LrGeniusAI/Health/ApiKeysMissing" = "No AI providers configured for AI generation."
 "$$$/LrGeniusAI/Health/ApiKeysMissingHint" = "You need to configure Gemini or ChatGPT API keys (or a local provider) to generate keywords and descriptions."
+"$$$/LrGeniusAI/MetadataManager/SkipRemaining" = "Save following without reviewing."
+"$$$/LrGeniusAI/MetadataManager/SelectAll" = "Select All"
+"$$$/LrGeniusAI/MetadataManager/DeselectAll" = "Deselect All"
+"$$$/LrGeniusAI/Keywords" = "Keywords"
+"$$$/LrGeniusAI/Metadata" = "Metadata"
