@@ -126,7 +126,17 @@ local CATALOG_DB_MIGRATIONS = {
     -- Add future migrations here, e.g. { id = "some_breaking_change_v1", run = function(progressScope) ... return ok, err [, userMessage] end },
 }
 
-local MIGRATION_IN_PROGRESS = "in_progress"
+local MIGRATION_IN_PROGRESS_PREFIX = "in_progress"
+-- Timestamp older than this (relative to now) means a crashed/orphaned migration task.
+-- Safety net beyond the session-start check so long-running Lightroom sessions still recover.
+local STALE_IN_PROGRESS_SECONDS = 600
+-- LrC caches this module per plugin-session; any `in_progress` marker whose timestamp predates
+-- SESSION_START_TIME was written by a prior process and its owning task no longer exists.
+local SESSION_START_TIME = LrDate.currentTime()
+
+local function formatInProgressMarker()
+    return MIGRATION_IN_PROGRESS_PREFIX .. ":" .. tostring(math.floor(LrDate.currentTime()))
+end
 
 local function shouldUseGlobalPhotoId()
     return prefs and prefs.useGlobalPhotoId ~= false
@@ -135,17 +145,54 @@ end
 local function parseCompletedMigrations(raw)
     local completed = {}
     local inProgress = false
+    local inProgressSince = nil
     if raw and raw ~= "" then
         for part in string.gmatch(raw, "([^,]+)") do
             part = part:match("^%s*(.-)%s*$") or part
-            if part == MIGRATION_IN_PROGRESS then
+            if part == MIGRATION_IN_PROGRESS_PREFIX then
+                -- Legacy unversioned marker (pre-timestamp plugin version): treat as stale.
                 inProgress = true
+                inProgressSince = inProgressSince or 0
             else
-                completed[part] = true
+                local ts = part:match("^" .. MIGRATION_IN_PROGRESS_PREFIX .. ":(%d+)$")
+                if ts then
+                    inProgress = true
+                    inProgressSince = tonumber(ts) or 0
+                else
+                    completed[part] = true
+                end
             end
         end
     end
-    return completed, inProgress
+    return completed, inProgress, inProgressSince
+end
+
+local function isInProgressStale(inProgressSince)
+    if not inProgressSince then
+        return false
+    end
+    -- 0 is reserved for legacy unversioned markers — always stale.
+    if inProgressSince == 0 then
+        return true
+    end
+    if inProgressSince < SESSION_START_TIME then
+        return true
+    end
+    if (LrDate.currentTime() - inProgressSince) > STALE_IN_PROGRESS_SECONDS then
+        return true
+    end
+    return false
+end
+
+local function stripInProgressMarkers(raw)
+    if not raw or raw == "" then return "" end
+    local cleaned = raw:gsub(MIGRATION_IN_PROGRESS_PREFIX .. ":%d+", "")
+                       :gsub(MIGRATION_IN_PROGRESS_PREFIX, "")
+                       :gsub(",+", ",")
+                       :gsub("^,", "")
+                       :gsub(",$", "")
+                       :gsub("^%s*(.-)%s*$", "%1")
+    return cleaned
 end
 
 --- Ensures all registered catalog DB migrations have been run for the active catalog. Runs pending ones in background; uses catalog plugin property catalogDbMigrations so each migration runs once per catalog.
@@ -155,7 +202,22 @@ local function ensureDbMigrationsDone()
         return
     end
     local raw = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
-    local completed, inProgress = parseCompletedMigrations(raw)
+    local completed, inProgress, inProgressSince = parseCompletedMigrations(raw)
+
+    -- Recover from crashed/killed prior migrations that left the marker poisoned.
+    if inProgress and isInProgressStale(inProgressSince) then
+        local age = inProgressSince and (LrDate.currentTime() - inProgressSince) or -1
+        log:warn("Clearing stale catalogDbMigrations in_progress marker (age=" ..
+            tostring(math.floor(age)) .. "s, pre_session=" ..
+            tostring(inProgressSince and inProgressSince < SESSION_START_TIME) .. ")")
+        catalog:withPrivateWriteAccessDo(function()
+            local cur = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
+            catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", stripInProgressMarkers(cur))
+        end)
+        raw = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
+        completed, inProgress, inProgressSince = parseCompletedMigrations(raw)
+    end
+
     if inProgress then
         return
     end
@@ -169,7 +231,8 @@ local function ensureDbMigrationsDone()
         return
     end
     catalog:withPrivateWriteAccessDo(function()
-        local newRaw = (raw == "" or raw:match("%S") == nil) and MIGRATION_IN_PROGRESS or (raw .. "," .. MIGRATION_IN_PROGRESS)
+        local marker = formatInProgressMarker()
+        local newRaw = (raw == "" or raw:match("%S") == nil) and marker or (raw .. "," .. marker)
         catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", newRaw)
     end)
     LrTasks.startAsyncTask(function()
@@ -217,8 +280,7 @@ local function ensureDbMigrationsDone()
         end
         catalog:withPrivateWriteAccessDo(function()
             local current = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
-            current = current:gsub("," .. MIGRATION_IN_PROGRESS .. "$", ""):gsub("^" .. MIGRATION_IN_PROGRESS .. ",?", ""):gsub("^%s*,%s*", "")
-            catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", current)
+            catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", stripInProgressMarkers(current))
         end)
     end)
 end
@@ -249,19 +311,21 @@ local function waitForCatalogDbMigrationsDone(timeoutSeconds)
 
     while (LrDate.currentTime() - start) < timeoutSeconds do
         local raw = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
-        local completed, inProgress = parseCompletedMigrations(raw)
-
-        if inProgress then
-            sawInProgress = true
-        end
+        local completed, inProgress, inProgressSince = parseCompletedMigrations(raw)
 
         if allCatalogDbMigrationsCompleted(completed) then
             return true
         end
 
-        -- If we saw migrations in progress and now they stopped but not everything is completed,
-        -- treat it as a failure (e.g. claim_photos_v1 errored).
-        if sawInProgress and not inProgress then
+        if inProgress then
+            -- A stale marker means no task is actually running — don't block waiting for a ghost.
+            if isInProgressStale(inProgressSince) then
+                log:warn("waitForCatalogDbMigrationsDone: stale in_progress marker detected, aborting wait")
+                return false
+            end
+            sawInProgress = true
+        elseif sawInProgress then
+            -- Previously observed in_progress, now gone but not all completed → migration failed.
             return false
         end
 
