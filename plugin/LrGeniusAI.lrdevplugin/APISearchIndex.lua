@@ -127,15 +127,36 @@ local CATALOG_DB_MIGRATIONS = {
 }
 
 local MIGRATION_IN_PROGRESS_PREFIX = "in_progress"
--- Timestamp older than this (relative to now) means a crashed/orphaned migration task.
--- Safety net beyond the session-start check so long-running Lightroom sessions still recover.
-local STALE_IN_PROGRESS_SECONDS = 600
+-- A live migration task re-writes its marker every MIGRATION_HEARTBEAT_INTERVAL_SECONDS seconds.
+-- Anything older than STALE_IN_PROGRESS_SECONDS is assumed orphaned (crashed/killed task).
+-- Keep the stale threshold several multiples of the heartbeat so a brief scheduler hiccup
+-- doesn't cause a parallel migration to start.
+local MIGRATION_HEARTBEAT_INTERVAL_SECONDS = 30
+local STALE_IN_PROGRESS_SECONDS = 120
 -- LrC caches this module per plugin-session; any `in_progress` marker whose timestamp predates
 -- SESSION_START_TIME was written by a prior process and its owning task no longer exists.
 local SESSION_START_TIME = LrDate.currentTime()
+-- In-session guard: short-circuits re-entry within the same plugin session, regardless of
+-- what's persisted in the plugin property. Survives nothing; exists only to defend against
+-- logic bugs where the property check doesn't fire fast enough.
+local _migrationTaskRunning = false
 
 local function formatInProgressMarker()
     return MIGRATION_IN_PROGRESS_PREFIX .. ":" .. tostring(math.floor(LrDate.currentTime()))
+end
+
+-- Rewrites the in_progress:<ts> marker with a current timestamp so the stale-detection check
+-- doesn't evict a long-running live migration. No-op if the marker is no longer present
+-- (e.g., the migration task just finished and stripped it).
+local function updateInProgressHeartbeat(catalog)
+    catalog:withPrivateWriteAccessDo(function()
+        local cur = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
+        local fresh = formatInProgressMarker()
+        local updated, n = cur:gsub(MIGRATION_IN_PROGRESS_PREFIX .. ":%d+", fresh, 1)
+        if n > 0 and updated ~= cur then
+            catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", updated)
+        end
+    end)
 end
 
 local function shouldUseGlobalPhotoId()
@@ -201,6 +222,9 @@ local function ensureDbMigrationsDone()
     if not catalog then
         return
     end
+    if _migrationTaskRunning then
+        return
+    end
     local raw = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
     local completed, inProgress, inProgressSince = parseCompletedMigrations(raw)
 
@@ -235,53 +259,78 @@ local function ensureDbMigrationsDone()
         local newRaw = (raw == "" or raw:match("%S") == nil) and marker or (raw .. "," .. marker)
         catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", newRaw)
     end)
+    _migrationTaskRunning = true
+    local heartbeatStop = false
+
+    -- Heartbeat task: periodically refreshes the in_progress:<ts> timestamp so a long-running
+    -- migration isn't mistaken for a crashed one. Sleeps in 1-second chunks so it can exit
+    -- quickly once the main task finishes (avoids a race where it re-writes the marker after
+    -- cleanup has already stripped it).
     LrTasks.startAsyncTask(function()
-        local done = raw
-        for _, m in ipairs(pending) do
-            local progressScope
-            if m.id == "claim_photos_v1" then
-                progressScope = LrProgressScope({
-                    title = LOC "$$$/LrGeniusAI/SearchIndexAPI/claimingPhotos=Claiming photos for this catalog...",
-                    functionContext = nil,
-                })
+        while not heartbeatStop do
+            for _ = 1, MIGRATION_HEARTBEAT_INTERVAL_SECONDS do
+                if heartbeatStop then return end
+                LrTasks.sleep(1)
             end
-            local ok, err, userMessage
-            if type(m.run) == "function" then
-                local status, a, b, c
-                if type(LrTasks) == "table" and type(LrTasks.pcall) == "function" then
-                    status, a, b, c = LrTasks.pcall(function() return m.run(progressScope) end)
-                else
-                    status, a, b, c = LrTasks.pcall(function() return m.run(progressScope) end)
-                end
-                if status then
-                    ok, err, userMessage = a, b, c
-                else
-                    ok, err, userMessage = false, tostring(a), nil
-                end
-            end
-            if ok then
-                done = (done == "" or done:match("%S") == nil) and m.id or (done .. "," .. m.id)
-                catalog:withPrivateWriteAccessDo(function()
-                    catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", done)
-                end)
-                log:info("Catalog DB migration completed: " .. tostring(m.id))
-                if userMessage and userMessage ~= "" then
-                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/ClaimPhotosTitle=Claim photos", userMessage, "info")
-                end
-            else
-                log:warn("Catalog DB migration failed: " .. tostring(m.id) .. " - " .. tostring(err))
-                if m.id == "claim_photos_v1" then
-                    LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/ClaimPhotosFailed=Claim photos failed", tostring(err or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error") .. "\n\n" .. LOC "$$$/LrGeniusAI/SearchIndexAPI/ClaimPhotosRetryHint=You can try again from Plug-in Manager → LrGeniusAI → Backend Server → Claim photos for this catalog.", "critical")
-                end
-            end
-            if progressScope then
-                progressScope:done()
-            end
+            if heartbeatStop then return end
+            updateInProgressHeartbeat(catalog)
         end
-        catalog:withPrivateWriteAccessDo(function()
-            local current = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
-            catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", stripInProgressMarkers(current))
+    end)
+
+    LrTasks.startAsyncTask(function()
+        local runOk, runErr = LrTasks.pcall(function()
+            local done = raw
+            for _, m in ipairs(pending) do
+                local progressScope
+                if m.id == "claim_photos_v1" then
+                    progressScope = LrProgressScope({
+                        title = LOC "$$$/LrGeniusAI/SearchIndexAPI/claimingPhotos=Claiming photos for this catalog...",
+                        functionContext = nil,
+                    })
+                end
+                local ok, err, userMessage
+                if type(m.run) == "function" then
+                    local status, a, b, c
+                    if type(LrTasks) == "table" and type(LrTasks.pcall) == "function" then
+                        status, a, b, c = LrTasks.pcall(function() return m.run(progressScope) end)
+                    else
+                        status, a, b, c = LrTasks.pcall(function() return m.run(progressScope) end)
+                    end
+                    if status then
+                        ok, err, userMessage = a, b, c
+                    else
+                        ok, err, userMessage = false, tostring(a), nil
+                    end
+                end
+                if ok then
+                    done = (done == "" or done:match("%S") == nil) and m.id or (done .. "," .. m.id)
+                    catalog:withPrivateWriteAccessDo(function()
+                        catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", done)
+                    end)
+                    log:info("Catalog DB migration completed: " .. tostring(m.id))
+                    if userMessage and userMessage ~= "" then
+                        LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/ClaimPhotosTitle=Claim photos", userMessage, "info")
+                    end
+                else
+                    log:warn("Catalog DB migration failed: " .. tostring(m.id) .. " - " .. tostring(err))
+                    if m.id == "claim_photos_v1" then
+                        LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/ClaimPhotosFailed=Claim photos failed", tostring(err or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error") .. "\n\n" .. LOC "$$$/LrGeniusAI/SearchIndexAPI/ClaimPhotosRetryHint=You can try again from Plug-in Manager → LrGeniusAI → Backend Server → Claim photos for this catalog.", "critical")
+                    end
+                end
+                if progressScope then
+                    progressScope:done()
+                end
+            end
+            catalog:withPrivateWriteAccessDo(function()
+                local current = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
+                catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", stripInProgressMarkers(current))
+            end)
         end)
+        heartbeatStop = true
+        _migrationTaskRunning = false
+        if not runOk then
+            log:error("Catalog DB migration task crashed: " .. tostring(runErr))
+        end
     end)
 end
 
