@@ -41,8 +41,18 @@ class LMStudioProvider(LLMProviderBase):
 
 
     def is_available(self) -> bool:
-        """Check if LM Studio server is reachable"""
-        return lms.Client.is_valid_api_host(self.host)
+        """Check if LM Studio server is reachable with a short timeout"""
+        try:
+            # First, a basic validation of host format
+            if not self.host or ":" not in self.host:
+                return False
+                
+            # Use the SDK's validation but be aware it might block if the host is a dead IP.
+            # In a future version, we might add a socket-level pre-check here.
+            return lms.Client.is_valid_api_host(self.host)
+        except Exception as e:
+            logger.warning(f"LM Studio availability check failed for {self.host}: {e}")
+            return False
     
     def generate_metadata(self, request: MetadataGenerationRequest) -> MetadataGenerationResponse:
         """

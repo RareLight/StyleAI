@@ -38,18 +38,19 @@ class OllamaProvider(LLMProviderBase):
             self.client = None  # type: ignore[assignment]
     
     def is_available(self) -> bool:
-        """Check if Ollama server is reachable"""
+        """Check if Ollama server is reachable with a short timeout"""
         try:
             if Client is None:
                 logger.warning("Ollama SDK not installed. Please install 'ollama' Python package.")
                 return False
-            if self.client is None:
-                self.client = Client(host=self.base_url)
-            # A lightweight call to verify connectivity
-            _ = self.client.list()
+            
+            # Use a specialized client with a very short timeout for the health check
+            # to avoid blocking the backend server if Ollama is down/slow.
+            temp_client = Client(host=self.base_url, timeout=2.0)
+            _ = temp_client.list()
             return True
         except Exception as e:
-            logger.warning(f"Ollama not available: {e}")
+            logger.warning(f"Ollama not available at {self.base_url}: {e}")
             return False
     
     def _get_client(self, base_url_override: Optional[str] = None):
