@@ -241,3 +241,41 @@ def get_logs():
     return jsonify(logs)
 
 
+@server_bp.route('/logs/raw/<log_type>', methods=['GET'])
+def get_raw_log(log_type):
+    """
+    Returns the raw log file for the specified type (backend, ollama, lmstudio).
+    """
+    logger.trace(f"GET /logs/raw/{log_type} request received")
+    
+    path = None
+    if log_type == "backend":
+        path = LOG_PATH
+    elif log_type == "ollama":
+        ollama_log_paths = [
+            os.path.expanduser("~/.ollama/logs/server.log"),
+            "/root/.ollama/logs/server.log",
+            r"C:\Users\%USERNAME%\AppData\Local\ollama\server.log",
+        ]
+        for p in ollama_log_paths:
+            p = os.path.expandvars(p)
+            if os.path.isfile(p):
+                path = p
+                break
+    elif log_type == "lmstudio":
+        lmstudio_log_paths = [
+            os.path.expanduser("~/Library/Logs/LM Studio/main.log"),
+            r"%APPDATA%\LM Studio\logs\main.log",
+        ]
+        for p in lmstudio_log_paths:
+            p = os.path.expandvars(p)
+            if os.path.isfile(p):
+                path = p
+                break
+    
+    if path and os.path.isfile(path):
+        return send_file(path, mimetype='text/plain')
+    
+    return jsonify({"error": f"Log file for {log_type} not found"}), 404
+
+

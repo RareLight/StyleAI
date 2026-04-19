@@ -520,49 +520,37 @@ function Util.copyLogfilesToDesktop(extraInfo)
     progressScope:setPortionComplete(0.5, 1)
     progressScope:setCaption(LOC "$$$/LrGeniusAI/Util/FetchingServerLogs=Fetching server-side logs via API...")
 
-    -- Server logs (backend, Ollama, LM Studio) are ALWAYS fetched via API
-    local status, err2 = LrTasks.pcall(function()
-        log:trace("Fetching server-side logs via API...")
-        local remoteLogs, err = SearchIndexAPI.getRemoteLogs()
-        log:trace("Remote logs result type: " .. type(remoteLogs))
-        if remoteLogs and type(remoteLogs) == 'table' then
-            log:trace("Successfully fetched server-side logs")
-            
-            local url = tostring(prefs.backendServerUrl or "")
-            local host = url:match("://([^:/]+)") or url:match("^([^:/]+)")
-            local prefix = ""
-            if host and host ~= "127.0.0.1" and host ~= "localhost" and host ~= "" then
-                prefix = tostring(host) .. "-"
-            end
+    -- Use the new streaming method to download logs directly to disk, avoiding memory spikes
+    local url = tostring(prefs.backendServerUrl or "")
+    local host = url:match("://([^:/]+)") or url:match("^([^:/]+)")
+    local prefix = ""
+    if host and host ~= "127.0.0.1" and host ~= "localhost" and host ~= "" then
+        prefix = tostring(host) .. "-"
+    end
 
-            local function saveLog(content, logName, friendlyName)
-                if content and #content > 0 then
-                    local filename = prefix .. logName
-                    local path = LrPathUtils.child(folder, filename)
-                    local f = io.open(path, "w")
-                    if f then
-                        f:write(content)
-                        f:close()
-                        log:trace("Saved " .. friendlyName .. ": " .. filename)
-                        return true
-                    end
-                end
-                return false
-            end
+    local logFiles = {
+        { type = "backend", filename = "lrgenius-server.log" },
+        { type = "ollama", filename = "ollama.log" },
+        { type = "lmstudio", filename = "lmstudio.log" },
+    }
 
-            saveLog(remoteLogs.backend, "lrgenius-server.log", "backend log")
-            saveLog(remoteLogs.ollama, "ollama.log", "Ollama log")
-            saveLog(remoteLogs.lmstudio, "lmstudio.log", "LM Studio log")
+    log:trace("Fetching server-side logs via streaming API...")
+    for i, logInfo in ipairs(logFiles) do
+        if progressScope:isCanceled() then break end
+        
+        local targetName = prefix .. logInfo.filename
+        local targetPath = LrPathUtils.child(folder, targetName)
+        
+        progressScope:setCaption(LOC("$$$/LrGeniusAI/Util/FetchingLog=Fetching ^1...", logInfo.filename))
+        local success = SearchIndexAPI.downloadRawLog(logInfo.type, targetPath)
+        
+        if success then
+            log:trace("Successfully streamed log: " .. logInfo.filename)
         else
-            log:warn("Could not fetch server logs via API: " .. (err or "unknown error"))
-            -- Update caption to show it's skipping server logs
-            progressScope:setCaption(LOC "$$$/LrGeniusAI/Util/ServerLogsUnavailable=Server logs unavailable, skipping...")
-            LrTasks.sleep(1)
+            log:trace("Log not available or fetch failed: " .. logInfo.filename)
         end
-    end)
-
-    if not status then
-        log:error("Error in copyLogfilesToDesktop server log retrieval: " .. tostring(err2))
+        
+        progressScope:setPortionComplete(0.5 + (i / #logFiles) * 0.4, 1)
     end
 
     progressScope:setPortionComplete(1.0, 1)
@@ -1017,7 +1005,7 @@ function Util.waitForServerDialog(options)
 
             LrTasks.sleep(1)
             LrTasks.pcall(function()
-                SearchIndexAPI.startServer({ readyTimeoutSeconds = 60 })
+                SearchIndexAPI.startServer({ readyTimeoutSeconds = 120 })
             end)
 
             if SearchIndexAPI.pingServer() then
@@ -1055,7 +1043,7 @@ function Util.waitForServerDialog(options)
         })
 
         local elapsedTime = 0
-        local timeout = 60 -- 60 seconds timeout
+        local timeout = 120 -- 120 seconds timeout
         local restartAttempted = false
         while not progressScope:isCanceled() and elapsedTime < timeout do
             if SearchIndexAPI.pingServer() then
@@ -1088,7 +1076,7 @@ function Util.waitForServerDialog(options)
                     end)
                     LrTasks.sleep(1)
                     LrTasks.pcall(function()
-                        SearchIndexAPI.startServer({ readyTimeoutSeconds = 60 })
+                        SearchIndexAPI.startServer({ readyTimeoutSeconds = 120 })
                     end)
 
                     -- Re-check compatibility immediately (without restarting the modal loop).
