@@ -3013,7 +3013,7 @@ function SearchIndexAPI.getDetailedHealth()
     -- Try to ping local LLMs if they are not default localhost but maybe they are
     if not Util.nilOrEmpty(prefs.ollamaBaseUrl) then
         local url = prefs.ollamaBaseUrl .. "/api/tags"
-        local res, hdrs = LrHttp.get(url, nil, 1000)
+        local res, hdrs = LrHttp.get(url, nil, 500)
         local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status)
         if status == 200 then health.ollama = true end
     end
@@ -3022,7 +3022,7 @@ function SearchIndexAPI.getDetailedHealth()
         local baseUrl = prefs.lmstudioBaseUrl
         if not baseUrl:match("^https?://") then baseUrl = "http://" .. baseUrl end
         local url = baseUrl .. "/v1/models"
-        local res, hdrs = LrHttp.get(url, nil, 1000)
+        local res, hdrs = LrHttp.get(url, nil, 500)
         local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status)
         if status == 200 then health.lmstudio = true end
     end
@@ -3202,7 +3202,7 @@ end
 function SearchIndexAPI.getRemoteLogs()
     local url = getBaseUrl() .. ENDPOINTS.LOGS
     log:trace("Fetching remote logs from: " .. url)
-    local response, err = _request('GET', url, nil, 30)
+    local response, err = _request('GET', url, nil, 10)
     log:trace("getRemoteLogs: _request returned type=" .. type(response))
     if not response then
         log:error("Failed to fetch remote logs: " .. tostring(err))

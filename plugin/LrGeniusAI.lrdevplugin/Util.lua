@@ -518,6 +518,7 @@ function Util.copyLogfilesToDesktop(extraInfo)
 
     if progressScope:isCanceled() then progressScope:done() return end
     progressScope:setPortionComplete(0.5, 1)
+    progressScope:setCaption(LOC "$$$/LrGeniusAI/Util/FetchingServerLogs=Fetching server-side logs via API...")
 
     -- Server logs (backend, Ollama, LM Studio) are ALWAYS fetched via API
     local status, err2 = LrTasks.pcall(function()
@@ -530,51 +531,42 @@ function Util.copyLogfilesToDesktop(extraInfo)
             local url = tostring(prefs.backendServerUrl or "")
             local host = url:match("://([^:/]+)") or url:match("^([^:/]+)")
             local prefix = ""
-            if host and host ~= "127.0.0.1" and host ~= "localhost" then
+            if host and host ~= "127.0.0.1" and host ~= "localhost" and host ~= "" then
                 prefix = tostring(host) .. "-"
             end
 
-            if remoteLogs.backend then
-                local filename = prefix .. "lrgenius-server.log"
-                local path = LrPathUtils.child(folder, filename)
-                local f = io.open(path, "w")
-                if f then
-                    f:write(remoteLogs.backend)
-                    f:close()
-                    log:trace("Saved backend log: " .. filename)
+            local function saveLog(content, logName, friendlyName)
+                if content and #content > 0 then
+                    local filename = prefix .. logName
+                    local path = LrPathUtils.child(folder, filename)
+                    local f = io.open(path, "w")
+                    if f then
+                        f:write(content)
+                        f:close()
+                        log:trace("Saved " .. friendlyName .. ": " .. filename)
+                        return true
+                    end
                 end
+                return false
             end
-            
-            if remoteLogs.ollama then
-                local filename = prefix .. "ollama.log"
-                local path = LrPathUtils.child(folder, filename)
-                local f = io.open(path, "w")
-                if f then
-                    f:write(remoteLogs.ollama)
-                    f:close()
-                    log:trace("Saved Ollama log: " .. filename)
-                end
-            end
-            
-            if remoteLogs.lmstudio then
-                local filename = prefix .. "lmstudio.log"
-                local path = LrPathUtils.child(folder, filename)
-                local f = io.open(path, "w")
-                if f then
-                    f:write(remoteLogs.lmstudio)
-                    f:close()
-                    log:trace("Saved LM Studio log: " .. filename)
-                end
-            end
+
+            saveLog(remoteLogs.backend, "lrgenius-server.log", "backend log")
+            saveLog(remoteLogs.ollama, "ollama.log", "Ollama log")
+            saveLog(remoteLogs.lmstudio, "lmstudio.log", "LM Studio log")
         else
             log:warn("Could not fetch server logs via API: " .. (err or "unknown error"))
+            -- Update caption to show it's skipping server logs
+            progressScope:setCaption(LOC "$$$/LrGeniusAI/Util/ServerLogsUnavailable=Server logs unavailable, skipping...")
+            LrTasks.sleep(1)
         end
     end)
+
     if not status then
         log:error("Error in copyLogfilesToDesktop server log retrieval: " .. tostring(err2))
     end
 
     progressScope:setPortionComplete(1.0, 1)
+    progressScope:setCaption(LOC "$$$/LrGeniusAI/common/Done=Done.")
     progressScope:done()
 
     if LrFileUtils.exists(folder) then
