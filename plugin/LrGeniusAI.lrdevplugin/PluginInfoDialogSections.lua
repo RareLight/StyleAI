@@ -514,7 +514,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                     f:push_button {
                         title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/OllamaSetup=Setup Ollama",
                         action = function(button)
-                            LrHttp.openUrlInBrowser("https://lrgenius.com/help/ollama-setup/")
+                            LrHttp.openUrlInBrowser("https://github.com/LrGenius/LrGeniusAI/wiki/Help-Ollama-Setup")
                         end,
                         width = share 'apiButtonWidth',
                     },
@@ -543,7 +543,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                     f:push_button {
                         title = LOC "$$$/LrGeniusAI/PluginInfo/SetupLmStudio=Setup LM Studio",
                         action = function(button)
-                            LrHttp.openUrlInBrowser("https://lrgenius.com/help/lm-studio-setup/")
+                            LrHttp.openUrlInBrowser("https://github.com/LrGenius/LrGeniusAI/wiki/Help-LM-Studio-Setup")
                         end,
                         width = share 'apiButtonWidth',
                     },
