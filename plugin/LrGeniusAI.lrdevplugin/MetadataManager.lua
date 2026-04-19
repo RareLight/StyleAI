@@ -465,8 +465,16 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options)
 
     local propertyTable = LrBinding.makePropertyTable(ctx)
     propertyTable.skipFromHere = false
-    propertyTable.keywordsVal, propertyTable.keywordsMeta = Util.extractAllKeywords(keywords or {})
-    propertyTable.keywordsSel = {}
+    
+    local kwVal, kwMeta, orderedIds = Util.extractAllKeywords(keywords or {})
+    propertyTable.keywordsMeta = kwMeta
+    
+    -- Initialize flat properties for bindings
+    for _, id in ipairs(orderedIds) do
+        propertyTable['keywordsSel.' .. id] = true
+        propertyTable['keywordsVal.' .. id] = kwVal[id] or ""
+    end
+    
     propertyTable.title = title or ""
     propertyTable.caption = caption or ""
     propertyTable.altText = altText or ""
@@ -475,122 +483,141 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options)
     propertyTable.saveTitle = title ~= nil and title ~= "" and options.applyTitle ~= false
     propertyTable.saveCaption = caption ~= nil and caption ~= "" and options.applyCaption ~= false
     propertyTable.saveAltText = altText ~= nil and altText ~= "" and options.applyAltText ~= false
-    -- propertyTable.keywordWidth = 50
 
-    local keywordRows = {}
-    local keywordLabels = {}
+    local keywordRows = {
+        spacing = 2,
+    }
 
-    local keywordCount = 0
-    for _, keyword in pairs(propertyTable.keywordsVal) do
-        if propertyTable.keywordsSel[_] == nil then -- Prevent duplicates
-            propertyTable.keywordsSel[_] = true
-            keywordCount = keywordCount + 1
-            table.insert(keywordLabels, f:checkbox { value = bind('keywordsSel.' .. _), visible = bind 'saveKeywords' })
-            table.insert(keywordLabels, f:edit_field { value = bind('keywordsVal.' .. _), width_in_chars = 15, immediate = true, enabled = bind 'saveKeywords' })
-        end
+    for _, id in ipairs(orderedIds) do
+        local path = propertyTable.keywordsMeta[id].path
+        table.insert(keywordRows, f:row {
+            f:checkbox { 
+                value = bind('keywordsSel.' .. id), 
+                visible = bind 'saveKeywords' 
+            },
+            f:column {
+                spacing = 0,
+                f:static_text {
+                    title = path,
+                    size = "small",
+                    text_color = { 0.5, 0.5, 0.5 },
+                    visible = path ~= "" and path ~= nil
+                },
+                f:edit_field {
+                    value = bind('keywordsVal.' .. id),
+                    width_in_chars = 40,
+                    immediate = true,
+                    enabled = bind 'saveKeywords'
+                },
+            }
+        })
     end
 
-    local rowCount = #keywordLabels / 10 + 1
-
-    for i = 1, rowCount do
-        local row = {}
-        for j = 1, 10 do
-            local index = (i - 1) * 10 + j
-            if index <= #keywordLabels then
-                table.insert(row, keywordLabels[index])
-            end
-        end
-        table.insert(keywordRows, f:row(row))
-    end
-
-    keywordRows.horizontal_scroller = true
-    keywordRows.vertical_scroller = true
-    keywordRows.height = 250
-    keywordRows.width = 1100
-
-    local dialogView = f:column {
-        bind_to_object = propertyTable,
-        f:row {
+    local dialogView = f:row {
+        spacing = 20,
+        f:column {
+            width = 250,
             f:static_text {
                 title = photo:getFormattedMetadata('fileName'),
                 font = "<system/bold>",
+                wrap = true,
+                width = 250,
             },
             f:catalog_photo {
                 photo = photo,
-                width = 150,
+                width = 250,
+                height = 250,
+            },
+            f:spacer { height = 10 },
+            f:checkbox {
+                value = bind 'skipFromHere',
+                title = LOC "$$$/LrGeniusAI/MetadataManager/SkipRemaining=Save following without reviewing.",
             },
         },
-        f:row {
-            margin_vertical = 10,
-            f:checkbox {
-                value = bind 'saveKeywords',
-                width = share 'checkboxWidth',
-            },
-            f:static_text {
-                title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SaveKeywords=Save keywords",
-                width = share 'labelWidth',
-            },
-            f:scrolled_view(keywordRows),
-        },
-        f:row {
-            margin_vertical = 10,
-            f:checkbox {
-                value = bind 'saveTitle',
-                width = share 'checkboxWidth',
-            },
-            f:static_text {
-                title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SaveTitle=Save title",
-                width = share 'labelWidth',
-            },
-            f:edit_field {
-                value = bind 'title',
-                -- width_in_chars = 40,
+        f:column {
+            f:group_box {
+                title = LOC "$$$/LrGeniusAI/Keywords=Keywords",
                 fill_horizontal = 1,
-                height_in_lines = 1,
-                enabled = bind 'saveTitle',  -- Enable only if the checkbox is checked
+                f:row {
+                    f:push_button {
+                        title = LOC "$$$/LrGeniusAI/MetadataManager/SelectAll=Select All",
+                        action = function()
+                            for _, id in ipairs(orderedIds) do
+                                propertyTable['keywordsSel.' .. id] = true
+                            end
+                        end
+                    },
+                    f:push_button {
+                        title = LOC "$$$/LrGeniusAI/MetadataManager/DeselectAll=Deselect All",
+                        action = function()
+                            for _, id in ipairs(orderedIds) do
+                                propertyTable['keywordsSel.' .. id] = false
+                            end
+                        end
+                    },
+                    f:spacer { fill_horizontal = 1 },
+                    f:checkbox {
+                        value = bind 'saveKeywords',
+                        title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SaveKeywords=Save keywords",
+                    },
+                },
+                f:scrolled_view {
+                    height = 250,
+                    width = 450,
+                    f:column(keywordRows)
+                },
             },
-        },
-        f:row {
-            margin_vertical = 10,
-            f:checkbox {
-                value = bind 'saveCaption',
-                width = share 'checkboxWidth',
-            },
-            f:static_text {
-                title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SaveCaption=Save caption",
-                width = share 'labelWidth',
-            },
-            f:edit_field {
-                value = bind 'caption',
+            f:group_box {
+                title = LOC "$$$/LrGeniusAI/Metadata=Metadata",
                 fill_horizontal = 1,
-                height_in_lines = 10,
-                enabled = bind 'saveCaption',  -- Enable only if the checkbox is checked
-            },
-        },
-        f:row {
-            margin_vertical = 10,
-            f:checkbox {
-                value = bind 'saveAltText',
-                width = share 'checkboxWidth',
-            },
-            f:static_text {
-                title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SaveAltText=Save alt text",
-                width = share 'labelWidth',
-            },
-            f:edit_field {
-                value = bind 'altText',
-                fill_horizontal = 1,
-                height_in_lines = 10,
-                enabled = bind 'saveAltText',  -- Enable only if the checkbox is checked
-            },
-        },
-        f:row {
-            margin_vertical = 10,
-            f:checkbox {
-                value = bind 'skipFromHere'
-            },
-            f:static_text {
-                title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SkipFromHere=Save following without reviewing.",
+                f:row {
+                    f:checkbox {
+                        value = bind 'saveTitle',
+                        width = share 'checkboxWidth',
+                    },
+                    f:static_text {
+                        title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SaveTitle=Save title",
+                        width = share 'labelWidth',
+                    },
+                    f:edit_field {
+                        value = bind 'title',
+                        fill_horizontal = 1,
+                        height_in_lines = 1,
+                        enabled = bind 'saveTitle',
+                    },
+                },
+                f:row {
+                    f:checkbox {
+                        value = bind 'saveCaption',
+                        width = share 'checkboxWidth',
+                    },
+                    f:static_text {
+                        title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SaveCaption=Save caption",
+                        width = share 'labelWidth',
+                    },
+                    f:edit_field {
+                        value = bind 'caption',
+                        fill_horizontal = 1,
+                        height_in_lines = 5,
+                        enabled = bind 'saveCaption',
+                    },
+                },
+                f:row {
+                    f:checkbox {
+                        value = bind 'saveAltText',
+                        width = share 'checkboxWidth',
+                    },
+                    f:static_text {
+                        title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SaveAltText=Save alt text",
+                        width = share 'labelWidth',
+                    },
+                    f:edit_field {
+                        value = bind 'altText',
+                        fill_horizontal = 1,
+                        height_in_lines = 3,
+                        enabled = bind 'saveAltText',
+                    },
+                },
             },
         },
     }
@@ -604,7 +631,14 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options)
     local results = {}
     local validatedKeywords = {}
     if propertyTable.saveKeywords then
-        validatedKeywords = Util.rebuildTableFromKeywords(keywords, propertyTable.keywordsVal, propertyTable.keywordsSel, propertyTable.keywordsMeta)
+        -- Sync flat properties back to tables for Util.rebuildTableFromKeywords
+        local finalKwVal = {}
+        local finalKwSel = {}
+        for _, id in ipairs(orderedIds) do
+            finalKwVal[id] = propertyTable['keywordsVal.' .. id]
+            finalKwSel[id] = propertyTable['keywordsSel.' .. id]
+        end
+        validatedKeywords = Util.rebuildTableFromKeywords(keywords, finalKwVal, finalKwSel, propertyTable.keywordsMeta)
     end
 
     results.keywords = validatedKeywords

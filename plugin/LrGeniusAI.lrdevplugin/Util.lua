@@ -695,17 +695,27 @@ end
 --
 function Util.extractAllKeywords(hierarchicalTable)
     if hierarchicalTable == nil or type(hierarchicalTable) ~= "table" then
-        return {}, {}
+        return {}, {}, {}
     end
 
     local result = {}
     local meta = {}
+    local orderedIds = {}
     local keywordCounter = 0
 
-    local function recurse(tbl)
-        iterateDeterministic(tbl, function(_, value)
+    local function recurse(tbl, currentPath)
+        iterateDeterministic(tbl, function(key, value)
+            local nextPath = currentPath
+            if type(key) == "string" then
+                if nextPath == "" then
+                    nextPath = key
+                else
+                    nextPath = nextPath .. " > " .. key
+                end
+            end
+
             if type(value) == "table" and not isKeywordLeafObject(value) then
-                recurse(value)
+                recurse(value, nextPath)
                 return
             end
 
@@ -714,16 +724,17 @@ function Util.extractAllKeywords(hierarchicalTable)
                 keywordCounter = keywordCounter + 1
                 local keywordId = "kw_" .. tostring(keywordCounter)
                 result[keywordId] = keywordName
-                meta[keywordId] = { synonyms = synonyms }
+                meta[keywordId] = { synonyms = synonyms, path = currentPath }
+                table.insert(orderedIds, keywordId)
             end
         end)
     end
 
-    recurse(hierarchicalTable)
+    recurse(hierarchicalTable, "")
 
     log:trace("Extracted keywords: " .. Util.dumpTable(result))
 
-    return result, meta
+    return result, meta, orderedIds
 end
 
 ---

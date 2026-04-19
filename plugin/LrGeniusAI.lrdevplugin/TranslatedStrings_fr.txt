@@ -540,3 +540,8 @@
 "$$$/LrGeniusAI/Health/IgnoreAndContinue" = "Ignorer et continuer"
 "$$$/LrGeniusAI/Health/ClipMissingHint" = "La recherche sémantique sera désactivée. Vous pouvez télécharger le modèle dans l'assistant de configuration."
 "$$$/LrGeniusAI/Health/ApiKeysMissingHint" = "Vous devez configurer des clés API Gemini ou ChatGPT pour générer des métadonnées."
+"$$$/LrGeniusAI/MetadataManager/SkipRemaining" = "Enregistrer les suivantes sans vérification."
+"$$$/LrGeniusAI/MetadataManager/SelectAll" = "Tout sélectionner"
+"$$$/LrGeniusAI/MetadataManager/DeselectAll" = "Tout désélectionner"
+"$$$/LrGeniusAI/Keywords" = "Mots-clés"
+"$$$/LrGeniusAI/Metadata" = "Métadonnées"
