@@ -179,8 +179,8 @@ if __name__ == "__main__":
     # Optional one-shot ID migration for deployed databases.
     # Set GENIUSAI_MIGRATION_FILE to a JSON list/object with mappings.
     migration_file = os.environ.get("GENIUSAI_MIGRATION_FILE", "").strip()
-    if migration_file and config.DB_PATH:
-        migration_path = migration_file if os.path.isabs(migration_file) else os.path.join(config.DB_PATH, migration_file)
+    if migration_file and DB_PATH:
+        migration_path = migration_file if os.path.isabs(migration_file) else os.path.join(DB_PATH, migration_file)
         try:
             with open(migration_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
