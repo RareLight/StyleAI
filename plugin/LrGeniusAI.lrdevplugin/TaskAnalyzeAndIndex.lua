@@ -14,21 +14,21 @@ local function showAnalyzeAndIndexDialog(ctx)
     local share = LrView.share
 
     local props = LrBinding.makePropertyTable(ctx)
-    
+
     -- Scope settings
     props.scope = prefs.indexScope or "selected"
-    
+
     -- Check if CLIP model is ready on server
     props.clipReady = SearchIndexAPI.isClipReady() and prefs.useClip
 
     -- Tasks to perform
     props.enableEmbeddings = (prefs.enableEmbeddings ~= false) and props.clipReady -- default true
-    props.enableMetadata = prefs.enableMetadata ~= false -- default true
+    props.enableMetadata = prefs.enableMetadata ~= false                           -- default true
     props.enableFaces = prefs.enableFaces or false
     props.enableVertexAI = prefs.enableVertexAI or false
     props.enableImportBeforeIndex = prefs.enableImportBeforeIndex or false
     props.regenerateMetadata = prefs.regenerateMetadata or false
-    
+
     -- Metadata generation options
     props.temperature = prefs.temperature or 0.1
     props.promptTitles = {}
@@ -59,7 +59,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.topLevelKeyword = prefs.topLevelKeyword or "LrGeniusAI"
     props.bilingualKeywords = prefs.bilingualKeywords or false
     props.keywordSecondaryLanguage = prefs.keywordSecondaryLanguage or Defaults.defaultKeywordSecondaryLanguage
-    
+
     -- AI Model selection (unified across providers)
     props.modelKey = prefs.modelKey -- format: "provider::model"
     props.language = prefs.generateLanguage or "English"
@@ -73,7 +73,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     -- Server will check all providers and filter to multimodal only
     local openaiKey = (prefs and not Util.nilOrEmpty(prefs.chatgptApiKey)) and prefs.chatgptApiKey or nil
     local geminiKey = (prefs and not Util.nilOrEmpty(prefs.geminiApiKey)) and prefs.geminiApiKey or nil
-    
+
     local modelsResp = SearchIndexAPI.getModels(openaiKey, geminiKey)
     if modelsResp and modelsResp.models then
         for provider, list in pairs(modelsResp.models) do
@@ -81,11 +81,11 @@ local function showAnalyzeAndIndexDialog(ctx)
                 local title = provider .. ": " .. model
                 local value = provider .. "::" .. model
                 table.insert(modelItems, { title = title, value = value })
-            end 
+            end
         end
     end
-    
-    table.sort(modelItems, function(a,b) return a.title < b.title end)
+
+    table.sort(modelItems, function(a, b) return a.title < b.title end)
     if (not modelItems or #modelItems == 0) then
         -- Fallback option if nothing matched filters
         table.insert(modelItems, { title = 'qwen: (default)', value = 'qwen::' })
@@ -93,13 +93,13 @@ local function showAnalyzeAndIndexDialog(ctx)
     if not props.modelKey or props.modelKey == '' then
         props.modelKey = modelItems[1].value
     end
-    
+
     -- Context options
     props.submitGPS = prefs.submitGPS or false
     props.submitKeywords = prefs.submitKeywords or false
     props.submitFolderName = prefs.submitFolderName or false
     props.showPhotoContextDialog = prefs.showPhotoContextDialog or false
-    
+
     -- SaveDataToCatalog
     props.saveDataToCatalog = prefs.saveDataToCatalog ~= false -- default true
     props.appendMetadata = prefs.appendMetadata or false
@@ -142,9 +142,9 @@ local function showAnalyzeAndIndexDialog(ctx)
                             value = bind 'scope',
                             width = 300,
                             items = {
-                                { title = LOC "$$$/LrGeniusAI/common/ScopeSelected=Selected photos only", value = 'selected' },
-                                { title = LOC "$$$/LrGeniusAI/common/ScopeView=Current view", value = 'view' },
-                                { title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ScopeAll=All photos in catalog", value = 'all' },
+                                { title = LOC "$$$/LrGeniusAI/common/ScopeSelected=Selected photos only",              value = 'selected' },
+                                { title = LOC "$$$/LrGeniusAI/common/ScopeView=Current view",                          value = 'view' },
+                                { title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ScopeAll=All photos in catalog",         value = 'all' },
                                 { title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", value = 'missing' },
                             },
                         },
@@ -270,7 +270,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         f:push_button {
                             enabled = bind 'useKeywordHierarchy',
                             title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/editKeywordHierarchy=Edit categories",
-                            action = function () KeywordConfigProvider.showKeywordCategoryDialog() end,
+                            action = function() KeywordConfigProvider.showKeywordCategoryDialog() end,
                         },
                     },
                     f:row {
@@ -325,7 +325,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                             vertical_scroller = true,
                             f:edit_field {
                                 value = bind 'selectedPrompt',
-                                fill_horizontal = 1,
+                                width = 430,
                                 height_in_lines = 20,
                                 wraps = true,
                             },
@@ -411,7 +411,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                 },
             }, -- end Context & Save tab
-        }, -- end tab_view
+        },     -- end tab_view
     }
 
     local result = LrDialogs.presentModalDialog {
@@ -441,7 +441,7 @@ local function showAnalyzeAndIndexDialog(ctx)
         if props.modelKey then
             local sep = string.find(props.modelKey, "::", 1, true)
             if sep then
-                local prov = string.sub(props.modelKey, 1, sep-1)
+                local prov = string.sub(props.modelKey, 1, sep - 1)
                 prefs.ai = prov
             end
         end
@@ -470,7 +470,7 @@ local function showAnalyzeAndIndexDialog(ctx)
 
         return props
     end
-    
+
     return nil
 end
 
@@ -578,8 +578,8 @@ LrTasks.startAsyncTask(function()
         if props.modelKey then
             local sep = string.find(props.modelKey, "::", 1, true)
             if sep then
-                providerFromKey = string.sub(props.modelKey, 1, sep-1)
-                modelFromKey = string.sub(props.modelKey, sep+2)
+                providerFromKey = string.sub(props.modelKey, 1, sep - 1)
+                modelFromKey = string.sub(props.modelKey, sep + 2)
                 if modelFromKey == "" then modelFromKey = nil end
             else
                 providerFromKey = props.modelKey -- fallback
@@ -612,7 +612,8 @@ LrTasks.startAsyncTask(function()
         }
         if props.enableVertexAI and prefs and not Util.nilOrEmpty(prefs.vertexProjectId) then
             options.vertex_project_id = prefs.vertexProjectId:gsub("^%s*(.-)%s*$", "%1")
-            options.vertex_location = (prefs.vertexLocation and prefs.vertexLocation:gsub("^%s*(.-)%s*$", "%1")) or "us-central1"
+            options.vertex_location = (prefs.vertexLocation and prefs.vertexLocation:gsub("^%s*(.-)%s*$", "%1")) or
+                "us-central1"
         end
         -- Add API key for cloud providers if configured
         if providerFromKey == 'chatgpt' and prefs then
@@ -677,7 +678,8 @@ LrTasks.startAsyncTask(function()
                     LOC "$$$/LrGeniusAI/common/InvalidViewMessage=The 'Current view' scope only works when a folder or collection is selected."
                 )
             else
-                log:trace("No photos found to process in scope: " .. props.scope .. " errorStatus: " .. (errorStatus or "nil"))
+                log:trace("No photos found to process in scope: " ..
+                    props.scope .. " errorStatus: " .. (errorStatus or "nil"))
                 LrDialogs.message(
                     LOC "$$$/LrGeniusAI/common/NoPhotosTitle=No Photos Found",
                     LOC "$$$/LrGeniusAI/common/NoPhotosInScope=No photos found in the selected scope."
@@ -687,7 +689,8 @@ LrTasks.startAsyncTask(function()
         end
 
         -- Per-photo progress for import and analysis (denominator = photos to process, not 1)
-        progressScope:setCaption(LOC("$$$/LrGeniusAI/AnalyzeAndIndex/ProgressCount=^1 photos to process", tostring(#photosToProcess)))
+        progressScope:setCaption(LOC("$$$/LrGeniusAI/AnalyzeAndIndex/ProgressCount=^1 photos to process",
+            tostring(#photosToProcess)))
         progressScope:setPortionComplete(0, #photosToProcess)
 
         -- If photo context dialog is enabled, show it for each photo
@@ -701,7 +704,8 @@ LrTasks.startAsyncTask(function()
                     result, contextData, skipFromHere = showPhotoContextDialog(photo)
                     if result == "ok" then
                     elseif result == "cancel" then
-                        log:trace("User canceled photo context dialog for photo: " .. (photo:getFormattedMetadata('fileName') or "unknown"))
+                        log:trace("User canceled photo context dialog for photo: " ..
+                            (photo:getFormattedMetadata('fileName') or "unknown"))
                         progressScope:done()
                         return
                     end
@@ -743,13 +747,14 @@ LrTasks.startAsyncTask(function()
         end
 
         local status, processed, failed, processedPhotos, combinedError, combinedWarnings
-        status, processed, failed, processedPhotos, combinedError, combinedWarnings = SearchIndexAPI.analyzeAndIndexSelectedPhotos(photosToProcess, progressScope, options, false)
+        status, processed, failed, processedPhotos, combinedError, combinedWarnings = SearchIndexAPI
+            .analyzeAndIndexSelectedPhotos(photosToProcess, progressScope, options, false)
 
         if status ~= "allfailed" and props.enableMetadata and props.saveDataToCatalog and not usedInlineApply then
             log:trace("Saving metadata for processed photos...")
             local savedCount = 0
             local skippedCount = 0
-            
+
             local skipFromHere = false
 
             for _, photo in ipairs(processedPhotos) do
@@ -792,7 +797,8 @@ LrTasks.startAsyncTask(function()
                                 })
 
                                 -- Overwrite with validated data
-                                log:trace("Reimported validated metadata for photo: " .. (photo:getFormattedMetadata('fileName') or "unknown"))
+                                log:trace("Reimported validated metadata for photo: " ..
+                                    (photo:getFormattedMetadata('fileName') or "unknown"))
                                 SearchIndexAPI.importMetadataFromCatalog({ photo }, progressScope, false)
 
                                 savedCount = savedCount + 1
@@ -816,12 +822,12 @@ LrTasks.startAsyncTask(function()
                                 appendMetadata = props.appendMetadata,
                             })
 
-                            log:trace("Applied metadata without validation for photo (skipFromHere active): " .. (photo:getFormattedMetadata('fileName') or "unknown"))
+                            log:trace("Applied metadata without validation for photo (skipFromHere active): " ..
+                                (photo:getFormattedMetadata('fileName') or "unknown"))
                             SearchIndexAPI.importMetadataFromCatalog({ photo }, progressScope, false)
 
                             savedCount = savedCount + 1
                         end
-
                     elseif props.enableMetadata and response and response.metadata then
                         -- Directly save generated metadata without validation
                         MetadataManager.applyMetadata(photo, response, nil, {
@@ -841,7 +847,7 @@ LrTasks.startAsyncTask(function()
                 end
             end
         end
-        
+
         progressScope:done()
 
         -- Show completion message based on status
@@ -866,13 +872,17 @@ LrTasks.startAsyncTask(function()
             local successCount = processed - failed
             if combinedError then
                 ErrorHandler.handleError(
-                    LOC("$$$/LrGeniusAI/AnalyzeAndIndex/SomeFailedMessage=^1 of ^2 photos processed successfully. ^3 failed.", successCount, processed, failed),
+                    LOC(
+                        "$$$/LrGeniusAI/AnalyzeAndIndex/SomeFailedMessage=^1 of ^2 photos processed successfully. ^3 failed.",
+                        successCount, processed, failed),
                     combinedError
                 )
             else
                 LrDialogs.message(
                     LOC "$$$/LrGeniusAI/common/TaskCompleted/Title=Task Completed with Errors",
-                    LOC("$$$/LrGeniusAI/AnalyzeAndIndex/SomeFailedMessage=^1 of ^2 photos processed successfully. ^3 failed.", successCount, processed, failed)
+                    LOC(
+                        "$$$/LrGeniusAI/AnalyzeAndIndex/SomeFailedMessage=^1 of ^2 photos processed successfully. ^3 failed.",
+                        successCount, processed, failed)
                 )
             end
         else -- success
@@ -890,7 +900,8 @@ LrTasks.startAsyncTask(function()
                 )
             end
         end
-        
-        log:trace("AnalyzeAndIndexTask completed: Status=" .. status .. ", Processed=" .. processed .. ", Failed=" .. failed)
+
+        log:trace("AnalyzeAndIndexTask completed: Status=" ..
+            status .. ", Processed=" .. processed .. ", Failed=" .. failed)
     end)
 end)
