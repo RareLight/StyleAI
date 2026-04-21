@@ -194,8 +194,6 @@ local function showAnalyzeAndIndexDialog(ctx)
                         },
                         f:checkbox {
                             value = bind 'replaceSS',
-                        },
-                        f:static_text {
                             title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/replaceSS=Replace ß with ss",
                         },
                     },
@@ -537,13 +535,9 @@ local function showPhotoContextDialog(photo)
                 height = 10,
             },
         },
-        f:row {
-            f:checkbox {
-                value = bind 'skipFromHere'
-            },
-            f:static_text {
-                title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SkipPreflightFromHere=Use for all following pictures.",
-            },
+        f:checkbox {
+            value = bind 'skipFromHere',
+            title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SkipPreflightFromHere=Use for all following pictures.",
         },
     }
 
