@@ -1,11 +1,13 @@
+import service_chroma as chroma_service
+import service_persons as persons_service
+from config import logger, DB_PATH
+
 import os
 import json
 import shutil
 import tempfile
 import zipfile
 from datetime import datetime
-
-from config import logger, DB_PATH
 
 # Ordner für serverseitig aufgehobene Backups: Docker /data/db/backups, Standalone <db-path>/backups
 def _get_backups_dir():
@@ -14,8 +16,6 @@ def _get_backups_dir():
         return None
     return os.path.join(DB_PATH, "backups")
 
-import service_chroma as chroma_service
-import service_persons as persons_service
 
 
 def get_database_stats(catalog_id=None) -> dict:
