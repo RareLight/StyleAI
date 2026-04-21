@@ -9,11 +9,9 @@ import json
 # Import modularized components
 from config import logger, args, DB_PATH
 from service_version import get_backend_version_info
-logger.info("Imported config")
 
 # Lazy import server_lifecycle to speed up startup
 import server_lifecycle
-logger.info("Imported server_lifecycle")
 
 # Import blueprints only (services are imported by routes when needed)
 from routes_index import index_bp
