@@ -481,9 +481,9 @@ end
 --
 function Util.formatTimestampSafe(timestamp)
     timestamp = timestamp or LrDate.currentTime()
-    local date = LrDate.currentDateTable(timestamp)
-    return string.format("%04d-%02d-%02d_%02d-%02d-%02d",
-        date.year, date.month, date.day, date.hour, date.minute, date.second)
+    local w3c = LrDate.timeToW3CDate(timestamp)
+    -- Convert W3C format (YYYY-MM-DDTHH:MM:SSZ) to filesystem safe (YYYY-MM-DD_HH-MM-SS)
+    return w3c:gsub("T", "_"):gsub(":", "-"):sub(1, 19)
 end
 
 function Util.copyLogfilesToDesktop(extraInfo)
