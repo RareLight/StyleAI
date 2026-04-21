@@ -474,6 +474,18 @@ function Util.table_size(table)
     return count
 end
 
+---
+-- Formats a timestamp into a filesystem-safe string (YYYY-MM-DD_HH-MM-SS).
+-- @param timestamp number Unix timestamp (defaults to current time).
+-- @return string Formatted timestamp.
+--
+function Util.formatTimestampSafe(timestamp)
+    timestamp = timestamp or LrDate.currentTime()
+    local date = LrDate.currentDateTable(timestamp)
+    return string.format("%04d-%02d-%02d_%02d-%02d-%02d",
+        date.year, date.month, date.day, date.hour, date.minute, date.second)
+end
+
 function Util.copyLogfilesToDesktop(extraInfo)
     local progressScope = LrProgressScope({
         title = LOC "$$$/LrGeniusAI/PluginInfo/CopyingLogs=Copying log files to Desktop...",
@@ -590,7 +602,7 @@ function Util.copyLogfilesToDesktop(extraInfo)
     if LrFileUtils.exists(folder) then
         LrShell.revealInShell(folder)
     else
-        ErrorHandler.showError(LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/logfileCopyFailed=Logfile copy failed",
+        ErrorHandler.handleError(LOC "$$$/LrGeniusAI/Util/LogfileCopyFailed=Logfile copy failed",
             folder)
     end
 end

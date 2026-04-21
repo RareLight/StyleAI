@@ -219,7 +219,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 
             f:group_box {
                 width = groupBoxWidth,
-                title = "System health",
+                title = LOC "$$$/LrGeniusAI/Health/SummaryTitle=System Health",
 
                 f:row {
                     fill_horizontal = 1,
@@ -600,7 +600,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                     f:static_text {
                         alignment = 'right',
                         width = share 'promptLabelWidth',
-                        title = "Title",
+                        title = LOC "$$$/LrGeniusAI/UI/PromptTitle=Title",
                     },
                     propertyTable.promptTitleMenu,
                     f:push_button {
@@ -679,10 +679,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                     f:spacer { width = share 'labelWidth' },
                     f:checkbox {
                         value = bind 'usePreviewThumbnails',
-                    },
-                    f:static_text {
                         title = LOC "$$$/LrGeniusAI/PluginInfo/UsePreviewThumbnails=Use Lightroom previews for faster indexing",
-                        fill_horizontal = 1,
                     },
                 },
             },
