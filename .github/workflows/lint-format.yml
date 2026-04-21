@@ -1,0 +1,17 @@
+name: "Python lint/format check"
+on: [push, pull_request]
+jobs:
+  format-lint:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Linting
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "check --ignore E741"
+          src: "./server"
+      - name: Formatting
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --check --diff"
+          src: "./server"
