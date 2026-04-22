@@ -2,7 +2,7 @@ name: "Python lint/format check"
 on: [push, pull_request]
 jobs:
   format-lint:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Linting
