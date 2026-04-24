@@ -41,21 +41,22 @@ class MetadataGenerationRequest:
     user_prompt: Optional[str]
 
     # Context flags (whether to include additional context)
-    submit_gps: bool
     submit_keywords: bool
     submit_folder_names: bool
 
     # Optional context data
     existing_keywords: Optional[List[str]]
-    gps_coordinates: Optional[Dict[str, float]]
-    folder_names: Optional[str]
-    user_context: Optional[str]
-    date_time: Optional[str]
+    # Reverse-geocoded location data extracted from JPEG EXIF/IPTC by the backend.
+    # Keys: city, state, country, location, country_code, gps_latitude, gps_longitude
+    location_data: Optional[Dict[str, Any]] = None
+    folder_names: Optional[str] = None
+    user_context: Optional[str] = None
+    date_time: Optional[str] = None
 
     # Keyword hierarchy for structured output
     # Can be either a flat list of strings: ["People", "Activities"]
     # Or a nested dict: {"People": {"Family": {}, "Friends": {}}, "Activities": {}}
-    keyword_categories: Optional[Union[List[str], Dict[str, Any]]]
+    keyword_categories: Optional[Union[List[str], Dict[str, Any]]] = None
     bilingual_keywords: bool = False
     keyword_secondary_language: Optional[str] = None
 
@@ -104,15 +105,16 @@ class EditGenerationRequest:
     system_prompt: Optional[str]
     user_prompt: Optional[str]
 
-    submit_gps: bool
     submit_keywords: bool
     submit_folder_names: bool
 
     existing_keywords: Optional[List[str]]
-    gps_coordinates: Optional[Dict[str, float]]
-    folder_names: Optional[str]
-    user_context: Optional[str]
-    date_time: Optional[str]
+    # Reverse-geocoded location data extracted from JPEG EXIF/IPTC by the backend.
+    # Keys: city, state, country, location, country_code, gps_latitude, gps_longitude
+    location_data: Optional[Dict[str, Any]] = None
+    folder_names: Optional[str] = None
+    user_context: Optional[str] = None
+    date_time: Optional[str] = None
     edit_intent: Optional[str] = None
     style_strength: float = 0.5
     include_masks: bool = True
@@ -253,13 +255,12 @@ class LLMProviderBase(ABC):
         # Add contextual information if provided and enabled
         context_additions = []
 
-        if request.submit_gps and isinstance(request.gps_coordinates, dict):
-            lat = request.gps_coordinates.get("latitude")
-            lon = request.gps_coordinates.get("longitude")
-            if lat is not None and lon is not None:
-                context_additions.append(
-                    f"This photo was taken at the following coordinates: {lat}, {lon}"
-                )
+        if isinstance(request.location_data, dict) and request.location_data:
+            from service_exif import format_location_for_prompt
+
+            location_str = format_location_for_prompt(request.location_data)
+            if location_str:
+                context_additions.append(f"This photo was taken at: {location_str}")
 
         if request.submit_keywords and request.existing_keywords:
             # Must be a list; if still a string, split so join() doesn't iterate over characters (issue #45).
@@ -501,11 +502,12 @@ class LLMProviderBase(ABC):
                 context_additions.append(f"Existing keywords: {keywords_str}")
         if request.submit_folder_names and request.folder_names:
             context_additions.append(f"Folder context: {request.folder_names}")
-        if request.submit_gps and isinstance(request.gps_coordinates, dict):
-            lat = request.gps_coordinates.get("latitude")
-            lon = request.gps_coordinates.get("longitude")
-            if lat is not None and lon is not None:
-                context_additions.append(f"Photo coordinates: {lat}, {lon}")
+        if isinstance(request.location_data, dict) and request.location_data:
+            from service_exif import format_location_for_prompt
+
+            location_str = format_location_for_prompt(request.location_data)
+            if location_str:
+                context_additions.append(f"Photo taken in: {location_str}")
         if request.date_time:
             context_additions.append(f"Capture time: {request.date_time}")
         if request.language:
