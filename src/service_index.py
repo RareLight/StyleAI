@@ -513,12 +513,14 @@ def process_image_task(
                         else {}
                     )
 
-        # Determine what actually needs to be computed for each image
-        images_needing_embeddings = []
-        images_needing_metadata = []
-        images_needing_faces = []
-        images_needing_vertexai = []
-        images_needing_cull_phash = []
+        # Determine what actually needs to be computed for each image.
+        # Sets (not lists) because downstream code does `uuid in ...` membership
+        # checks inside per-image loops — O(1) vs O(n).
+        images_needing_embeddings = set()
+        images_needing_metadata = set()
+        images_needing_faces = set()
+        images_needing_vertexai = set()
+        images_needing_cull_phash = set()
 
         for _, uuid, _ in image_triplets:
             existing = existing_records.get(uuid, {})
@@ -528,20 +530,20 @@ def process_image_task(
                 regenerate_metadata or not existing.get("has_embedding", False)
             )
             if needs_embedding:
-                images_needing_embeddings.append(uuid)
+                images_needing_embeddings.add(uuid)
 
             # Check if Vertex AI embedding is needed
             if compute_vertexai and (
                 regenerate_metadata or not chroma_service.has_vertex_embedding(uuid)
             ):
-                images_needing_vertexai.append(uuid)
+                images_needing_vertexai.add(uuid)
 
             # Check if faces are needed
             needs_faces = compute_faces and (
                 regenerate_metadata or not chroma_service.faces_checked_for_photo(uuid)
             )
             if needs_faces:
-                images_needing_faces.append(uuid)
+                images_needing_faces.add(uuid)
 
             # Check if metadata is needed
             has_any_metadata = (
@@ -562,11 +564,11 @@ def process_image_task(
                     f"alt_text={bool(existing.get('alt_text'))}, keywords={bool(existing.get('keywords'))}"
                 )
             if needs_metadata:
-                images_needing_metadata.append(uuid)
+                images_needing_metadata.add(uuid)
 
             # cull_phash is part of culling foundation and should be backfilled in delta mode.
             if regenerate_metadata or not existing.get("cull_phash"):
-                images_needing_cull_phash.append(uuid)
+                images_needing_cull_phash.add(uuid)
 
         logger.info(
             f"Generation needed: {len(images_needing_embeddings)} embeddings, "
@@ -597,15 +599,14 @@ def process_image_task(
         siglip_model = server_lifecycle.get_model()
         siglip_processor = server_lifecycle.get_processor()
 
-        # Convert lists to sets for faster lookup in analyze_batch
         try:
             embeddings, metadata_results = analysis_service.analyze_batch(
                 image_triplets,
                 options,
                 siglip_model,
                 siglip_processor,
-                set(images_needing_embeddings),
-                set(images_needing_metadata),
+                images_needing_embeddings,
+                images_needing_metadata,
             )
         except Exception as e:
             logger.error(f"Error in analyze_batch: {str(e)}", exc_info=True)
@@ -623,7 +624,7 @@ def process_image_task(
                 vertex_uuids = []
                 vertex_bytes = []
                 for image_bytes, uuid, _ in image_triplets:
-                    if uuid in set(images_needing_vertexai):
+                    if uuid in images_needing_vertexai:
                         vertex_uuids.append(uuid)
                         vertex_bytes.append(image_bytes)
                 if vertex_bytes:

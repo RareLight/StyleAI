@@ -164,6 +164,11 @@ class AnalysisService:
                 uuids if options.get("compute_metadata", False) else []
             )
 
+        # Coerce to sets so the `uuid in ...` checks in the loops below are O(1)
+        # regardless of what the caller passed.
+        uuids_needing_embeddings = set(uuids_needing_embeddings)
+        uuids_needing_metadata = set(uuids_needing_metadata)
+
         embeddings = None
         if len(uuids_needing_embeddings) > 0:
             logger.debug(
