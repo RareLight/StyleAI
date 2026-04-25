@@ -229,12 +229,7 @@ function _G.JSON.assert(v, message)
 	return v
 end
 
-if prefs.periodicalUpdateCheck then
-	LrTasks.startAsyncTask(function()
-		-- Check for updates in the background
-		UpdateCheck.checkForNewVersionInBackground()
-	end)
-end
+-- Update check is now handled via Backend + Util.waitForServerDialog
 
 -- if prefs.onboardingCompleted == nil then
 -- 	Do not set to false yet, let the wizard trigger
