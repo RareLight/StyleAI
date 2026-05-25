@@ -61,6 +61,24 @@ local function showTrainDialog(ctx)
 					height_in_lines = 2,
 				}),
 			}),
+			f:row({
+				f:static_text({
+					title = LOC("$$$/LrGeniusAI/Training/KeywordsLabel=Keywords (optional):"),
+					width = 180,
+				}),
+				f:edit_field({
+					value = bind("userKeywords"),
+					width_in_chars = 30,
+					placeholder_string = LOC("$$$/LrGeniusAI/Training/KeywordsPlaceholder=e.g. macro, nature, golden hour"),
+				}),
+			}),
+			f:row({
+				f:static_text({
+					title = LOC("$$$/LrGeniusAI/Training/KeywordsHint=These keywords help group your style. Common: portrait, landscape, macro, street, architecture, wildlife"),
+					size = "small",
+					font = "italic",
+				}),
+			}),
 		}),
 		f:row({
 			f:static_text({
@@ -85,11 +103,13 @@ local function showTrainDialog(ctx)
 	prefs.trainingLabel = props.label
 	prefs.trainingSummary = props.summary
 	prefs.trainingScope = props.scope
+	prefs.trainingKeywords = props.userKeywords
 
 	return {
 		label = props.label,
 		summary = props.summary,
 		scope = props.scope,
+		userKeywords = props.userKeywords,
 	}
 end
 
@@ -191,6 +211,9 @@ LrTasks.startAsyncTask(function()
 				local exifOptions = Util.getPhotoExif(photo)
 				exifOptions.label = options.label
 				exifOptions.summary = options.summary
+				if options.userKeywords and options.userKeywords ~= "" then
+					exifOptions.user_keywords = options.userKeywords
+				end
 
 				-- Export a JPEG thumbnail for CLIP embedding + exposure analysis.
 				local exportedPath = SearchIndexAPI.exportPhotoForIndexing(photo)

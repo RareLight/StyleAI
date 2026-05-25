@@ -12,15 +12,14 @@ the regular LLM-backed edit pipeline (re-using existing few-shot injection).
 
 from __future__ import annotations
 
-
 from flask import Blueprint, jsonify, request
 
 from config import logger
-from routes.index import _extract_options, _extract_photo_ids
 from services import chroma as chroma_service
 from services import style_engine as style_engine
 from services.style_engine import CONFIDENCE_LOW
-from routes.edit import _persist_edit_recipe, _success_payload
+from utils.edit_persistence import _persist_edit_recipe, _success_payload
+from utils.request_parsing import _extract_options, _extract_photo_ids
 
 style_edit_bp = Blueprint("style_edit", __name__)
 
@@ -52,6 +51,10 @@ def style_edit():
         use_llm_fallback (bool string "true"/"false" — default: "false")
         focal_length    (number, mm — optional for better matching)
         capture_time    (float, unix timestamp — optional for time-of-day bucket)
+        camera_make     (string, optional)
+        camera_model    (string, optional)
+        camera_profile  (string, optional)
+        user_keywords   (string, comma-separated — optional for style matching)
 
     Standard options passed through ``_extract_options``:
         provider, model, api_key, language, temperature, etc.
@@ -103,6 +106,20 @@ def style_edit():
     except (TypeError, ValueError):
         pass
 
+    def _opt_str(key):
+        val = request.form.get(key, "").strip()
+        return val or None
+
+    camera_make = _opt_str("camera_make")
+    camera_model = _opt_str("camera_model")
+    camera_profile = _opt_str("camera_profile")
+
+    # Parse user keywords
+    user_keywords: list[str] | None = None
+    kw_raw = request.form.get("user_keywords", "").strip()
+    if kw_raw:
+        user_keywords = [k.strip() for k in kw_raw.split(",") if k.strip()]
+
     # Re-use existing CLIP embedding from index (best-effort)
     clip_embedding = _get_clip_embedding(photo_id)
 
@@ -115,6 +132,10 @@ def style_edit():
         focal_length=focal_length,
         capture_time_unix=capture_time_unix,
         clip_embedding=clip_embedding,
+        camera_make=camera_make,
+        camera_model=camera_model,
+        camera_profile=camera_profile,
+        user_keywords=user_keywords,
         min_confidence=CONFIDENCE_LOW,
     )
 

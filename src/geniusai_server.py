@@ -17,34 +17,25 @@ import server_lifecycle
 # Import blueprints only (services are imported by routes when needed)
 from routes.index import index_bp
 from routes.edit import edit_bp
-from routes.search import search_bp
 from routes.server import server_bp
 from routes.db import db_bp
-from routes.import_ import import_bp
-from routes.clip import clip_bp
-from routes.faces import faces_bp
 from routes.training import training_bp
 from routes.style_edit import style_edit_bp
-from routes.keywords import keywords_bp
+from routes.style_catalog import style_catalog_bp
 from services import chroma as service_chroma
-from services import persons as service_persons
 from services import db as service_db
 
 app = Flask(__name__)
 logger.info("Flask app created")
 
-# Register blueprints
+# Register blueprints — core style-learning endpoints only
 app.register_blueprint(index_bp)
 app.register_blueprint(edit_bp)
-app.register_blueprint(search_bp)
 app.register_blueprint(server_bp)
 app.register_blueprint(db_bp)
-app.register_blueprint(clip_bp)
-app.register_blueprint(import_bp)
-app.register_blueprint(faces_bp)
 app.register_blueprint(training_bp)
 app.register_blueprint(style_edit_bp)
-app.register_blueprint(keywords_bp)
+app.register_blueprint(style_catalog_bp)
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -257,9 +248,8 @@ if __name__ == "__main__":
     # Write PID for lifecycle management
     server_lifecycle.write_pid_file()
 
-    # Start optional background schedulers (housekeeping, clustering)
+    # Start optional background schedulers (housekeeping only)
     _start_housekeeping_scheduler()
-    _start_faces_cluster_scheduler()
 
     host = os.environ.get("GENIUSAI_HOST", "127.0.0.1")
     port = int(os.environ.get("GENIUSAI_PORT", "19819"))

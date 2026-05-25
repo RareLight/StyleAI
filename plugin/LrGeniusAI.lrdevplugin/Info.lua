@@ -23,95 +23,39 @@ return {
 
 	LrLibraryMenuItems = {
 		{
-			title = LOC("$$$/LrGeniusAI/Menu/AnalyzeAndIndex=Analyze & Index Photos..."),
-			file = "TaskAnalyzeAndIndex.lua",
-		},
-		{
 			title = LOC("$$$/LrGeniusAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
 			file = "TaskAiEditPhotos.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/AdvancedSearch=Advanced Search..."),
-			file = "TaskSemanticSearch.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/CullPhotos=Cull Similar Photos..."),
-			file = "TaskCullPhotos.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/RetrieveMetadata=Retrieve Metadata from Backend..."),
-			file = "TaskRetrieveMetadata.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/ImportMetadata=Import Metadata from Catalog..."),
-			file = "TaskImportMetadata.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/People=People..."),
-			file = "TaskPeople.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/FindSimilarFaces=Find Similar Faces..."),
-			file = "TaskFindSimilarFaces.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/FindSimilarImages=Find Similar Images..."),
-			file = "TaskFindSimilarImages.lua",
 		},
 		{
 			title = LOC("$$$/LrGeniusAI/Training/MenuItem=Save Edits as AI Training Examples..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/LrGeniusAI/Menu/DeduplicateKeywords=Deduplicate Keyword Synonyms..."),
-			file = "TaskDeduplicateKeywords.lua",
+			title = LOC("$$$/LrGeniusAI/StyleCatalog/MenuItem=Style Catalog..."),
+			file = "TaskStyleCatalog.lua",
+		},
+		{
+			title = LOC("$$$/LrGeniusAI/Menu/AnalyzeAndIndex=Index Photos for Style Matching..."),
+			file = "TaskAnalyzeAndIndex.lua",
 		},
 	},
 
 	LrExportMenuItems = {
 		{
-			title = LOC("$$$/LrGeniusAI/Menu/AnalyzeAndIndex=Analyze & Index Photos..."),
-			file = "TaskAnalyzeAndIndex.lua",
-		},
-		{
 			title = LOC("$$$/LrGeniusAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
 			file = "TaskAiEditPhotos.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/AdvancedSearch=Advanced Search..."),
-			file = "TaskSemanticSearch.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/CullPhotos=Cull Similar Photos..."),
-			file = "TaskCullPhotos.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/RetrieveMetadata=Retrieve Metadata from Backend..."),
-			file = "TaskRetrieveMetadata.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/ImportMetadata=Import Metadata from Catalog..."),
-			file = "TaskImportMetadata.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/People=People..."),
-			file = "TaskPeople.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/FindSimilarFaces=Find Similar Faces..."),
-			file = "TaskFindSimilarFaces.lua",
-		},
-		{
-			title = LOC("$$$/LrGeniusAI/Menu/FindSimilarImages=Find Similar Images..."),
-			file = "TaskFindSimilarImages.lua",
 		},
 		{
 			title = LOC("$$$/LrGeniusAI/Training/MenuItem=Save Edits as AI Training Examples..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/LrGeniusAI/Menu/DeduplicateKeywords=Deduplicate Keyword Synonyms..."),
-			file = "TaskDeduplicateKeywords.lua",
+			title = LOC("$$$/LrGeniusAI/StyleCatalog/MenuItem=Style Catalog..."),
+			file = "TaskStyleCatalog.lua",
+		},
+		{
+			title = LOC("$$$/LrGeniusAI/Menu/AnalyzeAndIndex=Index Photos for Style Matching..."),
+			file = "TaskAnalyzeAndIndex.lua",
 		},
 	},
 
