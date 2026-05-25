@@ -378,6 +378,10 @@ def generate_style_edit(
     focal_length: float | None = None,
     capture_time_unix: float | None = None,
     clip_embedding: list[float] | None = None,
+    camera_make: str | None = None,
+    camera_model: str | None = None,
+    camera_profile: str | None = None,
+    user_keywords: list[str] | None = None,
     min_confidence: float = CONFIDENCE_LOW,
 ) -> StyleEngineResult:
     """Generate a style-matched edit recipe without an LLM.
@@ -388,6 +392,10 @@ def generate_style_edit(
         focal_length:       Focal length in mm from EXIF (optional).
         capture_time_unix:  Capture Unix timestamp (optional).
         clip_embedding:     Pre-computed CLIP embedding (re-used from index if available).
+        camera_make:        Camera manufacturer string (optional).
+        camera_model:       Camera model string (optional).
+        camera_profile:     Camera profile name (optional).
+        user_keywords:      User-provided keywords for style matching (optional).
         min_confidence:     Below this confidence the caller should fall back to LLM.
 
     Returns:
@@ -425,7 +433,93 @@ def generate_style_edit(
     )
 
     # -----------------------------------------------------------------------
-    # Step 2: Candidate retrieval via CLIP similarity
+    # Step 2: Try style catalog match first (structured style groups)
+    # -----------------------------------------------------------------------
+    try:
+        from services import style_catalog as style_catalog_service
+
+        style_matches = style_catalog_service.find_matching_styles(
+            camera_make=camera_make,
+            camera_model=camera_model,
+            scene_tags=query_scene_tags,
+            exposure_metrics=query_exposure,
+            camera_profile=camera_profile,
+            user_keywords=user_keywords,
+            top_k=3,
+        )
+    except Exception as exc:
+        logger.debug("Style catalog lookup failed: %s", exc)
+        style_matches = []
+
+    if style_matches:
+        best_style, best_confidence = style_matches[0]
+        # Confidence thresholds for style catalog
+        if best_confidence >= CONFIDENCE_GOOD:
+            # High confidence: use style recipe directly
+            recipe_settings = style_catalog_service.get_style_recipe(
+                best_style["style_id"]
+            )
+            if recipe_settings:
+                summary = (
+                    f"Style: {best_style.get('style_name', 'Unknown')} "
+                    f"(confidence {best_confidence:.0%})"
+                )
+                recipe = _canonical_to_edit_recipe(recipe_settings, summary=summary)
+                logger.info(
+                    "Style engine catalog match: photo_id=%s style=%s confidence=%.3f",
+                    photo_id,
+                    best_style.get("style_name", "?"),
+                    best_confidence,
+                )
+                return StyleEngineResult(
+                    recipe=recipe,
+                    confidence=round(best_confidence, 3),
+                    matched_count=best_style.get("example_count", 0),
+                    engine="style_catalog",
+                    matched_filenames=[best_style.get("style_name", "")],
+                )
+        elif best_confidence >= CONFIDENCE_LOW and len(style_matches) >= 2:
+            # Medium confidence: blend top 2 styles
+            style1, conf1 = style_matches[0]
+            style2, conf2 = style_matches[1]
+            total_conf = conf1 + conf2
+            if total_conf > 0:
+                w1 = conf1 / total_conf
+                w2 = conf2 / total_conf
+                recipe1 = style_catalog_service.get_style_recipe(style1["style_id"])
+                recipe2 = style_catalog_service.get_style_recipe(style2["style_id"])
+                if recipe1 and recipe2:
+                    blended: dict[str, float] = {}
+                    all_keys = set(recipe1.keys()) | set(recipe2.keys())
+                    for key in all_keys:
+                        v1 = recipe1.get(key, 0.0)
+                        v2 = recipe2.get(key, 0.0)
+                        blended[key] = round(w1 * v1 + w2 * v2, 4)
+                    summary = (
+                        f"Blend: {style1.get('style_name', '?')} + "
+                        f"{style2.get('style_name', '?')} (confidence {best_confidence:.0%})"
+                    )
+                    recipe = _canonical_to_edit_recipe(blended, summary=summary)
+                    logger.info(
+                        "Style engine catalog blend: photo_id=%s styles=%s+%s confidence=%.3f",
+                        photo_id,
+                        style1.get("style_name", "?"),
+                        style2.get("style_name", "?"),
+                        best_confidence,
+                    )
+                    return StyleEngineResult(
+                        recipe=recipe,
+                        confidence=round(best_confidence, 3),
+                        matched_count=style1.get("example_count", 0) + style2.get("example_count", 0),
+                        engine="style_catalog_blend",
+                        matched_filenames=[
+                            style1.get("style_name", ""),
+                            style2.get("style_name", ""),
+                        ],
+                    )
+
+    # -----------------------------------------------------------------------
+    # Step 3: Fall back to per-example interpolation (legacy path)
     # -----------------------------------------------------------------------
     if clip_embedding is not None:
         candidates = training_service.query_similar_training_examples(
@@ -449,7 +543,7 @@ def generate_style_edit(
         )
 
     # -----------------------------------------------------------------------
-    # Step 3: Re-score candidates with composite criteria
+    # Step 4: Re-score candidates with composite criteria
     # -----------------------------------------------------------------------
     scored: list[tuple[dict[str, Any], float]] = []
     for candidate in candidates:
@@ -467,15 +561,13 @@ def generate_style_edit(
     scored.sort(key=lambda x: x[1], reverse=True)
 
     # -----------------------------------------------------------------------
-    # Step 4: Compute confidence from best candidate scores
+    # Step 5: Compute confidence from best candidate scores
     # -----------------------------------------------------------------------
-    # top_scores = [s for _, s in scored[:TOP_K_BLEND]]
-
     best_score = scored[0][1] if scored else 0.0
     confidence = round(best_score, 3)
 
     # -----------------------------------------------------------------------
-    # Step 5: Interpolate the top-K winners
+    # Step 6: Interpolate the top-K winners
     # -----------------------------------------------------------------------
     winners = scored[:TOP_K_BLEND]
     matched_filenames = [
@@ -483,15 +575,15 @@ def generate_style_edit(
         for ex, _ in winners
     ]
 
-    blended = interpolate_recipes(winners)
+    blended_recipe = interpolate_recipes(winners)
 
     # -----------------------------------------------------------------------
-    # Step 6: RAW-adaptive compensation
+    # Step 7: RAW-adaptive compensation
     # -----------------------------------------------------------------------
-    blended = adaptive_compensation(blended, query_exposure, winners)
+    blended_recipe = adaptive_compensation(blended_recipe, query_exposure, winners)
 
     # -----------------------------------------------------------------------
-    # Step 7: Build summary from top example labels
+    # Step 8: Build summary from top example labels
     # -----------------------------------------------------------------------
     labels = list(
         set(
@@ -508,10 +600,10 @@ def generate_style_edit(
     )
     summary = " — ".join(summary_parts)
 
-    recipe = _canonical_to_edit_recipe(blended, summary=summary)
+    recipe = _canonical_to_edit_recipe(blended_recipe, summary=summary)
 
     # -----------------------------------------------------------------------
-    # Step 8: Attach appropriate warning for low confidence
+    # Step 9: Attach appropriate warning for low confidence
     # -----------------------------------------------------------------------
     warning: str | None = None
     if confidence < CONFIDENCE_LOW:

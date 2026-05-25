@@ -70,6 +70,8 @@ def add_training_example():
     - capture_time      (form field, float unix timestamp, optional)
     - camera_make       (form field, string, optional)
     - camera_model      (form field, string, optional)
+    - camera_profile    (form field, string, optional)
+    - user_keywords     (form field, comma-separated string, optional – e.g. "macro,nature")
     - iso               (form field, float, optional)
     - aperture          (form field, float, optional)
     - shutter_speed     (form field, string, optional)
@@ -111,7 +113,14 @@ def add_training_example():
 
     camera_make = _opt_str("camera_make")
     camera_model_str = _opt_str("camera_model")
+    camera_profile = _opt_str("camera_profile")
     shutter_speed = _opt_str("shutter_speed")
+
+    # Parse comma-separated user keywords
+    user_keywords: list[str] | None = None
+    kw_raw = request.form.get("user_keywords", "").strip()
+    if kw_raw:
+        user_keywords = [k.strip() for k in kw_raw.split(",") if k.strip()]
 
     iso: float | None = None
     try:
@@ -155,6 +164,8 @@ def add_training_example():
             capture_time_unix=capture_time_unix,
             camera_make=camera_make,
             camera_model=camera_model_str,
+            camera_profile=camera_profile,
+            user_keywords=user_keywords,
             iso=iso,
             aperture=aperture,
             shutter_speed=shutter_speed,

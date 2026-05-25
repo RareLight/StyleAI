@@ -97,7 +97,35 @@ def _safe_unit(value: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Exposure metrics (computed from JPEG preview bytes)
+# Image analysis at ~3MP (2048px long edge) for histograms & scene features
+# ---------------------------------------------------------------------------
+
+_THUMBNAIL_LONG_EDGE = 2048  # ~3MP sweet spot for analysis speed vs accuracy
+
+
+def _load_thumbnail(image_bytes: bytes) -> tuple[np.ndarray, tuple[int, int]]:
+    """Load image and downscale to ~3MP for efficient analysis.
+
+    Returns (rgb_array, original_size).
+    """
+    from PIL import Image
+    import io
+
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    orig_size = image.size
+    if max(image.size) > _THUMBNAIL_LONG_EDGE:
+        scale = _THUMBNAIL_LONG_EDGE / float(max(image.size))
+        new_size = (
+            max(32, int(round(image.size[0] * scale))),
+            max(32, int(round(image.size[1] * scale))),
+        )
+        image = image.resize(new_size, Image.Resampling.LANCZOS)
+    rgb = np.asarray(image, dtype=np.float32) / 255.0
+    return rgb, orig_size
+
+
+# ---------------------------------------------------------------------------
+# Exposure metrics (computed from downscaled thumbnail)
 # ---------------------------------------------------------------------------
 
 
@@ -108,20 +136,7 @@ def compute_exposure_metrics(image_bytes: bytes) -> dict[str, float]:
     storage as ChromaDB metadata and multi-criteria matching.
     """
     try:
-        from PIL import Image
-        import io
-
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        # Downscale for speed – we only need aggregate statistics
-        if max(image.size) > 512:
-            scale = 512 / float(max(image.size))
-            new_size = (
-                max(32, int(round(image.size[0] * scale))),
-                max(32, int(round(image.size[1] * scale))),
-            )
-            image = image.resize(new_size, Image.Resampling.BILINEAR)
-
-        rgb = np.asarray(image, dtype=np.float32) / 255.0
+        rgb, _ = _load_thumbnail(image_bytes)
         gray = 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
 
         lum_mean = float(np.mean(gray))
@@ -175,6 +190,159 @@ def compute_exposure_metrics(image_bytes: bytes) -> dict[str, float]:
             "exp_warmth_proxy": 0.5,
             "exp_contrast": 0.0,
         }
+
+
+# ---------------------------------------------------------------------------
+# Perceptual histogram signature for style grouping
+# ---------------------------------------------------------------------------
+
+_L_BINS = 16
+_AB_BINS = 8
+
+
+def _rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
+    """Convert RGB [0,1] to LAB using D65 white point (simplified)."""
+    # Gamma correction (sRGB to linear)
+    mask = rgb > 0.04045
+    linear = np.where(mask, ((rgb + 0.055) / 1.055) ** 2.4, rgb / 12.92)
+
+    # XYZ conversion (D65)
+    x = 0.4124564 * linear[:, :, 0] + 0.3575761 * linear[:, :, 1] + 0.1804375 * linear[:, :, 2]
+    y = 0.2126729 * linear[:, :, 0] + 0.7151522 * linear[:, :, 1] + 0.0721750 * linear[:, :, 2]
+    z = 0.0193339 * linear[:, :, 0] + 0.1191920 * linear[:, :, 1] + 0.9503041 * linear[:, :, 2]
+
+    # Normalize for D65
+    xn, yn, zn = 0.95047, 1.00000, 1.08883
+    x, y, z = x / xn, y / yn, z / zn
+
+    # F function
+    def _f(t):
+        return np.where(t > 0.008856, t ** (1.0 / 3.0), 7.787 * t + 16.0 / 116.0)
+
+    fx, fy, fz = _f(x), _f(y), _f(z)
+
+    L = 116.0 * fy - 16.0
+    a = 500.0 * (fx - fy)
+    b = 200.0 * (fy - fz)
+
+    return np.stack([L, a, b], axis=-1)
+
+
+def compute_histogram_signature(image_bytes: bytes) -> dict[str, Any]:
+    """Compute a compact perceptual histogram signature for style grouping.
+
+    Uses LAB color space with 16 L bins + 8 a bins + 8 b bins.
+    Returns a dict with normalized histograms and derived statistics.
+    """
+    try:
+        rgb, orig_size = _load_thumbnail(image_bytes)
+        lab = _rgb_to_lab(rgb)
+
+        # Compute histograms
+        L = lab[:, :, 0].ravel()
+        a = lab[:, :, 1].ravel()
+        b = lab[:, :, 2].ravel()
+
+        # L: 0-100 → 16 bins
+        L_hist, _ = np.histogram(L, bins=_L_BINS, range=(0, 100))
+        L_hist = L_hist.astype(np.float32)
+        L_hist = L_hist / (L_hist.sum() + 1e-8)
+
+        # a: -128 to 128 → 8 bins
+        a_hist, _ = np.histogram(a, bins=_AB_BINS, range=(-128, 128))
+        a_hist = a_hist.astype(np.float32)
+        a_hist = a_hist / (a_hist.sum() + 1e-8)
+
+        # b: -128 to 128 → 8 bins
+        b_hist, _ = np.histogram(b, bins=_AB_BINS, range=(-128, 128))
+        b_hist = b_hist.astype(np.float32)
+        b_hist = b_hist / (b_hist.sum() + 1e-8)
+
+        # Compact summary statistics for quick comparison
+        L_mean = float(np.mean(L))
+        L_std = float(np.std(L))
+        a_mean = float(np.mean(a))
+        b_mean = float(np.mean(b))
+        chroma_mean = float(np.mean(np.sqrt(a**2 + b**2)))
+
+        # Tonal distribution (percentile-based, profile-independent)
+        L_sorted = np.sort(L)
+        n = len(L_sorted)
+        shadow_level = float(L_sorted[int(n * 0.10)])  # 10th percentile
+        mid_level = float(L_sorted[int(n * 0.50)])     # median
+        highlight_level = float(L_sorted[int(n * 0.90)])  # 90th percentile
+
+        return {
+            "hist_L": L_hist.tolist(),
+            "hist_a": a_hist.tolist(),
+            "hist_b": b_hist.tolist(),
+            "hist_L_mean": round(L_mean / 100.0, 4),  # normalize to 0..1
+            "hist_L_std": round(L_std / 100.0, 4),
+            "hist_a_mean": round((a_mean + 128.0) / 256.0, 4),  # normalize to 0..1
+            "hist_b_mean": round((b_mean + 128.0) / 256.0, 4),
+            "hist_chroma": round(chroma_mean / 128.0, 4),
+            "hist_shadow_level": round(shadow_level / 100.0, 4),
+            "hist_mid_level": round(mid_level / 100.0, 4),
+            "hist_highlight_level": round(highlight_level / 100.0, 4),
+            "hist_orig_width": orig_size[0],
+            "hist_orig_height": orig_size[1],
+        }
+    except Exception as exc:
+        logger.warning("compute_histogram_signature failed: %s", exc)
+        return {
+            "hist_L": [1.0 / _L_BINS] * _L_BINS,
+            "hist_a": [1.0 / _AB_BINS] * _AB_BINS,
+            "hist_b": [1.0 / _AB_BINS] * _AB_BINS,
+            "hist_L_mean": 0.5,
+            "hist_L_std": 0.0,
+            "hist_a_mean": 0.5,
+            "hist_b_mean": 0.5,
+            "hist_chroma": 0.0,
+            "hist_shadow_level": 0.1,
+            "hist_mid_level": 0.5,
+            "hist_highlight_level": 0.9,
+        }
+
+
+def histogram_distance(sig1: dict[str, Any], sig2: dict[str, Any]) -> float:
+    """Compute distance between two histogram signatures.
+
+    Returns 0..1 where 0 = identical, 1 = completely different.
+    Uses chi-square on histogram bins + euclidean on summary stats.
+    """
+    try:
+        # Chi-square on histogram bins
+        chi_sq = 0.0
+        for key in ("hist_L", "hist_a", "hist_b"):
+            h1 = np.array(sig1.get(key, []), dtype=np.float32)
+            h2 = np.array(sig2.get(key, []), dtype=np.float32)
+            if len(h1) == 0 or len(h2) == 0 or len(h1) != len(h2):
+                continue
+            # Add epsilon to avoid division by zero
+            denom = h1 + h2 + 1e-8
+            diff = h1 - h2
+            chi_sq += float(np.sum(diff ** 2 / denom))
+
+        # Normalize chi-square (empirical: max useful value ~4.0 for these bin counts)
+        chi_component = min(1.0, chi_sq / 4.0)
+
+        # Euclidean on summary stats (all normalized 0..1)
+        stat_keys = [
+            "hist_L_mean", "hist_L_std", "hist_chroma",
+            "hist_shadow_level", "hist_mid_level", "hist_highlight_level",
+        ]
+        stat_diffs = []
+        for key in stat_keys:
+            v1 = sig1.get(key, 0.5)
+            v2 = sig2.get(key, 0.5)
+            stat_diffs.append((float(v1) - float(v2)) ** 2)
+        stat_dist = np.sqrt(sum(stat_diffs) / len(stat_diffs)) if stat_diffs else 0.0
+
+        # Weighted combination (histogram shape matters more than exact levels)
+        return 0.6 * chi_component + 0.4 * stat_dist
+    except Exception as exc:
+        logger.debug("histogram_distance failed: %s", exc)
+        return 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +523,8 @@ def add_training_example(
     capture_time_unix: float | None = None,
     camera_make: str | None = None,
     camera_model: str | None = None,
+    camera_profile: str | None = None,
+    user_keywords: list[str] | None = None,
     iso: float | None = None,
     aperture: float | None = None,
     shutter_speed: str | None = None,
@@ -374,6 +544,8 @@ def add_training_example(
         capture_time_unix: Capture time as Unix timestamp.
         camera_make:      Camera manufacturer string.
         camera_model:     Camera model string.
+        camera_profile:   Camera profile name (e.g. "Nikon Z7 Linear").
+        user_keywords:    User-provided keywords (e.g. ["macro", "nature"]).
         iso:              ISO value.
         aperture:         Aperture f-number.
         shutter_speed:    Shutter speed string (e.g. "1/250").
@@ -402,6 +574,10 @@ def add_training_example(
         metadata["filename"] = filename
     if summary:
         metadata["summary"] = summary
+    if user_keywords:
+        # Store as comma-separated, normalized (lowercase, no spaces)
+        normalized = [k.strip().lower().replace(" ", "_") for k in user_keywords if k.strip()]
+        metadata["user_keywords"] = json.dumps(normalized, ensure_ascii=False)
 
     # EXIF categorical fields
     metadata["focal_length_bucket"] = focal_length_bucket(focal_length)
@@ -410,6 +586,8 @@ def add_training_example(
         metadata["camera_make"] = camera_make[:64]
     if camera_model:
         metadata["camera_model"] = camera_model[:64]
+    if camera_profile:
+        metadata["camera_profile"] = camera_profile[:128]
     if iso is not None:
         metadata["iso"] = float(iso)
     if aperture is not None:
@@ -421,6 +599,10 @@ def add_training_example(
     if image_bytes:
         exp_metrics = compute_exposure_metrics(image_bytes)
         metadata.update(exp_metrics)
+
+        # Perceptual histogram signature for style grouping (profile-independent)
+        hist_sig = compute_histogram_signature(image_bytes)
+        metadata["histogram_signature"] = json.dumps(hist_sig, ensure_ascii=False)
 
     # Scene-type tags from CLIP zero-shot
     scene_tags = compute_scene_tags(embedding)
@@ -445,6 +627,22 @@ def add_training_example(
         logger.info(
             "Added training example photo_id=%s scene_tags=%s", photo_id, scene_tags
         )
+
+    # Update style catalog
+    try:
+        from services import style_catalog as style_catalog_service
+
+        style_catalog_service.update_style_for_example(
+            photo_id=photo_id,
+            camera_make=camera_make,
+            camera_model=camera_model,
+            camera_profile=camera_profile,
+            scene_tags=scene_tags,
+            exposure_metrics=metadata if image_bytes else None,
+            user_keywords=user_keywords or [],
+        )
+    except Exception as exc:
+        logger.warning("Style catalog update failed for %s: %s", photo_id, exc)
 
 
 def delete_training_example(photo_id: str) -> bool:
@@ -504,7 +702,16 @@ def list_training_examples() -> list[dict[str, Any]]:
                 "has_embedding": bool(meta.get("has_embedding", False)),
                 "focal_length_bucket": meta.get("focal_length_bucket", "unknown"),
                 "time_of_day_bucket": meta.get("time_of_day_bucket", "unknown"),
-                "scene_tags": _safe_json_list(meta.get("scene_tags", "[]")),
+                "scene_tags": meta.get("scene_tags", "[]"),
+                "user_keywords": meta.get("user_keywords", "[]"),
+                "camera_make": meta.get("camera_make", ""),
+                "camera_model": meta.get("camera_model", ""),
+                "camera_profile": meta.get("camera_profile", ""),
+                "canonical_settings": meta.get("canonical_settings", "{}"),
+                "develop_settings": meta.get("develop_settings", "{}"),
+                "histogram_signature": meta.get("histogram_signature", "{}"),
+                "exp_luminance_mean": meta.get("exp_luminance_mean", "0.5"),
+                "exp_contrast": meta.get("exp_contrast", "0.0"),
             }
         )
     examples.sort(key=lambda x: x["captured_at"], reverse=True)
