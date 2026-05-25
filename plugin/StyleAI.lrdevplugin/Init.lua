@@ -63,8 +63,36 @@ if _G.prefs.vertexLocation == nil then
 	_G.prefs.vertexLocation = "us-central1"
 end
 
-if _G.prefs.generateTitle == nil then
-	_G.prefs.generateTitle = true
+if _G.prefs.generateLanguage == nil then
+	_G.prefs.generateLanguage = Defaults.defaultGenerateLanguage
+end
+
+if _G.prefs.exportSize == nil then
+	_G.prefs.exportSize = Defaults.defaultExportSize
+end
+
+if _G.prefs.exportQuality == nil then
+	_G.prefs.exportQuality = Defaults.defaultExportQuality
+end
+
+if _G.prefs.usePreviewThumbnails == nil then
+	_G.prefs.usePreviewThumbnails = true
+end
+
+if _G.prefs.showPhotoContextDialog == nil then
+	_G.prefs.showPhotoContextDialog = true
+end
+
+if _G.prefs.submitKeywords == nil then
+	_G.prefs.submitKeywords = true
+end
+
+if _G.prefs.temperature == nil then
+	_G.prefs.temperature = Defaults.defaultTemperature
+end
+
+if _G.prefs.maxTokens == nil then
+	_G.prefs.maxTokens = Defaults.defaultMaxTokens
 end
 
 if _G.prefs.generateKeywords == nil then
@@ -247,8 +275,5 @@ LrTasks.startAsyncTask(function()
 
 	if SearchIndexAPI.startServer() then
 		SearchIndexAPI.checkServerHealth()
-		if prefs.useClip then
-			SearchIndexAPI.isClipReady() -- To trigger load of the CLIP model.
-		end
 	end
 end)

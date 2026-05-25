@@ -230,6 +230,14 @@ function Util.getPhotoExif(photo)
 		exif.shutter_speed = ss
 	end
 
+	-- Camera Profile (from develop settings — critical for profile-aware style matching)
+	local okDev, devSettings = LrTasks.pcall(function()
+		return photo:getDevelopSettings()
+	end)
+	if okDev and type(devSettings) == "table" and type(devSettings.Profile) == "string" and devSettings.Profile ~= "" then
+		exif.camera_profile = devSettings.Profile
+	end
+
 	return exif
 end
 

@@ -1,17 +1,7 @@
 PluginInfoDialogSections = {}
 
 function PluginInfoDialogSections.startDialog(propertyTable)
-	propertyTable.useClip = prefs.useClip
-
-	propertyTable.clipReady = false
 	propertyTable.keepChecksRunning = true
-	LrTasks.startAsyncTask(function(context)
-		propertyTable.clipReady = SearchIndexAPI.isClipReady()
-		while propertyTable.keepChecksRunning do
-			LrTasks.sleep(5)
-			propertyTable.clipReady = SearchIndexAPI.isClipReady()
-		end
-	end)
 	propertyTable.logging = prefs.logging
 	propertyTable.geminiApiKey = prefs.geminiApiKey
 	propertyTable.chatgptApiKey = prefs.chatgptApiKey
@@ -104,16 +94,6 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 				status = "critical"
 				table.insert(issues, LOC("$$$/StyleAI/Health/BackendFailed=Backend server is not reachable."))
 				color = { 0.8, 0, 0 }
-			end
-			if not health.clip and prefs.useClip then
-				if status ~= "critical" then
-					status = "warning"
-					color = { 0.8, 0.8, 0 }
-				end
-				table.insert(
-					issues,
-					LOC("$$$/StyleAI/Health/ClipMissing=CLIP model for semantic search is missing.")
-				)
 			end
 			if not health.gemini and not health.chatgpt and not health.ollama and not health.lmstudio then
 				if status ~= "critical" then
@@ -883,34 +863,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:group_box({
 				width = groupBoxWidth,
-				f:checkbox({
-					value = bind("useClip"),
-					title = LOC("$$$/StyleAI/PluginInfo/UseOpenClip=Use OpenCLIP AI model for advanced search"),
-				}),
-				f:group_box({
-					fill_horizontal = 1,
-					title = LOC("$$$/StyleAI/PluginInfo/AdvancedSearchTitle=Advanced search"),
-					f:row({
-						fill_horizontal = 1,
-						f:checkbox({
-							value = bind("clipReady"),
-							enabled = false,
-							title = LOC("$$$/StyleAI/PluginInfo/OpenClipReady=OpenCLIP AI model is ready"),
-						}),
-						f:push_button({
-							title = LOC("$$$/StyleAI/PluginInfo/DownloadNow=Download now"),
-							action = function(button)
-								LrTasks.startAsyncTask(function()
-									SearchIndexAPI.startClipDownload()
-								end)
-							end,
-							enabled = bind("useClip"),
-						}),
-					}),
-				}),
-			}),
-			f:group_box({
-				width = groupBoxWidth,
 				title = LOC("$$$/StyleAI/Training/SectionTitle=My Style Profile"),
 				f:row({
 					fill_horizontal = 1,
@@ -1131,8 +1083,6 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 		end)
 	end
 
-	prefs.useClip = propertyTable.useClip
-
 	if propertyTable.backendServerUrl and propertyTable.backendServerUrl:gsub("^%s*(.-)%s*$", "%1") ~= "" then
 		prefs.backendServerUrl = propertyTable.backendServerUrl:gsub("^%s*(.-)%s*$", "%1")
 	else
@@ -1151,5 +1101,5 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 		prefs.lmstudioBaseUrl = Defaults.defaultLmStudioBaseUrl
 	end
 
-	propertyTable.keepChecksRunning = false -- Stop the async task checking for CLIP readiness
+	propertyTable.keepChecksRunning = false -- Stop background health polling
 end

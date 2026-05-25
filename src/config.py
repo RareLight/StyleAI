@@ -263,7 +263,7 @@ def get_current_log_path() -> str:
 
     # Default paths determined at startup
     if sys.platform == "darwin":  # macOS
-        return "/Library/Logs/StyleAI/service.log"
+        return os.path.join(os.path.expanduser("~"), "Library", "Logs", "StyleAI", "service.log")
     elif sys.platform == "win32":  # Windows
         return os.path.join(
             os.environ.get("LOCALAPPDATA", ""),
@@ -354,6 +354,12 @@ def _rotate_log_on_startup(log_path: str, backup_count: int) -> None:
 
 
 def _file_log_handler():
+    # Ensure log directory exists before creating the handler
+    try:
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+    except Exception:
+        pass
+
     if _is_running_in_docker():
         return logging.FileHandler(LOG_PATH, encoding="utf-8")
     # Local: on every start create a new log file; keep N backups (STYLEAI_LOG_ROTATE_BACKUPS).

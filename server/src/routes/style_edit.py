@@ -41,20 +41,127 @@ def _get_clip_embedding(photo_id: str):
     return None
 
 
+def _run_single_style_edit(
+    photo_id: str,
+    image_bytes: bytes,
+    filename: str,
+    options: dict[str, Any],
+    *,
+    focal_length: float | None = None,
+    capture_time_unix: float | None = None,
+    camera_make: str | None = None,
+    camera_model: str | None = None,
+    camera_profile: str | None = None,
+    user_keywords: list[str] | None = None,
+    use_llm_fallback: bool = False,
+) -> dict[str, Any]:
+    """Run the style engine for a single photo. Returns a result dict."""
+    clip_embedding = _get_clip_embedding(photo_id)
+
+    result = style_engine.generate_style_edit(
+        photo_id=photo_id,
+        image_bytes=image_bytes,
+        focal_length=focal_length,
+        capture_time_unix=capture_time_unix,
+        clip_embedding=clip_embedding,
+        camera_make=camera_make,
+        camera_model=camera_model,
+        camera_profile=camera_profile,
+        user_keywords=user_keywords,
+        min_confidence=CONFIDENCE_LOW,
+    )
+
+    # LLM fallback when style engine couldn't produce a confident result
+    if (
+        result.engine == "none" or result.confidence < CONFIDENCE_LOW
+    ) and use_llm_fallback:
+        logger.info(
+            "Style engine confidence %.3f below threshold for photo_id=%s, falling back to LLM",
+            result.confidence,
+            photo_id,
+        )
+        from services.metadata import get_analysis_service
+        from services import training as training_service
+
+        if clip_embedding is not None:
+            training_examples = training_service.query_similar_training_examples(
+                clip_embedding, n_results=3
+            )
+        else:
+            training_examples = []
+        options["use_training_style"] = False
+        options["_injected_training_examples"] = training_examples
+
+        analysis_service = get_analysis_service()
+        llm_response = analysis_service.generate_edit_recipe_single(
+            photo_id, image_bytes, options
+        )
+
+        if not llm_response.success or not llm_response.recipe:
+            return {
+                "status": "error",
+                "engine": "llm",
+                "photo_id": photo_id,
+                "error": llm_response.error or "LLM edit generation failed",
+            }
+
+        _persist_edit_recipe(photo_id, filename, llm_response.recipe, options)
+        payload = _success_payload(
+            photo_id, llm_response.recipe, options, warning=llm_response.warning
+        )
+        payload["engine"] = "llm"
+        payload["confidence"] = round(result.confidence, 3)
+        payload["matched_examples"] = result.matched_count
+        payload["style_engine_note"] = result.warning
+        payload["input_tokens"] = llm_response.input_tokens
+        payload["output_tokens"] = llm_response.output_tokens
+        return payload
+
+    # Style engine had no result and fallback disabled — return error
+    if result.engine == "none":
+        return {
+            "status": "error",
+            "engine": "none",
+            "photo_id": photo_id,
+            "confidence": 0.0,
+            "matched_examples": 0,
+            "error": result.warning or "Style engine could not produce a result.",
+        }
+
+    # Successful style engine result
+    if not result.recipe:
+        return {
+            "status": "error",
+            "engine": "style",
+            "photo_id": photo_id,
+            "confidence": round(result.confidence, 3),
+            "matched_examples": result.matched_count,
+            "error": "Style engine returned an empty recipe.",
+        }
+
+    _persist_edit_recipe(photo_id, filename, result.recipe, options)
+    payload = _success_payload(photo_id, result.recipe, options, warning=result.warning)
+    payload["engine"] = result.engine
+    payload["confidence"] = round(result.confidence, 3)
+    payload["matched_examples"] = result.matched_count
+    payload["matched_filenames"] = result.matched_filenames
+    return payload
+
+
 @style_edit_bp.route("/style_edit", methods=["POST"])
 def style_edit():
-    """Generate a style-matched edit recipe.
+    """Generate style-matched edit recipes for one or more photos.
 
-    Multipart/form-data fields:
-        image           (file, JPEG/PNG preview — required)
-        photo_id        (str — required)
-        use_llm_fallback (bool string "true"/"false" — default: "false")
-        focal_length    (number, mm — optional for better matching)
-        capture_time    (float, unix timestamp — optional for time-of-day bucket)
-        camera_make     (string, optional)
-        camera_model    (string, optional)
-        camera_profile  (string, optional)
-        user_keywords   (string, comma-separated — optional for style matching)
+    Multipart/form-data fields (per photo, use array notation [] for batch):
+        image[]           (file, JPEG/PNG preview — required)
+        photo_id[]        (str — required)
+        use_llm_fallback  (bool string "true"/"false" — default: "false")
+        focal_length      (number, mm — optional, shared across batch)
+        capture_time      (float, unix timestamp — optional)
+        camera_make       (string, optional)
+        camera_model      (string, optional)
+        camera_profile    (string, optional)
+        user_keywords     (string, comma-separated — optional)
 
     Standard options passed through ``_extract_options``:
         provider, model, api_key, language, temperature, etc.
@@ -71,19 +178,7 @@ def style_edit():
                 "error": "Mismatch between number of images and photo IDs, or no images provided"
             }
         ), 400
-    if len(images) != 1:
-        return jsonify(
-            {
-                "error": "The /style_edit endpoint currently supports exactly one photo per request"
-            }
-        ), 400
 
-    file = images[0]
-    photo_id = photo_ids[0]
-    if not file or not photo_id:
-        return jsonify({"error": "Missing file or photo_id"}), 400
-
-    image_bytes = file.read()
     use_llm_fallback = request.form.get("use_llm_fallback", "false").lower() in (
         "1",
         "true",
@@ -114,80 +209,45 @@ def style_edit():
     camera_model = _opt_str("camera_model")
     camera_profile = _opt_str("camera_profile")
 
-    # Parse user keywords
     user_keywords: list[str] | None = None
     kw_raw = request.form.get("user_keywords", "").strip()
     if kw_raw:
         user_keywords = [k.strip() for k in kw_raw.split(",") if k.strip()]
 
-    # Re-use existing CLIP embedding from index (best-effort)
-    clip_embedding = _get_clip_embedding(photo_id)
-
-    # -------------------------------------------------------------------
-    # Run the style engine
-    # -------------------------------------------------------------------
-    result = style_engine.generate_style_edit(
-        photo_id=photo_id,
-        image_bytes=image_bytes,
-        focal_length=focal_length,
-        capture_time_unix=capture_time_unix,
-        clip_embedding=clip_embedding,
-        camera_make=camera_make,
-        camera_model=camera_model,
-        camera_profile=camera_profile,
-        user_keywords=user_keywords,
-        min_confidence=CONFIDENCE_LOW,
-    )
-
-    # -------------------------------------------------------------------
-    # LLM fallback when style engine couldn't produce a confident result
-    # -------------------------------------------------------------------
-    if (
-        result.engine == "none" or result.confidence < CONFIDENCE_LOW
-    ) and use_llm_fallback:
-        logger.info(
-            "Style engine confidence %.3f below threshold for photo_id=%s, falling back to LLM",
-            result.confidence,
-            photo_id,
-        )
-        from services.metadata import get_analysis_service
-        from services import training as training_service
-
-        # Inject training examples as few-shot context in the LLM request
-        if clip_embedding is not None:
-            training_examples = training_service.query_similar_training_examples(
-                clip_embedding, n_results=3
-            )
-        else:
-            training_examples = []
-        options["use_training_style"] = False  # already handled above
-        options["_injected_training_examples"] = training_examples
-
-        analysis_service = get_analysis_service()
-        llm_response = analysis_service.generate_edit_recipe_single(
-            photo_id, image_bytes, options
-        )
-
-        if not llm_response.success or not llm_response.recipe:
-            return jsonify(
+    # Process each photo
+    results: list[dict[str, Any]] = []
+    for file, photo_id in zip(images, photo_ids):
+        if not file or not photo_id:
+            results.append(
                 {
                     "status": "error",
-                    "engine": "llm",
-                    "error": llm_response.error or "LLM edit generation failed",
+                    "photo_id": photo_id or "unknown",
+                    "error": "Missing file or photo_id",
                 }
-            ), 500
+            )
+            continue
 
-        _persist_edit_recipe(photo_id, file.filename, llm_response.recipe, options)
-        payload = _success_payload(
-            photo_id, llm_response.recipe, options, warning=llm_response.warning
+        image_bytes = file.read()
+        result = _run_single_style_edit(
+            photo_id=photo_id,
+            image_bytes=image_bytes,
+            filename=file.filename or "",
+            options=options,
+            focal_length=focal_length,
+            capture_time_unix=capture_time_unix,
+            camera_make=camera_make,
+            camera_model=camera_model,
+            camera_profile=camera_profile,
+            user_keywords=user_keywords,
+            use_llm_fallback=use_llm_fallback,
         )
-        payload["engine"] = "llm"
-        payload["confidence"] = round(result.confidence, 3)
-        payload["matched_examples"] = result.matched_count
-        payload["style_engine_note"] = result.warning
-        payload["input_tokens"] = llm_response.input_tokens
-        payload["output_tokens"] = llm_response.output_tokens
-        return jsonify(payload), 200
+        results.append(result)
+
+    return jsonify({
+        "status": "ok",
+        "batch_size": len(results),
+        "results": results,
+    }), 200
 
     # -------------------------------------------------------------------
     # Style engine had no result and fallback disabled — return error

@@ -167,10 +167,9 @@ LrTasks.startAsyncTask(function()
 		})
 		progressScope:setPortionComplete(0, #photos)
 
-		local successCount = 0
-		local errorCount = 0
-		local errorMessages = {}
-		local backendWarnings = {}
+		-- Collect all examples first (no network calls yet).
+		local examples = {}
+		local collectErrors = {}
 
 		for index, photo in ipairs(photos) do
 			if progressScope:isCanceled() then
@@ -180,7 +179,7 @@ LrTasks.startAsyncTask(function()
 			local fileName = photo:getFormattedMetadata("fileName") or "Photo"
 			progressScope:setCaption(
 				string.format(
-					LOC("$$$/StyleAI/Training/ProgressCaption=Processing %s (%d of %d)"),
+					LOC("$$$/StyleAI/Training/ProgressCaption=Preparing %s (%d of %d)"),
 					fileName,
 					index,
 					#photos
@@ -204,50 +203,73 @@ LrTasks.startAsyncTask(function()
 			local photoId, photoIdErr = SearchIndexAPI.getPhotoIdForPhoto(photo)
 			if not photoId then
 				log:error("Failed to resolve photo ID for " .. fileName .. ": " .. tostring(photoIdErr))
-				table.insert(errorMessages, fileName .. ": " .. tostring(photoIdErr))
-				errorCount = errorCount + 1
+				table.insert(collectErrors, fileName .. ": " .. tostring(photoIdErr))
 			else
 				-- Collect EXIF metadata for richer style matching using standardized utility.
 				local exifOptions = Util.getPhotoExif(photo)
-				exifOptions.label = options.label
-				exifOptions.summary = options.summary
+
+			local example = {
+				photo_id = photoId,
+				develop_settings = developSettings or {},
+				label = options.label,
+				summary = options.summary,
+				focal_length = exifOptions.focal_length,
+				capture_time = exifOptions.capture_time,
+				camera_make = exifOptions.camera_make,
+				camera_model = exifOptions.camera_model,
+				camera_profile = exifOptions.camera_profile,
+				iso = exifOptions.iso,
+				aperture = exifOptions.aperture,
+				shutter_speed = exifOptions.shutter_speed,
+			}
 				if options.userKeywords and options.userKeywords ~= "" then
-					exifOptions.user_keywords = options.userKeywords
+					example.user_keywords = options.userKeywords
 				end
 
-				-- Export a JPEG thumbnail for CLIP embedding + exposure analysis.
-				local exportedPath = SearchIndexAPI.exportPhotoForIndexing(photo)
-
-				local ok, resp = SearchIndexAPI.addTrainingExample(
-					photoId,
-					exportedPath, -- may be nil; server will still store settings
-					developSettings,
-					exifOptions
-				)
-
-				-- Clean up temp file.
-				if exportedPath then
-					LrTasks.pcall(function()
-						if LrFileUtils.exists(exportedPath) then
-							LrFileUtils.delete(exportedPath)
-						end
-					end)
-				end
-
-				if ok then
-					successCount = successCount + 1
-					log:info("Saved training example for " .. fileName)
-					if resp and resp.warning then
-						table.insert(backendWarnings, fileName .. ": " .. tostring(resp.warning))
-					end
-				else
-					errorCount = errorCount + 1
-					table.insert(errorMessages, fileName .. ": " .. tostring(resp))
-					log:error("Failed to save training example for " .. fileName .. ": " .. tostring(resp))
-				end
+				table.insert(examples, example)
 			end
 
 			progressScope:setPortionComplete(index, #photos)
+		end
+
+		-- Send all examples in a single batch request.
+		local successCount = 0
+		local errorCount = #collectErrors
+		local errorMessages = {}
+		for _, msg in ipairs(collectErrors) do
+			table.insert(errorMessages, msg)
+		end
+		local backendWarnings = {}
+
+		if #examples > 0 then
+			progressScope:setCaption(
+				LOC("$$$/StyleAI/Training/SendingBatch=Sending ^1 examples to StyleAI server...", tostring(#examples))
+			)
+
+			local ok, resp = SearchIndexAPI.addTrainingBatch(examples)
+
+			if ok and resp and resp.results then
+				for _, result in ipairs(resp.results) do
+					if result.status == "ok" then
+						successCount = successCount + 1
+						if result.warning then
+							table.insert(backendWarnings, tostring(result.photo_id) .. ": " .. tostring(result.warning))
+						end
+					else
+						errorCount = errorCount + 1
+						table.insert(errorMessages, tostring(result.photo_id) .. ": " .. tostring(result.error))
+					end
+				end
+				log:info("Batch training saved " .. tostring(successCount) .. "/" .. tostring(#examples) .. " examples")
+			else
+				-- Entire batch failed (network or server error).
+				local errMsg = tostring(resp) or "Unknown batch error"
+				log:error("Batch training failed: " .. errMsg)
+				errorCount = errorCount + #examples
+				for _, ex in ipairs(examples) do
+					table.insert(errorMessages, tostring(ex.photo_id) .. ": " .. errMsg)
+				end
+			end
 		end
 
 		progressScope:done()
