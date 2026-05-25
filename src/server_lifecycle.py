@@ -23,10 +23,14 @@ _model_load_error = None
 
 # Idle-unload handling
 # If the model hasn't been used for this many seconds, it will be unloaded to free memory.
-IDLE_UNLOAD_SECONDS = 30 * 60  # 30 minutes
+IDLE_UNLOAD_SECONDS = 10 * 60  # 10 minutes
 
+# Server idle-shutdown: if no HTTP request arrives in this many seconds, the whole
+# server process exits gracefully.  Overridable via env var.
+IDLE_SHUTDOWN_SECONDS = int(os.environ.get("STYLEAI_IDLE_SHUTDOWN_SECONDS", "600"))
 
 _last_used = None
+_last_request_time = time.time()  # track last HTTP request for server idle shutdown
 _model_lock = threading.RLock()
 _unloader_thread = None
 
@@ -257,20 +261,43 @@ def unload_all_resources():
     logger.info("All resources unloaded successfully.")
 
 
+def note_request():
+    """Called by Flask before_request to record that the server is active."""
+    global _last_request_time
+    _last_request_time = time.time()
+
+
 def _idle_unloader_loop():
-    """Background thread which periodically checks whether the model should be unloaded."""
+    """Background thread which periodically checks whether the model should be unloaded
+    and whether the server has been idle long enough to shut down entirely."""
     global _unloader_thread
-    logger.info("Starting server_lifecycle idle unloader thread")
+    logger.info(
+        "Starting idle monitor (model unload after %ss, server shutdown after %ss)",
+        IDLE_UNLOAD_SECONDS,
+        IDLE_SHUTDOWN_SECONDS,
+    )
     try:
         while True:
             time.sleep(60)
             try:
+                # 1. Model unload (free GPU/CPU memory)
                 if _needs_unload():
                     unload_model()
+
+                # 2. Server idle shutdown (free the whole process)
+                idle_seconds = time.time() - _last_request_time
+                if idle_seconds >= IDLE_SHUTDOWN_SECONDS:
+                    logger.info(
+                        "Server idle for %.0fs (threshold %ss) — shutting down",
+                        idle_seconds,
+                        IDLE_SHUTDOWN_SECONDS,
+                    )
+                    request_shutdown()
+                    break  # exit loop; process will die shortly
             except Exception:
-                logger.exception("Error checking/unloading model in background thread")
+                logger.exception("Error in idle monitor background thread")
     finally:
-        logger.info("Server_lifecycle idle unloader thread exiting")
+        logger.info("Idle monitor thread exiting")
 
 
 def _ensure_unloader_thread():
@@ -348,9 +375,25 @@ def remove_ok_file():
 
 
 def request_shutdown():
+    """Gracefully-but-firmly shut down the server process.
+
+    Uses a daemon thread so the current HTTP response can finish being sent
+    before the process exits.  os._exit(0) is used instead of SIGINT because
+    waitress's signal handler and shell job control can swallow/intercept SIGINT
+    in background processes, leaving a zombie server on port 19819.
+    """
     logger.info("Shutdown request received")
-    time.sleep(1)  # Give time for the response to be sent
-    os.kill(os.getpid(), signal.SIGINT)
+
+    def _exit_after_delay():
+        time.sleep(1)  # Allow the /shutdown HTTP response to flush
+        remove_pid_file()
+        remove_ok_file()
+        logger.info("Bye.")
+        # Hard exit — skips Python-level finally blocks but guarantees the
+        # process actually terminates (waitress doesn't always honour SIGINT).
+        os._exit(0)
+
+    threading.Thread(target=_exit_after_delay, daemon=True).start()
 
 
 def get_health_status():

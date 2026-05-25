@@ -28,6 +28,13 @@ from services import db as service_db
 app = Flask(__name__)
 logger.info("Flask app created")
 
+
+@app.before_request
+def _touch_activity():
+    """Record that the server received an HTTP request so idle-shutdown knows we're alive."""
+    server_lifecycle.note_request()
+
+
 # Register blueprints — core style-learning endpoints only
 app.register_blueprint(index_bp)
 app.register_blueprint(edit_bp)
@@ -250,6 +257,9 @@ if __name__ == "__main__":
 
     # Start optional background schedulers (housekeeping only)
     _start_housekeeping_scheduler()
+
+    # Start idle monitor (model unload + server auto-shutdown)
+    server_lifecycle._ensure_unloader_thread()
 
     host = os.environ.get("STYLEAI_HOST", "127.0.0.1")
     port = int(os.environ.get("STYLEAI_PORT", "19819"))

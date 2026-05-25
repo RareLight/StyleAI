@@ -1,10 +1,22 @@
 local function shutdownApp(doneFunc, progressFunc)
-	-- Instead of shutting down the backend, we now request it to unload models and collections from memory
-	-- to free up resources. This is sent to both local and remote backends to ensure efficiency.
 	LrTasks.startAsyncTask(function()
-		LrTasks.pcall(function()
-			SearchIndexAPI.unloadResources()
-		end)
+		if prefs.shutdownServerOnExit then
+			-- Gracefully shut down the entire backend server when Lightroom exits.
+			-- The server will be restarted automatically the next time Lightroom opens.
+			LrTasks.pcall(function()
+				SearchIndexAPI.shutdownServer({
+					graceSeconds = 8,
+					forceWaitSeconds = 5,
+					pollIntervalSeconds = 0.5,
+					shutdownRequestTimeoutSeconds = 5,
+				})
+			end)
+		else
+			-- Keep server alive but free heavy models from memory.
+			LrTasks.pcall(function()
+				SearchIndexAPI.unloadResources()
+			end)
+		end
 		doneFunc()
 	end)
 end
