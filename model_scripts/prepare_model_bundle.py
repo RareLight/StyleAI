@@ -86,7 +86,7 @@ def prepare_model_bundle(model_id: str, output_dir: str):
     print(f"\nBundled model directory ready at: {output_dir}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Prepare model bundle for LrGenius AI Server.")
+    parser = argparse.ArgumentParser(description="Prepare model bundle for StyleAI Server.")
     parser.add_argument("--model_id", type=str, default="ViT-SO400M-16-SigLIP2-384", help="The model ID from open_clip model configs.")
     parser.add_argument("--output_dir", type=str, default="dist/models", help="The output directory for the bundled model files.")
     args = parser.parse_args()

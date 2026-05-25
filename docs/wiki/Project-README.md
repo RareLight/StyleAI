@@ -3,29 +3,29 @@
 > Auto-generated from `README.md`. Do not edit this page manually.
 
 <div align="center">
-  <h1>🌟 LrGeniusAI</h1>
+  <h1>🌟 StyleAI</h1>
   <p><b>A smart Lightroom Classic plugin for AI-powered tagging, describing, and semantic image search.</b></p>
   
   [![Lua](https://img.shields.io/badge/Lua-2C2D72?style=for-the-badge&logo=lua&logoColor=white)]()
   [![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)]()
   [![Website](https://img.shields.io/badge/Website-lrgenius.com-00B2FF?style=for-the-badge)]()
-  [![Downloads](https://img.shields.io/github/downloads/LrGenius/LrGeniusAI/total?style=for-the-badge&label=Downloads)](https://github.com/LrGenius/LrGeniusAI/releases)
+  [![Downloads](https://img.shields.io/github/downloads/RareLight/StyleAI/total?style=for-the-badge&label=Downloads)](https://github.com/RareLight/StyleAI/releases)
 </div>
 
 ---
 
 ## 📖 About the Project
 
-**LrGeniusAI** brings the power of modern Large Language Models (LLMs) directly into Adobe Lightroom Classic. It analyzes your photos, automatically generates accurate tags and detailed descriptions, and lets you rediscover your library with a semantic free-text search using natural language.
+**StyleAI** brings the power of modern Large Language Models (LLMs) directly into Adobe Lightroom Classic. It analyzes your photos, automatically generates accurate tags and detailed descriptions, and lets you rediscover your library with a semantic free-text search using natural language.
 
-Whether you prefer running local models to ensure maximum privacy or want to leverage powerful cloud APIs, LrGeniusAI seamlessly adapts to your photography workflow.
+Whether you prefer running local models to ensure maximum privacy or want to leverage powerful cloud APIs, StyleAI seamlessly adapts to your photography workflow.
 
 ---
 
 ## ✨ Core Features
 
 - **🤖 AI-Powered Tagging & Describing:** Uses advanced LLMs to accurately recognize image content, generate metadata, and provide detailed descriptions of your photos.
-- **🔍 Semantic Free-Text Search (Advanced Search):** Find images naturally through descriptive queries (e.g., *"Red sports car parked in front of a garage"* or *"Sunset over the mountains"*). LrGeniusAI automatically creates a relevance-sorted Collection in Lightroom based on your prompt.
+- **🔍 Semantic Free-Text Search (Advanced Search):** Find images naturally through descriptive queries (e.g., *"Red sports car parked in front of a garage"* or *"Sunset over the mountains"*). StyleAI automatically creates a relevance-sorted Collection in Lightroom based on your prompt.
 - **☁️ Local & Cloud Models:** Full support for local AI models via **Ollama** and **LM Studio**, as well as integration with cloud providers like **Google Gemini** and **Vertex AI**.
 - **🎨 Customizable Prompts & Temperature Control:** System prompts for the AI can be added, edited, and deleted directly within the Lightroom Plug-In Manager. Use the temperature slider to control whether the AI should be highly creative or strictly consistent.
 - **📝 Photo Context (Contextual Info):** Provide manual hints to the AI before analysis (e.g., names of people or specific background details) that aren't immediately obvious from the image itself. This can be done via a popup dialog or directly in Lightroom's metadata panel.
@@ -35,12 +35,12 @@ Whether you prefer running local models to ensure maximum privacy or want to lev
 
 ## 🚀 Installation & Getting Started
 
-1. Download the latest release from the [GitHub Releases page](https://github.com/LrGenius/LrGeniusAI/releases).
+1. Download the latest release from the [GitHub Releases page](https://github.com/RareLight/StyleAI/releases).
 2. Extract the ZIP file and add the plugin via the **Plug-in Manager** in Lightroom Classic.
 3. **Backend Server Setup (First Launch):**
    - The backend now starts automatically from Lightroom.
    - The previous SmartScreen/Gatekeeper manual unblock steps are no longer required with the current release package.
-   - Optional troubleshooting: if you want to start it manually, run `lrgenius-server/lrgenius-server.cmd` on Windows or `lrgenius-server/lrgenius-server` on macOS.
+   - Optional troubleshooting: if you want to start it manually, run `styleai-server/styleai-server.cmd` on Windows or `styleai-server/styleai-server` on macOS.
 4. Select your photos in the library and choose from the menu: **Library -> Plug-in Extras -> Analyze & Index photos**.
 
 *For comprehensive details, model setup guides, and tips, see the wiki — in particular [Getting Started](Getting-Started), [Help: Choosing AI Model](Help-Choosing-AI-Model), [Help: Ollama Setup](Help-Ollama-Setup), and [Help: LM Studio Setup](Help-LM-Studio-Setup).*
@@ -57,7 +57,7 @@ If you upgrade from an older version, run a one-time migration to keep existing 
 ### Recommended migration path (from Lightroom)
 
 1. Open `File -> Plug-in Manager`
-2. Open LrGeniusAI settings
+2. Open StyleAI settings
 3. In `Backend Server`, click **Migrate existing DB IDs to photo_id**
 4. Wait until the progress dialog is complete
 
@@ -83,7 +83,7 @@ If strict cross-catalog identity is important for your workflow, plan for re-ind
 
 ## ☁️ Google Vertex AI Login (gcloud)
 
-If you want to use Vertex AI with LrGeniusAI, run the login on the machine where `geniusai-server` is running.
+If you want to use Vertex AI with StyleAI, run the login on the machine where `geniusai-server` is running.
 
 ### macOS
 

@@ -14,7 +14,7 @@ if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
 # --- Argument Parsing ---
-parser = argparse.ArgumentParser(description="LrGenius Server")
+parser = argparse.ArgumentParser(description="StyleAI Server")
 parser.add_argument(
     "--db-path", type=str, help="Path to the ChromaDB database folder", required=False
 )

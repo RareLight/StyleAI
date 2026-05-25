@@ -1,6 +1,6 @@
 # Getting Started
 
-Welcome to LrGeniusAI! This guide will walk you through setting up the plugin, indexing your first batch of photos, and starting your AI-powered Lightroom workflow.
+Welcome to StyleAI! This guide will walk you through setting up the plugin, indexing your first batch of photos, and starting your AI-powered Lightroom workflow.
 
 ## 1. Install Plugin and Server
 
@@ -9,7 +9,7 @@ Please refer to the high-level installation instructions on the [root `README.md
 
 ### ⚠️ Bypassing Security Warnings (Unsigned Installers)
 
-Because LrGeniusAI is an open-source project and the current installers are not code-signed, your operating system will likely flag them as "untrusted" or "malicious". This is a standard security precaution for any third-party software that has not been notarized by Microsoft or Apple.
+Because StyleAI is an open-source project and the current installers are not code-signed, your operating system will likely flag them as "untrusted" or "malicious". This is a standard security precaution for any third-party software that has not been notarized by Microsoft or Apple.
 
 #### Windows (SmartScreen)
 When you run the installer or the backend `.cmd` file, you may see a "Windows protected your PC" dialog.
@@ -27,7 +27,7 @@ When you try to open the `.pkg` installer or the backend binary:
 
 ## 2. Configure Plugin
 
-Once installed, open the **Lightroom Plug-in Manager** (`File -> Plug-in Manager`) and locate LrGeniusAI. Here you need to:
+Once installed, open the **Lightroom Plug-in Manager** (`File -> Plug-in Manager`) and locate StyleAI. Here you need to:
 - **Set the Backend Server URL:** This defaults to `http://127.0.0.1:8000` but if you're running the backend on a different machine (e.g. via Docker), update the address here.
 - **Configure Provider/API Keys:** If you plan to use cloud providers like OpenAI or Google Gemini, enter your API keys. For local providers like Ollama or LM Studio, ensure their respective base URLs are correctly configured.
 - **Set Vertex AI Details:** If using Google Cloud's Vertex AI, provide your project ID and preferred location.
@@ -45,11 +45,11 @@ Once indexing finishes, try out **Advanced Search**, the **People** workflows, o
 
 ## 4. Run One-Time ID Migration (Upgrade Path)
 
-*Note: This step is only relevant if you are upgrading from an older version of LrGeniusAI.*
+*Note: This step is only relevant if you are upgrading from an older version of StyleAI.*
 
 If your previous database relied on Lightroom catalog UUIDs, you must migrate to the new `photo_id` system:
 1. Open `File -> Plug-in Manager`.
-2. Open LrGeniusAI settings.
+2. Open StyleAI settings.
 3. In the `Backend Server` section, click **Migrate existing DB IDs to photo_id**.
 4. Wait for the progress dialog to complete. This ensures you do not lose any previously generated metadata or semantic search indexes.
 
@@ -60,7 +60,7 @@ After indexing your photos, you can automate the process of picking the best sho
 2. Open `Library -> Plug-in Extras -> Cull Similar Photos`.
 3. Choose a culling preset (e.g., `default` or `sports`) depending on how aggressive you want the AI to be.
 4. Wait for the backend to group and analyze your photos. 
-5. LrGeniusAI will rapidly create a time-stamped Collection Set in Lightroom containing `Picks`, `Alternates`, `Reject Candidates`, and `Duplicates`. Your view will automatically switch to the `Picks` collection so you can review the best shots right away.
+5. StyleAI will rapidly create a time-stamped Collection Set in Lightroom containing `Picks`, `Alternates`, `Reject Candidates`, and `Duplicates`. Your view will automatically switch to the `Picks` collection so you can review the best shots right away.
 
 ## 6. Create a DB Backup
 

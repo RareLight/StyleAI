@@ -1,4 +1,4 @@
-# geniusai-server dependencies (for Docker / pip install)
+# styleai-server dependencies (for Docker / pip install)
 # open_clip (lokal) benötigt:
 torch==2.5.1
 torchvision==0.20.1

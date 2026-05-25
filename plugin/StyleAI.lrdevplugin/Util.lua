@@ -554,7 +554,7 @@ function Util.copyLogfilesToDesktop(extraInfo)
 		canCancel = true,
 	})
 
-	local folderName = "LrGenius_" .. Util.formatTimestampSafe(LrDate.currentTime())
+	local folderName = "StyleAI_" .. Util.formatTimestampSafe(LrDate.currentTime())
 	local folder = LrPathUtils.child(LrPathUtils.getStandardFilePath("desktop"), folderName)
 	if LrFileUtils.exists(folder) then
 		log:trace("Removing pre-existing report folder: " .. folder)

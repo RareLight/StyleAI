@@ -1,6 +1,6 @@
 # Credits & Dependencies
 
-LrGeniusAI is made possible by these amazing open-source projects and AI frameworks.
+StyleAI is made possible by these amazing open-source projects and AI frameworks.
 
 ## Core Backend Dependencies
 - **InsightFace**: State-of-the-art face analysis and recognition. [GitHub](https://github.com/deepinsight/insightface)

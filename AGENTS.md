@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents (Claude Code, Cursor, Copilot, A
 
 ## Repository Overview
 
-**LrGeniusAI** — An automated style-learning AI plugin for Adobe Lightroom Classic.
+**StyleAI** — An automated style-learning AI plugin for Adobe Lightroom Classic.
 
 This plugin transforms how photographers edit by learning their personal editing style from training examples and applying it to new photos automatically. Instead of generic AI presets, it discovers the photographer's own aesthetic through:
 

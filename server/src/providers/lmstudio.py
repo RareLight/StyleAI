@@ -3,13 +3,8 @@ LM Studio Provider for metadata generation using the lmstudio-python library
 """
 import json
 import lmstudio as lms
-<<<<<<<< HEAD:src/llm_provider_lmstudio.py
-from typing import Dict, Any
-from llm_provider_base import (
-========
 from typing import Any, override
 from .base import (
->>>>>>>> f2a2a9d (Refactor: server src restructure (#149)):server/src/providers/lmstudio.py
     LLMProviderBase,
     EditGenerationRequest,
     EditGenerationResponse,
@@ -25,7 +20,7 @@ class LMStudioProvider(LLMProviderBase):
     Uses the lmstudio-python library.
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.host = config.get('base_url', LMSTUDIO_HOST)
         self.timeout = config.get('timeout', 720)

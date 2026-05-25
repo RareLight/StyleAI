@@ -79,7 +79,7 @@ EOF
 Do **not** point the updater at your working checkout — it will overwrite files.
 
 ```bash
-cp -r plugin/LrGeniusAI.lrdevplugin /tmp/test-plugin
+cp -r plugin/StyleAI.lrdevplugin /tmp/test-plugin
 cp -r server /tmp/test-server
 ```
 
@@ -103,7 +103,7 @@ diff /tmp/test-plugin/Init.lua test_update_env/source_files/plugin/Init.lua
 find /tmp/test-plugin /tmp/test-server -name "*.bak"
 
 # No leftover temp dir
-ls ~/.lrgeniusai/update_tmp 2>/dev/null || echo "cleaned up OK"
+ls ~/.styleai/update_tmp 2>/dev/null || echo "cleaned up OK"
 ```
 
 ---
@@ -192,7 +192,7 @@ The confirmation dialog should show version 9.9.9 with the file counts from the 
 | Scenario | How to trigger |
 |---|---|
 | SHA mismatch rejected | Edit a sha256 value in the manifest to a wrong hash |
-| Stale temp dir cleaned | Pre-create `~/.lrgeniusai/update_tmp/` with junk files before running |
+| Stale temp dir cleaned | Pre-create `~/.styleai/update_tmp/` with junk files before running |
 | Backup created and cleaned on success | Run with a real existing file at the target path; confirm no `.bak` left behind |
 | Backup survives a mid-apply failure | Kill the updater process during the apply phase; confirm `.bak` file still exists |
 | Backend restart fails gracefully | Remove the `geniusai_server.py` entry point from the throwaway directory |

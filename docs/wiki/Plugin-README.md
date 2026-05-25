@@ -2,7 +2,7 @@
 
 > Auto-generated from `plugin/README.md`. Do not edit this page manually.
 
-# LrGeniusAI Lightroom Plugin
+# StyleAI Lightroom Plugin
 
 AI-powered metadata, semantic search, and face workflows for Adobe Lightroom Classic.
 
@@ -10,7 +10,7 @@ AI-powered metadata, semantic search, and face workflows for Adobe Lightroom Cla
 
 ## What It Does
 
-LrGeniusAI adds a backend-powered AI layer to Lightroom Classic. It helps you:
+StyleAI adds a backend-powered AI layer to Lightroom Classic. It helps you:
 
 - Generate metadata (`title`, `caption`, `keywords`, `alt_text`)
 - Run semantic search on your catalog
@@ -53,7 +53,7 @@ The plugin is designed to work with local and cloud providers, while keeping Lig
 ## Requirements
 
 - Adobe Lightroom Classic (supported by plugin SDK settings)
-- LrGeniusAI backend server reachable from Lightroom
+- StyleAI backend server reachable from Lightroom
 - Optional API keys depending on provider:
   - Gemini
   - OpenAI / ChatGPT
@@ -65,7 +65,7 @@ The plugin is designed to work with local and cloud providers, while keeping Lig
 
 1. Build or download the plugin package.
 2. In Lightroom Classic, open `File -> Plug-in Manager`.
-3. Click `Add` and select the `LrGeniusAI.lrdevplugin` folder.
+3. Click `Add` and select the `StyleAI.lrdevplugin` folder.
 4. Configure server URL and provider settings in plugin preferences.
 
 ---
@@ -78,7 +78,7 @@ The stable ID algorithm was updated again to avoid ID changes when metadata is w
 If you already have an indexed backend database from older versions, run this one-time migration:
 
 1. Open `File -> Plug-in Manager`
-2. Select `LrGeniusAI`
+2. Select `StyleAI`
 3. In the `Backend Server` section, click **Migrate existing DB IDs to photo_id**
 4. Wait for the `LrProgressScope` migration to finish
 
@@ -118,7 +118,7 @@ In the plugin settings dialog you can configure:
 
 ## Google Vertex AI Login (gcloud)
 
-If you want to use Vertex AI from LrGeniusAI, run the login on the machine where the backend server runs.
+If you want to use Vertex AI from StyleAI, run the login on the machine where the backend server runs.
 
 ### macOS
 
@@ -196,4 +196,4 @@ If you migrated from legacy UUID-based IDs to `photo_id`:
 ## Documentation
 
 - Help: [https://lrgenius.com/help/](https://lrgenius.com/help/)
-- Repository: [https://github.com/LrGenius/LrGeniusAI](https://github.com/LrGenius/LrGeniusAI)
+- Repository: [https://github.com/RareLight/StyleAI](https://github.com/RareLight/StyleAI)

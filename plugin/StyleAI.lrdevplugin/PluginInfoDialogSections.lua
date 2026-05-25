@@ -322,7 +322,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:push_button({
 					title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/Docs=Read documentation online"),
 					action = function(button)
-						LrHttp.openUrlInBrowser("https://github.com/LrGenius/StyleAI/wiki")
+						LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki")
 					end,
 				}),
 			}),
@@ -750,7 +750,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					f:push_button({
 						title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
 						action = function(button)
-							LrHttp.openUrlInBrowser("https://github.com/LrGenius/StyleAI/wiki/Help-Ollama-Setup")
+							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-Ollama-Setup")
 						end,
 						width = share("setupButtonWidth"),
 					}),
@@ -775,7 +775,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/SetupLmStudio=Setup LM Studio"),
 						action = function(button)
-							LrHttp.openUrlInBrowser("https://github.com/LrGenius/StyleAI/wiki/Help-LM-Studio-Setup")
+							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-LM-Studio-Setup")
 						end,
 						width = share("setupButtonWidth"),
 					}),

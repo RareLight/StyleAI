@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**LrGeniusAI** is an Adobe Lightroom Classic plugin that brings AI-powered photo analysis (tagging, descriptions, semantic search, develop edits, face recognition) into Lightroom. It consists of two main components:
+**StyleAI** is an Adobe Lightroom Classic plugin that brings AI-powered photo analysis (tagging, descriptions, semantic search, develop edits, face recognition) into Lightroom. It consists of two main components:
 
-- **Plugin** (`plugin/LrGeniusAI.lrdevplugin/`) — Lua frontend using the Lightroom SDK
+- **Plugin** (`plugin/StyleAI.lrdevplugin/`) — Lua frontend using the Lightroom SDK
 - **Backend** (`server/`) — Python/Flask server running as a local background process
 
 ---
@@ -65,7 +65,7 @@ uv run python src/geniusai_server.py
 
 ### Plugin — load into Lightroom
 
-Add (or symlink) `plugin/LrGeniusAI.lrdevplugin` via Lightroom **Plug-in Manager**. Smoke tests run inside Lightroom via `TaskAutomatedTests.lua`.
+Add (or symlink) `plugin/StyleAI.lrdevplugin` via Lightroom **Plug-in Manager**. Smoke tests run inside Lightroom via `TaskAutomatedTests.lua`.
 
 ### Translations sync
 

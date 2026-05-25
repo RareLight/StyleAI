@@ -1,6 +1,6 @@
 # Help: Keyword Deduplication and De-Clutter
 
-LrGeniusAI offers two complementary keyword management features to keep your Lightroom catalog clean:
+StyleAI offers two complementary keyword management features to keep your Lightroom catalog clean:
 
 - **Deduplicate Keyword Synonyms** — an interactive workflow to find and merge near-duplicate or synonym keywords that already exist in your catalog.
 - **Auto De-Clutter during Indexing** — an automatic step inside Analyze & Index Photos that prevents newly AI-generated keywords from creating near-duplicates of what's already in your catalog.

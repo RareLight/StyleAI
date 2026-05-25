@@ -1,4 +1,4 @@
-# LrGeniusAI Wiki
+# StyleAI Wiki
 
 Welcome to the project wiki.
 
@@ -34,9 +34,9 @@ The new DB backup workflow is documented in:
 - [Server Guide](Server-Guide)
 - [Server README](Server-README)
 
-## What is LrGeniusAI?
+## What is StyleAI?
 
-LrGeniusAI is an AI extension for Lightroom Classic with:
+StyleAI is an AI extension for Lightroom Classic with:
 
 - metadata generation
 - semantic search

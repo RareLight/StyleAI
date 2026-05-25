@@ -79,7 +79,7 @@ end
 --- Fetch information about the latest release directly from GitHub.
 --- Returns a table {tag_name, release_url, manifest_url, is_code_only, is_newer} or nil.
 function UpdateCheck.getLatestReleaseInfo()
-	local release = fetchJson("https://api.github.com/repos/LrGenius/StyleAI/releases/latest")
+	local release = fetchJson("https://api.github.com/repos/RareLight/StyleAI/releases/latest")
 	if not release then
 		return nil
 	end
@@ -151,7 +151,7 @@ function UpdateCheck.checkForNewVersion()
 				tu.runUpdate(info)
 			end
 		else
-			LrHttp.openUrlInBrowser(info.release_url or "https://github.com/LrGenius/StyleAI/releases/latest")
+			LrHttp.openUrlInBrowser(info.release_url or "https://github.com/RareLight/StyleAI/releases/latest")
 		end
 	else
 		LrDialogs.message(

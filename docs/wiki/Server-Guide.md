@@ -1,6 +1,6 @@
 # Server Guide
 
-The Python backend (`geniusai-server`) acts as the brains of LrGeniusAI. It runs locally via FastAPI and handles Large Language Model (LLM) inference, image embedding generation using OpenCLIP, and vector database management.
+The Python backend (`geniusai-server`) acts as the brains of StyleAI. It runs locally via FastAPI and handles Large Language Model (LLM) inference, image embedding generation using OpenCLIP, and vector database management.
 
 ## Main Documentation
 
@@ -30,7 +30,7 @@ Given the importance of your generated search indexes and AI metadata, the backe
 - Output: A comprehensive ZIP archive containing the complete DB directory (Chroma data, SQLite db, and associated JSON files).
 
 **To create a backup via Lightroom:**
-Open `File -> Plug-in Manager -> LrGeniusAI -> Backend Server` and click **Download DB backup**.
+Open `File -> Plug-in Manager -> StyleAI -> Backend Server` and click **Download DB backup**.
 
 **When to backup:**
 We highly recommend initiating a backup prior to running large one-time DB migrations, moving the server to a new machine, or updating backend dependencies.

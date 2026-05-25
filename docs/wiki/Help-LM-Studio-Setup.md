@@ -7,7 +7,7 @@
 
 - Download from: [https://lmstudio.ai/download](https://lmstudio.ai/download)
 
-## 2. Configure LM Studio for LrGeniusAI
+## 2. Configure LM Studio for StyleAI
 
 - Enable server mode in LM Studio
 - Ensure server status is running
