@@ -50,7 +50,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.trainingCount = 0
 	propertyTable.styleStats = nil
 	propertyTable.styleReadiness = "cold_start"
-	propertyTable.styleReadyText = LOC("$$$/LrGeniusAI/Training/Status/ColdStart=Cold Start (0 examples)")
+	propertyTable.styleReadyText = LOC("$$$/StyleAI/Training/Status/ColdStart=Cold Start (0 examples)")
 	propertyTable.styleReadyColor = { 0.7, 0.7, 0.7 }
 
 	local function updateStats()
@@ -65,20 +65,20 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 
 				if readiness == "active" then
 					propertyTable.styleReadyText =
-						LOC("$$$/LrGeniusAI/Training/Status/Active=ACTIVE - High precision matching")
+						LOC("$$$/StyleAI/Training/Status/Active=ACTIVE - High precision matching")
 					propertyTable.styleReadyColor = { 0.2, 0.8, 0.2 }
 				elseif readiness == "limited" then
-					propertyTable.styleReadyText = LOC("$$$/LrGeniusAI/Training/Status/Limited=LIMITED - Good matching")
+					propertyTable.styleReadyText = LOC("$$$/StyleAI/Training/Status/Limited=LIMITED - Good matching")
 					propertyTable.styleReadyColor = { 0.8, 0.8, 0.2 }
 				elseif readiness == "warming_up" then
 					propertyTable.styleReadyText = LOC(
-						"$$$/LrGeniusAI/Training/Status/WarmingUp=WARMING UP (^1/10 examples)",
+						"$$$/StyleAI/Training/Status/WarmingUp=WARMING UP (^1/10 examples)",
 						tostring(stats.count)
 					)
 					propertyTable.styleReadyColor = { 0.8, 0.4, 0.1 }
 				else
 					propertyTable.styleReadyText =
-						LOC("$$$/LrGeniusAI/Training/Status/ColdStart=COLD START (Add examples to begin)")
+						LOC("$$$/StyleAI/Training/Status/ColdStart=COLD START (Add examples to begin)")
 					propertyTable.styleReadyColor = { 0.7, 0.7, 0.7 }
 				end
 			end
@@ -102,7 +102,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 
 			if not health.backend then
 				status = "critical"
-				table.insert(issues, LOC("$$$/LrGeniusAI/Health/BackendFailed=Backend server is not reachable."))
+				table.insert(issues, LOC("$$$/StyleAI/Health/BackendFailed=Backend server is not reachable."))
 				color = { 0.8, 0, 0 }
 			end
 			if not health.clip and prefs.useClip then
@@ -112,7 +112,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 				end
 				table.insert(
 					issues,
-					LOC("$$$/LrGeniusAI/Health/ClipMissing=CLIP model for semantic search is missing.")
+					LOC("$$$/StyleAI/Health/ClipMissing=CLIP model for semantic search is missing.")
 				)
 			end
 			if not health.gemini and not health.chatgpt and not health.ollama and not health.lmstudio then
@@ -122,7 +122,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 				end
 				table.insert(
 					issues,
-					LOC("$$$/LrGeniusAI/Health/ApiKeysMissing=No AI providers configured for AI generation.")
+					LOC("$$$/StyleAI/Health/ApiKeysMissing=No AI providers configured for AI generation.")
 				)
 			end
 
@@ -154,15 +154,15 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 				propertyTable.latestReleaseInfo = info
 				propertyTable.updateAvailable = true
 				propertyTable.updateStatus =
-					LOC("$$$/LrGeniusAI/PluginInfo/UpdateAvailable=Update Available: ^1", info.tag_name)
+					LOC("$$$/StyleAI/PluginInfo/UpdateAvailable=Update Available: ^1", info.tag_name)
 				propertyTable.updateStatusColor = { 0.1, 0.5, 0.8 }
 				if info.is_code_only then
-					propertyTable.updateButtonTitle = LOC("$$$/LrGeniusAI/UpdateCheck/UpdateNow=Update Now")
+					propertyTable.updateButtonTitle = LOC("$$$/StyleAI/UpdateCheck/UpdateNow=Update Now")
 				else
-					propertyTable.updateButtonTitle = LOC("$$$/LrGeniusAI/PluginInfo/DownloadUpdate=Download Update")
+					propertyTable.updateButtonTitle = LOC("$$$/StyleAI/PluginInfo/DownloadUpdate=Download Update")
 				end
 			else
-				propertyTable.updateStatus = LOC("$$$/LrGeniusAI/PluginInfo/UpToDate=Plugin is up to date")
+				propertyTable.updateStatus = LOC("$$$/StyleAI/PluginInfo/UpToDate=Plugin is up to date")
 				propertyTable.updateStatusColor = { 0.5, 0.5, 0.5 }
 				propertyTable.updateButtonTitle =
 					LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/UpdateCheck=Check for updates")
@@ -182,10 +182,10 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 	return {
 		{
 			bind_to_object = propertyTable,
-			title = LOC("$$$/LrGeniusAI/PluginInfo/Logging=Logging"),
+			title = LOC("$$$/StyleAI/PluginInfo/Logging=Logging"),
 
 			f:group_box({
-				title = LOC("$$$/LrGeniusAI/PluginInfo/Logging=Logging"),
+				title = LOC("$$$/StyleAI/PluginInfo/Logging=Logging"),
 				width = 600,
 
 				f:row({
@@ -245,10 +245,10 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 			}),
 		},
 		{
-			title = LOC("$$$/LrGeniusAI/PluginInfo/Credits=CREDITS"),
+			title = LOC("$$$/StyleAI/PluginInfo/Credits=CREDITS"),
 			f:group_box({
 				width = 600,
-				title = LOC("$$$/LrGeniusAI/PluginInfo/Credits=CREDITS"),
+				title = LOC("$$$/StyleAI/PluginInfo/Credits=CREDITS"),
 				f:row({
 					f:static_text({
 						title = Defaults.copyrightString,
@@ -279,16 +279,16 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 		{
 			bind_to_object = propertyTable,
 
-			title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/header=LrGeniusAI configuration"),
+			title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/header=StyleAI configuration"),
 
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("$$$/LrGeniusAI/Health/SummaryTitle=System Health"),
+				title = LOC("$$$/StyleAI/Health/SummaryTitle=System Health"),
 
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/Health/SummaryTitle=System Health"),
+						title = LOC("$$$/StyleAI/Health/SummaryTitle=System Health"),
 						font = "<system/bold>",
 						alignment = "right",
 					}),
@@ -297,15 +297,15 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							key = "healthStatus",
 							transform = function(v)
 								if v == "healthy" then
-									return LOC("$$$/LrGeniusAI/Health/StatusHealthy=Everything looks good!")
+									return LOC("$$$/StyleAI/Health/StatusHealthy=Everything looks good!")
 								end
 								if v == "warning" then
 									return LOC(
-										"$$$/LrGeniusAI/Health/StatusWarning=Some features might not work correctly."
+										"$$$/StyleAI/Health/StatusWarning=Some features might not work correctly."
 									)
 								end
 								return LOC(
-									"$$$/LrGeniusAI/Health/StatusCritical=Critical issues detected. Plugin cannot function."
+									"$$$/StyleAI/Health/StatusCritical=Critical issues detected. Plugin cannot function."
 								)
 							end,
 						}),
@@ -314,7 +314,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				}),
 				f:row({
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/Health/RunWizard=Run Setup Wizard"),
+						title = LOC("$$$/StyleAI/Health/RunWizard=Run Setup Wizard"),
 						action = function()
 							OnboardingWizard.show(true)
 						end,
@@ -341,7 +341,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:push_button({
 					title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/Docs=Read documentation online"),
 					action = function(button)
-						LrHttp.openUrlInBrowser("https://github.com/LrGenius/LrGeniusAI/wiki")
+						LrHttp.openUrlInBrowser("https://github.com/LrGenius/StyleAI/wiki")
 					end,
 				}),
 			}),
@@ -389,7 +389,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/VertexProjectId=Vertex AI Project ID"),
+						title = LOC("$$$/StyleAI/PluginInfo/VertexProjectId=Vertex AI Project ID"),
 						alignment = "right",
 						width = share("apiKeyLabelWidth"),
 					}),
@@ -401,7 +401,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/VertexLocation=Vertex AI Location"),
+						title = LOC("$$$/StyleAI/PluginInfo/VertexLocation=Vertex AI Location"),
 						alignment = "right",
 						width = share("apiKeyLabelWidth"),
 					}),
@@ -431,7 +431,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/DbStoragePath=Database storage folder"),
+						title = LOC("$$$/StyleAI/PluginInfo/DbStoragePath=Database storage folder"),
 						alignment = "right",
 						width = share("labelWidth"),
 					}),
@@ -440,13 +440,13 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						fill_horizontal = 1,
 					}),
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/Browse=Browse..."),
+						title = LOC("$$$/StyleAI/PluginInfo/Browse=Browse..."),
 						action = function(button)
 							local result = LrDialogs.runOpenPanel({
 								title = LOC(
-									"$$$/LrGeniusAI/PluginInfo/SelectDbFolderTitle=Select Database Storage Folder"
+									"$$$/StyleAI/PluginInfo/SelectDbFolderTitle=Select Database Storage Folder"
 								),
-								prompt = LOC("$$$/LrGeniusAI/PluginInfo/SelectFolder=Select"),
+								prompt = LOC("$$$/StyleAI/PluginInfo/SelectFolder=Select"),
 								canChooseFiles = false,
 								canChooseDirectories = true,
 								allowsMultipleSelection = false,
@@ -456,9 +456,9 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 								local oldPath = (propertyTable.dbStoragePath or ""):gsub("^%s*(.-)%s*$", "%1")
 								if oldPath ~= "" and oldPath ~= newPath then
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/DbPathChangedTitle=Database Path Changed"),
+										LOC("$$$/StyleAI/PluginInfo/DbPathChangedTitle=Database Path Changed"),
 										LOC(
-											"$$$/LrGeniusAI/PluginInfo/DbPathChangedMessage=The AI search index will be created fresh at the new location. Your existing index data will remain at the old path and will not be moved. Re-run indexing after saving to rebuild the index."
+											"$$$/StyleAI/PluginInfo/DbPathChangedMessage=The AI search index will be created fresh at the new location. Your existing index data will remain at the old path and will not be moved. Re-run indexing after saving to rebuild the index."
 										),
 										"warning"
 									)
@@ -473,7 +473,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					f:spacer({ width = share("labelWidth") }),
 					f:static_text({
 						title = LOC(
-							"$$$/LrGeniusAI/PluginInfo/DbStoragePathDesc=Leave empty to store next to the catalog (default)."
+							"$$$/StyleAI/PluginInfo/DbStoragePathDesc=Leave empty to store next to the catalog (default)."
 						),
 						size = "small",
 						fill_horizontal = 1,
@@ -483,7 +483,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					f:push_button({
 						title = LOC(
-							"$$$/LrGeniusAI/PluginInfo/GeneratePhotoIds=Generate hash-based photo IDs (catalog only)"
+							"$$$/StyleAI/PluginInfo/GeneratePhotoIds=Generate hash-based photo IDs (catalog only)"
 						),
 						width = share("longBackendButtonWidth"),
 						action = function(button)
@@ -491,13 +491,13 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 								local ok, msg = SearchIndexAPI.generateGlobalPhotoIdsForCatalog()
 								if ok then
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/PhotoIdGenTitle=Photo-ID Generation"),
-										msg or LOC("$$$/LrGeniusAI/common/GenerationCompleted=Generation completed.")
+										LOC("$$$/StyleAI/PluginInfo/PhotoIdGenTitle=Photo-ID Generation"),
+										msg or LOC("$$$/StyleAI/common/GenerationCompleted=Generation completed.")
 									)
 								else
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/PhotoIdGenFailed=Photo-ID Generation failed"),
-										msg or LOC("$$$/LrGeniusAI/common/UnknownError=Unknown error"),
+										LOC("$$$/StyleAI/PluginInfo/PhotoIdGenFailed=Photo-ID Generation failed"),
+										msg or LOC("$$$/StyleAI/common/UnknownError=Unknown error"),
 										"critical"
 									)
 								end
@@ -505,7 +505,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						end,
 					}),
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/MigratePhotoIds=Migrate existing DB IDs to photo_id"),
+						title = LOC("$$$/StyleAI/PluginInfo/MigratePhotoIds=Migrate existing DB IDs to photo_id"),
 						width = share("longBackendButtonWidth"),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
@@ -522,19 +522,19 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 								if not status then
 									log:error("Photo-ID migration crashed.")
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
+										LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
 										tostring(ok),
 										"critical"
 									)
 								elseif ok then
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateTitle=Photo-ID Migration"),
-										msg or LOC("$$$/LrGeniusAI/common/MigrationCompleted=Migration completed.")
+										LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateTitle=Photo-ID Migration"),
+										msg or LOC("$$$/StyleAI/common/MigrationCompleted=Migration completed.")
 									)
 								else
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
-										msg or LOC("$$$/LrGeniusAI/common/UnknownError=Unknown error"),
+										LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
+										msg or LOC("$$$/StyleAI/common/UnknownError=Unknown error"),
 										"critical"
 									)
 								end
@@ -544,13 +544,13 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				}),
 				f:row({
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/ClaimPhotos=Claim photos for this catalog"),
+						title = LOC("$$$/StyleAI/PluginInfo/ClaimPhotos=Claim photos for this catalog"),
 						width = share("backendButtonWidth"),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
 								local progressScope = LrProgressScope({
 									title = LOC(
-										"$$$/LrGeniusAI/SearchIndexAPI/claimingPhotos=Claiming photos for this catalog..."
+										"$$$/StyleAI/SearchIndexAPI/claimingPhotos=Claiming photos for this catalog..."
 									),
 									functionContext = nil,
 								})
@@ -558,20 +558,20 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 								progressScope:done()
 								if ok then
 									local msg = result
-											and (LOC("$$$/LrGeniusAI/PluginInfo/ClaimedPrefix=Claimed: ") .. tostring(
+											and (LOC("$$$/StyleAI/PluginInfo/ClaimedPrefix=Claimed: ") .. tostring(
 												result.claimed
 											) .. (result.errors and result.errors > 0 and (LOC(
-												"$$$/LrGeniusAI/PluginInfo/ClaimedErrors=; errors: "
+												"$$$/StyleAI/PluginInfo/ClaimedErrors=; errors: "
 											) .. tostring(result.errors)) or ""))
-										or LOC("$$$/LrGeniusAI/common/Done=Done.")
+										or LOC("$$$/StyleAI/common/Done=Done.")
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/ClaimPhotosTitle=Claim photos"),
+										LOC("$$$/StyleAI/PluginInfo/ClaimPhotosTitle=Claim photos"),
 										msg
 									)
 								else
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/ClaimPhotosFailed=Claim photos failed"),
-										tostring(err or LOC("$$$/LrGeniusAI/common/UnknownError=Unknown error")),
+										LOC("$$$/StyleAI/PluginInfo/ClaimPhotosFailed=Claim photos failed"),
+										tostring(err or LOC("$$$/StyleAI/common/UnknownError=Unknown error")),
 										"critical"
 									)
 								end
@@ -579,21 +579,21 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						end,
 					}),
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/ShowDbStats=Show DB stats"),
+						title = LOC("$$$/StyleAI/PluginInfo/ShowDbStats=Show DB stats"),
 						width = share("backendButtonWidth"),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
 								local stats, err = SearchIndexAPI.getStats()
 								if stats then
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/DbStatsTitle=Database statistics"),
+										LOC("$$$/StyleAI/PluginInfo/DbStatsTitle=Database statistics"),
 										SearchIndexAPI.formatStats(stats),
 										"info"
 									)
 								else
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/DbStatsFailed=Database statistics failed"),
-										tostring(err or LOC("$$$/LrGeniusAI/common/UnknownError=Unknown error")),
+										LOC("$$$/StyleAI/PluginInfo/DbStatsFailed=Database statistics failed"),
+										tostring(err or LOC("$$$/StyleAI/common/UnknownError=Unknown error")),
 										"critical"
 									)
 								end
@@ -601,7 +601,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						end,
 					}),
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/DownloadDbBackup=Download DB backup"),
+						title = LOC("$$$/StyleAI/PluginInfo/DownloadDbBackup=Download DB backup"),
 						width = share("backendButtonWidth"),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
@@ -609,13 +609,13 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 								if result then
 									LrShell.revealInShell(path)
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/DbBackupDownloaded=Database backup downloaded."),
+										LOC("$$$/StyleAI/PluginInfo/DbBackupDownloaded=Database backup downloaded."),
 										path
 									)
 								else
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/DbBackupFailed=Database backup failed"),
-										tostring(result or LOC("$$$/LrGeniusAI/common/UnknownError=Unknown error")),
+										LOC("$$$/StyleAI/PluginInfo/DbBackupFailed=Database backup failed"),
+										tostring(result or LOC("$$$/StyleAI/common/UnknownError=Unknown error")),
 										"critical"
 									)
 								end
@@ -625,7 +625,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				}),
 				f:row({
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/CheckVersions=Check Plugin/Backend versions"),
+						title = LOC("$$$/StyleAI/PluginInfo/CheckVersions=Check Plugin/Backend versions"),
 						width = share("backendButtonWidth"),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
@@ -637,7 +637,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 												"v"
 												.. tostring(
 													result.backend_version
-														or LOC("$$$/LrGeniusAI/common/Unknown=unknown")
+														or LOC("$$$/StyleAI/common/Unknown=unknown")
 												)
 											)
 									)
@@ -647,45 +647,45 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 												"v"
 												.. tostring(
 													result.plugin_version
-														or LOC("$$$/LrGeniusAI/common/Unknown=unknown")
+														or LOC("$$$/StyleAI/common/Unknown=unknown")
 												)
 											)
 									)
-									local buildInfo = LOC("$$$/LrGeniusAI/PluginInfo/PluginBuild=Plugin build: ")
+									local buildInfo = LOC("$$$/StyleAI/PluginInfo/PluginBuild=Plugin build: ")
 										.. tostring(result.plugin_build or "n/a")
 										.. "\n"
-										.. LOC("$$$/LrGeniusAI/PluginInfo/BackendBuild=Backend build: ")
+										.. LOC("$$$/StyleAI/PluginInfo/BackendBuild=Backend build: ")
 										.. tostring(result.backend_build or "n/a")
 
 									if result.compatible then
 										LrDialogs.message(
-											LOC("$$$/LrGeniusAI/PluginInfo/VersionCheckPassed=Version check passed"),
+											LOC("$$$/StyleAI/PluginInfo/VersionCheckPassed=Version check passed"),
 											LOC(
-												"$$$/LrGeniusAI/PluginInfo/VersionMatch=Plugin and backend versions match.\n"
+												"$$$/StyleAI/PluginInfo/VersionMatch=Plugin and backend versions match.\n"
 											)
-												.. LOC("$$$/LrGeniusAI/PluginInfo/PluginPrefix=Plugin: ")
+												.. LOC("$$$/StyleAI/PluginInfo/PluginPrefix=Plugin: ")
 												.. pluginTag
 												.. "\n"
-												.. LOC("$$$/LrGeniusAI/PluginInfo/BackendPrefix=Backend: ")
+												.. LOC("$$$/StyleAI/PluginInfo/BackendPrefix=Backend: ")
 												.. backendTag
 												.. "\n\n"
 												.. buildInfo
 										)
 									else
 										LrDialogs.message(
-											LOC("$$$/LrGeniusAI/PluginInfo/VersionMismatch=Version mismatch"),
+											LOC("$$$/StyleAI/PluginInfo/VersionMismatch=Version mismatch"),
 											LOC(
-												"$$$/LrGeniusAI/PluginInfo/VersionDiffer=Plugin and backend versions differ.\n"
+												"$$$/StyleAI/PluginInfo/VersionDiffer=Plugin and backend versions differ.\n"
 											)
-												.. LOC("$$$/LrGeniusAI/PluginInfo/PluginPrefix=Plugin: ")
+												.. LOC("$$$/StyleAI/PluginInfo/PluginPrefix=Plugin: ")
 												.. pluginTag
 												.. "\n"
-												.. LOC("$$$/LrGeniusAI/PluginInfo/BackendPrefix=Backend: ")
+												.. LOC("$$$/StyleAI/PluginInfo/BackendPrefix=Backend: ")
 												.. backendTag
 												.. "\n"
-												.. LOC("$$$/LrGeniusAI/PluginInfo/ReasonPrefix=Reason: ")
+												.. LOC("$$$/StyleAI/PluginInfo/ReasonPrefix=Reason: ")
 												.. tostring(
-													result.reason or LOC("$$$/LrGeniusAI/common/Unknown=unknown")
+													result.reason or LOC("$$$/StyleAI/common/Unknown=unknown")
 												)
 												.. "\n\n"
 												.. buildInfo,
@@ -694,8 +694,8 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 									end
 								else
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/VersionCheckFailed=Version check failed"),
-										tostring(err or LOC("$$$/LrGeniusAI/common/UnknownError=Unknown error")),
+										LOC("$$$/StyleAI/PluginInfo/VersionCheckFailed=Version check failed"),
+										tostring(err or LOC("$$$/StyleAI/common/UnknownError=Unknown error")),
 										"critical"
 									)
 								end
@@ -704,26 +704,26 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/RestartBackend=Restart Backend"),
+						title = LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Backend"),
 						width = share("backendButtonWidth"),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
 								local progressScope = LrProgressScope({
-									title = LOC("$$$/LrGeniusAI/PluginInfo/Restarting=Restarting..."),
+									title = LOC("$$$/StyleAI/PluginInfo/Restarting=Restarting..."),
 									functionContext = nil,
 								})
 								local ok, err = SearchIndexAPI.restartBackend()
 								progressScope:done()
 								if ok then
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/RestartBackend=Restart Backend"),
-										LOC("$$$/LrGeniusAI/PluginInfo/RestartSuccess=Backend restarted successfully.")
+										LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Backend"),
+										LOC("$$$/StyleAI/PluginInfo/RestartSuccess=Backend restarted successfully.")
 									)
 								else
 									LrDialogs.message(
-										LOC("$$$/LrGeniusAI/PluginInfo/RestartBackend=Restart Backend"),
+										LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Backend"),
 										LOC(
-											"$$$/LrGeniusAI/PluginInfo/RestartFailed=Failed to restart backend: ^1",
+											"$$$/StyleAI/PluginInfo/RestartFailed=Failed to restart backend: ^1",
 											tostring(err)
 										),
 										"critical"
@@ -753,7 +753,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					f:push_button({
 						title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
 						action = function(button)
-							LrHttp.openUrlInBrowser("https://github.com/LrGenius/LrGeniusAI/wiki/Help-Ollama-Setup")
+							LrHttp.openUrlInBrowser("https://github.com/LrGenius/StyleAI/wiki/Help-Ollama-Setup")
 						end,
 						width = share("setupButtonWidth"),
 					}),
@@ -761,11 +761,11 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("$$$/LrGeniusAI/PluginInfo/LmStudioSettings=LM Studio Settings"),
+				title = LOC("$$$/StyleAI/PluginInfo/LmStudioSettings=LM Studio Settings"),
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/LmStudioUrl=LM Studio Base URL (host:port)"),
+						title = LOC("$$$/StyleAI/PluginInfo/LmStudioUrl=LM Studio Base URL (host:port)"),
 						width = share("setupLabelWidth"),
 					}),
 				}),
@@ -776,9 +776,9 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						width_in_chars = 40,
 					}),
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/PluginInfo/SetupLmStudio=Setup LM Studio"),
+						title = LOC("$$$/StyleAI/PluginInfo/SetupLmStudio=Setup LM Studio"),
 						action = function(button)
-							LrHttp.openUrlInBrowser("https://github.com/LrGenius/LrGeniusAI/wiki/Help-LM-Studio-Setup")
+							LrHttp.openUrlInBrowser("https://github.com/LrGenius/StyleAI/wiki/Help-LM-Studio-Setup")
 						end,
 						width = share("setupButtonWidth"),
 					}),
@@ -786,13 +786,13 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("$$$/LrGeniusAI/UI/Prompts=Prompts"),
+				title = LOC("$$$/StyleAI/UI/Prompts=Prompts"),
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
 						alignment = "right",
 						width = share("promptLabelWidth"),
-						title = LOC("$$$/LrGeniusAI/UI/PromptTitle=Title"),
+						title = LOC("$$$/StyleAI/UI/PromptTitle=Title"),
 					}),
 					propertyTable.promptTitleMenu,
 					f:push_button({
@@ -813,7 +813,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					f:static_text({
 						alignment = "right",
 						width = share("promptLabelWidth"),
-						title = LOC("$$$/LrGeniusAI/PromptConfig/PromptField=Prompt"),
+						title = LOC("$$$/StyleAI/PromptConfig/PromptField=Prompt"),
 					}),
 					f:scrolled_view({
 						horizontal_scroller = false,
@@ -876,7 +876,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					f:checkbox({
 						value = bind("usePreviewThumbnails"),
 						title = LOC(
-							"$$$/LrGeniusAI/PluginInfo/UsePreviewThumbnails=Use Lightroom previews for faster indexing"
+							"$$$/StyleAI/PluginInfo/UsePreviewThumbnails=Use Lightroom previews for faster indexing"
 						),
 					}),
 				}),
@@ -885,20 +885,20 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				width = groupBoxWidth,
 				f:checkbox({
 					value = bind("useClip"),
-					title = LOC("$$$/LrGeniusAI/PluginInfo/UseOpenClip=Use OpenCLIP AI model for advanced search"),
+					title = LOC("$$$/StyleAI/PluginInfo/UseOpenClip=Use OpenCLIP AI model for advanced search"),
 				}),
 				f:group_box({
 					fill_horizontal = 1,
-					title = LOC("$$$/LrGeniusAI/PluginInfo/AdvancedSearchTitle=Advanced search"),
+					title = LOC("$$$/StyleAI/PluginInfo/AdvancedSearchTitle=Advanced search"),
 					f:row({
 						fill_horizontal = 1,
 						f:checkbox({
 							value = bind("clipReady"),
 							enabled = false,
-							title = LOC("$$$/LrGeniusAI/PluginInfo/OpenClipReady=OpenCLIP AI model is ready"),
+							title = LOC("$$$/StyleAI/PluginInfo/OpenClipReady=OpenCLIP AI model is ready"),
 						}),
 						f:push_button({
-							title = LOC("$$$/LrGeniusAI/PluginInfo/DownloadNow=Download now"),
+							title = LOC("$$$/StyleAI/PluginInfo/DownloadNow=Download now"),
 							action = function(button)
 								LrTasks.startAsyncTask(function()
 									SearchIndexAPI.startClipDownload()
@@ -911,11 +911,11 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("$$$/LrGeniusAI/Training/SectionTitle=My Style Profile"),
+				title = LOC("$$$/StyleAI/Training/SectionTitle=My Style Profile"),
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/Training/EngineStatus=Style Engine Status:"),
+						title = LOC("$$$/StyleAI/Training/EngineStatus=Style Engine Status:"),
 						alignment = "right",
 						width = share("labelWidth"),
 					}),
@@ -929,7 +929,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/Training/SavedExamples=Saved training examples:"),
+						title = LOC("$$$/StyleAI/Training/SavedExamples=Saved training examples:"),
 						alignment = "right",
 						width = share("labelWidth"),
 					}),
@@ -946,7 +946,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/Training/TopScenes=Top Scene Types:"),
+						title = LOC("$$$/StyleAI/Training/TopScenes=Top Scene Types:"),
 						alignment = "right",
 						width = share("labelWidth"),
 					}),
@@ -979,7 +979,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/Training/LearnedCameras=Learned Cameras:"),
+						title = LOC("$$$/StyleAI/Training/LearnedCameras=Learned Cameras:"),
 						alignment = "right",
 						width = share("labelWidth"),
 					}),
@@ -1013,7 +1013,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/Training/StyleDNA=Style DNA (Average):"),
+						title = LOC("$$$/StyleAI/Training/StyleDNA=Style DNA (Average):"),
 						alignment = "right",
 						width = share("labelWidth"),
 					}),
@@ -1043,21 +1043,21 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				}),
 				f:row({
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/common/Refresh=Refresh"),
+						title = LOC("$$$/StyleAI/common/Refresh=Refresh"),
 						action = function(button)
 							propertyTable.refreshStyleStats()
 						end,
 					}),
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/Training/ClearAll=Clear all training examples"),
+						title = LOC("$$$/StyleAI/Training/ClearAll=Clear all training examples"),
 						action = function(button)
 							local confirm = LrDialogs.confirm(
-								LOC("$$$/LrGeniusAI/Training/ClearConfirmTitle=Clear Training Examples"),
+								LOC("$$$/StyleAI/Training/ClearConfirmTitle=Clear Training Examples"),
 								LOC(
-									"$$$/LrGeniusAI/Training/ClearConfirmMsg=This will permanently delete all saved training examples. The Style Engine will be reset to Cold Start. Continue?"
+									"$$$/StyleAI/Training/ClearConfirmMsg=This will permanently delete all saved training examples. The Style Engine will be reset to Cold Start. Continue?"
 								),
-								LOC("$$$/LrGeniusAI/Training/ClearConfirmOk=Delete All"),
-								LOC("$$$/LrGeniusAI/Training/ClearConfirmCancel=Cancel")
+								LOC("$$$/StyleAI/Training/ClearConfirmOk=Delete All"),
+								LOC("$$$/StyleAI/Training/ClearConfirmCancel=Cancel")
 							)
 							if confirm == "ok" then
 								LrTasks.startAsyncTask(function()
@@ -1065,15 +1065,15 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 									if ok then
 										propertyTable.refreshStyleStats()
 										LrDialogs.message(
-											LOC("$$$/LrGeniusAI/Training/ClearedTitle=Training Data Cleared"),
+											LOC("$$$/StyleAI/Training/ClearedTitle=Training Data Cleared"),
 											LOC(
-												"$$$/LrGeniusAI/Training/ClearedMsg=All training examples have been removed."
+												"$$$/StyleAI/Training/ClearedMsg=All training examples have been removed."
 											),
 											"info"
 										)
 									else
 										ErrorHandler.handleError(
-											LOC("$$$/LrGeniusAI/Training/ClearFailedTitle=Clear Failed"),
+											LOC("$$$/StyleAI/Training/ClearFailedTitle=Clear Failed"),
 											tostring(err or "Unknown error")
 										)
 									end
@@ -1123,7 +1123,7 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 				ErrorHandler.handleError(
 					"DbPathInit",
 					LOC(
-						"$$$/LrGeniusAI/PluginInfo/DbPathInitFailed=Failed to initialize database at the selected path: ^1\n\nCheck that the folder exists and is writable.",
+						"$$$/StyleAI/PluginInfo/DbPathInitFailed=Failed to initialize database at the selected path: ^1\n\nCheck that the folder exists and is writable.",
 						tostring(errMsg)
 					)
 				)

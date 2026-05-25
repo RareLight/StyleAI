@@ -20,36 +20,36 @@ local function showFindSimilarDialog(ctx)
 		bind_to_object = props,
 		spacing = f:control_spacing(),
 		f:static_text({
-			title = LOC("$$$/LrGeniusAI/FindSimilarImages/SelectOptions=Search options:"),
+			title = LOC("$$$/StyleAI/FindSimilarImages/SelectOptions=Search options:"),
 			font = "<system/bold>",
 		}),
 		f:row({
-			f:static_text({ title = LOC("$$$/LrGeniusAI/FindSimilarImages/FindBy=Find by:"), width = 120 }),
+			f:static_text({ title = LOC("$$$/StyleAI/FindSimilarImages/FindBy=Find by:"), width = 120 }),
 			f:popup_menu({
 				value = bind("similarityMode"),
 				items = {
 					{
-						title = LOC("$$$/LrGeniusAI/FindSimilarImages/ModePhash=Near duplicates (phash)"),
+						title = LOC("$$$/StyleAI/FindSimilarImages/ModePhash=Near duplicates (phash)"),
 						value = "phash",
 					},
-					{ title = LOC("$$$/LrGeniusAI/FindSimilarImages/ModeClip=Similar content (CLIP)"), value = "clip" },
+					{ title = LOC("$$$/StyleAI/FindSimilarImages/ModeClip=Similar content (CLIP)"), value = "clip" },
 				},
 				width = 260,
 			}),
 		}),
 		f:row({
-			f:static_text({ title = LOC("$$$/LrGeniusAI/FindSimilarImages/SearchIn=Search in:"), width = 120 }),
+			f:static_text({ title = LOC("$$$/StyleAI/FindSimilarImages/SearchIn=Search in:"), width = 120 }),
 			f:popup_menu({
 				value = bind("searchScope"),
 				items = {
-					{ title = LOC("$$$/LrGeniusAI/FindSimilarImages/ScopeAll=All indexed photos"), value = "all" },
-					{ title = LOC("$$$/LrGeniusAI/FindSimilarImages/ScopeView=Current view"), value = "view" },
+					{ title = LOC("$$$/StyleAI/FindSimilarImages/ScopeAll=All indexed photos"), value = "all" },
+					{ title = LOC("$$$/StyleAI/FindSimilarImages/ScopeView=Current view"), value = "view" },
 				},
 				width = 260,
 			}),
 		}),
 		f:row({
-			f:static_text({ title = LOC("$$$/LrGeniusAI/FindSimilarImages/MaxResults=Max results:"), width = 120 }),
+			f:static_text({ title = LOC("$$$/StyleAI/FindSimilarImages/MaxResults=Max results:"), width = 120 }),
 			f:popup_menu({
 				value = bind("maxResults"),
 				items = {
@@ -62,16 +62,16 @@ local function showFindSimilarDialog(ctx)
 			}),
 		}),
 		f:row({
-			f:static_text({ title = LOC("$$$/LrGeniusAI/FindSimilarImages/Similarity=Similarity:"), width = 120 }),
+			f:static_text({ title = LOC("$$$/StyleAI/FindSimilarImages/Similarity=Similarity:"), width = 120 }),
 			f:popup_menu({
 				value = bind("phashStrictness"),
 				items = {
 					{
-						title = LOC("$$$/LrGeniusAI/FindSimilarImages/Strict=Strict (near duplicates)"),
+						title = LOC("$$$/StyleAI/FindSimilarImages/Strict=Strict (near duplicates)"),
 						value = "strict",
 					},
-					{ title = LOC("$$$/LrGeniusAI/FindSimilarImages/Normal=Normal"), value = "normal" },
-					{ title = LOC("$$$/LrGeniusAI/FindSimilarImages/Loose=Loose (more variety)"), value = "loose" },
+					{ title = LOC("$$$/StyleAI/FindSimilarImages/Normal=Normal"), value = "normal" },
+					{ title = LOC("$$$/StyleAI/FindSimilarImages/Loose=Loose (more variety)"), value = "loose" },
 				},
 				width = 260,
 			}),
@@ -79,10 +79,10 @@ local function showFindSimilarDialog(ctx)
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/FindSimilarImages/WindowTitle=Find Similar Images"),
+		title = LOC("$$$/StyleAI/FindSimilarImages/WindowTitle=Find Similar Images"),
 		contents = contents,
-		actionVerb = LOC("$$$/LrGeniusAI/FindSimilarImages/Search=Find Similar"),
-		cancelVerb = LOC("$$$/LrGeniusAI/common/Cancel=Cancel"),
+		actionVerb = LOC("$$$/StyleAI/FindSimilarImages/Search=Find Similar"),
+		cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
 	})
 	if result ~= "ok" then
 		return nil
@@ -116,9 +116,9 @@ local function createCollectionFromPhotoIds(photoIds, collectionName)
 	local photos = SearchIndexAPI.findPhotosByPhotoIds(photoIds)
 	if #photos == 0 then
 		LrDialogs.message(
-			LOC("$$$/LrGeniusAI/FindSimilarImages/NoPhotosInCatalog=Not in catalog"),
+			LOC("$$$/StyleAI/FindSimilarImages/NoPhotosInCatalog=Not in catalog"),
 			LOC(
-				"$$$/LrGeniusAI/FindSimilarImages/NoPhotosInCatalogMessage=Similar photos were found in the index but are not in the current catalog."
+				"$$$/StyleAI/FindSimilarImages/NoPhotosInCatalogMessage=Similar photos were found in the index but are not in the current catalog."
 			)
 		)
 		return
@@ -127,16 +127,16 @@ local function createCollectionFromPhotoIds(photoIds, collectionName)
 	local collectionSet, collection
 	catalog:withWriteAccessDo("Create Collection Set", function()
 		collectionSet = catalog:createCollectionSet(
-			LOC("$$$/LrGeniusAI/FindSimilarImages/CollectionSetName=Similar Images"),
+			LOC("$$$/StyleAI/FindSimilarImages/CollectionSetName=Similar Images"),
 			nil,
 			true
 		)
 	end, Defaults.catalogWriteAccessOptions)
 	if not collectionSet then
 		ErrorHandler.handleError(
-			LOC("$$$/LrGeniusAI/FindSimilarImages/CollectionSetError=Collection set error"),
+			LOC("$$$/StyleAI/FindSimilarImages/CollectionSetError=Collection set error"),
 			LOC(
-				"$$$/LrGeniusAI/FindSimilarImages/CollectionSetErrorMessage=Could not create collection set for similar images."
+				"$$$/StyleAI/FindSimilarImages/CollectionSetErrorMessage=Could not create collection set for similar images."
 			)
 		)
 		return
@@ -147,8 +147,8 @@ local function createCollectionFromPhotoIds(photoIds, collectionName)
 	end, Defaults.catalogWriteAccessOptions)
 	if not collection then
 		ErrorHandler.handleError(
-			LOC("$$$/LrGeniusAI/FindSimilarImages/CollectionError=Collection error"),
-			LOC("$$$/LrGeniusAI/FindSimilarImages/CollectionErrorMessage=Could not create collection.")
+			LOC("$$$/StyleAI/FindSimilarImages/CollectionError=Collection error"),
+			LOC("$$$/StyleAI/FindSimilarImages/CollectionErrorMessage=Could not create collection.")
 		)
 		return
 	end
@@ -160,9 +160,9 @@ local function createCollectionFromPhotoIds(photoIds, collectionName)
 	catalog:setActiveSources({ collection })
 	LrApplicationView.gridView()
 	LrDialogs.message(
-		LOC("$$$/LrGeniusAI/FindSimilarImages/Done=Done"),
+		LOC("$$$/StyleAI/FindSimilarImages/Done=Done"),
 		LOC(
-			'$$$/LrGeniusAI/People/CollectionCreated=^1 photo(s) added to collection "^2".',
+			'$$$/StyleAI/People/CollectionCreated=^1 photo(s) added to collection "^2".',
 			tostring(#photos),
 			collectionName
 		)
@@ -179,16 +179,16 @@ LrTasks.startAsyncTask(function()
 		local targetPhotos = catalog:getTargetPhotos()
 		if not targetPhotos or #targetPhotos == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/FindSimilarImages/NoPhotoTitle=No photo selected"),
-				LOC("$$$/LrGeniusAI/FindSimilarImages/NoPhotoMessage=Please select a single photo in the Library.")
+				LOC("$$$/StyleAI/FindSimilarImages/NoPhotoTitle=No photo selected"),
+				LOC("$$$/StyleAI/FindSimilarImages/NoPhotoMessage=Please select a single photo in the Library.")
 			)
 			return
 		end
 		if #targetPhotos > 1 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/FindSimilarImages/SinglePhotoTitle=Select one photo"),
+				LOC("$$$/StyleAI/FindSimilarImages/SinglePhotoTitle=Select one photo"),
 				LOC(
-					"$$$/LrGeniusAI/FindSimilarImages/SinglePhotoMessage=Please select exactly one photo to find similar images."
+					"$$$/StyleAI/FindSimilarImages/SinglePhotoMessage=Please select exactly one photo to find similar images."
 				)
 			)
 			return
@@ -203,7 +203,7 @@ LrTasks.startAsyncTask(function()
 		local photoId, photoIdErr = SearchIndexAPI.getPhotoIdForPhoto(photo)
 		if not photoId or photoId == "" then
 			ErrorHandler.handleError(
-				LOC("$$$/LrGeniusAI/FindSimilarImages/PhotoIdError=Could not get photo ID"),
+				LOC("$$$/StyleAI/FindSimilarImages/PhotoIdError=Could not get photo ID"),
 				photoIdErr or "Photo has no UUID. Run Analyze & Index first."
 			)
 			return
@@ -214,9 +214,9 @@ LrTasks.startAsyncTask(function()
 			local scopePhotos = PhotoSelector.getPhotosInScope("view")
 			if not scopePhotos or #scopePhotos == 0 then
 				LrDialogs.message(
-					LOC("$$$/LrGeniusAI/common/InvalidViewTitle=Invalid View"),
+					LOC("$$$/StyleAI/common/InvalidViewTitle=Invalid View"),
 					LOC(
-						"$$$/LrGeniusAI/common/InvalidViewMessage=The 'Current view' scope only works when a folder or collection is selected."
+						"$$$/StyleAI/common/InvalidViewMessage=The 'Current view' scope only works when a folder or collection is selected."
 					)
 				)
 				return
@@ -231,7 +231,7 @@ LrTasks.startAsyncTask(function()
 		end
 
 		local progressScope = LrProgressScope({
-			title = LOC("$$$/LrGeniusAI/FindSimilarImages/ProgressTitle=Finding similar images..."),
+			title = LOC("$$$/StyleAI/FindSimilarImages/ProgressTitle=Finding similar images..."),
 			functionContext = context,
 		})
 		progressScope:setPortionComplete(0, 1)
@@ -251,13 +251,13 @@ LrTasks.startAsyncTask(function()
 		progressScope:done()
 
 		if err then
-			ErrorHandler.handleError(LOC("$$$/LrGeniusAI/FindSimilarImages/SearchError=Find similar failed"), err)
+			ErrorHandler.handleError(LOC("$$$/StyleAI/FindSimilarImages/SearchError=Find similar failed"), err)
 			return
 		end
 
 		-- If the server returned a warning (e.g. reference photo not indexed), show it and stop.
 		if result and result.warning then
-			LrDialogs.message(LOC("$$$/LrGeniusAI/common/BackendWarning=Backend Warning"), result.warning, "warning")
+			LrDialogs.message(LOC("$$$/StyleAI/common/BackendWarning=Backend Warning"), result.warning, "warning")
 			return
 		end
 
@@ -270,9 +270,9 @@ LrTasks.startAsyncTask(function()
 				phashMaxHammingFromStrictness(options.phashStrictness)
 			)
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/FindSimilarImages/NoResultsTitle=No similar images"),
+				LOC("$$$/StyleAI/FindSimilarImages/NoResultsTitle=No similar images"),
 				LOC(
-					"$$$/LrGeniusAI/FindSimilarImages/NoResultsMessage=No similar images found. The photo may not be indexed yet, or no other photos are similar enough. Run 'Analyze & Index' to ensure perceptual hashes are computed."
+					"$$$/StyleAI/FindSimilarImages/NoResultsMessage=No similar images found. The photo may not be indexed yet, or no other photos are similar enough. Run 'Analyze & Index' to ensure perceptual hashes are computed."
 				)
 			)
 			return
@@ -287,7 +287,7 @@ LrTasks.startAsyncTask(function()
 		end
 
 		local collectionName = LOC(
-			"$$$/LrGeniusAI/FindSimilarImages/CollectionName=Similar images @ ^1",
+			"$$$/StyleAI/FindSimilarImages/CollectionName=Similar images @ ^1",
 			LrDate.timeToW3CDate(LrDate.currentTime())
 		)
 		createCollectionFromPhotoIds(photoIds, collectionName)

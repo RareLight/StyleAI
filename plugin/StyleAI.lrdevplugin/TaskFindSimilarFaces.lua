@@ -14,7 +14,7 @@ local function saveFaceThumbnail(face, index)
 		return
 	end
 	local tempDir = LrPathUtils.getStandardFilePath("temp")
-	local tempFile = LrPathUtils.child(tempDir, "lrgenius_face_" .. tostring(index) .. ".jpg")
+	local tempFile = LrPathUtils.child(tempDir, "styleai_face_" .. tostring(index) .. ".jpg")
 	local f = io.open(tempFile, "wb")
 	if f then
 		f:write(LrStringUtils.decodeBase64(thumb))
@@ -61,9 +61,9 @@ local function showFaceSelectionDialog(context, faces)
 	for i, face in ipairs(faces) do
 		local label
 		if face.person_name and face.person_name ~= "" then
-			label = LOC("$$$/LrGeniusAI/FindSimilarFaces/FaceWithName=Face ^1 (^2)", tostring(i), face.person_name)
+			label = LOC("$$$/StyleAI/FindSimilarFaces/FaceWithName=Face ^1 (^2)", tostring(i), face.person_name)
 		else
-			label = LOC("$$$/LrGeniusAI/FindSimilarFaces/FaceNumber=Face ^1", tostring(i))
+			label = LOC("$$$/StyleAI/FindSimilarFaces/FaceNumber=Face ^1", tostring(i))
 		end
 		local thumbView = (face.thumbnail_path and face.thumbnail_path ~= "")
 				and f:picture({ value = face.thumbnail_path, width = 48, height = 48 })
@@ -89,17 +89,17 @@ local function showFaceSelectionDialog(context, faces)
 		spacing = f:control_spacing(),
 		fill_horizontal = 1,
 		f:static_text({
-			title = LOC("$$$/LrGeniusAI/FindSimilarFaces/SelectFace=Select the face to search for:"),
+			title = LOC("$$$/StyleAI/FindSimilarFaces/SelectFace=Select the face to search for:"),
 			font = "<system/bold>",
 		}),
 		listScroller,
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/FindSimilarFaces/WindowTitle=Find Similar Faces"),
+		title = LOC("$$$/StyleAI/FindSimilarFaces/WindowTitle=Find Similar Faces"),
 		contents = contents,
-		actionVerb = LOC("$$$/LrGeniusAI/FindSimilarFaces/Search=Search"),
-		cancelVerb = LOC("$$$/LrGeniusAI/common/Cancel=Cancel"),
+		actionVerb = LOC("$$$/StyleAI/FindSimilarFaces/Search=Search"),
+		cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
 	})
 	if result == "cancel" then
 		return nil
@@ -113,9 +113,9 @@ local function createCollectionFromPhotoIds(photoIds, collectionName)
 	local photos = SearchIndexAPI.findPhotosByPhotoIds(photoIds)
 	if #photos == 0 then
 		LrDialogs.message(
-			LOC("$$$/LrGeniusAI/FindSimilarFaces/NoPhotosInCatalog=Not in catalog"),
+			LOC("$$$/StyleAI/FindSimilarFaces/NoPhotosInCatalog=Not in catalog"),
 			LOC(
-				"$$$/LrGeniusAI/FindSimilarFaces/PersonPhotosNotInCatalog=Photos for this person are not in the current catalog."
+				"$$$/StyleAI/FindSimilarFaces/PersonPhotosNotInCatalog=Photos for this person are not in the current catalog."
 			)
 		)
 		return
@@ -123,12 +123,12 @@ local function createCollectionFromPhotoIds(photoIds, collectionName)
 
 	local collectionSet, collection
 	catalog:withWriteAccessDo("Create Collection Set", function()
-		collectionSet = catalog:createCollectionSet(LOC("$$$/LrGeniusAI/People/CollectionSetName=People"), nil, true)
+		collectionSet = catalog:createCollectionSet(LOC("$$$/StyleAI/People/CollectionSetName=People"), nil, true)
 	end, Defaults.catalogWriteAccessOptions)
 	if not collectionSet then
 		ErrorHandler.handleError(
-			LOC("$$$/LrGeniusAI/People/CollectionSetError=Collection set error"),
-			LOC("$$$/LrGeniusAI/People/CollectionSetErrorMessage=Could not create collection set for people.")
+			LOC("$$$/StyleAI/People/CollectionSetError=Collection set error"),
+			LOC("$$$/StyleAI/People/CollectionSetErrorMessage=Could not create collection set for people.")
 		)
 		return
 	end
@@ -138,8 +138,8 @@ local function createCollectionFromPhotoIds(photoIds, collectionName)
 	end, Defaults.catalogWriteAccessOptions)
 	if not collection then
 		ErrorHandler.handleError(
-			LOC("$$$/LrGeniusAI/People/CollectionError=Collection error"),
-			LOC("$$$/LrGeniusAI/People/CollectionErrorMessage=Could not create collection for this person.")
+			LOC("$$$/StyleAI/People/CollectionError=Collection error"),
+			LOC("$$$/StyleAI/People/CollectionErrorMessage=Could not create collection for this person.")
 		)
 		return
 	end
@@ -151,9 +151,9 @@ local function createCollectionFromPhotoIds(photoIds, collectionName)
 	catalog:setActiveSources({ collection })
 	LrApplicationView.gridView()
 	LrDialogs.message(
-		LOC("$$$/LrGeniusAI/People/Done=Done"),
+		LOC("$$$/StyleAI/People/Done=Done"),
 		LOC(
-			'$$$/LrGeniusAI/People/CollectionCreated=^1 photo(s) added to collection "^2".',
+			'$$$/StyleAI/People/CollectionCreated=^1 photo(s) added to collection "^2".',
 			tostring(#photos),
 			collectionName
 		)
@@ -170,16 +170,16 @@ LrTasks.startAsyncTask(function()
 		local targetPhotos = catalog:getTargetPhotos()
 		if not targetPhotos or #targetPhotos == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/FindSimilarFaces/NoPhotoTitle=No photo selected"),
-				LOC("$$$/LrGeniusAI/FindSimilarFaces/NoPhotoMessage=Please select a single photo in the Library.")
+				LOC("$$$/StyleAI/FindSimilarFaces/NoPhotoTitle=No photo selected"),
+				LOC("$$$/StyleAI/FindSimilarFaces/NoPhotoMessage=Please select a single photo in the Library.")
 			)
 			return
 		end
 		if #targetPhotos > 1 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/FindSimilarFaces/SinglePhotoTitle=Select one photo"),
+				LOC("$$$/StyleAI/FindSimilarFaces/SinglePhotoTitle=Select one photo"),
 				LOC(
-					"$$$/LrGeniusAI/FindSimilarFaces/SinglePhotoMessage=Please select exactly one photo to find similar faces."
+					"$$$/StyleAI/FindSimilarFaces/SinglePhotoMessage=Please select exactly one photo to find similar faces."
 				)
 			)
 			return
@@ -189,7 +189,7 @@ LrTasks.startAsyncTask(function()
 		local path = SearchIndexAPI.exportPhotoForIndexing(photo)
 		if not path or not LrFileUtils.exists(path) then
 			ErrorHandler.handleError(
-				LOC("$$$/LrGeniusAI/FindSimilarFaces/ExportError=Export failed"),
+				LOC("$$$/StyleAI/FindSimilarFaces/ExportError=Export failed"),
 				"Could not export photo for face detection."
 			)
 			return
@@ -199,7 +199,7 @@ LrTasks.startAsyncTask(function()
 		LrFileUtils.delete(path)
 		if not imageBase64 then
 			ErrorHandler.handleError(
-				LOC("$$$/LrGeniusAI/FindSimilarFaces/ExportError=Export failed"),
+				LOC("$$$/StyleAI/FindSimilarFaces/ExportError=Export failed"),
 				"Could not read exported image."
 			)
 			return
@@ -208,13 +208,13 @@ LrTasks.startAsyncTask(function()
 		-- 1) Detect faces
 		local detectResp, err = SearchIndexAPI.detectFacesInImage(imageBase64)
 		if err then
-			ErrorHandler.handleError(LOC("$$$/LrGeniusAI/FindSimilarFaces/DetectError=Face detection failed"), err)
+			ErrorHandler.handleError(LOC("$$$/StyleAI/FindSimilarFaces/DetectError=Face detection failed"), err)
 			return
 		end
 
 		if detectResp and detectResp.warning then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/common/BackendWarning=Backend Warning"),
+				LOC("$$$/StyleAI/common/BackendWarning=Backend Warning"),
 				detectResp.warning,
 				"warning"
 			)
@@ -223,8 +223,8 @@ LrTasks.startAsyncTask(function()
 		local faces = (detectResp and detectResp.faces) and detectResp.faces or {}
 		if #faces == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/FindSimilarFaces/NoFacesTitle=No faces found"),
-				LOC("$$$/LrGeniusAI/FindSimilarFaces/NoFacesMessage=No faces were detected on this photo.")
+				LOC("$$$/StyleAI/FindSimilarFaces/NoFacesTitle=No faces found"),
+				LOC("$$$/StyleAI/FindSimilarFaces/NoFacesMessage=No faces were detected on this photo.")
 			)
 			return
 		end
@@ -267,19 +267,19 @@ LrTasks.startAsyncTask(function()
 		local queryResp
 		queryResp, err = SearchIndexAPI.queryFacesByImage(imageBase64, faceIndex, 500)
 		if err then
-			ErrorHandler.handleError(LOC("$$$/LrGeniusAI/FindSimilarFaces/QueryError=Search failed"), err)
+			ErrorHandler.handleError(LOC("$$$/StyleAI/FindSimilarFaces/QueryError=Search failed"), err)
 			return
 		end
 		if queryResp and queryResp.warning then
-			LrDialogs.message(LOC("$$$/LrGeniusAI/common/BackendWarning=Backend Warning"), queryResp.warning, "warning")
+			LrDialogs.message(LOC("$$$/StyleAI/common/BackendWarning=Backend Warning"), queryResp.warning, "warning")
 		end
 
 		local results = (queryResp and queryResp.results) and queryResp.results or {}
 		if #results == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/FindSimilarFaces/NoResultsTitle=No similar faces"),
+				LOC("$$$/StyleAI/FindSimilarFaces/NoResultsTitle=No similar faces"),
 				LOC(
-					"$$$/LrGeniusAI/FindSimilarFaces/NoResultsMessage=No similar faces found in the index. Run 'Analyze & Index' with face detection enabled."
+					"$$$/StyleAI/FindSimilarFaces/NoResultsMessage=No similar faces found in the index. Run 'Analyze & Index' with face detection enabled."
 				)
 			)
 			return
@@ -312,8 +312,8 @@ LrTasks.startAsyncTask(function()
 
 		if #photoIds == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/FindSimilarFaces/NoResultsTitle=No similar faces"),
-				LOC("$$$/LrGeniusAI/FindSimilarFaces/NoPhotosForFace=No photos found for this face.")
+				LOC("$$$/StyleAI/FindSimilarFaces/NoResultsTitle=No similar faces"),
+				LOC("$$$/StyleAI/FindSimilarFaces/NoPhotosForFace=No photos found for this face.")
 			)
 			return
 		end
@@ -326,7 +326,7 @@ LrTasks.startAsyncTask(function()
 			personDisplayName = getPersonNameForId(personId, personsList)
 		end
 		if not personDisplayName or personDisplayName == "" then
-			personDisplayName = LOC("$$$/LrGeniusAI/FindSimilarFaces/SimilarFaces=Similar Faces")
+			personDisplayName = LOC("$$$/StyleAI/FindSimilarFaces/SimilarFaces=Similar Faces")
 		end
 		local collectionName = string.format("%s @ %s", personDisplayName, LrDate.timeToW3CDate(LrDate.currentTime()))
 		createCollectionFromPhotoIds(photoIds, collectionName)

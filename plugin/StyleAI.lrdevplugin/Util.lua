@@ -496,7 +496,7 @@ function Util.getStringsFromRelativePath(absolutePath)
 end
 
 function Util.getLogfilePath()
-	local filename = "LrGeniusAI.log"
+	local filename = "StyleAI.log"
 	local macPath14 = LrPathUtils.getStandardFilePath("home") .. "/Library/Logs/Adobe/Lightroom/LrClassicLogs/"
 	local winPath14 = LrPathUtils.getStandardFilePath("home")
 		.. "\\AppData\\Local\\Adobe\\Lightroom\\Logs\\LrClassicLogs\\"
@@ -542,7 +542,7 @@ end
 
 function Util.copyLogfilesToDesktop(extraInfo)
 	local progressScope = LrProgressScope({
-		title = LOC("$$$/LrGeniusAI/PluginInfo/CopyingLogs=Copying log files to Desktop..."),
+		title = LOC("$$$/StyleAI/PluginInfo/CopyingLogs=Copying log files to Desktop..."),
 		canCancel = true,
 	})
 
@@ -566,7 +566,7 @@ function Util.copyLogfilesToDesktop(extraInfo)
 		local reportPath = LrPathUtils.child(folder, "report.txt")
 		local f = io.open(reportPath, "w")
 		if f then
-			f:write("LrGeniusAI Error Report\n")
+			f:write("StyleAI Error Report\n")
 			f:write("======================\n\n")
 			f:write("Date: " .. Util.formatTimestampSafe(LrDate.currentTime()) .. "\n")
 			if extraInfo.error then
@@ -588,7 +588,7 @@ function Util.copyLogfilesToDesktop(extraInfo)
 	end
 	progressScope:setPortionComplete(0.3, 1)
 
-	local filePath = LrPathUtils.child(folder, "LrGeniusAI.log")
+	local filePath = LrPathUtils.child(folder, "StyleAI.log")
 	local logFilePath = Util.getLogfilePath()
 	if LrFileUtils.exists(logFilePath) then
 		log:trace("Copying local logfile: " .. logFilePath)
@@ -618,7 +618,7 @@ function Util.copyLogfilesToDesktop(extraInfo)
 		return
 	end
 	progressScope:setPortionComplete(0.5, 1)
-	progressScope:setCaption(LOC("$$$/LrGeniusAI/Util/FetchingServerLogs=Fetching server-side logs via API..."))
+	progressScope:setCaption(LOC("$$$/StyleAI/Util/FetchingServerLogs=Fetching server-side logs via API..."))
 
 	-- Use the new streaming method to download logs directly to disk, avoiding memory spikes
 	local url = tostring(prefs.backendServerUrl or "")
@@ -629,7 +629,7 @@ function Util.copyLogfilesToDesktop(extraInfo)
 	end
 
 	local logFiles = {
-		{ type = "backend", filename = "lrgenius-server.log" },
+		{ type = "backend", filename = "styleai-server.log" },
 		{ type = "ollama", filename = "ollama.log" },
 		{ type = "lmstudio", filename = "lmstudio.log" },
 	}
@@ -643,7 +643,7 @@ function Util.copyLogfilesToDesktop(extraInfo)
 		local targetName = prefix .. logInfo.filename
 		local targetPath = LrPathUtils.child(folder, targetName)
 
-		progressScope:setCaption(LOC("$$$/LrGeniusAI/Util/FetchingLog=Fetching ^1...", logInfo.filename))
+		progressScope:setCaption(LOC("$$$/StyleAI/Util/FetchingLog=Fetching ^1...", logInfo.filename))
 		local success = SearchIndexAPI.downloadRawLog(logInfo.type, targetPath)
 
 		if success then
@@ -656,13 +656,13 @@ function Util.copyLogfilesToDesktop(extraInfo)
 	end
 
 	progressScope:setPortionComplete(1.0, 1)
-	progressScope:setCaption(LOC("$$$/LrGeniusAI/common/Done=Done."))
+	progressScope:setCaption(LOC("$$$/StyleAI/common/Done=Done."))
 	progressScope:done()
 
 	if LrFileUtils.exists(folder) then
 		LrShell.revealInShell(folder)
 	else
-		ErrorHandler.handleError(LOC("$$$/LrGeniusAI/Util/LogfileCopyFailed=Logfile copy failed"), folder)
+		ErrorHandler.handleError(LOC("$$$/StyleAI/Util/LogfileCopyFailed=Logfile copy failed"), folder)
 	end
 end
 
@@ -1207,8 +1207,8 @@ function Util.waitForServerDialog(options)
 
 	LrFunctionContext.callWithContext("WaitForServerContext", function(waitContext)
 		local progressScope = LrDialogs.showModalProgressDialog({
-			title = LOC("$$$/lrc-ai-assistant/WaitForServer/title=LrGeniusAI"),
-			caption = LOC("$$$/lrc-ai-assistant/WaitForServer/caption=Waiting for LrGeniusAI database to load..."),
+			title = LOC("$$$/lrc-ai-assistant/WaitForServer/title=StyleAI"),
+			caption = LOC("$$$/lrc-ai-assistant/WaitForServer/caption=Waiting for StyleAI database to load..."),
 			cannotCancel = false,
 			functionContext = waitContext,
 		})
@@ -1309,20 +1309,20 @@ function Util.showDiagnosticFailureDialog(diag)
 	local f = LrView.osFactory()
 
 	local message =
-		LOC("$$$/LrGeniusAI/Health/BackendCritical=The local backend server is not running and could not be started.")
+		LOC("$$$/StyleAI/Health/BackendCritical=The local backend server is not running and could not be started.")
 	local hint
 
 	if diag.binaryMissing then
 		hint = LOC(
-			"$$$/LrGeniusAI/Diagnostics/BinaryMissingHint=Please reinstall the LrGeniusAI plugin or check if your antivirus has quarantined the 'lrgenius-server' file."
+			"$$$/StyleAI/Diagnostics/BinaryMissingHint=Please reinstall the StyleAI plugin or check if your antivirus has quarantined the 'styleai-server' file."
 		)
 	elseif diag.portBusy then
 		hint = LOC(
-			"$$$/LrGeniusAI/Diagnostics/PortBusyHint=Please close other applications like Ollama or another instance of Lightroom that might be using this port."
+			"$$$/StyleAI/Diagnostics/PortBusyHint=Please close other applications like Ollama or another instance of Lightroom that might be using this port."
 		)
 	else
 		hint = LOC(
-			"$$$/LrGeniusAI/Onboarding/BackendHint=If the server fails to start, check if another application is using port 19819 or if your firewall is blocking it."
+			"$$$/StyleAI/Onboarding/BackendHint=If the server fails to start, check if another application is using port 19819 or if your firewall is blocking it."
 		)
 	end
 
@@ -1334,7 +1334,7 @@ function Util.showDiagnosticFailureDialog(diag)
 			text_color = LrColor(1, 0, 0),
 		}),
 		f:static_text({
-			title = LOC("$$$/LrGeniusAI/Health/FixIt=How to fix it:"),
+			title = LOC("$$$/StyleAI/Health/FixIt=How to fix it:"),
 			font = "<system/bold>",
 		}),
 		f:static_text({
@@ -1347,7 +1347,7 @@ function Util.showDiagnosticFailureDialog(diag)
 		table.insert(contents, f:spacer({ height = 10 }))
 		table.insert(
 			contents,
-			f:static_text({ title = LOC("$$$/LrGeniusAI/Diagnostics/LogSnippet=Recent server errors:") })
+			f:static_text({ title = LOC("$$$/StyleAI/Diagnostics/LogSnippet=Recent server errors:") })
 		)
 		table.insert(
 			contents,
@@ -1361,10 +1361,10 @@ function Util.showDiagnosticFailureDialog(diag)
 	end
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/Health/DialogTitle=LrGeniusAI System Check"),
+		title = LOC("$$$/StyleAI/Health/DialogTitle=StyleAI System Check"),
 		contents = contents,
-		actionVerb = LOC("$$$/LrGeniusAI/Health/OpenWizard=Run Setup Wizard"),
-		cancelVerb = LOC("$$$/LrGeniusAI/common/Close=Close"),
+		actionVerb = LOC("$$$/StyleAI/Health/OpenWizard=Run Setup Wizard"),
+		cancelVerb = LOC("$$$/StyleAI/common/Close=Close"),
 	})
 
 	if result == "ok" then
@@ -1387,9 +1387,9 @@ function Util.checkPluginHealth(options)
 		report.critical = true
 		report.diagnostics = SearchIndexAPI.diagnoseStartupFailure()
 		table.insert(report.issues, {
-			title = LOC("$$$/LrGeniusAI/Health/BackendFailed=Backend server is not reachable."),
+			title = LOC("$$$/StyleAI/Health/BackendFailed=Backend server is not reachable."),
 			hint = LOC(
-				"$$$/LrGeniusAI/Health/BackendCritical=The local backend server is not running and could not be started."
+				"$$$/StyleAI/Health/BackendCritical=The local backend server is not running and could not be started."
 			),
 			critical = true,
 		})
@@ -1398,9 +1398,9 @@ function Util.checkPluginHealth(options)
 	if not health.clip and (options.requireClip or prefs.useClip) then
 		report.healthy = false
 		table.insert(report.issues, {
-			title = LOC("$$$/LrGeniusAI/Health/ClipMissing=CLIP model for semantic search is missing."),
+			title = LOC("$$$/StyleAI/Health/ClipMissing=CLIP model for semantic search is missing."),
 			hint = LOC(
-				"$$$/LrGeniusAI/Health/ClipMissingHint=Semantic search and some indexing features will be disabled. You can download the model in the Setup Wizard."
+				"$$$/StyleAI/Health/ClipMissingHint=Semantic search and some indexing features will be disabled. You can download the model in the Setup Wizard."
 			),
 			critical = false,
 		})
@@ -1409,9 +1409,9 @@ function Util.checkPluginHealth(options)
 	if not health.gemini and not health.chatgpt and not health.ollama and not health.lmstudio then
 		report.healthy = false
 		table.insert(report.issues, {
-			title = LOC("$$$/LrGeniusAI/Health/ApiKeysMissing=No AI providers configured for AI generation."),
+			title = LOC("$$$/StyleAI/Health/ApiKeysMissing=No AI providers configured for AI generation."),
 			hint = LOC(
-				"$$$/LrGeniusAI/Health/ApiKeysMissingHint=You need to configure Gemini or ChatGPT API keys (or a local provider) to generate keywords and descriptions."
+				"$$$/StyleAI/Health/ApiKeysMissingHint=You need to configure Gemini or ChatGPT API keys (or a local provider) to generate keywords and descriptions."
 			),
 			critical = options.requireProviders == true,
 		})
@@ -1430,7 +1430,7 @@ function Util.showHealthIssuesDialog(report)
 		spacing = f:control_spacing(),
 		f:static_text({
 			title = LOC(
-				"$$$/LrGeniusAI/Health/IssuesFound=We found some issues that might prevent the plugin from working correctly:"
+				"$$$/StyleAI/Health/IssuesFound=We found some issues that might prevent the plugin from working correctly:"
 			),
 			font = "<system/bold>",
 		}),
@@ -1461,12 +1461,12 @@ function Util.showHealthIssuesDialog(report)
 	end
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/Health/DialogTitle=LrGeniusAI System Check"),
+		title = LOC("$$$/StyleAI/Health/DialogTitle=StyleAI System Check"),
 		contents = contents,
-		actionVerb = report.critical and LOC("$$$/LrGeniusAI/Health/OpenWizard=Run Setup Wizard")
-			or LOC("$$$/LrGeniusAI/Health/IgnoreAndContinue=Ignore & Continue"),
-		cancelVerb = LOC("$$$/LrGeniusAI/common/Cancel=Cancel"),
-		otherVerb = not report.critical and LOC("$$$/LrGeniusAI/Health/OpenWizard=Run Setup Wizard") or nil,
+		actionVerb = report.critical and LOC("$$$/StyleAI/Health/OpenWizard=Run Setup Wizard")
+			or LOC("$$$/StyleAI/Health/IgnoreAndContinue=Ignore & Continue"),
+		cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
+		otherVerb = not report.critical and LOC("$$$/StyleAI/Health/OpenWizard=Run Setup Wizard") or nil,
 	})
 
 	if result == "ok" then
@@ -1485,7 +1485,7 @@ function Util.showHealthIssuesDialog(report)
 end
 
 ---
--- Adds a photo to the "Rejected AI Descriptions" collection (under set "LrGeniusAI").
+-- Adds a photo to the "Rejected AI Descriptions" collection (under set "StyleAI").
 -- Finds or creates the set and collection by name, then adds the photo.
 -- @param photo LrPhoto
 -- @param writeOptions optional; e.g. Defaults.catalogWriteAccessOptions
@@ -1496,8 +1496,8 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 	end
 	writeOptions = writeOptions or { timeout = 60 }
 	local catalog = LrApplication.activeCatalog()
-	local setName = LOC("$$$/LrGeniusAI/Rejected/CollectionSetName=LrGeniusAI")
-	local collName = LOC("$$$/LrGeniusAI/Rejected/CollectionName=Rejected AI Descriptions")
+	local setName = LOC("$$$/StyleAI/Rejected/CollectionSetName=StyleAI")
+	local collName = LOC("$$$/StyleAI/Rejected/CollectionName=Rejected AI Descriptions")
 
 	local collectionSet, collection
 
@@ -1530,7 +1530,7 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 		end
 	end
 
-	catalog:withWriteAccessDo(LOC("$$$/LrGeniusAI/Rejected/AddToCollection=Add to Rejected AI Descriptions"), function()
+	catalog:withWriteAccessDo(LOC("$$$/StyleAI/Rejected/AddToCollection=Add to Rejected AI Descriptions"), function()
 		findSetAndCollection()
 		if collection then
 			collection:addPhotos({ photo })

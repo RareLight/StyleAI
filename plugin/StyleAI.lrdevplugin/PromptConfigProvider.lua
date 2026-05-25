@@ -4,14 +4,14 @@ function PromptConfigProvider.deletePrompt(props)
 	local promptTitle = props.prompt
 	if promptTitle == "Default" then
 		LrDialogs.showError(
-			LOC("$$$/LrGeniusAI/PromptConfig/DefaultPromptCannotDelete=Default prompt cannot be deleted.")
+			LOC("$$$/StyleAI/PromptConfig/DefaultPromptCannotDelete=Default prompt cannot be deleted.")
 		)
 		return nil
 	end
 
 	if
 		LrDialogs.confirm(
-			LOC("$$$/LrGeniusAI/PromptConfig/DeletePromptConfirm=Do you really want to delete the prompt")
+			LOC("$$$/StyleAI/PromptConfig/DeletePromptConfirm=Do you really want to delete the prompt")
 				.. " "
 				.. promptTitle
 		) == "ok"
@@ -42,7 +42,7 @@ function PromptConfigProvider.addPrompt(props)
 		f:row({
 			f:static_text({
 				width = share("labelWidth"),
-				title = LOC("$$$/LrGeniusAI/PromptConfig/PromptName=Prompt name"),
+				title = LOC("$$$/StyleAI/PromptConfig/PromptName=Prompt name"),
 			}),
 			f:edit_field({
 				value = bind("name"),
@@ -52,7 +52,7 @@ function PromptConfigProvider.addPrompt(props)
 		f:row({
 			f:static_text({
 				width = share("labelWidth"),
-				title = LOC("$$$/LrGeniusAI/PromptConfig/PromptField=Prompt"),
+				title = LOC("$$$/StyleAI/PromptConfig/PromptField=Prompt"),
 			}),
 			f:scrolled_view({
 				horizontal_scroller = false,
@@ -69,7 +69,7 @@ function PromptConfigProvider.addPrompt(props)
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/PromptConfig/AddNewPrompt=Add new prompt"),
+		title = LOC("$$$/StyleAI/PromptConfig/AddNewPrompt=Add new prompt"),
 		contents = dialogView,
 	})
 
@@ -118,11 +118,11 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 		f:row({
 			f:static_text({
 				width = share("labelWidth"),
-				title = LOC("$$$/LrGeniusAI/PromptConfig/PromptName=Prompt name"),
+				title = LOC("$$$/StyleAI/PromptConfig/PromptName=Prompt name"),
 			}),
 			dropDown,
 			f:push_button({
-				title = LOC("$$$/LrGeniusAI/PromptConfig/Add=Add"),
+				title = LOC("$$$/StyleAI/PromptConfig/Add=Add"),
 				action = function(button)
 					local newName = PromptConfigProvider.addPrompt(propertyTable)
 					if newName ~= nil then
@@ -132,7 +132,7 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 				end,
 			}),
 			f:push_button({
-				title = LOC("$$$/LrGeniusAI/PromptConfig/Delete=Delete"),
+				title = LOC("$$$/StyleAI/PromptConfig/Delete=Delete"),
 				action = function(button)
 					PromptConfigProvider.deletePrompt(propertyTable)
 					LrDialogs.stopModalWithResult(dropDown, "cancel")
@@ -157,7 +157,7 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 		f:row({
 			f:static_text({
 				width = share("labelWidth"),
-				title = LOC("$$$/LrGeniusAI/PromptConfig/PromptField=Prompt"),
+				title = LOC("$$$/StyleAI/PromptConfig/PromptField=Prompt"),
 			}),
 			f:edit_field({
 				value = bind("selectedPrompt"),
@@ -169,7 +169,7 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/PromptConfig/ConfigurePrompts=Configure Prompts"),
+		title = LOC("$$$/StyleAI/PromptConfig/ConfigurePrompts=Configure Prompts"),
 		contents = dialogView,
 		otherVerb = LOC("$$$/lrc-ai-assistant/ResponseStructure/ResetToDefault=Reset to defaults"),
 	})

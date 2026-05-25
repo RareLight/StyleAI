@@ -18,41 +18,41 @@ local function showTrainDialog(ctx)
 		bind_to_object = props,
 		spacing = f:control_spacing(),
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/AnalyzeAndIndex/Scope=Scope"),
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/Scope=Scope"),
 			fill_horizontal = 1,
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/AnalyzeAndIndex/Scope=Scope"),
+					title = LOC("$$$/StyleAI/AnalyzeAndIndex/Scope=Scope"),
 					width = 150,
 				}),
 				f:popup_menu({
 					value = bind("scope"),
 					width = 300,
 					items = {
-						{ title = LOC("$$$/LrGeniusAI/common/ScopeSelected=Selected photos only"), value = "selected" },
-						{ title = LOC("$$$/LrGeniusAI/common/ScopeView=Current view"), value = "view" },
-						{ title = LOC("$$$/LrGeniusAI/common/ScopeAll=Entire Catalog"), value = "all" },
+						{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
+						{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
+						{ title = LOC("$$$/StyleAI/common/ScopeAll=Entire Catalog"), value = "all" },
 					},
 				}),
 			}),
 		}),
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/Training/StyleGroup=Edit Style"),
+			title = LOC("$$$/StyleAI/Training/StyleGroup=Edit Style"),
 			fill_horizontal = 1,
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/Training/LabelLabel=Style label (optional):"),
+					title = LOC("$$$/StyleAI/Training/LabelLabel=Style label (optional):"),
 					width = 180,
 				}),
 				f:edit_field({
 					value = bind("label"),
 					width_in_chars = 30,
-					placeholder_string = LOC("$$$/LrGeniusAI/Training/LabelPlaceholder=e.g. Wedding, Portrait, Street"),
+					placeholder_string = LOC("$$$/StyleAI/Training/LabelPlaceholder=e.g. Wedding, Portrait, Street"),
 				}),
 			}),
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/Training/SummaryLabel=Description (optional):"),
+					title = LOC("$$$/StyleAI/Training/SummaryLabel=Description (optional):"),
 					width = 180,
 				}),
 				f:edit_field({
@@ -63,18 +63,18 @@ local function showTrainDialog(ctx)
 			}),
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/Training/KeywordsLabel=Keywords (optional):"),
+					title = LOC("$$$/StyleAI/Training/KeywordsLabel=Keywords (optional):"),
 					width = 180,
 				}),
 				f:edit_field({
 					value = bind("userKeywords"),
 					width_in_chars = 30,
-					placeholder_string = LOC("$$$/LrGeniusAI/Training/KeywordsPlaceholder=e.g. macro, nature, golden hour"),
+					placeholder_string = LOC("$$$/StyleAI/Training/KeywordsPlaceholder=e.g. macro, nature, golden hour"),
 				}),
 			}),
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/Training/KeywordsHint=These keywords help group your style. Common: portrait, landscape, macro, street, architecture, wildlife"),
+					title = LOC("$$$/StyleAI/Training/KeywordsHint=These keywords help group your style. Common: portrait, landscape, macro, street, architecture, wildlife"),
 					size = "small",
 					font = "italic",
 				}),
@@ -83,7 +83,7 @@ local function showTrainDialog(ctx)
 		f:row({
 			f:static_text({
 				title = LOC(
-					"$$$/LrGeniusAI/Training/DialogHint=Hint: Only select photos that you have manually edited. The AI will learn your style from these examples."
+					"$$$/StyleAI/Training/DialogHint=Hint: Only select photos that you have manually edited. The AI will learn your style from these examples."
 				),
 				font = "italic",
 			}),
@@ -91,9 +91,9 @@ local function showTrainDialog(ctx)
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/Training/DialogTitle=Save Edits as AI Training Examples"),
+		title = LOC("$$$/StyleAI/Training/DialogTitle=Save Edits as AI Training Examples"),
 		contents = contents,
-		actionVerb = LOC("$$$/LrGeniusAI/Training/SaveButton=Save Examples"),
+		actionVerb = LOC("$$$/StyleAI/Training/SaveButton=Save Examples"),
 	})
 
 	if result ~= "ok" then
@@ -132,8 +132,8 @@ LrTasks.startAsyncTask(function()
 		local photosToProcess = PhotoSelector.getPhotosInScope(options.scope)
 		if not photosToProcess or #photosToProcess == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/Training/NoPhotosTitle=No Photos"),
-				LOC("$$$/LrGeniusAI/Training/NoPhotosMsg=No photos found in the selected scope."),
+				LOC("$$$/StyleAI/Training/NoPhotosTitle=No Photos"),
+				LOC("$$$/StyleAI/Training/NoPhotosMsg=No photos found in the selected scope."),
 				"info"
 			)
 			return
@@ -152,9 +152,9 @@ LrTasks.startAsyncTask(function()
 
 		if #photos == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/Training/NoValidPhotosTitle=No Valid Training Photos"),
+				LOC("$$$/StyleAI/Training/NoValidPhotosTitle=No Valid Training Photos"),
 				LOC(
-					"$$$/LrGeniusAI/Training/NoValidPhotosMsg=None of the photos in the selected scope match the training criteria (must be RAW or DNG format). JPEGs, TIFFs, and other formats are excluded."
+					"$$$/StyleAI/Training/NoValidPhotosMsg=None of the photos in the selected scope match the training criteria (must be RAW or DNG format). JPEGs, TIFFs, and other formats are excluded."
 				),
 				"info"
 			)
@@ -162,7 +162,7 @@ LrTasks.startAsyncTask(function()
 		end
 
 		local progressScope = LrProgressScope({
-			title = LOC("$$$/LrGeniusAI/Training/Progress=Saving training examples..."),
+			title = LOC("$$$/StyleAI/Training/Progress=Saving training examples..."),
 			functionContext = ctx,
 		})
 		progressScope:setPortionComplete(0, #photos)
@@ -180,7 +180,7 @@ LrTasks.startAsyncTask(function()
 			local fileName = photo:getFormattedMetadata("fileName") or "Photo"
 			progressScope:setCaption(
 				string.format(
-					LOC("$$$/LrGeniusAI/Training/ProgressCaption=Processing %s (%d of %d)"),
+					LOC("$$$/StyleAI/Training/ProgressCaption=Processing %s (%d of %d)"),
 					fileName,
 					index,
 					#photos
@@ -267,30 +267,30 @@ LrTasks.startAsyncTask(function()
 			end
 
 			local combinedReport =
-				LOC("$$$/LrGeniusAI/Training/Summary=Saved ^1 training example(s).", tostring(successCount))
+				LOC("$$$/StyleAI/Training/Summary=Saved ^1 training example(s).", tostring(successCount))
 			if errorCount > 0 then
 				combinedReport = combinedReport
 					.. "\n"
-					.. LOC("$$$/LrGeniusAI/common/Errors=Errors: ^1", tostring(errorCount))
+					.. LOC("$$$/StyleAI/common/Errors=Errors: ^1", tostring(errorCount))
 			end
 
 			if #errorList > 0 then
 				combinedReport = combinedReport
 					.. "\n\n"
-					.. LOC("$$$/LrGeniusAI/common/ErrorDetails=Error details:")
+					.. LOC("$$$/StyleAI/common/ErrorDetails=Error details:")
 					.. "\n"
 					.. table.concat(errorList, "\n")
 				if #errorMessages > 5 then
 					combinedReport = combinedReport
 						.. "\n"
-						.. LOC("$$$/LrGeniusAI/common/MoreErrors=... and ^1 more errors", tostring(#errorMessages - 5))
+						.. LOC("$$$/StyleAI/common/MoreErrors=... and ^1 more errors", tostring(#errorMessages - 5))
 				end
 			end
 
 			if #backendWarnings > 0 then
 				combinedReport = combinedReport
 					.. "\n\n"
-					.. LOC("$$$/LrGeniusAI/common/BackendWarnings=Backend Warnings:")
+					.. LOC("$$$/StyleAI/common/BackendWarnings=Backend Warnings:")
 					.. "\n"
 				for i = 1, math.min(5, #backendWarnings) do
 					combinedReport = combinedReport .. "- " .. backendWarnings[i] .. "\n"
@@ -298,21 +298,21 @@ LrTasks.startAsyncTask(function()
 				if #backendWarnings > 5 then
 					combinedReport = combinedReport
 						.. LOC(
-							"$$$/LrGeniusAI/common/MoreWarnings=... and ^1 more warnings",
+							"$$$/StyleAI/common/MoreWarnings=... and ^1 more warnings",
 							tostring(#backendWarnings - 5)
 						)
 				end
 			end
 
 			ErrorHandler.handleError(
-				LOC("$$$/LrGeniusAI/Training/CompletionTitle=Training Examples Saved"),
+				LOC("$$$/StyleAI/Training/CompletionTitle=Training Examples Saved"),
 				combinedReport
 			)
 		else
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/Training/SuccessTitle=Training Examples Saved"),
+				LOC("$$$/StyleAI/Training/SuccessTitle=Training Examples Saved"),
 				LOC(
-					"$$$/LrGeniusAI/Training/SuccessSummary=Successfully saved ^1 training example(s).\nAI Edit Photos will use your style when editing visually similar photos.",
+					"$$$/StyleAI/Training/SuccessSummary=Successfully saved ^1 training example(s).\nAI Edit Photos will use your style when editing visually similar photos.",
 					tostring(successCount)
 				),
 				"info"

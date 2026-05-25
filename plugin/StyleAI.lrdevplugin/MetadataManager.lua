@@ -160,7 +160,7 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 				function()
 					topKeyword = createKeywordSafely(
 						catalog,
-						options.topLevelKeyword or "LrGeniusAI",
+						options.topLevelKeyword or "StyleAI",
 						{ Defaults.topLevelKeywordSynonym },
 						false,
 						nil,
@@ -182,7 +182,7 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 			end
 		end
 		local existingKeywordNames = nil
-		local currentTopLevelKeyword = options.useTopLevelKeyword and (options.topLevelKeyword or "LrGeniusAI") or nil
+		local currentTopLevelKeyword = options.useTopLevelKeyword and (options.topLevelKeyword or "StyleAI") or nil
 		catalog:withWriteAccessDo(
 			"$$$/lrc-ai-assistant/AnalyzeImageTask/saveTopKeyword=Save AI generated keywords",
 			function()
@@ -810,14 +810,14 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 			f:row({
 				spacing = 4,
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/MetadataManager/ColGenerated=Generated"),
+					title = LOC("$$$/StyleAI/MetadataManager/ColGenerated=Generated"),
 					width = 185,
 					font = "<system/bold>",
 					enabled = false,
 				}),
 				f:spacer({ width = 18 }),
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/MetadataManager/ColDeCluttered=De-cluttered"),
+					title = LOC("$$$/StyleAI/MetadataManager/ColDeCluttered=De-cluttered"),
 					font = "<system/bold>",
 				}),
 			})
@@ -888,7 +888,7 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 			and mergeCount > 0
 			and f:static_text({
 				title = LOC(
-					"$$$/LrGeniusAI/MetadataManager/MergedCount=^1 keyword^2 merged with existing catalog terms",
+					"$$$/StyleAI/MetadataManager/MergedCount=^1 keyword^2 merged with existing catalog terms",
 					tostring(mergeCount),
 					mergeCount == 1 and "" or "s"
 				),
@@ -919,19 +919,19 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 			f:spacer({ height = 10 }),
 			f:checkbox({
 				value = bind("skipFromHere"),
-				title = LOC("$$$/LrGeniusAI/MetadataManager/SkipRemaining=Save following without reviewing."),
+				title = LOC("$$$/StyleAI/MetadataManager/SkipRemaining=Save following without reviewing."),
 			}),
 		}),
 
 		-- Right panel: keywords + metadata
 		f:column({
 			f:group_box({
-				title = LOC("$$$/LrGeniusAI/Keywords=Keywords"),
+				title = LOC("$$$/StyleAI/Keywords=Keywords"),
 				fill_horizontal = 1,
 				f:row({
 					mergeLabel,
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/MetadataManager/SelectAll=Select All"),
+						title = LOC("$$$/StyleAI/MetadataManager/SelectAll=Select All"),
 						action = function()
 							for _, id in ipairs(activeOrderedIds) do
 								propertyTable["keywordsSel_" .. id] = true
@@ -939,7 +939,7 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 						end,
 					}),
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/MetadataManager/DeselectAll=Deselect All"),
+						title = LOC("$$$/StyleAI/MetadataManager/DeselectAll=Deselect All"),
 						action = function()
 							for _, id in ipairs(activeOrderedIds) do
 								propertyTable["keywordsSel_" .. id] = false
@@ -959,7 +959,7 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 			}),
 
 			f:group_box({
-				title = LOC("$$$/LrGeniusAI/Metadata=Metadata"),
+				title = LOC("$$$/StyleAI/Metadata=Metadata"),
 				fill_horizontal = 1,
 				f:row({
 					f:checkbox({

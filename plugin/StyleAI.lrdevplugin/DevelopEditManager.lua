@@ -556,7 +556,7 @@ end
 
 function DevelopEditManager.formatRecipeDetails(response)
 	if not recipe then
-		return LOC("$$$/LrGeniusAI/DevelopEdit/NoRecipe=No edit recipe available.")
+		return LOC("$$$/StyleAI/DevelopEdit/NoRecipe=No edit recipe available.")
 	end
 
 	local lines = {}
@@ -1446,18 +1446,18 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 		}),
 		f:row({
 			f:checkbox({ value = bind("applyGlobal") }),
-			f:static_text({ title = LOC("$$$/LrGeniusAI/DevelopEdit/ApplyGlobal=Apply global develop settings") }),
+			f:static_text({ title = LOC("$$$/StyleAI/DevelopEdit/ApplyGlobal=Apply global develop settings") }),
 		}),
 		f:row({
 			f:checkbox({
 				value = bind("applyMasks"),
 				enabled = (recipe.masks and #recipe.masks > 0) or false,
 			}),
-			f:static_text({ title = LOC("$$$/LrGeniusAI/DevelopEdit/ApplyMasks=Apply masks when possible") }),
+			f:static_text({ title = LOC("$$$/StyleAI/DevelopEdit/ApplyMasks=Apply masks when possible") }),
 		}),
 		f:row({
 			f:static_text({
-				title = LOC("$$$/LrGeniusAI/DevelopEdit/EngineType=AI Engine:"),
+				title = LOC("$$$/StyleAI/DevelopEdit/EngineType=AI Engine:"),
 				width = share("labelWidth"),
 			}),
 			f:static_text({
@@ -1466,7 +1466,7 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 			}),
 			f:spacer({ width = 10 }),
 			f:static_text({
-				title = LOC("$$$/LrGeniusAI/DevelopEdit/BaseProfile=Base Profile:"),
+				title = LOC("$$$/StyleAI/DevelopEdit/BaseProfile=Base Profile:"),
 			}),
 			f:static_text({
 				title = bind("baseProfileName"),
@@ -1483,7 +1483,7 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/DevelopEdit/ReviewTitle=Review AI Lightroom Edit"),
+		title = LOC("$$$/StyleAI/DevelopEdit/ReviewTitle=Review AI Lightroom Edit"),
 		contents = dialogView,
 		actionVerb = "Apply",
 	})

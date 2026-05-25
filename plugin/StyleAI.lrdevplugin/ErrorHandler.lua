@@ -2,11 +2,11 @@ ErrorHandler = {}
 
 function ErrorHandler.handleError(errorMessage, detailedInfo)
 	-- Log the error message
-	log:error(LOC("$$$/LrGeniusAI/ErrorHandler/logError=Error: ^1", errorMessage))
+	log:error(LOC("$$$/StyleAI/ErrorHandler/logError=Error: ^1", errorMessage))
 	log:error(
 		LOC(
-			"$$$/LrGeniusAI/ErrorHandler/logDetails=Details: ^1",
-			(detailedInfo or LOC("$$$/LrGeniusAI/ErrorHandler/noDetails=No additional details provided."))
+			"$$$/StyleAI/ErrorHandler/logDetails=Details: ^1",
+			(detailedInfo or LOC("$$$/StyleAI/ErrorHandler/noDetails=No additional details provided."))
 		)
 	)
 
@@ -22,7 +22,7 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
 	local dialogView = f:column({
 		f:row({
 			f:static_text({
-				title = LOC("$$$/LrGeniusAI/ErrorHandler/Error=Error"),
+				title = LOC("$$$/StyleAI/ErrorHandler/Error=Error"),
 				alignment = "left",
 				font = "<system/bold>",
 				width = share("labelWidth"),
@@ -36,12 +36,12 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
 		f:row({
 			margin_top = 10,
 			f:static_text({
-				title = LOC("$$$/LrGeniusAI/ErrorHandler/Details=Details"),
+				title = LOC("$$$/StyleAI/ErrorHandler/Details=Details"),
 				alignment = "left",
 				width = share("labelWidth"),
 			}),
 			f:static_text({
-				title = detailedInfo or LOC("$$$/LrGeniusAI/ErrorHandler/noDetails=No additional details provided."),
+				title = detailedInfo or LOC("$$$/StyleAI/ErrorHandler/noDetails=No additional details provided."),
 				alignment = "left",
 				size = "small",
 			}),
@@ -49,9 +49,9 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/ErrorHandler/Error=Error"),
+		title = LOC("$$$/StyleAI/ErrorHandler/Error=Error"),
 		contents = dialogView,
-		cancelVerb = LOC("$$$/LrGeniusAI/ErrorHandler/gatherLogs=Generate report"),
+		cancelVerb = LOC("$$$/StyleAI/ErrorHandler/gatherLogs=Generate report"),
 	})
 
 	if result == "cancel" then

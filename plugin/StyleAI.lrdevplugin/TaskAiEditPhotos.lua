@@ -64,7 +64,7 @@ local function buildEditIntentPresetItems()
 	end
 	if #items == 0 then
 		table.insert(items, {
-			title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/Custom=Custom"),
+			title = LOC("$$$/StyleAI/TaskAiEditPhotos/Custom=Custom"),
 			value = Defaults.editIntentCustomValue or "custom",
 		})
 	end
@@ -105,7 +105,7 @@ local function showPhotoInstructionDialog(ctx, photo)
 		}),
 		f:row({
 			f:static_text({
-				title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/PerPhotoInstructions=Per-photo edit instructions"),
+				title = LOC("$$$/StyleAI/TaskAiEditPhotos/PerPhotoInstructions=Per-photo edit instructions"),
 			}),
 		}),
 		f:row({
@@ -121,16 +121,16 @@ local function showPhotoInstructionDialog(ctx, photo)
 			}),
 			f:static_text({
 				title = LOC(
-					"$$$/LrGeniusAI/TaskAiEditPhotos/UseForFollowing=Use these instructions for all following photos."
+					"$$$/StyleAI/TaskAiEditPhotos/UseForFollowing=Use these instructions for all following photos."
 				),
 			}),
 		}),
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/PhotoSpecificInstructions=Photo-specific edit instructions"),
+		title = LOC("$$$/StyleAI/TaskAiEditPhotos/PhotoSpecificInstructions=Photo-specific edit instructions"),
 		contents = dialogView,
-		actionVerb = LOC("$$$/LrGeniusAI/common/Continue=Continue"),
+		actionVerb = LOC("$$$/StyleAI/common/Continue=Continue"),
 	})
 
 	return result, props.photoContextData, props.skipFromHere
@@ -258,30 +258,30 @@ local function showAiEditDialog(ctx)
 		bind_to_object = props,
 		spacing = f:control_spacing(),
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/common/Scope=Scope"),
+			title = LOC("$$$/StyleAI/common/Scope=Scope"),
 			fill_horizontal = 1,
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/common/ApplyTo=Apply to:"),
+					title = LOC("$$$/StyleAI/common/ApplyTo=Apply to:"),
 					width = share("labelWidth"),
 				}),
 				f:popup_menu({
 					value = bind("scope"),
 					width = 300,
 					items = {
-						{ title = LOC("$$$/LrGeniusAI/common/ScopeSelected=Selected photos only"), value = "selected" },
-						{ title = LOC("$$$/LrGeniusAI/common/ScopeView=Current view"), value = "view" },
-						{ title = LOC("$$$/LrGeniusAI/common/ScopeAll=All photos in catalog"), value = "all" },
+						{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
+						{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
+						{ title = LOC("$$$/StyleAI/common/ScopeAll=All photos in catalog"), value = "all" },
 					},
 				}),
 			}),
 		}),
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/common/AiSettings=AI Settings"),
+			title = LOC("$$$/StyleAI/common/AiSettings=AI Settings"),
 			fill_horizontal = 1,
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/common/AiModel=AI model:"),
+					title = LOC("$$$/StyleAI/common/AiModel=AI model:"),
 					width = share("labelWidth"),
 				}),
 				f:popup_menu({
@@ -292,7 +292,7 @@ local function showAiEditDialog(ctx)
 			}),
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/common/Temperature=Temperature:"),
+					title = LOC("$$$/StyleAI/common/Temperature=Temperature:"),
 					width = share("labelWidth"),
 				}),
 				f:slider({
@@ -310,11 +310,11 @@ local function showAiEditDialog(ctx)
 			f:row({
 				f:static_text({
 					width = share("labelWidth"),
-					title = LOC("$$$/LrGeniusAI/common/Prompt=Prompt:"),
+					title = LOC("$$$/StyleAI/common/Prompt=Prompt:"),
 				}),
 				props.promptTitleMenu,
 				f:push_button({
-					title = LOC("$$$/LrGeniusAI/common/Add=Add"),
+					title = LOC("$$$/StyleAI/common/Add=Add"),
 					action = function()
 						local ok, err = LrTasks.pcall(function()
 							PromptConfigProvider.addPrompt(props)
@@ -322,14 +322,14 @@ local function showAiEditDialog(ctx)
 						if not ok then
 							log:error("AI Edit prompt add failed: " .. tostring(err))
 							LrDialogs.showError(
-								LOC("$$$/LrGeniusAI/PromptConfig/AddFailed=Adding prompt failed: ^1"),
+								LOC("$$$/StyleAI/PromptConfig/AddFailed=Adding prompt failed: ^1"),
 								tostring(err)
 							)
 						end
 					end,
 				}),
 				f:push_button({
-					title = LOC("$$$/LrGeniusAI/common/Delete=Delete"),
+					title = LOC("$$$/StyleAI/common/Delete=Delete"),
 					action = function()
 						local ok, err = LrTasks.pcall(function()
 							PromptConfigProvider.deletePrompt(props)
@@ -337,7 +337,7 @@ local function showAiEditDialog(ctx)
 						if not ok then
 							log:error("AI Edit prompt delete failed: " .. tostring(err))
 							LrDialogs.showError(
-								LOC("$$$/LrGeniusAI/PromptConfig/DeleteFailed=Deleting prompt failed: ^1"),
+								LOC("$$$/StyleAI/PromptConfig/DeleteFailed=Deleting prompt failed: ^1"),
 								tostring(err)
 							)
 						end
@@ -347,7 +347,7 @@ local function showAiEditDialog(ctx)
 			f:row({
 				f:static_text({
 					width = share("labelWidth"),
-					title = LOC("$$$/LrGeniusAI/common/SystemInstruction=System instruction:"),
+					title = LOC("$$$/StyleAI/common/SystemInstruction=System instruction:"),
 				}),
 				f:edit_field({
 					value = bind("selectedPrompt"),
@@ -357,7 +357,7 @@ local function showAiEditDialog(ctx)
 			}),
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/common/SummaryLanguage=Summary language:"),
+					title = LOC("$$$/StyleAI/common/SummaryLanguage=Summary language:"),
 					width = share("labelWidth"),
 				}),
 				f:combo_box({
@@ -367,11 +367,11 @@ local function showAiEditDialog(ctx)
 			}),
 		}),
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/EditInstructions=Edit Instructions"),
+			title = LOC("$$$/StyleAI/TaskAiEditPhotos/EditInstructions=Edit Instructions"),
 			fill_horizontal = 1,
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/OverallLook=Overall look:"),
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/OverallLook=Overall look:"),
 					width = share("labelWidth"),
 				}),
 				f:popup_menu({
@@ -382,7 +382,7 @@ local function showAiEditDialog(ctx)
 			}),
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/CustomIntent=Custom intent:"),
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/CustomIntent=Custom intent:"),
 					width = share("labelWidth"),
 				}),
 				f:edit_field({
@@ -393,7 +393,7 @@ local function showAiEditDialog(ctx)
 			}),
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/StyleStrength=Style strength:"),
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleStrength=Style strength:"),
 					width = share("labelWidth"),
 				}),
 				f:slider({
@@ -414,7 +414,7 @@ local function showAiEditDialog(ctx)
 				}),
 				f:static_text({
 					title = LOC(
-						"$$$/LrGeniusAI/TaskAiEditPhotos/ReviewProposed=Review each proposed edit before applying it"
+						"$$$/StyleAI/TaskAiEditPhotos/ReviewProposed=Review each proposed edit before applying it"
 					),
 				}),
 			}),
@@ -423,7 +423,7 @@ local function showAiEditDialog(ctx)
 					value = bind("applyMasks"),
 				}),
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/AskMasks=Ask the AI for subject/sky/background masks"),
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/AskMasks=Ask the AI for subject/sky/background masks"),
 				}),
 			}),
 			f:row({
@@ -432,13 +432,13 @@ local function showAiEditDialog(ctx)
 				}),
 				f:static_text({
 					title = LOC(
-						"$$$/LrGeniusAI/TaskAiEditPhotos/AllowPerPhoto=Allow per-photo edit instructions before generation"
+						"$$$/StyleAI/TaskAiEditPhotos/AllowPerPhoto=Allow per-photo edit instructions before generation"
 					),
 				}),
 			}),
 		}),
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/CreativeControls=Creative Controls"),
+			title = LOC("$$$/StyleAI/TaskAiEditPhotos/CreativeControls=Creative Controls"),
 			fill_horizontal = 1,
 			f:row({
 				f:column({
@@ -448,7 +448,7 @@ local function showAiEditDialog(ctx)
 							value = bind("adjustWhiteBalance"),
 						}),
 						f:static_text({
-							title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/AdjustWB=Adjust white balance"),
+							title = LOC("$$$/StyleAI/TaskAiEditPhotos/AdjustWB=Adjust white balance"),
 						}),
 					}),
 					f:row({
@@ -457,7 +457,7 @@ local function showAiEditDialog(ctx)
 						}),
 						f:static_text({
 							title = LOC(
-								"$$$/LrGeniusAI/TaskAiEditPhotos/AdjustBasicTone=Adjust basic tone (exposure/contrast/highlights/shadows/whites/blacks)"
+								"$$$/StyleAI/TaskAiEditPhotos/AdjustBasicTone=Adjust basic tone (exposure/contrast/highlights/shadows/whites/blacks)"
 							),
 						}),
 					}),
@@ -467,7 +467,7 @@ local function showAiEditDialog(ctx)
 						}),
 						f:static_text({
 							title = LOC(
-								"$$$/LrGeniusAI/TaskAiEditPhotos/AdjustPresence=Adjust presence (texture/clarity/dehaze)"
+								"$$$/StyleAI/TaskAiEditPhotos/AdjustPresence=Adjust presence (texture/clarity/dehaze)"
 							),
 						}),
 					}),
@@ -477,7 +477,7 @@ local function showAiEditDialog(ctx)
 						}),
 						f:static_text({
 							title = LOC(
-								"$$$/LrGeniusAI/TaskAiEditPhotos/AdjustColorMix=Adjust color mix (vibrance/saturation/HSL)"
+								"$$$/StyleAI/TaskAiEditPhotos/AdjustColorMix=Adjust color mix (vibrance/saturation/HSL)"
 							),
 						}),
 					}),
@@ -486,7 +486,7 @@ local function showAiEditDialog(ctx)
 							value = bind("doColorGrading"),
 						}),
 						f:static_text({
-							title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/DoColorGrading=Do color grading"),
+							title = LOC("$$$/StyleAI/TaskAiEditPhotos/DoColorGrading=Do color grading"),
 						}),
 					}),
 				}),
@@ -497,7 +497,7 @@ local function showAiEditDialog(ctx)
 							value = bind("useToneCurve"),
 						}),
 						f:static_text({
-							title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/UseToneCurve=Use tone curve"),
+							title = LOC("$$$/StyleAI/TaskAiEditPhotos/UseToneCurve=Use tone curve"),
 						}),
 					}),
 					f:row({
@@ -506,7 +506,7 @@ local function showAiEditDialog(ctx)
 							enabled = bind("useToneCurve"),
 						}),
 						f:static_text({
-							title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/UsePointCurve=Use point curve"),
+							title = LOC("$$$/StyleAI/TaskAiEditPhotos/UsePointCurve=Use point curve"),
 						}),
 					}),
 					f:row({
@@ -515,7 +515,7 @@ local function showAiEditDialog(ctx)
 						}),
 						f:static_text({
 							title = LOC(
-								"$$$/LrGeniusAI/TaskAiEditPhotos/AdjustDetail=Adjust detail (sharpening/noise reduction)"
+								"$$$/StyleAI/TaskAiEditPhotos/AdjustDetail=Adjust detail (sharpening/noise reduction)"
 							),
 						}),
 					}),
@@ -525,7 +525,7 @@ local function showAiEditDialog(ctx)
 						}),
 						f:static_text({
 							title = LOC(
-								"$$$/LrGeniusAI/TaskAiEditPhotos/AdjustEffects=Adjust effects (vignette/grain)"
+								"$$$/StyleAI/TaskAiEditPhotos/AdjustEffects=Adjust effects (vignette/grain)"
 							),
 						}),
 					}),
@@ -534,7 +534,7 @@ local function showAiEditDialog(ctx)
 							value = bind("adjustLensCorrections"),
 						}),
 						f:static_text({
-							title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/AdjustLens=Adjust lens corrections"),
+							title = LOC("$$$/StyleAI/TaskAiEditPhotos/AdjustLens=Adjust lens corrections"),
 						}),
 					}),
 					f:row({
@@ -542,14 +542,14 @@ local function showAiEditDialog(ctx)
 							value = bind("allowAutoCrop"),
 						}),
 						f:static_text({
-							title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/AllowAutoCrop=Allow AI auto crop"),
+							title = LOC("$$$/StyleAI/TaskAiEditPhotos/AllowAutoCrop=Allow AI auto crop"),
 						}),
 					}),
 				}),
 			}),
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/CompositionMode=Composition mode:"),
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/CompositionMode=Composition mode:"),
 					width = share("labelWidth"),
 				}),
 				f:popup_menu({
@@ -560,7 +560,7 @@ local function showAiEditDialog(ctx)
 			}),
 		}),
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/common/Context=Context"),
+			title = LOC("$$$/StyleAI/common/Context=Context"),
 			fill_horizontal = 1,
 			f:row({
 				f:column({
@@ -571,7 +571,7 @@ local function showAiEditDialog(ctx)
 						}),
 						f:static_text({
 							title = LOC(
-								"$$$/LrGeniusAI/TaskAiEditPhotos/SendKeywords=Send existing Lightroom keywords"
+								"$$$/StyleAI/TaskAiEditPhotos/SendKeywords=Send existing Lightroom keywords"
 							),
 						}),
 					}),
@@ -583,7 +583,7 @@ local function showAiEditDialog(ctx)
 							value = bind("submitFolderName"),
 						}),
 						f:static_text({
-							title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/SendFolders=Send folder names"),
+							title = LOC("$$$/StyleAI/TaskAiEditPhotos/SendFolders=Send folder names"),
 						}),
 					}),
 					f:row({
@@ -592,7 +592,7 @@ local function showAiEditDialog(ctx)
 						}),
 						f:static_text({
 							title = LOC(
-								"$$$/LrGeniusAI/Training/UseTrainingCheckbox=Apply my saved edit style (training examples)"
+								"$$$/StyleAI/Training/UseTrainingCheckbox=Apply my saved edit style (training examples)"
 							),
 						}),
 					}),
@@ -602,9 +602,9 @@ local function showAiEditDialog(ctx)
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/DialogTitle=AI Edit Photos in Lightroom"),
+		title = LOC("$$$/StyleAI/TaskAiEditPhotos/DialogTitle=AI Edit Photos in Lightroom"),
 		contents = contents,
-		actionVerb = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/GenerateEdits=Generate edits"),
+		actionVerb = LOC("$$$/StyleAI/TaskAiEditPhotos/GenerateEdits=Generate edits"),
 	})
 	log:trace("showAiEditDialog: dialog result=" .. tostring(result))
 
@@ -686,7 +686,7 @@ local function showAiEditDialog(ctx)
 		else
 			LrDialogs.showError(
 				LOC(
-					"$$$/LrGeniusAI/AnalyzeAndIndex/MissingChatGPTAPIKey=ChatGPT API key is not configured. Please set it in the plugin preferences."
+					"$$$/StyleAI/AnalyzeAndIndex/MissingChatGPTAPIKey=ChatGPT API key is not configured. Please set it in the plugin preferences."
 				)
 			)
 			return nil
@@ -697,7 +697,7 @@ local function showAiEditDialog(ctx)
 		else
 			LrDialogs.showError(
 				LOC(
-					"$$$/LrGeniusAI/AnalyzeAndIndex/MissingGeminiAPIKey=Gemini API key is not configured. Please set it in the plugin preferences."
+					"$$$/StyleAI/AnalyzeAndIndex/MissingGeminiAPIKey=Gemini API key is not configured. Please set it in the plugin preferences."
 				)
 			)
 			return nil
@@ -798,8 +798,8 @@ LrTasks.startAsyncTask(function()
 		local photos = PhotoSelector.getPhotosInScope(options.scope)
 		if not photos or #photos == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/common/NoPhotosTitle=No Photos"),
-				LOC("$$$/LrGeniusAI/common/NoPhotosInScope=No photos found in the selected scope."),
+				LOC("$$$/StyleAI/common/NoPhotosTitle=No Photos"),
+				LOC("$$$/StyleAI/common/NoPhotosInScope=No photos found in the selected scope."),
 				"info"
 			)
 			log:warn("AI Edit task found no photos in scope: " .. tostring(options.scope))
@@ -807,7 +807,7 @@ LrTasks.startAsyncTask(function()
 		end
 
 		local progressScope = LrProgressScope({
-			title = LOC("$$$/LrGeniusAI/TaskAiEditPhotos/ProgressTitle=Generating AI Lightroom edits..."),
+			title = LOC("$$$/StyleAI/TaskAiEditPhotos/ProgressTitle=Generating AI Lightroom edits..."),
 			functionContext = ctx,
 		})
 		progressScope:setPortionComplete(0, #photos)
@@ -1023,35 +1023,35 @@ LrTasks.startAsyncTask(function()
 			end
 
 			local combinedReport =
-				LOC("$$$/LrGeniusAI/TaskAiEditPhotos/Summary=Applied edits to ^1 photo(s).", tostring(successCount))
+				LOC("$$$/StyleAI/TaskAiEditPhotos/Summary=Applied edits to ^1 photo(s).", tostring(successCount))
 			if skippedCount > 0 then
 				combinedReport = combinedReport
 					.. "\n"
-					.. LOC("$$$/LrGeniusAI/common/Skipped=Skipped: ^1", tostring(skippedCount))
+					.. LOC("$$$/StyleAI/common/Skipped=Skipped: ^1", tostring(skippedCount))
 			end
 			if errorCount > 0 then
 				combinedReport = combinedReport
 					.. "\n"
-					.. LOC("$$$/LrGeniusAI/common/Errors=Errors: ^1", tostring(errorCount))
+					.. LOC("$$$/StyleAI/common/Errors=Errors: ^1", tostring(errorCount))
 			end
 
 			if #errorList > 0 then
 				combinedReport = combinedReport
 					.. "\n\n"
-					.. LOC("$$$/LrGeniusAI/common/ErrorDetails=Error details:")
+					.. LOC("$$$/StyleAI/common/ErrorDetails=Error details:")
 					.. "\n"
 					.. table.concat(errorList, "\n")
 				if #errorMessages > 5 then
 					combinedReport = combinedReport
 						.. "\n"
-						.. LOC("$$$/LrGeniusAI/common/MoreErrors=... and ^1 more errors", tostring(#errorMessages - 5))
+						.. LOC("$$$/StyleAI/common/MoreErrors=... and ^1 more errors", tostring(#errorMessages - 5))
 				end
 			end
 
 			if #backendWarnings > 0 then
 				combinedReport = combinedReport
 					.. "\n\n"
-					.. LOC("$$$/LrGeniusAI/common/BackendWarnings=Backend Warnings:")
+					.. LOC("$$$/StyleAI/common/BackendWarnings=Backend Warnings:")
 					.. "\n"
 				for i = 1, math.min(5, #backendWarnings) do
 					combinedReport = combinedReport .. "- " .. backendWarnings[i] .. "\n"
@@ -1059,7 +1059,7 @@ LrTasks.startAsyncTask(function()
 				if #backendWarnings > 5 then
 					combinedReport = combinedReport
 						.. LOC(
-							"$$$/LrGeniusAI/common/MoreWarnings=... and ^1 more warnings",
+							"$$$/StyleAI/common/MoreWarnings=... and ^1 more warnings",
 							tostring(#backendWarnings - 5)
 						)
 				end
@@ -1067,21 +1067,21 @@ LrTasks.startAsyncTask(function()
 
 			if errorCount > 0 then
 				ErrorHandler.handleError(
-					LOC("$$$/LrGeniusAI/TaskAiEditPhotos/CompletionTitle=AI Edit Completed"),
+					LOC("$$$/StyleAI/TaskAiEditPhotos/CompletionTitle=AI Edit Completed"),
 					combinedReport
 				)
 			else
 				LrDialogs.message(
-					LOC("$$$/LrGeniusAI/TaskAiEditPhotos/CompletionTitle=AI Edit Completed"),
+					LOC("$$$/StyleAI/TaskAiEditPhotos/CompletionTitle=AI Edit Completed"),
 					combinedReport,
 					"warning"
 				)
 			end
 		else
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/TaskAiEditPhotos/SuccessTitle=AI Lightroom Edit"),
+				LOC("$$$/StyleAI/TaskAiEditPhotos/SuccessTitle=AI Lightroom Edit"),
 				LOC(
-					"$$$/LrGeniusAI/TaskAiEditPhotos/SuccessSummary=Applied edits to ^1 photo(s).\nSkipped: ^2",
+					"$$$/StyleAI/TaskAiEditPhotos/SuccessSummary=Applied edits to ^1 photo(s).\nSkipped: ^2",
 					tostring(successCount),
 					tostring(skippedCount)
 				),

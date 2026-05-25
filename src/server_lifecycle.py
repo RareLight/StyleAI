@@ -309,7 +309,7 @@ def write_pid_file():
     db_dir = get_db_dir()
     if not db_dir:
         return
-    pid_file = os.path.join(db_dir, "lrgenius-server.pid")
+    pid_file = os.path.join(db_dir, "styleai-server.pid")
     tmp_file = pid_file + ".tmp"
     with open(tmp_file, "w") as f:
         f.write(str(os.getpid()))
@@ -320,7 +320,7 @@ def remove_pid_file():
     db_dir = get_db_dir()
     if not db_dir:
         return
-    pid_file = os.path.join(db_dir, "lrgenius-server.pid")
+    pid_file = os.path.join(db_dir, "styleai-server.pid")
     try:
         os.remove(pid_file)
     except FileNotFoundError:
@@ -331,7 +331,7 @@ def write_ok_file():
     db_dir = get_db_dir()
     if not db_dir:
         return
-    ok_file = os.path.join(db_dir, "lrgenius-server.OK")
+    ok_file = os.path.join(db_dir, "styleai-server.OK")
     with open(ok_file, "w") as f:
         f.write("OK\n")
 
@@ -340,7 +340,7 @@ def remove_ok_file():
     db_dir = get_db_dir()
     if not db_dir:
         return
-    ok_file = os.path.join(db_dir, "lrgenius-server.OK")
+    ok_file = os.path.join(db_dir, "styleai-server.OK")
     try:
         os.remove(ok_file)
     except FileNotFoundError:

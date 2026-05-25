@@ -80,5 +80,5 @@ echo
 echo "Environment ready at: ${SERVER_DIR}/.venv"
 echo
 echo "Next steps:"
-echo "  cd \"${SERVER_DIR}\" && uv run python src/geniusai_server.py --db-path /tmp/lrgeniusai-data"
+echo "  cd \"${SERVER_DIR}\" && uv run python src/styleai_server.py --db-path /tmp/styleai-data"
 echo "  cd \"${SERVER_DIR}\" && uv run pytest test/"

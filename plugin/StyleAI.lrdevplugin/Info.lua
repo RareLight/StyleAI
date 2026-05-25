@@ -1,20 +1,20 @@
 Info = {}
 
-Info.MAJOR = 9
-Info.MINOR = 9
-Info.REVISION = 9
-Info.BUILD = 99991212
+Info.MAJOR = 1
+Info.MINOR = 0
+Info.REVISION = 0
+Info.BUILD = 20260524
 Info.VERSION = { major = Info.MAJOR, minor = Info.MINOR, revision = Info.REVISION, build = Info.BUILD }
 
 return {
 
 	LrSdkVersion = 14.0,
 	LrSdkMinimumVersion = 14.0,
-	LrToolkitIdentifier = "LrGeniusAI",
-	LrPluginName = "LrGeniusAI",
+	LrToolkitIdentifier = "StyleAI",
+	LrPluginName = "StyleAI",
 	LrInitPlugin = "Init.lua",
 	LrPluginInfoProvider = "PluginInfo.lua",
-	LrPluginInfoURL = "https://github.com/LrGenius",
+	LrPluginInfoURL = "https://github.com/StyleAI",
 
 	VERSION = Info.VERSION,
 
@@ -23,38 +23,38 @@ return {
 
 	LrLibraryMenuItems = {
 		{
-			title = LOC("$$$/LrGeniusAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
+			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
 			file = "TaskAiEditPhotos.lua",
 		},
 		{
-			title = LOC("$$$/LrGeniusAI/Training/MenuItem=Save Edits as AI Training Examples..."),
+			title = LOC("$$$/StyleAI/Training/MenuItem=Save Edits as AI Training Examples..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/LrGeniusAI/StyleCatalog/MenuItem=Style Catalog..."),
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Style Catalog..."),
 			file = "TaskStyleCatalog.lua",
 		},
 		{
-			title = LOC("$$$/LrGeniusAI/Menu/AnalyzeAndIndex=Index Photos for Style Matching..."),
+			title = LOC("$$$/StyleAI/Menu/AnalyzeAndIndex=Index Photos for Style Matching..."),
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 	},
 
 	LrExportMenuItems = {
 		{
-			title = LOC("$$$/LrGeniusAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
+			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
 			file = "TaskAiEditPhotos.lua",
 		},
 		{
-			title = LOC("$$$/LrGeniusAI/Training/MenuItem=Save Edits as AI Training Examples..."),
+			title = LOC("$$$/StyleAI/Training/MenuItem=Save Edits as AI Training Examples..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/LrGeniusAI/StyleCatalog/MenuItem=Style Catalog..."),
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Style Catalog..."),
 			file = "TaskStyleCatalog.lua",
 		},
 		{
-			title = LOC("$$$/LrGeniusAI/Menu/AnalyzeAndIndex=Index Photos for Style Matching..."),
+			title = LOC("$$$/StyleAI/Menu/AnalyzeAndIndex=Index Photos for Style Matching..."),
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 	},

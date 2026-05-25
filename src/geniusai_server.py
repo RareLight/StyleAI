@@ -50,29 +50,29 @@ def _start_faces_cluster_scheduler() -> None:
     Periodically run face clustering in a background thread while the backend is running.
 
     Controlled via environment variables:
-      GENIUSAI_FACES_CLUSTER_ENABLED    (bool; default: false)
-      GENIUSAI_FACES_CLUSTER_INTERVAL   (seconds; default: 3600)
-      GENIUSAI_FACES_CLUSTER_DISTANCE   (float cosine distance; default: 0.5)
-      GENIUSAI_FACES_CLUSTER_MIN_FACES  (int; optional; if unset -> None)
-      GENIUSAI_FACES_CLUSTER_LINKAGE    ("complete" | "average"; default: "complete")
+      STYLEAI_FACES_CLUSTER_ENABLED    (bool; default: false)
+      STYLEAI_FACES_CLUSTER_INTERVAL   (seconds; default: 3600)
+      STYLEAI_FACES_CLUSTER_DISTANCE   (float cosine distance; default: 0.5)
+      STYLEAI_FACES_CLUSTER_MIN_FACES  (int; optional; if unset -> None)
+      STYLEAI_FACES_CLUSTER_LINKAGE    ("complete" | "average"; default: "complete")
     """
-    if not _bool_env("GENIUSAI_FACES_CLUSTER_ENABLED", default=False):
+    if not _bool_env("STYLEAI_FACES_CLUSTER_ENABLED", default=False):
         logger.info(
-            "Faces cluster scheduler disabled (GENIUSAI_FACES_CLUSTER_ENABLED not set)."
+            "Faces cluster scheduler disabled (STYLEAI_FACES_CLUSTER_ENABLED not set)."
         )
         return
 
     try:
-        interval = int(os.environ.get("GENIUSAI_FACES_CLUSTER_INTERVAL", "3600"))
+        interval = int(os.environ.get("STYLEAI_FACES_CLUSTER_INTERVAL", "3600"))
     except ValueError:
         interval = 3600
 
     try:
-        distance = float(os.environ.get("GENIUSAI_FACES_CLUSTER_DISTANCE", "0.5"))
+        distance = float(os.environ.get("STYLEAI_FACES_CLUSTER_DISTANCE", "0.5"))
     except ValueError:
         distance = 0.5
 
-    min_faces_raw = os.environ.get("GENIUSAI_FACES_CLUSTER_MIN_FACES", "").strip()
+    min_faces_raw = os.environ.get("STYLEAI_FACES_CLUSTER_MIN_FACES", "").strip()
     min_faces = None
     if min_faces_raw:
         try:
@@ -81,7 +81,7 @@ def _start_faces_cluster_scheduler() -> None:
             min_faces = None
 
     linkage = (
-        (os.environ.get("GENIUSAI_FACES_CLUSTER_LINKAGE", "complete") or "complete")
+        (os.environ.get("STYLEAI_FACES_CLUSTER_LINKAGE", "complete") or "complete")
         .strip()
         .lower()
     )
@@ -117,22 +117,22 @@ def _start_housekeeping_scheduler() -> None:
     Periodically run housekeeping tasks such as database backups.
 
     Controlled via environment variables:
-      GENIUSAI_BACKUP_ENABLED       (bool; default: false)
-      GENIUSAI_BACKUP_INTERVAL      (seconds; default: 86400, min 600)
-      GENIUSAI_BACKUP_MAX_KEEP      (int; number of backup files to keep; default: 14)
+      STYLEAI_BACKUP_ENABLED       (bool; default: false)
+      STYLEAI_BACKUP_INTERVAL      (seconds; default: 86400, min 600)
+      STYLEAI_BACKUP_MAX_KEEP      (int; number of backup files to keep; default: 14)
     """
-    if not _bool_env("GENIUSAI_BACKUP_ENABLED", default=False):
-        logger.info("DB backup scheduler disabled (GENIUSAI_BACKUP_ENABLED not set).")
+    if not _bool_env("STYLEAI_BACKUP_ENABLED", default=False):
+        logger.info("DB backup scheduler disabled (STYLEAI_BACKUP_ENABLED not set).")
         return
 
     try:
-        interval = int(os.environ.get("GENIUSAI_BACKUP_INTERVAL", "86400"))
+        interval = int(os.environ.get("STYLEAI_BACKUP_INTERVAL", "86400"))
     except ValueError:
         interval = 86400
     interval = max(600, interval)
 
     try:
-        max_keep = int(os.environ.get("GENIUSAI_BACKUP_MAX_KEEP", "14"))
+        max_keep = int(os.environ.get("STYLEAI_BACKUP_MAX_KEEP", "14"))
     except ValueError:
         max_keep = 14
     if max_keep <= 0:
@@ -225,8 +225,8 @@ if __name__ == "__main__":
     logger.info("=" * 60)
 
     # Optional one-shot ID migration for deployed databases.
-    # Set GENIUSAI_MIGRATION_FILE to a JSON list/object with mappings.
-    migration_file = os.environ.get("GENIUSAI_MIGRATION_FILE", "").strip()
+    # Set STYLEAI_MIGRATION_FILE to a JSON list/object with mappings.
+    migration_file = os.environ.get("STYLEAI_MIGRATION_FILE", "").strip()
     if migration_file and config.DB_PATH:
         migration_path = (
             migration_file
@@ -251,8 +251,8 @@ if __name__ == "__main__":
     # Start optional background schedulers (housekeeping only)
     _start_housekeeping_scheduler()
 
-    host = os.environ.get("GENIUSAI_HOST", "127.0.0.1")
-    port = int(os.environ.get("GENIUSAI_PORT", "19819"))
+    host = os.environ.get("STYLEAI_HOST", "127.0.0.1")
+    port = int(os.environ.get("STYLEAI_PORT", "19819"))
     try:
         if args.debug:
             logger.info(

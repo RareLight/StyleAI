@@ -10,7 +10,7 @@ local function writePersonThumbnailFile(base64Thumb, personId, index)
 	local tempDir = LrPathUtils.getStandardFilePath("temp")
 	local safeId = (personId and personId ~= "") and personId or ("person_" .. tostring(index))
 	local safeIdClean = safeId:gsub("[^%w_-]", "_")
-	local tempFile = LrPathUtils.child(tempDir, "lrgenius_person_" .. safeIdClean .. ".jpg")
+	local tempFile = LrPathUtils.child(tempDir, "styleai_person_" .. safeIdClean .. ".jpg")
 	local fh = io.open(tempFile, "wb")
 	if fh then
 		fh:write(LrStringUtils.decodeBase64(base64Thumb))
@@ -27,7 +27,7 @@ local function ensureThumbPlaceholderPath()
 		return _thumbPlaceholderPath
 	end
 	local tempDir = LrPathUtils.getStandardFilePath("temp")
-	local path = LrPathUtils.child(tempDir, "lrgenius_person_thumb_placeholder.jpg")
+	local path = LrPathUtils.child(tempDir, "styleai_person_thumb_placeholder.jpg")
 	local fh = io.open(path, "wb")
 	if fh then
 		local tiny =
@@ -65,12 +65,12 @@ local function loadPersonsFromServer()
 	if err then
 		return {},
 			(LOC(
-				"$$$/LrGeniusAI/People/LoadError=Could not load persons. Check server connection. Try 'Cluster faces' or close and reopen."
+				"$$$/StyleAI/People/LoadError=Could not load persons. Check server connection. Try 'Cluster faces' or close and reopen."
 			))
 	end
 
 	if resp and resp.warning then
-		LrDialogs.message(LOC("$$$/LrGeniusAI/common/BackendWarning=Backend Warning"), resp.warning, "warning")
+		LrDialogs.message(LOC("$$$/StyleAI/common/BackendWarning=Backend Warning"), resp.warning, "warning")
 	end
 
 	local persons = (resp and resp.persons) and resp.persons or {}
@@ -126,8 +126,8 @@ local function showPeopleDialog(ctx, persons, loadError)
 
 	local function photoCountLabel(pc)
 		pc = tonumber(pc) or 0
-		local unit = (pc == 1) and (LOC("$$$/LrGeniusAI/People/Photo=photo"))
-			or (LOC("$$$/LrGeniusAI/People/Photos=photos"))
+		local unit = (pc == 1) and (LOC("$$$/StyleAI/People/Photo=photo"))
+			or (LOC("$$$/StyleAI/People/Photos=photos"))
 		return string.format("%d %s", pc, unit)
 	end
 
@@ -137,7 +137,7 @@ local function showPeopleDialog(ctx, persons, loadError)
 		peopleListBlock = f:static_text({
 			title = loadError
 				or LOC(
-					"$$$/LrGeniusAI/People/NoPersons=No persons yet. Run 'Cluster faces' after indexing photos with face embeddings."
+					"$$$/StyleAI/People/NoPersons=No persons yet. Run 'Cluster faces' after indexing photos with face embeddings."
 				),
 		})
 		listScroller = peopleListBlock
@@ -166,7 +166,7 @@ local function showPeopleDialog(ctx, persons, loadError)
 						})
 					else
 						nameRow = f:static_text({
-							title = LOC("$$$/LrGeniusAI/People/Unnamed=Unnamed"),
+							title = LOC("$$$/StyleAI/People/Unnamed=Unnamed"),
 							alignment = "center",
 						})
 					end
@@ -174,7 +174,7 @@ local function showPeopleDialog(ctx, persons, loadError)
 					if p and p.person_id and p.person_id ~= "" then
 						libRow = f:checkbox({
 							value = bind("librarySel_" .. idx),
-							title = LOC("$$$/LrGeniusAI/People/SelectForLibrary=Library"),
+							title = LOC("$$$/StyleAI/People/SelectForLibrary=Library"),
 						})
 					else
 						libRow = f:spacer({ height = 1 })
@@ -216,7 +216,7 @@ local function showPeopleDialog(ctx, persons, loadError)
 		})
 
 		peopleListBlock = f:group_box({
-			title = LOC("$$$/LrGeniusAI/People/TableGroupTitle=People"),
+			title = LOC("$$$/StyleAI/People/TableGroupTitle=People"),
 			fill_horizontal = 1,
 			listScroller,
 		})
@@ -230,26 +230,26 @@ local function showPeopleDialog(ctx, persons, loadError)
 		f:row({
 			spacing = f:control_spacing(),
 			f:push_button({
-				title = LOC("$$$/LrGeniusAI/People/ClusterFaces=Cluster faces"),
+				title = LOC("$$$/StyleAI/People/ClusterFaces=Cluster faces"),
 				action = function()
 					local clusterResp, err = SearchIndexAPI.clusterFaces()
 					if err then
-						ErrorHandler.handleError(LOC("$$$/LrGeniusAI/People/ClusterError=Face clustering failed"), err)
+						ErrorHandler.handleError(LOC("$$$/StyleAI/People/ClusterError=Face clustering failed"), err)
 						return
 					end
 
 					if clusterResp and clusterResp.warning then
 						LrDialogs.message(
-							LOC("$$$/LrGeniusAI/common/BackendWarning=Backend Warning"),
+							LOC("$$$/StyleAI/common/BackendWarning=Backend Warning"),
 							clusterResp.warning,
 							"warning"
 						)
 					end
 
 					LrDialogs.message(
-						LOC("$$$/LrGeniusAI/People/ClusterDone=Clustering done"),
+						LOC("$$$/StyleAI/People/ClusterDone=Clustering done"),
 						LOC(
-							"$$$/LrGeniusAI/People/ClusterSummaryAndReopen=^1 persons, ^2 faces. Close this dialog and open 'People...' again to see the updated list.",
+							"$$$/StyleAI/People/ClusterSummaryAndReopen=^1 persons, ^2 faces. Close this dialog and open 'People...' again to see the updated list.",
 							tostring(clusterResp and clusterResp.person_count or 0),
 							tostring(clusterResp and clusterResp.face_count or 0)
 						)
@@ -257,14 +257,14 @@ local function showPeopleDialog(ctx, persons, loadError)
 				end,
 			}),
 			f:push_button({
-				title = LOC("$$$/LrGeniusAI/People/ShowInLibrary=Show in Library"),
+				title = LOC("$$$/StyleAI/People/ShowInLibrary=Show in Library"),
 				action = function()
 					local sel = buildLibrarySelection()
 					if #sel == 0 then
 						LrDialogs.message(
-							LOC("$$$/LrGeniusAI/People/NoLibrarySelectionTitle=No people selected"),
+							LOC("$$$/StyleAI/People/NoLibrarySelectionTitle=No people selected"),
 							LOC(
-								"$$$/LrGeniusAI/People/NoLibrarySelectionMessage=Check Library on one or more people, then try again."
+								"$$$/StyleAI/People/NoLibrarySelectionMessage=Check Library on one or more people, then try again."
 							)
 						)
 						return
@@ -281,7 +281,7 @@ local function showPeopleDialog(ctx, persons, loadError)
 		f:row({
 			spacing = f:control_spacing(),
 			f:static_text({
-				title = LOC("$$$/LrGeniusAI/People/LibraryMatchLabel=When several people are selected:"),
+				title = LOC("$$$/StyleAI/People/LibraryMatchLabel=When several people are selected:"),
 				width_in_chars = 34,
 				alignment = "right",
 			}),
@@ -289,11 +289,11 @@ local function showPeopleDialog(ctx, persons, loadError)
 				value = bind("libraryMatchMode"),
 				items = {
 					{
-						title = LOC("$$$/LrGeniusAI/People/LibraryMatchOneOf=Photos with any selected person"),
+						title = LOC("$$$/StyleAI/People/LibraryMatchOneOf=Photos with any selected person"),
 						value = "union",
 					},
 					{
-						title = LOC("$$$/LrGeniusAI/People/LibraryMatchAll=Photos with all selected people"),
+						title = LOC("$$$/StyleAI/People/LibraryMatchAll=Photos with all selected people"),
 						value = "intersection",
 					},
 				},
@@ -302,7 +302,7 @@ local function showPeopleDialog(ctx, persons, loadError)
 
 		f:static_text({
 			title = LOC(
-				"$$$/LrGeniusAI/People/ListTitle=Check Library for people to include, then Show in Library. Edit names; Save (OK) writes to the server, Reset reverts edits, Cancel closes without saving."
+				"$$$/StyleAI/People/ListTitle=Check Library for people to include, then Show in Library. Edit names; Save (OK) writes to the server, Reset reverts edits, Cancel closes without saving."
 			),
 			font = "<system/bold>",
 		}),
@@ -334,11 +334,11 @@ local function showPeopleDialog(ctx, persons, loadError)
 
 	-- Lightroom SDK: actionVerb = primary OK (Save); cancelVerb; otherVerb (Reset).
 	local dialogResult = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/People/WindowTitle=People"),
+		title = LOC("$$$/StyleAI/People/WindowTitle=People"),
 		contents = contents,
-		actionVerb = LOC("$$$/LrGeniusAI/common/Save=Save"),
-		cancelVerb = LOC("$$$/LrGeniusAI/common/Cancel=Cancel"),
-		otherVerb = LOC("$$$/LrGeniusAI/People/Reset=Reset"),
+		actionVerb = LOC("$$$/StyleAI/common/Save=Save"),
+		cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
+		otherVerb = LOC("$$$/StyleAI/People/Reset=Reset"),
 	})
 	thumbLoaderDone = true
 
@@ -360,7 +360,7 @@ local function showPeopleDialog(ctx, persons, loadError)
 				if newName ~= oldName then
 					local nameOk, nameErr = SearchIndexAPI.setPersonName(per.person_id, newName)
 					if not nameOk then
-						ErrorHandler.handleError(LOC("$$$/LrGeniusAI/People/SetNameError=Could not set name"), nameErr)
+						ErrorHandler.handleError(LOC("$$$/StyleAI/People/SetNameError=Could not set name"), nameErr)
 					else
 						per.name = newName
 						nameSnapshot[i] = newName
@@ -397,7 +397,7 @@ local function unionPhotoIdsForEntries(entries)
 			local resp, err = SearchIndexAPI.getPhotosForPerson(pid)
 			if err or type(resp) ~= "table" then
 				ErrorHandler.handleError(
-					LOC("$$$/LrGeniusAI/People/GetPhotosError=Could not get photos for person"),
+					LOC("$$$/StyleAI/People/GetPhotosError=Could not get photos for person"),
 					err or "No data"
 				)
 				return nil
@@ -434,7 +434,7 @@ local function intersectPhotoIdsForEntries(entries)
 		local resp, err = SearchIndexAPI.getPhotosForPerson(pid)
 		if err or type(resp) ~= "table" then
 			ErrorHandler.handleError(
-				LOC("$$$/LrGeniusAI/People/GetPhotosError=Could not get photos for person"),
+				LOC("$$$/StyleAI/People/GetPhotosError=Could not get photos for person"),
 				err or "No data"
 			)
 			return nil
@@ -476,8 +476,8 @@ end
 local function doShowInLibrary(entries, matchMode)
 	if not entries or #entries == 0 then
 		LrDialogs.message(
-			LOC("$$$/LrGeniusAI/People/NoLibrarySelectionTitle=No people selected"),
-			LOC("$$$/LrGeniusAI/People/NoLibrarySelectionMessage=Check Library on one or more people, then try again.")
+			LOC("$$$/StyleAI/People/NoLibrarySelectionTitle=No people selected"),
+			LOC("$$$/StyleAI/People/NoLibrarySelectionMessage=Check Library on one or more people, then try again.")
 		)
 		return
 	end
@@ -497,13 +497,13 @@ local function doShowInLibrary(entries, matchMode)
 	if #photoIdsOrdered == 0 then
 		if mode == "intersection" and #entries >= 2 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/People/NoPhotos=No photos"),
-				LOC("$$$/LrGeniusAI/People/NoPhotosIntersection=No photos contain all selected people together.")
+				LOC("$$$/StyleAI/People/NoPhotos=No photos"),
+				LOC("$$$/StyleAI/People/NoPhotosIntersection=No photos contain all selected people together.")
 			)
 		else
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/People/NoPhotos=No photos"),
-				LOC("$$$/LrGeniusAI/People/NoPhotosForPerson=No photos found for this person.")
+				LOC("$$$/StyleAI/People/NoPhotos=No photos"),
+				LOC("$$$/StyleAI/People/NoPhotosForPerson=No photos found for this person.")
 			)
 		end
 		return
@@ -513,8 +513,8 @@ local function doShowInLibrary(entries, matchMode)
 	local photos = SearchIndexAPI.findPhotosByPhotoIds(photoIdsOrdered)
 	if #photos == 0 then
 		LrDialogs.message(
-			LOC("$$$/LrGeniusAI/People/NoPhotosInCatalog=Not in catalog"),
-			LOC("$$$/LrGeniusAI/People/PersonPhotosNotInCatalog=Photos for this person are not in the current catalog.")
+			LOC("$$$/StyleAI/People/NoPhotosInCatalog=Not in catalog"),
+			LOC("$$$/StyleAI/People/PersonPhotosNotInCatalog=Photos for this person are not in the current catalog.")
 		)
 		return
 	end
@@ -530,18 +530,18 @@ local function doShowInLibrary(entries, matchMode)
 	end
 	local label = table.concat(nameParts, ", ")
 	if #label > 100 then
-		label = string.format("%s (%d)", LOC("$$$/LrGeniusAI/People/MultiPeopleLabel=People"), #entries)
+		label = string.format("%s (%d)", LOC("$$$/StyleAI/People/MultiPeopleLabel=People"), #entries)
 	end
 	local collectionName = string.format("%s @ %s", label, LrDate.timeToW3CDate(LrDate.currentTime()))
 
 	local collectionSet, collection
 	catalog:withWriteAccessDo("Create Collection Set", function()
-		collectionSet = catalog:createCollectionSet(LOC("$$$/LrGeniusAI/People/CollectionSetName=People"), nil, true)
+		collectionSet = catalog:createCollectionSet(LOC("$$$/StyleAI/People/CollectionSetName=People"), nil, true)
 	end, Defaults.catalogWriteAccessOptions)
 	if not collectionSet then
 		ErrorHandler.handleError(
-			LOC("$$$/LrGeniusAI/People/CollectionSetError=Collection set error"),
-			LOC("$$$/LrGeniusAI/People/CollectionSetErrorMessage=Could not create collection set for people.")
+			LOC("$$$/StyleAI/People/CollectionSetError=Collection set error"),
+			LOC("$$$/StyleAI/People/CollectionSetErrorMessage=Could not create collection set for people.")
 		)
 		return
 	end
@@ -551,8 +551,8 @@ local function doShowInLibrary(entries, matchMode)
 	end, Defaults.catalogWriteAccessOptions)
 	if not collection then
 		ErrorHandler.handleError(
-			LOC("$$$/LrGeniusAI/People/CollectionError=Collection error"),
-			LOC("$$$/LrGeniusAI/People/CollectionErrorMessage=Could not create collection for this person.")
+			LOC("$$$/StyleAI/People/CollectionError=Collection error"),
+			LOC("$$$/StyleAI/People/CollectionErrorMessage=Could not create collection for this person.")
 		)
 		return
 	end
@@ -564,9 +564,9 @@ local function doShowInLibrary(entries, matchMode)
 	catalog:setActiveSources({ collection })
 	LrApplicationView.gridView()
 	LrDialogs.message(
-		LOC("$$$/LrGeniusAI/People/Done=Done"),
+		LOC("$$$/StyleAI/People/Done=Done"),
 		LOC(
-			'$$$/LrGeniusAI/People/CollectionCreated=^1 photo(s) added to collection "^2".',
+			'$$$/StyleAI/People/CollectionCreated=^1 photo(s) added to collection "^2".',
 			tostring(#photos),
 			collectionName
 		)
@@ -582,7 +582,7 @@ LrTasks.startAsyncTask(function()
 		while true do
 			local ok, r, pending = LrTasks.pcall(showPeopleDialog, context, persons, loadError)
 			if not ok then
-				ErrorHandler.handleError(LOC("$$$/LrGeniusAI/People/ErrorTitle=Error"), tostring(r))
+				ErrorHandler.handleError(LOC("$$$/StyleAI/People/ErrorTitle=Error"), tostring(r))
 				return
 			end
 			if

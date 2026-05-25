@@ -4,7 +4,7 @@
 --[[
 TaskUpdate.lua
 
-Handles the code-only in-place update flow for LrGeniusAI.
+Handles the code-only in-place update flow for StyleAI.
 Delegates the actual file operations to the Backend server and the external Updater GUI.
 
 Flow:
@@ -31,9 +31,9 @@ end
 function TaskUpdate.runUpdate(releaseInfo)
 	if not releaseInfo or not releaseInfo.manifest_url then
 		LrDialogs.message(
-			LOC("$$$/LrGeniusAI/TaskUpdate/ErrorTitle=Update Error"),
+			LOC("$$$/StyleAI/TaskUpdate/ErrorTitle=Update Error"),
 			LOC(
-				"$$$/LrGeniusAI/TaskUpdate/NoManifestError=No code-only update manifest found. Please download the full installer from the releases page."
+				"$$$/StyleAI/TaskUpdate/NoManifestError=No code-only update manifest found. Please download the full installer from the releases page."
 			),
 			"critical"
 		)
@@ -46,9 +46,9 @@ function TaskUpdate.runUpdate(releaseInfo)
 		-- without incurring a network download first.
 		if not SearchIndexAPI.isLocalBackend() then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/TaskUpdate/ErrorTitle=Update Error"),
+				LOC("$$$/StyleAI/TaskUpdate/ErrorTitle=Update Error"),
 				LOC(
-					"$$$/LrGeniusAI/TaskUpdate/RemoteBackendError=The automated update is only available for local backends. Please update the backend manually on your remote server and re-install the plugin if necessary."
+					"$$$/StyleAI/TaskUpdate/RemoteBackendError=The automated update is only available for local backends. Please update the backend manually on your remote server and re-install the plugin if necessary."
 				),
 				"critical"
 			)
@@ -59,9 +59,9 @@ function TaskUpdate.runUpdate(releaseInfo)
 		local manifest = UpdateCheck.fetchManifest(releaseInfo.manifest_url)
 		if not manifest then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/TaskUpdate/ErrorTitle=Update Error"),
+				LOC("$$$/StyleAI/TaskUpdate/ErrorTitle=Update Error"),
 				LOC(
-					"$$$/LrGeniusAI/TaskUpdate/ManifestFetchError=Could not download the update manifest. Please check your internet connection."
+					"$$$/StyleAI/TaskUpdate/ManifestFetchError=Could not download the update manifest. Please check your internet connection."
 				),
 				"critical"
 			)
@@ -73,13 +73,13 @@ function TaskUpdate.runUpdate(releaseInfo)
 			local version = manifest.version or releaseInfo.tag_name or "?"
 			local releaseUrl = manifest.release_url
 			local btn = LrDialogs.confirm(
-				LOC("$$$/LrGeniusAI/TaskUpdate/BreakingChangesTitle=Full Installer Required"),
+				LOC("$$$/StyleAI/TaskUpdate/BreakingChangesTitle=Full Installer Required"),
 				LOC(
-					"$$$/LrGeniusAI/TaskUpdate/BreakingChangesRequired=Version ^1 requires a full reinstall because it includes changes to the backend dependencies. Please download the installer for your platform from the releases page.",
+					"$$$/StyleAI/TaskUpdate/BreakingChangesRequired=Version ^1 requires a full reinstall because it includes changes to the backend dependencies. Please download the installer for your platform from the releases page.",
 					version
 				),
-				LOC("$$$/LrGeniusAI/PluginInfo/DownloadNow=Download now"),
-				LOC("$$$/LrGeniusAI/common/Cancel=Cancel")
+				LOC("$$$/StyleAI/PluginInfo/DownloadNow=Download now"),
+				LOC("$$$/StyleAI/common/Cancel=Cancel")
 			)
 			if btn == "ok" and releaseUrl then
 				LrHttp.openUrlInBrowser(releaseUrl)
@@ -94,16 +94,16 @@ function TaskUpdate.runUpdate(releaseInfo)
 
 		-- Step 3: Confirmation dialog
 		local detail = LOC(
-			"$$$/LrGeniusAI/TaskUpdate/ConfirmMsgBackend=The backend will download and replace the code files. You should close Lightroom once the process finishes."
-		) .. "\n\n" .. LOC("$$$/LrGeniusAI/TaskUpdate/PluginFiles=Plugin files:") .. " " .. tostring(pluginCount) .. "   " .. LOC(
-			"$$$/LrGeniusAI/TaskUpdate/BackendFiles=Backend files:"
+			"$$$/StyleAI/TaskUpdate/ConfirmMsgBackend=The backend will download and replace the code files. You should close Lightroom once the process finishes."
+		) .. "\n\n" .. LOC("$$$/StyleAI/TaskUpdate/PluginFiles=Plugin files:") .. " " .. tostring(pluginCount) .. "   " .. LOC(
+			"$$$/StyleAI/TaskUpdate/BackendFiles=Backend files:"
 		) .. " " .. tostring(backendCount) .. "   (" .. formatSize(totalSize) .. ")"
 
 		local btn = LrDialogs.confirm(
-			LOC("$$$/LrGeniusAI/TaskUpdate/ConfirmTitle=Install Update ^1?", version),
+			LOC("$$$/StyleAI/TaskUpdate/ConfirmTitle=Install Update ^1?", version),
 			detail,
-			LOC("$$$/LrGeniusAI/TaskUpdate/Install=Install"),
-			LOC("$$$/LrGeniusAI/common/Cancel=Cancel")
+			LOC("$$$/StyleAI/TaskUpdate/Install=Install"),
+			LOC("$$$/StyleAI/common/Cancel=Cancel")
 		)
 
 		if btn ~= "ok" then
@@ -116,10 +116,10 @@ function TaskUpdate.runUpdate(releaseInfo)
 		if not ok then
 			log:error("TaskUpdate: backend update failed to start: " .. tostring(result))
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/TaskUpdate/ErrorTitle=Update Error"),
+				LOC("$$$/StyleAI/TaskUpdate/ErrorTitle=Update Error"),
 				LOC(
-					"$$$/LrGeniusAI/TaskUpdate/UpdateFailed=The update could not be started:\n\n^1",
-					tostring(result or LOC("$$$/LrGeniusAI/common/UnknownError=Unknown error"))
+					"$$$/StyleAI/TaskUpdate/UpdateFailed=The update could not be started:\n\n^1",
+					tostring(result or LOC("$$$/StyleAI/common/UnknownError=Unknown error"))
 				),
 				"critical"
 			)
@@ -129,9 +129,9 @@ function TaskUpdate.runUpdate(releaseInfo)
 		-- Step 5: Brief heads-up before Lightroom shuts down automatically.
 		log:info("TaskUpdate: update to " .. version .. " triggered successfully")
 		LrDialogs.message(
-			LOC("$$$/LrGeniusAI/TaskUpdate/SuccessTitle=Update Starting"),
+			LOC("$$$/StyleAI/TaskUpdate/SuccessTitle=Update Starting"),
 			LOC(
-				"$$$/LrGeniusAI/TaskUpdate/ExternalUpdaterMsg=Lightroom will now close to allow the update to complete. Restart it once the updater window shows 'Finished'."
+				"$$$/StyleAI/TaskUpdate/ExternalUpdaterMsg=Lightroom will now close to allow the update to complete. Restart it once the updater window shows 'Finished'."
 			)
 		)
 		LrApplication.shutdown()

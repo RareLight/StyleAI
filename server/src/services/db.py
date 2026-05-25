@@ -50,9 +50,9 @@ def build_backup_zip() -> tuple[str, str]:
         )
 
     backup_name = (
-        f"lrgeniusai-backend-backup-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.zip"
+        f"styleai-backend-backup-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.zip"
     )
-    fd, zip_path = tempfile.mkstemp(prefix="lrgeniusai-backup-", suffix=".zip")
+    fd, zip_path = tempfile.mkstemp(prefix="styleai-backup-", suffix=".zip")
     os.close(fd)
 
     root_parent = os.path.dirname(db_path)

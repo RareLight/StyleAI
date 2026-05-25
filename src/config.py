@@ -259,20 +259,20 @@ def get_current_log_path() -> str:
     """Returns the log path based on the current DB_PATH, or the default if not set."""
     if DB_PATH:
         # Use dynamic DB_PATH context if available
-        return os.path.join(os.path.dirname(DB_PATH) or ".", "lrgenius-server.log")
+        return os.path.join(os.path.dirname(DB_PATH) or ".", "styleai-server.log")
 
     # Default paths determined at startup
     if sys.platform == "darwin":  # macOS
-        return "/Library/Logs/LrGeniusAI/service.log"
+        return "/Library/Logs/StyleAI/service.log"
     elif sys.platform == "win32":  # Windows
         return os.path.join(
             os.environ.get("LOCALAPPDATA", ""),
-            "LrGeniusAI",
+            "StyleAI",
             "logs",
-            "lrgenius-server.log",
+            "styleai-server.log",
         )
     else:
-        return os.path.join(os.getcwd(), "lrgenius-server.log")
+        return os.path.join(os.getcwd(), "styleai-server.log")
 
 
 LOG_PATH = get_current_log_path()
@@ -356,9 +356,9 @@ def _rotate_log_on_startup(log_path: str, backup_count: int) -> None:
 def _file_log_handler():
     if _is_running_in_docker():
         return logging.FileHandler(LOG_PATH, encoding="utf-8")
-    # Local: on every start create a new log file; keep N backups (GENIUSAI_LOG_ROTATE_BACKUPS).
+    # Local: on every start create a new log file; keep N backups (STYLEAI_LOG_ROTATE_BACKUPS).
     try:
-        backup_count = int(os.environ.get("GENIUSAI_LOG_ROTATE_BACKUPS", "3"))
+        backup_count = int(os.environ.get("STYLEAI_LOG_ROTATE_BACKUPS", "3"))
     except ValueError:
         backup_count = 3
     backup_count = max(1, min(backup_count, 20))
@@ -376,9 +376,9 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
     handlers=handlers,
 )
-logger = logging.getLogger("geniusai-server")
+logger = logging.getLogger("styleai-server")
 if not _is_running_in_docker():
     logger.info(
-        "Log file rotation on startup enabled for %s (GENIUSAI_LOG_ROTATE_BACKUPS)",
+        "Log file rotation on startup enabled for %s (STYLEAI_LOG_ROTATE_BACKUPS)",
         LOG_PATH,
     )

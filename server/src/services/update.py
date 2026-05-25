@@ -31,7 +31,7 @@ def perform_code_update(manifest: dict, plugin_path: str) -> tuple[bool, str]:
         updater_script = backend_root / "src" / "scripts" / "updater.py"
 
         # Save manifest to a temp file for the script
-        manifest_path = Path(os.path.expanduser("~/.lrgeniusai/manifest_to_apply.json"))
+        manifest_path = Path(os.path.expanduser("~/.styleai/manifest_to_apply.json"))
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(manifest_path, "w") as f:
             json.dump(manifest, f)
