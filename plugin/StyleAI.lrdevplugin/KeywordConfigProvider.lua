@@ -56,10 +56,10 @@ function KeywordConfigProvider.showKeywordCategoryDialog()
 		local props = LrBinding.makePropertyTable(context)
 		props.categoriesText = keywordsToText(keywords)
 		props.countLabel =
-			LOC("$$$/LrGeniusAI/KeywordConfig/Count=^1 categories", tostring(countLines(props.categoriesText)))
+			LOC("$$$/StyleAI/KeywordConfig/Count=^1 categories", tostring(countLines(props.categoriesText)))
 
 		props:addObserver("categoriesText", function(p, _, value)
-			p.countLabel = LOC("$$$/LrGeniusAI/KeywordConfig/Count=^1 categories", tostring(countLines(value or "")))
+			p.countLabel = LOC("$$$/StyleAI/KeywordConfig/Count=^1 categories", tostring(countLines(value or "")))
 		end)
 
 		local function resetToDefaults()
@@ -80,7 +80,7 @@ function KeywordConfigProvider.showKeywordCategoryDialog()
 
 			f:static_text({
 				title = LOC(
-					"$$$/LrGeniusAI/KeywordConfig/Description=One category per line.\nEmpty lines are ignored when you save."
+					"$$$/StyleAI/KeywordConfig/Description=One category per line.\nEmpty lines are ignored when you save."
 				),
 			}),
 
@@ -104,14 +104,14 @@ function KeywordConfigProvider.showKeywordCategoryDialog()
 				}),
 				f:spacer({ fill_horizontal = 1 }),
 				f:push_button({
-					title = LOC("$$$/LrGeniusAI/KeywordConfig/ResetButton=Reset to defaults"),
+					title = LOC("$$$/StyleAI/KeywordConfig/ResetButton=Reset to defaults"),
 					action = resetToDefaults,
 				}),
 			}),
 		})
 
 		local result = LrDialogs.presentModalDialog({
-			title = LOC("$$$/LrGeniusAI/KeywordConfig/Title=Configure Keyword Categories"),
+			title = LOC("$$$/StyleAI/KeywordConfig/Title=Configure Keyword Categories"),
 			contents = dialogView,
 		})
 

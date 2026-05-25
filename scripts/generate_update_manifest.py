@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate a code-only update manifest for LrGeniusAI releases.
+Generate a code-only update manifest for StyleAI releases.
 
 The manifest is a JSON file that lists all plugin (.lua, .txt) and backend
 Python source files with their download URLs and SHA256 hashes. The plugin
@@ -10,7 +10,7 @@ the full installer.
 Usage (in CI):
     python3 scripts/generate_update_manifest.py \
         --version v2.15.0 \
-        --repo LrGenius/LrGeniusAI \
+        --repo LrGenius/StyleAI \
         --output update-manifest.json
 """
 
@@ -23,7 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PLUGIN_DIR = Path("plugin/LrGeniusAI.lrdevplugin")
+PLUGIN_DIR = Path("plugin/StyleAI.lrdevplugin")
 BACKEND_SRC_DIR = Path("server/src")
 
 PLUGIN_EXTENSIONS = {".lua", ".txt"}
@@ -153,12 +153,12 @@ def _detect_dependency_changes(current_tag: str) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate LrGeniusAI code-only update manifest"
+        description="Generate StyleAI code-only update manifest"
     )
     parser.add_argument("--version", required=True, help="Version tag (e.g. v2.15.0)")
     parser.add_argument(
         "--repo",
-        default="LrGenius/LrGeniusAI",
+        default="LrGenius/StyleAI",
         help="GitHub repo in owner/name format",
     )
     parser.add_argument(

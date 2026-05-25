@@ -23,16 +23,16 @@ local function showRetrieveMetadataDialog(ctx)
 	props.applyCaption = prefs.applyCaption ~= false -- default true
 	props.applyAltText = prefs.applyAltText ~= false -- default true
 	props.useTopLevelKeyword = prefs.useTopLevelKeyword ~= false -- default true
-	props.topLevelKeyword = prefs.topLevelKeyword or "LrGeniusAI"
+	props.topLevelKeyword = prefs.topLevelKeyword or "StyleAI"
 
 	-- Validation option
 	props.enableValidation = prefs.retrieveEnableValidation or false
 	props.appendMetadata = prefs.retrieveAppendMetadata or false
 
 	local scopeItems = {
-		{ title = LOC("$$$/LrGeniusAI/Scope/Selected=Selected Photos"), value = "selected" },
-		{ title = LOC("$$$/LrGeniusAI/Scope/View=Current View"), value = "view" },
-		{ title = LOC("$$$/LrGeniusAI/Scope/All=All Photos"), value = "all" },
+		{ title = LOC("$$$/StyleAI/Scope/Selected=Selected Photos"), value = "selected" },
+		{ title = LOC("$$$/StyleAI/Scope/View=Current View"), value = "view" },
+		{ title = LOC("$$$/StyleAI/Scope/All=All Photos"), value = "all" },
 	}
 
 	local dialogView = f:column({
@@ -41,11 +41,11 @@ local function showRetrieveMetadataDialog(ctx)
 
 		-- Scope Selection
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/RetrieveMetadata/Scope=Photo Selection"),
+			title = LOC("$$$/StyleAI/RetrieveMetadata/Scope=Photo Selection"),
 			fill_horizontal = 1,
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/RetrieveMetadata/ScopeLabel=Apply to:"),
+					title = LOC("$$$/StyleAI/RetrieveMetadata/ScopeLabel=Apply to:"),
 					width = share("labelWidth"),
 				}),
 				f:popup_menu({
@@ -58,47 +58,47 @@ local function showRetrieveMetadataDialog(ctx)
 
 		-- Data Fields to Apply
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/RetrieveMetadata/DataFields=Data Fields to Apply"),
+			title = LOC("$$$/StyleAI/RetrieveMetadata/DataFields=Data Fields to Apply"),
 			fill_horizontal = 1,
 			f:column({
 				spacing = f:control_spacing(),
 				f:checkbox({
 					value = bind("applyKeywords"),
-					title = LOC("$$$/LrGeniusAI/RetrieveMetadata/Keywords=Keywords"),
+					title = LOC("$$$/StyleAI/RetrieveMetadata/Keywords=Keywords"),
 				}),
 				f:checkbox({
 					value = bind("applyTitle"),
-					title = LOC("$$$/LrGeniusAI/RetrieveMetadata/Title=Title"),
+					title = LOC("$$$/StyleAI/RetrieveMetadata/Title=Title"),
 				}),
 				f:checkbox({
 					value = bind("applyCaption"),
-					title = LOC("$$$/LrGeniusAI/RetrieveMetadata/Caption=Caption"),
+					title = LOC("$$$/StyleAI/RetrieveMetadata/Caption=Caption"),
 				}),
 				f:checkbox({
 					value = bind("applyAltText"),
-					title = LOC("$$$/LrGeniusAI/RetrieveMetadata/AltText=Alt Text"),
+					title = LOC("$$$/StyleAI/RetrieveMetadata/AltText=Alt Text"),
 				}),
 			}),
 		}),
 
 		-- Validation Option
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/RetrieveMetadata/Validation=Validation"),
+			title = LOC("$$$/StyleAI/RetrieveMetadata/Validation=Validation"),
 			fill_horizontal = 1,
 			f:checkbox({
 				value = bind("enableValidation"),
-				title = LOC("$$$/LrGeniusAI/RetrieveMetadata/EnableValidation=Review data before applying to catalog"),
+				title = LOC("$$$/StyleAI/RetrieveMetadata/EnableValidation=Review data before applying to catalog"),
 			}),
 		}),
 
 		-- Append metadata option
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/RetrieveMetadata/AppendOption=Apply Options"),
+			title = LOC("$$$/StyleAI/RetrieveMetadata/AppendOption=Apply Options"),
 			fill_horizontal = 1,
 			f:checkbox({
 				value = bind("appendMetadata"),
 				title = LOC(
-					"$$$/LrGeniusAI/RetrieveMetadata/AppendMetadata=Append metadata (do not overwrite existing)"
+					"$$$/StyleAI/RetrieveMetadata/AppendMetadata=Append metadata (do not overwrite existing)"
 				),
 			}),
 		}),
@@ -106,7 +106,7 @@ local function showRetrieveMetadataDialog(ctx)
 		-- Keyword Option
 		f:group_box({
 			title = LOC(
-				"$$$/LrGeniusAI/RetrieveMetadata/UseTopLevelKeyword=Use top-level keyword for applied keywords"
+				"$$$/StyleAI/RetrieveMetadata/UseTopLevelKeyword=Use top-level keyword for applied keywords"
 			),
 			fill_horizontal = 1,
 			f:row({
@@ -123,9 +123,9 @@ local function showRetrieveMetadataDialog(ctx)
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/RetrieveMetadata/DialogTitle=Retrieve Metadata from Backend"),
+		title = LOC("$$$/StyleAI/RetrieveMetadata/DialogTitle=Retrieve Metadata from Backend"),
 		contents = dialogView,
-		actionVerb = LOC("$$$/LrGeniusAI/RetrieveMetadata/ActionVerb=Retrieve"),
+		actionVerb = LOC("$$$/StyleAI/RetrieveMetadata/ActionVerb=Retrieve"),
 	})
 
 	if result == "ok" then
@@ -177,8 +177,8 @@ LrTasks.startAsyncTask(function()
 		local photos = PhotoSelector.getPhotosInScope(options.scope)
 		if not photos or #photos == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/RetrieveMetadata/NoPhotos=No Photos"),
-				LOC("$$$/LrGeniusAI/RetrieveMetadata/NoPhotosMessage=No photos found in the selected scope."),
+				LOC("$$$/StyleAI/RetrieveMetadata/NoPhotos=No Photos"),
+				LOC("$$$/StyleAI/RetrieveMetadata/NoPhotosMessage=No photos found in the selected scope."),
 				"info"
 			)
 			return
@@ -188,7 +188,7 @@ LrTasks.startAsyncTask(function()
 
 		-- Progress indicator
 		local progressScope = LrProgressScope({
-			title = LOC("$$$/LrGeniusAI/RetrieveMetadata/ProgressTitle=Retrieving Metadata from Backend"),
+			title = LOC("$$$/StyleAI/RetrieveMetadata/ProgressTitle=Retrieving Metadata from Backend"),
 		})
 
 		local successCount = 0
@@ -208,7 +208,7 @@ LrTasks.startAsyncTask(function()
 			progressScope:setPortionComplete(i - 1, #photos)
 			progressScope:setCaption(
 				string.format(
-					LOC("$$$/LrGeniusAI/RetrieveMetadata/Processing=Processing %s (%d of %d)"),
+					LOC("$$$/StyleAI/RetrieveMetadata/Processing=Processing %s (%d of %d)"),
 					fileName,
 					i,
 					#photos
@@ -219,9 +219,9 @@ LrTasks.startAsyncTask(function()
 			if photoId then
 				if not SearchIndexAPI.pingServer() then
 					LrDialogs.message(
-						LOC("$$$/LrGeniusAI/RetrieveMetadata/ServerUnreachable=Server Unreachable"),
+						LOC("$$$/StyleAI/RetrieveMetadata/ServerUnreachable=Server Unreachable"),
 						LOC(
-							"$$$/LrGeniusAI/RetrieveMetadata/ServerUnreachableMessage=Cannot reach backend server. Please check your connection and try again."
+							"$$$/StyleAI/RetrieveMetadata/ServerUnreachableMessage=Cannot reach backend server. Please check your connection and try again."
 						),
 						"error"
 					)
@@ -281,7 +281,7 @@ LrTasks.startAsyncTask(function()
 					log:warn("No data found in backend for photo: " .. fileName)
 					table.insert(
 						errorMessages,
-						fileName .. ": " .. LOC("$$$/LrGeniusAI/RetrieveMetadata/ErrorNoData=No data found")
+						fileName .. ": " .. LOC("$$$/StyleAI/RetrieveMetadata/ErrorNoData=No data found")
 					)
 					errorCount = errorCount + 1
 				end
@@ -308,37 +308,37 @@ LrTasks.startAsyncTask(function()
 			end
 
 			local combinedReport = LOC(
-				"$$$/LrGeniusAI/RetrieveMetadata/Summary=Retrieved metadata for ^1 photo(s).",
+				"$$$/StyleAI/RetrieveMetadata/Summary=Retrieved metadata for ^1 photo(s).",
 				tostring(successCount)
 			)
 			if skipCount > 0 then
 				combinedReport = combinedReport
 					.. "\n"
-					.. LOC("$$$/LrGeniusAI/common/Skipped=Skipped: ^1", tostring(skipCount))
+					.. LOC("$$$/StyleAI/common/Skipped=Skipped: ^1", tostring(skipCount))
 			end
 			if errorCount > 0 then
 				combinedReport = combinedReport
 					.. "\n"
-					.. LOC("$$$/LrGeniusAI/common/Errors=Errors: ^1", tostring(errorCount))
+					.. LOC("$$$/StyleAI/common/Errors=Errors: ^1", tostring(errorCount))
 			end
 
 			if #errorList > 0 then
 				combinedReport = combinedReport
 					.. "\n\n"
-					.. LOC("$$$/LrGeniusAI/common/ErrorDetails=Error details:")
+					.. LOC("$$$/StyleAI/common/ErrorDetails=Error details:")
 					.. "\n"
 					.. table.concat(errorList, "\n")
 				if #errorMessages > 5 then
 					combinedReport = combinedReport
 						.. "\n"
-						.. LOC("$$$/LrGeniusAI/common/MoreErrors=... and ^1 more errors", tostring(#errorMessages - 5))
+						.. LOC("$$$/StyleAI/common/MoreErrors=... and ^1 more errors", tostring(#errorMessages - 5))
 				end
 			end
 
 			if #backendWarnings > 0 then
 				combinedReport = combinedReport
 					.. "\n\n"
-					.. LOC("$$$/LrGeniusAI/common/BackendWarnings=Backend Warnings:")
+					.. LOC("$$$/StyleAI/common/BackendWarnings=Backend Warnings:")
 					.. "\n"
 				for i = 1, math.min(5, #backendWarnings) do
 					combinedReport = combinedReport .. "- " .. backendWarnings[i] .. "\n"
@@ -346,21 +346,21 @@ LrTasks.startAsyncTask(function()
 				if #backendWarnings > 5 then
 					combinedReport = combinedReport
 						.. LOC(
-							"$$$/LrGeniusAI/common/MoreWarnings=... and ^1 more warnings",
+							"$$$/StyleAI/common/MoreWarnings=... and ^1 more warnings",
 							tostring(#backendWarnings - 5)
 						)
 				end
 			end
 
 			ErrorHandler.handleError(
-				LOC("$$$/LrGeniusAI/RetrieveMetadata/CompletionTitle=Metadata Retrieval Completed"),
+				LOC("$$$/StyleAI/RetrieveMetadata/CompletionTitle=Metadata Retrieval Completed"),
 				combinedReport
 			)
 		else
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/RetrieveMetadata/SuccessTitle=Metadata Retrieval"),
+				LOC("$$$/StyleAI/RetrieveMetadata/SuccessTitle=Metadata Retrieval"),
 				LOC(
-					"$$$/LrGeniusAI/RetrieveMetadata/SuccessSummary=Successfully retrieved metadata for ^1 photo(s).\nSkipped: ^2",
+					"$$$/StyleAI/RetrieveMetadata/SuccessSummary=Successfully retrieved metadata for ^1 photo(s).\nSkipped: ^2",
 					tostring(successCount),
 					tostring(skipCount)
 				),

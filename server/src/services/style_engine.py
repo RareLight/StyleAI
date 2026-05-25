@@ -339,7 +339,7 @@ def _canonical_to_edit_recipe(
         global_settings["tone_curve"] = tone_curve
 
     return {
-        "summary": summary or "Style-matched edit by LrGeniusAI Style Engine",
+        "summary": summary or "Style-matched edit by StyleAI Style Engine",
         "global": global_settings,
         "masks": [],
         "warnings": [],

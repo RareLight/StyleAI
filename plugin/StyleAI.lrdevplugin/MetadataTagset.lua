@@ -1,6 +1,6 @@
 return {
-	title = "LrGeniusAI",
-	id = "lrgeniusTagset",
+	title = "StyleAI",
+	id = "styleaiTagset",
 	items = {
 		"com.adobe.filename",
 		"com.adobe.copyname",

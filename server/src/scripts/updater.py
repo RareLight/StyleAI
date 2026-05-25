@@ -104,9 +104,9 @@ def _modern_dialog(title: str, message: str, kind: str = "info") -> None:
     win.mainloop()
 
 
-_LAUNCHD_PLIST = Path("/Library/LaunchAgents/com.lrgenius.server.plist")
+_LAUNCHD_PLIST = Path("/Library/LaunchAgents/com.styleai.server.plist")
 _WIN_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-_WIN_REG_VALUE = "LrGeniusAIBackend"
+_WIN_REG_VALUE = "StyleAIBackend"
 
 
 def _launchd_unload() -> bool:
@@ -152,7 +152,7 @@ def _windows_stop() -> bool:
                 img,
                 "/T",
                 "/FI",
-                "WINDOWTITLE eq lrgenius-server*",
+                "WINDOWTITLE eq styleai-server*",
             ],
             capture_output=True,
             text=True,
@@ -207,7 +207,7 @@ def _log(msg: str) -> None:
 
 def _apply_elevated_macos(ops: list[tuple[Path, Path]]) -> None:
     """Run all (src, dst) copies in a single privileged osascript call (one prompt)."""
-    script_path = Path(os.path.expanduser("~/.lrgeniusai/update_tmp/apply_elevated.sh"))
+    script_path = Path(os.path.expanduser("~/.styleai/update_tmp/apply_elevated.sh"))
     script_path.parent.mkdir(parents=True, exist_ok=True)
     with open(script_path, "w") as f:
         f.write("#!/bin/bash\nset -e\n")
@@ -228,7 +228,7 @@ def _apply_elevated_macos(ops: list[tuple[Path, Path]]) -> None:
 def _apply_elevated_windows(ops: list[tuple[Path, Path]]) -> None:
     """Run all (src, dst) copies in a single UAC-elevated PowerShell call (one prompt)."""
     script_path = Path(
-        os.path.expanduser("~/.lrgeniusai/update_tmp/apply_elevated.ps1")
+        os.path.expanduser("~/.styleai/update_tmp/apply_elevated.ps1")
     )
     script_path.parent.mkdir(parents=True, exist_ok=True)
     with open(script_path, "w", encoding="utf-8") as f:
@@ -309,7 +309,7 @@ class UpdaterGUI:
         self._bar_value = 0
 
         self.root = tk.Tk()
-        self.root.title("LrGeniusAI Updater")
+        self.root.title("StyleAI Updater")
         self.root.resizable(False, False)
         self.root.configure(bg=_BG)
 
@@ -319,7 +319,7 @@ class UpdaterGUI:
         # App name + subtitle row
         tk.Label(
             outer,
-            text="LrGeniusAI",
+            text="StyleAI",
             bg=_BG,
             fg=_TEXT,
             font=_FONT_TITLE,
@@ -417,7 +417,7 @@ class UpdaterGUI:
         """Runs on the main thread after all files have been applied."""
         _log("Update applied — restarting backend...")
         backend_root = Path(self.backend_root)
-        entry_point = backend_root / "src" / "geniusai_server.py"
+        entry_point = backend_root / "src" / "styleai_server.py"
         if not entry_point.exists():
             _log(f"Backend entry point not found: {entry_point}")
             self.root.destroy()
@@ -432,7 +432,7 @@ class UpdaterGUI:
             # Ask a still-running backend to restart itself (picks up new files).
             # Silently ignored if the backend is already down.
             try:
-                port = int(os.environ.get("GENIUSAI_PORT", "19819"))
+                port = int(os.environ.get("STYLEAI_PORT", "19819"))
                 requests.post(f"http://127.0.0.1:{port}/restart", timeout=5)
                 _log("Sent /restart to running backend.")
             except Exception:
@@ -463,7 +463,7 @@ class UpdaterGUI:
             self.root.destroy()
             _modern_dialog(
                 "Update complete",
-                "LrGeniusAI has been updated successfully. You can now restart Lightroom.",
+                "StyleAI has been updated successfully. You can now restart Lightroom.",
                 "info",
             )
         except Exception as e:
@@ -517,7 +517,7 @@ class UpdaterGUI:
                 f"Files to update: {total_files} ({len(plugin_files)} plugin, {len(backend_files)} backend)"
             )
 
-            temp_dir = Path(os.path.expanduser("~/.lrgeniusai/update_tmp"))
+            temp_dir = Path(os.path.expanduser("~/.styleai/update_tmp"))
             if temp_dir.exists():
                 shutil.rmtree(temp_dir)
             temp_dir.mkdir(parents=True, exist_ok=True)

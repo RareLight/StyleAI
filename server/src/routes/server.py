@@ -77,7 +77,7 @@ def update_apply():
 def initialize():
     """
     Called by the Lightroom plugin to 'attach' the running service to a specific catalog.
-    JSON: { "db_path": "/path/to/catalog/folder/lrgenius.db" }
+    JSON: { "db_path": "/path/to/catalog/folder/styleai.db" }
     """
     data = request.get_json(silent=True) or {}
     db_path = data.get("db_path")

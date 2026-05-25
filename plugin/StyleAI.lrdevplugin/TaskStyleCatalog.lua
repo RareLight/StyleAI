@@ -26,13 +26,13 @@ LrTasks.startAsyncTask(function()
 		-- Load styles from backend
 		local function loadStyles()
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/LrGeniusAI/StyleCatalog/Loading=Loading styles...")
+			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Loading=Loading styles...")
 
 			local success, result = SearchIndexAPI.listStyles()
 			if success then
 				props.styles = result or {}
 				props.statusMessage = LOC(
-					"$$$/LrGeniusAI/StyleCatalog/LoadedCount=^1 style(s) discovered.",
+					"$$$/StyleAI/StyleCatalog/LoadedCount=^1 style(s) discovered.",
 					tostring(#props.styles)
 				)
 				if #props.styles > 0 then
@@ -40,7 +40,7 @@ LrTasks.startAsyncTask(function()
 				end
 			else
 				props.statusMessage = LOC(
-					"$$$/LrGeniusAI/StyleCatalog/LoadError=Error loading styles: ^1",
+					"$$$/StyleAI/StyleCatalog/LoadError=Error loading styles: ^1",
 					tostring(result)
 				)
 				props.styles = {}
@@ -52,20 +52,20 @@ LrTasks.startAsyncTask(function()
 		-- Discover styles from all training examples
 		local function discoverStyles()
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/LrGeniusAI/StyleCatalog/Discovering=Discovering styles from training examples...")
+			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Discovering=Discovering styles from training examples...")
 
 			local success, result = SearchIndexAPI.discoverStyles(nil)
 			if success then
 				local count = result.styles_created or 0
 				props.statusMessage = LOC(
-					"$$$/LrGeniusAI/StyleCatalog/DiscoveredCount=Discovered ^1 style(s).",
+					"$$$/StyleAI/StyleCatalog/DiscoveredCount=Discovered ^1 style(s).",
 					tostring(count)
 				)
 				-- Reload the list
 				loadStyles()
 			else
 				props.statusMessage = LOC(
-					"$$$/LrGeniusAI/StyleCatalog/DiscoverError=Discovery failed: ^1",
+					"$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1",
 					tostring(result)
 				)
 				props.isLoading = false
@@ -83,13 +83,13 @@ LrTasks.startAsyncTask(function()
 			local styleName = style.style_name or style.style_id or "this style"
 
 			local confirm = LrDialogs.confirm(
-				LOC("$$$/LrGeniusAI/StyleCatalog/DeleteTitle=Delete Style"),
+				LOC("$$$/StyleAI/StyleCatalog/DeleteTitle=Delete Style"),
 				LOC(
-					"$$$/LrGeniusAI/StyleCatalog/DeleteConfirm=Are you sure you want to delete '^1'? Training examples will not be affected.",
+					"$$$/StyleAI/StyleCatalog/DeleteConfirm=Are you sure you want to delete '^1'? Training examples will not be affected.",
 					styleName
 				),
-				LOC("$$$/LrGeniusAI/common/Delete=Delete"),
-				LOC("$$$/LrGeniusAI/common/Cancel=Cancel")
+				LOC("$$$/StyleAI/common/Delete=Delete"),
+				LOC("$$$/StyleAI/common/Cancel=Cancel")
 			)
 
 			if confirm ~= "ok" then
@@ -97,15 +97,15 @@ LrTasks.startAsyncTask(function()
 			end
 
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/LrGeniusAI/StyleCatalog/Deleting=Deleting style...")
+			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Deleting=Deleting style...")
 
 			local success, err = SearchIndexAPI.resetStyle(style.style_id)
 			if success then
-				props.statusMessage = LOC("$$$/LrGeniusAI/StyleCatalog/Deleted=Style deleted.")
+				props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Deleted=Style deleted.")
 				loadStyles()
 			else
 				props.statusMessage = LOC(
-					"$$$/LrGeniusAI/StyleCatalog/DeleteError=Delete failed: ^1",
+					"$$$/StyleAI/StyleCatalog/DeleteError=Delete failed: ^1",
 					tostring(err)
 				)
 				props.isLoading = false
@@ -115,10 +115,10 @@ LrTasks.startAsyncTask(function()
 		-- Reset all styles
 		local function resetAllStyles()
 			local confirm = LrDialogs.confirm(
-				LOC("$$$/LrGeniusAI/StyleCatalog/ResetAllTitle=Reset All Styles"),
-				LOC("$$$/LrGeniusAI/StyleCatalog/ResetAllConfirm=This will delete ALL discovered styles. Training examples will be preserved. Are you sure?"),
-				LOC("$$$/LrGeniusAI/common/ResetAll=Reset All"),
-				LOC("$$$/LrGeniusAI/common/Cancel=Cancel")
+				LOC("$$$/StyleAI/StyleCatalog/ResetAllTitle=Reset All Styles"),
+				LOC("$$$/StyleAI/StyleCatalog/ResetAllConfirm=This will delete ALL discovered styles. Training examples will be preserved. Are you sure?"),
+				LOC("$$$/StyleAI/common/ResetAll=Reset All"),
+				LOC("$$$/StyleAI/common/Cancel=Cancel")
 			)
 
 			if confirm ~= "ok" then
@@ -126,16 +126,16 @@ LrTasks.startAsyncTask(function()
 			end
 
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/LrGeniusAI/StyleCatalog/ResettingAll=Resetting all styles...")
+			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ResettingAll=Resetting all styles...")
 
 			local success, err = SearchIndexAPI.resetAllStyles()
 			if success then
-				props.statusMessage = LOC("$$$/LrGeniusAI/StyleCatalog/ResetAllDone=All styles cleared.")
+				props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ResetAllDone=All styles cleared.")
 				props.styles = {}
 				props.selectedStyleIndex = 0
 			else
 				props.statusMessage = LOC(
-					"$$$/LrGeniusAI/StyleCatalog/ResetAllError=Reset failed: ^1",
+					"$$$/StyleAI/StyleCatalog/ResetAllError=Reset failed: ^1",
 					tostring(err)
 				)
 			end
@@ -145,12 +145,12 @@ LrTasks.startAsyncTask(function()
 		-- Export styles to file
 		local function exportStyles()
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/LrGeniusAI/StyleCatalog/Exporting=Exporting styles...")
+			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Exporting=Exporting styles...")
 
 			local success, data = SearchIndexAPI.exportStyles()
 			if not success then
 				props.statusMessage = LOC(
-					"$$$/LrGeniusAI/StyleCatalog/ExportError=Export failed: ^1",
+					"$$$/StyleAI/StyleCatalog/ExportError=Export failed: ^1",
 					tostring(data)
 				)
 				props.isLoading = false
@@ -160,11 +160,11 @@ LrTasks.startAsyncTask(function()
 			local catalog = LrApplication.activeCatalog()
 			local catalogPath = catalog:getPath()
 			local catalogDir = LrPathUtils.parent(catalogPath)
-			local defaultPath = LrPathUtils.child(catalogDir, "LrGeniusAI-Styles.json")
+			local defaultPath = LrPathUtils.child(catalogDir, "StyleAI-Styles.json")
 
 			local path = LrDialogs.runSavePanel({
-				title = LOC("$$$/LrGeniusAI/StyleCatalog/ExportDialogTitle=Export Style Catalog"),
-				prompt = LOC("$$$/LrGeniusAI/StyleCatalog/ExportDialogPrompt=Save"),
+				title = LOC("$$$/StyleAI/StyleCatalog/ExportDialogTitle=Export Style Catalog"),
+				prompt = LOC("$$$/StyleAI/StyleCatalog/ExportDialogPrompt=Save"),
 				requiredFileType = "json",
 				initialDirectory = catalogDir,
 			})
@@ -180,14 +180,14 @@ LrTasks.startAsyncTask(function()
 					file:write(JSON:encode(data))
 					file:close()
 					props.statusMessage = LOC(
-						"$$$/LrGeniusAI/StyleCatalog/ExportedTo=Exported to ^1",
+						"$$$/StyleAI/StyleCatalog/ExportedTo=Exported to ^1",
 						path
 					)
 				else
-					props.statusMessage = LOC("$$$/LrGeniusAI/StyleCatalog/ExportFileError=Could not write file.")
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportFileError=Could not write file.")
 				end
 			else
-				props.statusMessage = LOC("$$$/LrGeniusAI/StyleCatalog/ExportCancelled=Export cancelled.")
+				props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportCancelled=Export cancelled.")
 			end
 
 			props.isLoading = false
@@ -203,7 +203,7 @@ LrTasks.startAsyncTask(function()
 				-- Title
 				f:row({
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/StyleCatalog/Title=AI Style Catalog"),
+						title = LOC("$$$/StyleAI/StyleCatalog/Title=AI Style Catalog"),
 						font = "bold",
 						size = "large",
 					}),
@@ -220,7 +220,7 @@ LrTasks.startAsyncTask(function()
 				-- Toolbar
 				f:row({
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/StyleCatalog/Refresh=Refresh"),
+						title = LOC("$$$/StyleAI/StyleCatalog/Refresh=Refresh"),
 						action = loadStyles,
 						enabled = bind({
 							key = "isLoading",
@@ -228,7 +228,7 @@ LrTasks.startAsyncTask(function()
 						}),
 					}),
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/StyleCatalog/Discover=Discover"),
+						title = LOC("$$$/StyleAI/StyleCatalog/Discover=Discover"),
 						action = discoverStyles,
 						enabled = bind({
 							key = "isLoading",
@@ -236,7 +236,7 @@ LrTasks.startAsyncTask(function()
 						}),
 					}),
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/StyleCatalog/Export=Export"),
+						title = LOC("$$$/StyleAI/StyleCatalog/Export=Export"),
 						action = exportStyles,
 						enabled = bind({
 							key = "isLoading",
@@ -244,7 +244,7 @@ LrTasks.startAsyncTask(function()
 						}),
 					}),
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/StyleCatalog/Delete=Delete"),
+						title = LOC("$$$/StyleAI/StyleCatalog/Delete=Delete"),
 						action = deleteSelectedStyle,
 						enabled = bind({
 							key = "isLoading",
@@ -252,7 +252,7 @@ LrTasks.startAsyncTask(function()
 						}),
 					}),
 					f:push_button({
-						title = LOC("$$$/LrGeniusAI/StyleCatalog/ResetAll=Reset All"),
+						title = LOC("$$$/StyleAI/StyleCatalog/ResetAll=Reset All"),
 						action = resetAllStyles,
 						enabled = bind({
 							key = "isLoading",
@@ -263,7 +263,7 @@ LrTasks.startAsyncTask(function()
 
 				-- Style list
 				f:group_box({
-					title = LOC("$$$/LrGeniusAI/StyleCatalog/StyleList=Discovered Styles"),
+					title = LOC("$$$/StyleAI/StyleCatalog/StyleList=Discovered Styles"),
 					fill_horizontal = 1,
 					fill_vertical = 1,
 					f:simple_list({
@@ -289,7 +289,7 @@ LrTasks.startAsyncTask(function()
 
 				-- Style detail panel
 				f:group_box({
-					title = LOC("$$$/LrGeniusAI/StyleCatalog/StyleDetails=Style Details"),
+					title = LOC("$$$/StyleAI/StyleCatalog/StyleDetails=Style Details"),
 					fill_horizontal = 1,
 					f:column({
 						spacing = f:control_spacing(),
@@ -344,9 +344,9 @@ LrTasks.startAsyncTask(function()
 
 		-- Show the dialog
 		LrDialogs.presentModalDialog({
-			title = LOC("$$$/LrGeniusAI/StyleCatalog/DialogTitle=AI Style Catalog"),
+			title = LOC("$$$/StyleAI/StyleCatalog/DialogTitle=AI Style Catalog"),
 			contents = buildDialog(),
-			actionVerb = LOC("$$$/LrGeniusAI/common/Close=Close"),
+			actionVerb = LOC("$$$/StyleAI/common/Close=Close"),
 		})
 
 		log:info("Style Catalog task finished")

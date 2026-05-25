@@ -79,7 +79,7 @@ end
 --- Fetch information about the latest release directly from GitHub.
 --- Returns a table {tag_name, release_url, manifest_url, is_code_only, is_newer} or nil.
 function UpdateCheck.getLatestReleaseInfo()
-	local release = fetchJson("https://api.github.com/repos/LrGenius/LrGeniusAI/releases/latest")
+	local release = fetchJson("https://api.github.com/repos/LrGenius/StyleAI/releases/latest")
 	if not release then
 		return nil
 	end
@@ -131,32 +131,32 @@ end
 function UpdateCheck.checkForNewVersion()
 	local info = UpdateCheck.getLatestReleaseInfo()
 	if not info then
-		LrDialogs.message(LOC("$$$/LrGeniusAI/UpdateCheck/Error=Could not check for updates."))
+		LrDialogs.message(LOC("$$$/StyleAI/UpdateCheck/Error=Could not check for updates."))
 		return nil
 	end
 
 	if info.is_newer then
 		if info.is_code_only then
 			local btn = LrDialogs.confirm(
-				LOC("$$$/LrGeniusAI/UpdateCheck/CodeOnlyAvailableTitle=Update Available: ^1", info.tag_name),
+				LOC("$$$/StyleAI/UpdateCheck/CodeOnlyAvailableTitle=Update Available: ^1", info.tag_name),
 				LOC(
-					"$$$/LrGeniusAI/UpdateCheck/CodeOnlyAvailableMsg=A new version is available (^1). You can update the plugin code directly.\n\nUpdate now?",
+					"$$$/StyleAI/UpdateCheck/CodeOnlyAvailableMsg=A new version is available (^1). You can update the plugin code directly.\n\nUpdate now?",
 					info.tag_name
 				),
-				LOC("$$$/LrGeniusAI/UpdateCheck/UpdateNow=Update Now"),
-				LOC("$$$/LrGeniusAI/common/Later=Later")
+				LOC("$$$/StyleAI/UpdateCheck/UpdateNow=Update Now"),
+				LOC("$$$/StyleAI/common/Later=Later")
 			)
 			if btn == "ok" then
 				local tu = require("TaskUpdate")
 				tu.runUpdate(info)
 			end
 		else
-			LrHttp.openUrlInBrowser(info.release_url or "https://github.com/LrGenius/LrGeniusAI/releases/latest")
+			LrHttp.openUrlInBrowser(info.release_url or "https://github.com/LrGenius/StyleAI/releases/latest")
 		end
 	else
 		LrDialogs.message(
 			LOC(
-				"$$$/LrGeniusAI/UpdateCheck/LatestVersion=You're on the latest plugin version: ^1",
+				"$$$/StyleAI/UpdateCheck/LatestVersion=You're on the latest plugin version: ^1",
 				UpdateCheck.releaseTagName
 			)
 		)
@@ -172,13 +172,13 @@ function UpdateCheck.checkForNewVersionInBackground()
 	end
 
 	local btn = LrDialogs.confirm(
-		LOC("$$$/LrGeniusAI/UpdateCheck/NewVersionAvailableTitle=New Version Available"),
+		LOC("$$$/StyleAI/UpdateCheck/NewVersionAvailableTitle=New Version Available"),
 		LOC(
-			"$$$/LrGeniusAI/UpdateCheck/CodeOnlyBackgroundMsg=LrGeniusAI ^1 is available. You can update directly.\n\nUpdate now?",
+			"$$$/StyleAI/UpdateCheck/CodeOnlyBackgroundMsg=StyleAI ^1 is available. You can update directly.\n\nUpdate now?",
 			info.tag_name
 		),
-		LOC("$$$/LrGeniusAI/UpdateCheck/UpdateNow=Update Now"),
-		LOC("$$$/LrGeniusAI/common/Later=Later")
+		LOC("$$$/StyleAI/UpdateCheck/UpdateNow=Update Now"),
+		LOC("$$$/StyleAI/common/Later=Later")
 	)
 	if btn == "ok" then
 		local tu = require("TaskUpdate")

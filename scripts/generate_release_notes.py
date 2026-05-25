@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate AI-powered release notes for LrGeniusAI and maintain CHANGELOG.md.
+Generate AI-powered release notes for StyleAI and maintain CHANGELOG.md.
 Uses Google Gemini with a technical and concise tone.
 """
 
@@ -21,7 +21,7 @@ STATIC_FOOTER = """
 - The backend now runs as a persistent system service (LaunchAgent on macOS, Startup Registry on Windows).
 - It starts automatically at login and remains active to manage background AI tasks even when Lightroom is closed.
 - Manual management (troubleshooting):
-  - Windows: Run `{commonpf}\\LrGeniusAI\\backend\\lrgenius-server.cmd`
+  - Windows: Run `{commonpf}\\StyleAI\\backend\\lrgenius-server.cmd`
   - macOS: Service `com.lrgenius.server` (managed via `launchctl`)
 
 ### Security & Permissions
@@ -29,7 +29,7 @@ STATIC_FOOTER = """
 - **macOS**: If Gatekeeper blocks the installer, go to **System Settings > Privacy & Security** and click **"Open Anyway"** under the Security section. Alternatively, run `xattr -d com.apple.quarantine <path-to-pkg>` in Terminal to clear the block.
 
 ## Docker Deployment
-- For containerized environments, use the `LrGeniusAI-plugin-docker-backend-<version>.zip` asset which includes the pre-configured plugin and Docker setup.
+- For containerized environments, use the `StyleAI-plugin-docker-backend-<version>.zip` asset which includes the pre-configured plugin and Docker setup.
 """
 
 def run_command(cmd):
@@ -75,7 +75,7 @@ def generate_ai_notes(api_key, tag, commits, date):
         client = genai.Client(api_key=api_key)
         
         system_instruction = (
-            "You are a technical release manager for LrGeniusAI, an AI-powered Lightroom plugin. "
+            "You are a technical release manager for StyleAI, an AI-powered Lightroom plugin. "
             "Your task is to generate concise, technical release notes based on a list of git commits. "
             "Group changes into logical sections: Features, Fixes, Architecture/Refactoring, and Documentation. "
             "Use a professional and efficient tone. Avoid marketing fluff. "

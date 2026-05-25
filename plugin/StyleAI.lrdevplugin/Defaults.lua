@@ -1,19 +1,19 @@
 Defaults = {}
 
-Defaults.defaultTopLevelKeyword = "LrGeniusAI"
+Defaults.defaultTopLevelKeyword = "StyleAI"
 
 Defaults.defaultPromptName = "Default"
 Defaults.defaultEditPromptName = "Default"
 
 Defaults.defaultTopLevelKeywords = {
-	"LrGeniusAI",
+	"StyleAI",
 	"Ollama",
 	"LM Studio",
 	"ChatGPT",
 	"Google Gemini",
 }
 
-Defaults.topLevelKeywordSynonym = "LrGeniusAI Top-Level Keyword"
+Defaults.topLevelKeywordSynonym = "StyleAI Top-Level Keyword"
 
 Defaults.defaultGenerateLanguage = "English"
 
@@ -66,68 +66,68 @@ Defaults.editIntentCustomValue = "custom"
 Defaults.defaultEditIntentPresetValue = "natural_pro"
 Defaults.editIntentPresets = {
 	{
-		title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/NaturalPro=General - Natural Professional"),
+		title = LOC("$$$/StyleAI/Defaults/EditIntent/NaturalPro=General - Natural Professional"),
 		value = "natural_pro",
 		instruction = "Natural professional Lightroom edit with balanced contrast, realistic color, and clean detail.",
 	},
 	{
-		title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/MoodyDramatic=General - Moody Dramatic"),
+		title = LOC("$$$/StyleAI/Defaults/EditIntent/MoodyDramatic=General - Moody Dramatic"),
 		value = "moody_dramatic",
 		instruction = "Moody dramatic treatment with deeper shadows, restrained saturation, and cinematic tonal separation while preserving realism.",
 	},
 	{
-		title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/CinematicLandscape=Landscape - Cinematic"),
+		title = LOC("$$$/StyleAI/Defaults/EditIntent/CinematicLandscape=Landscape - Cinematic"),
 		value = "cinematic_landscape",
 		instruction = "Cinematic landscape look with controlled dynamic range, subtle color contrast, and tasteful depth without overprocessing.",
 	},
 	{
-		title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/VibrantNaturalLandscape=Landscape - Vibrant Natural"),
+		title = LOC("$$$/StyleAI/Defaults/EditIntent/VibrantNaturalLandscape=Landscape - Vibrant Natural"),
 		value = "landscape_vibrant_natural",
 		instruction = "Vibrant but natural landscape look with clear tonal separation, protected highlights, and controlled saturation.",
 	},
 	{
-		title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/SkinSafePortrait=Portrait - Skin Safe"),
+		title = LOC("$$$/StyleAI/Defaults/EditIntent/SkinSafePortrait=Portrait - Skin Safe"),
 		value = "portrait_skin_safe",
 		instruction = "Portrait-focused edit with skin-tone safety, gentle contrast, natural texture, and flattering highlights.",
 	},
 	{
-		title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/EditorialPortrait=Portrait - Editorial"),
+		title = LOC("$$$/StyleAI/Defaults/EditIntent/EditorialPortrait=Portrait - Editorial"),
 		value = "portrait_editorial",
 		instruction = "Editorial portrait style with clean skin tones, polished midtone contrast, soft highlight roll-off, and restrained color shifts.",
 	},
 	{
-		title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/SoftAiryWedding=Wedding - Soft Airy"),
+		title = LOC("$$$/StyleAI/Defaults/EditIntent/SoftAiryWedding=Wedding - Soft Airy"),
 		value = "wedding_soft_airy",
 		instruction = "Soft airy wedding style with bright mids, warm-neutral white balance, gentle contrast, and elegant highlight rendering.",
 	},
 	{
-		title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/RichFilmicWedding=Wedding - Rich Filmic"),
+		title = LOC("$$$/StyleAI/Defaults/EditIntent/RichFilmicWedding=Wedding - Rich Filmic"),
 		value = "wedding_rich_filmic",
 		instruction = "Rich filmic wedding style with subtle warm skin tones, gentle black-point lift, and cinematic but natural color depth.",
 	},
 	{
-		title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/BrightNeutralRealEstate=Real Estate - Bright Neutral"),
+		title = LOC("$$$/StyleAI/Defaults/EditIntent/BrightNeutralRealEstate=Real Estate - Bright Neutral"),
 		value = "real_estate_bright_neutral",
 		instruction = "Real-estate edit with bright neutral interiors, straight tonal balance, clean whites, and minimal stylization.",
 	},
 	{
-		title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/CleanCommercial=Commercial - Clean Product"),
+		title = LOC("$$$/StyleAI/Defaults/EditIntent/CleanCommercial=Commercial - Clean Product"),
 		value = "clean_commercial",
 		instruction = "Clean commercial look: neutral white balance, crisp detail, controlled contrast, and true-to-product colors.",
 	},
 	{
-		title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/PunchyDocumentaryStreet=Street - Punchy Documentary"),
+		title = LOC("$$$/StyleAI/Defaults/EditIntent/PunchyDocumentaryStreet=Street - Punchy Documentary"),
 		value = "street_punchy_doc",
 		instruction = "Punchy documentary street look with decisive contrast, neutral color fidelity, and clear subject separation.",
 	},
-	{ title = LOC("$$$/LrGeniusAI/Defaults/EditIntent/Custom=Custom"), value = "custom", instruction = "" },
+	{ title = LOC("$$$/StyleAI/Defaults/EditIntent/Custom=Custom"), value = "custom", instruction = "" },
 }
 Defaults.defaultEditStyleStrength = 0.5
 Defaults.defaultCompositionMode = "subtle"
 Defaults.compositionModes = {
-	{ title = LOC("$$$/LrGeniusAI/Defaults/CompositionMode/None=No crop"), value = "none" },
-	{ title = LOC("$$$/LrGeniusAI/Defaults/CompositionMode/Subtle=Subtle crop"), value = "subtle" },
-	{ title = LOC("$$$/LrGeniusAI/Defaults/CompositionMode/Aggressive=Aggressive crop"), value = "aggressive" },
+	{ title = LOC("$$$/StyleAI/Defaults/CompositionMode/None=No crop"), value = "none" },
+	{ title = LOC("$$$/StyleAI/Defaults/CompositionMode/Subtle=Subtle crop"), value = "subtle" },
+	{ title = LOC("$$$/StyleAI/Defaults/CompositionMode/Aggressive=Aggressive crop"), value = "aggressive" },
 }
 
 Defaults.catalogWriteAccessOptions = {

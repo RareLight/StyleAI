@@ -31,7 +31,7 @@ local function showAdvancedSearchDialog(ctx)
 			spacing = f:control_spacing(),
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/SearchTerm=Search Term"),
+					title = LOC("$$$/StyleAI/AdvancedSearchTask/SearchTerm=Search Term"),
 					width = share("labelWidth"),
 					alignment = "right",
 				}),
@@ -39,32 +39,32 @@ local function showAdvancedSearchDialog(ctx)
 			}),
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/SearchScope=Search Scope:"),
+					title = LOC("$$$/StyleAI/AdvancedSearchTask/SearchScope=Search Scope:"),
 					width = share("labelWidth"),
 					alignment = "right",
 				}),
 				f:popup_menu({
 					value = bind("searchScope"),
 					items = {
-						{ title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/ScopeAllPhotos=All photos"), value = "all" },
+						{ title = LOC("$$$/StyleAI/AdvancedSearchTask/ScopeAllPhotos=All photos"), value = "all" },
 						{
-							title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/ScopeCurrentView=Current view"),
+							title = LOC("$$$/StyleAI/AdvancedSearchTask/ScopeCurrentView=Current view"),
 							value = "view",
 						},
 						{
-							title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/ScopeSelectedPhotos=Selected photos"),
+							title = LOC("$$$/StyleAI/AdvancedSearchTask/ScopeSelectedPhotos=Selected photos"),
 							value = "selected",
 						},
 					},
 				}),
 			}),
 			f:group_box({
-				title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/Tuning=Tuning"),
+				title = LOC("$$$/StyleAI/AdvancedSearchTask/Tuning=Tuning"),
 				f:column({
 					spacing = f:control_spacing(),
 					f:row({
 						f:static_text({
-							title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/RelevanceStrictness=Relevance strictness"),
+							title = LOC("$$$/StyleAI/AdvancedSearchTask/RelevanceStrictness=Relevance strictness"),
 							width = share("labelWidth"),
 							alignment = "right",
 						}),
@@ -84,13 +84,13 @@ local function showAdvancedSearchDialog(ctx)
 						f:static_text({ width = share("labelWidth") }),
 						f:static_text({
 							title = LOC(
-								"$$$/LrGeniusAI/AdvancedSearchTask/RelevanceStrictnessHint=0 = off, 50 = moderate, 100 = strict"
+								"$$$/StyleAI/AdvancedSearchTask/RelevanceStrictnessHint=0 = off, 50 = moderate, 100 = strict"
 							),
 						}),
 					}),
 					f:row({
 						f:static_text({
-							title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/MaxResults=Max results"),
+							title = LOC("$$$/StyleAI/AdvancedSearchTask/MaxResults=Max results"),
 							width = share("labelWidth"),
 							alignment = "right",
 						}),
@@ -109,22 +109,22 @@ local function showAdvancedSearchDialog(ctx)
 				}),
 			}),
 			f:group_box({
-				title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/SearchIn=Search in"),
+				title = LOC("$$$/StyleAI/AdvancedSearchTask/SearchIn=Search in"),
 				f:column({
 					spacing = f:control_spacing(),
 					f:checkbox({
 						value = bind("searchInSemanticSiglip"),
 						title = LOC(
-							"$$$/LrGeniusAI/AdvancedSearchTask/SearchInSemanticSiglip=Semantic (SigLIP / local AI)"
+							"$$$/StyleAI/AdvancedSearchTask/SearchInSemanticSiglip=Semantic (SigLIP / local AI)"
 						),
 					}),
 					f:checkbox({
 						value = bind("searchInSemanticVertex"),
-						title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/SearchInSemanticVertex=Semantic (Vertex AI)"),
+						title = LOC("$$$/StyleAI/AdvancedSearchTask/SearchInSemanticVertex=Semantic (Vertex AI)"),
 					}),
 					f:checkbox({
 						value = bind("searchInMetadata"),
-						title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/SearchInMetadata=Metadata"),
+						title = LOC("$$$/StyleAI/AdvancedSearchTask/SearchInMetadata=Metadata"),
 					}),
 					f:column({
 						spacing = 2,
@@ -135,7 +135,7 @@ local function showAdvancedSearchDialog(ctx)
 							f:checkbox({
 								value = bind("searchInMetadataKeywords"),
 								enabled = bind("searchInMetadata"),
-								title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/SearchInMetadataKeywords=Keywords"),
+								title = LOC("$$$/StyleAI/AdvancedSearchTask/SearchInMetadataKeywords=Keywords"),
 							}),
 						}),
 						f:row({
@@ -143,7 +143,7 @@ local function showAdvancedSearchDialog(ctx)
 							f:checkbox({
 								value = bind("searchInMetadataCaption"),
 								enabled = bind("searchInMetadata"),
-								title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/SearchInMetadataCaption=Caption"),
+								title = LOC("$$$/StyleAI/AdvancedSearchTask/SearchInMetadataCaption=Caption"),
 							}),
 						}),
 						f:row({
@@ -151,7 +151,7 @@ local function showAdvancedSearchDialog(ctx)
 							f:checkbox({
 								value = bind("searchInMetadataTitle"),
 								enabled = bind("searchInMetadata"),
-								title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/SearchInMetadataTitle=Title"),
+								title = LOC("$$$/StyleAI/AdvancedSearchTask/SearchInMetadataTitle=Title"),
 							}),
 						}),
 						f:row({
@@ -159,7 +159,7 @@ local function showAdvancedSearchDialog(ctx)
 							f:checkbox({
 								value = bind("searchInMetadataAltText"),
 								enabled = bind("searchInMetadata"),
-								title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/SearchInMetadataAltText=Alt text"),
+								title = LOC("$$$/StyleAI/AdvancedSearchTask/SearchInMetadataAltText=Alt text"),
 							}),
 						}),
 					}),
@@ -169,10 +169,10 @@ local function showAdvancedSearchDialog(ctx)
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/AdvancedSearchTask/WindowTitle=Advanced Search"),
+		title = LOC("$$$/StyleAI/AdvancedSearchTask/WindowTitle=Advanced Search"),
 		contents = contents,
-		actionVerb = LOC("$$$/LrGeniusAI/common/Search=Search"),
-		cancelVerb = LOC("$$$/LrGeniusAI/common/Cancel=Cancel"),
+		actionVerb = LOC("$$$/StyleAI/common/Search=Search"),
+		cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
 		resizable = false,
 	})
 
@@ -219,15 +219,15 @@ LrTasks.startAsyncTask(function()
 			if not photosToSearch or #photosToSearch == 0 then
 				if status == "Invalid view" then
 					LrDialogs.message(
-						LOC("$$$/LrGeniusAI/common/InvalidViewTitle=Invalid View"),
+						LOC("$$$/StyleAI/common/InvalidViewTitle=Invalid View"),
 						LOC(
-							"$$$/LrGeniusAI/common/InvalidViewMessage=The 'Current view' scope only works when a folder or collection or collection set is selected."
+							"$$$/StyleAI/common/InvalidViewMessage=The 'Current view' scope only works when a folder or collection or collection set is selected."
 						)
 					)
 				else
 					LrDialogs.message(
-						LOC("$$$/LrGeniusAI/common/NoPhotosTitle=No Photos Found"),
-						LOC("$$$/LrGeniusAI/common/NoPhotosMessage=No photos were found in the selected scope.")
+						LOC("$$$/StyleAI/common/NoPhotosTitle=No Photos Found"),
+						LOC("$$$/StyleAI/common/NoPhotosMessage=No photos were found in the selected scope.")
 					)
 				end
 				return
@@ -291,22 +291,22 @@ LrTasks.startAsyncTask(function()
 			if props.qualitySort == "prettiest" then
 				apiCall = SearchIndexAPI.getPrettiest
 				apiCallInSelection = SearchIndexAPI.getPrettiestInSelection
-				collectionNamePrefix = LOC("$$$/LrGeniusAI/AdvancedSearchTask/Prettiest=Prettiest")
+				collectionNamePrefix = LOC("$$$/StyleAI/AdvancedSearchTask/Prettiest=Prettiest")
 			else -- ugliest
 				apiCall = SearchIndexAPI.getUgliest
 				apiCallInSelection = SearchIndexAPI.getUgliestInSelection
-				collectionNamePrefix = LOC("$$$/LrGeniusAI/AdvancedSearchTask/Ugliest=Ugliest")
+				collectionNamePrefix = LOC("$$$/StyleAI/AdvancedSearchTask/Ugliest=Ugliest")
 			end
 
 			if props.searchScope == "all" then
 				results = apiCall()
 				collectionNamePrefix = collectionNamePrefix
-					.. LOC("$$$/LrGeniusAI/AdvancedSearchTask/inCatalog= in Catalog")
+					.. LOC("$$$/StyleAI/AdvancedSearchTask/inCatalog= in Catalog")
 			else
 				if #photosToSearch == 0 then
 					LrDialogs.message(
-						LOC("$$$/LrGeniusAI/common/NoPhotosTitle=No Photos Found"),
-						LOC("$$$/LrGeniusAI/common/NoPhotosMessage=No photos were found in the selected scope.")
+						LOC("$$$/StyleAI/common/NoPhotosTitle=No Photos Found"),
+						LOC("$$$/StyleAI/common/NoPhotosMessage=No photos were found in the selected scope.")
 					)
 					return
 				end
@@ -314,28 +314,28 @@ LrTasks.startAsyncTask(function()
 				collectionNamePrefix = collectionNamePrefix
 					.. (
 						props.searchScope == "selection"
-							and LOC("$$$/LrGeniusAI/AdvancedSearchTask/inSelection= in Selection")
-						or LOC("$$$/LrGeniusAI/AdvancedSearchTask/inView= in View")
+							and LOC("$$$/StyleAI/AdvancedSearchTask/inSelection= in Selection")
+						or LOC("$$$/StyleAI/AdvancedSearchTask/inView= in View")
 					)
 			end
 			collectionName = string.format("%s @ %s", collectionNamePrefix, LrDate.timeToW3CDate(LrDate.currentTime()))
 		else
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/AdvancedSearchTask/noSearchCriteria=No Search Criteria"),
+				LOC("$$$/StyleAI/AdvancedSearchTask/noSearchCriteria=No Search Criteria"),
 				LOC(
-					"$$$/LrGeniusAI/AdvancedSearchTask/noSearchCriteriaMessage=Please enter a search term or select a quality filter."
+					"$$$/StyleAI/AdvancedSearchTask/noSearchCriteriaMessage=Please enter a search term or select a quality filter."
 				)
 			)
 			return
 		end
 
 		if err then
-			ErrorHandler.handleError(LOC("$$$/LrGeniusAI/AdvancedSearchTask/SearchError=Search failed"), err)
+			ErrorHandler.handleError(LOC("$$$/StyleAI/AdvancedSearchTask/SearchError=Search failed"), err)
 			return
 		end
 
 		if results and results.warning then
-			LrDialogs.message(LOC("$$$/LrGeniusAI/common/BackendWarning=Backend Warning"), results.warning, "warning")
+			LrDialogs.message(LOC("$$$/StyleAI/common/BackendWarning=Backend Warning"), results.warning, "warning")
 		end
 
 		local finalResults = {}
@@ -349,8 +349,8 @@ LrTasks.startAsyncTask(function()
 
 		if #finalResults == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/AdvancedSearchTask/noResults=No Results"),
-				LOC("$$$/LrGeniusAI/AdvancedSearchTask/noResultsMessage=No photos found matching the criteria.")
+				LOC("$$$/StyleAI/AdvancedSearchTask/noResults=No Results"),
+				LOC("$$$/StyleAI/AdvancedSearchTask/noResultsMessage=No photos found matching the criteria.")
 			)
 			return
 		end
@@ -366,7 +366,7 @@ LrTasks.startAsyncTask(function()
 				else
 					log:warn(
 						LOC(
-							"$$$/LrGeniusAI/AdvancedSearchTask/photoNotFound=Photo with ID ^1 not found in catalog.",
+							"$$$/StyleAI/AdvancedSearchTask/photoNotFound=Photo with ID ^1 not found in catalog.",
 							"nil"
 						)
 					)
@@ -376,8 +376,8 @@ LrTasks.startAsyncTask(function()
 
 		if #photoIds == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/AdvancedSearchTask/noResults=No Results"),
-				LOC("$$$/LrGeniusAI/AdvancedSearchTask/noResultsMessage=No photos found matching the criteria.")
+				LOC("$$$/StyleAI/AdvancedSearchTask/noResults=No Results"),
+				LOC("$$$/StyleAI/AdvancedSearchTask/noResultsMessage=No photos found matching the criteria.")
 			)
 			return
 		end
@@ -400,7 +400,7 @@ LrTasks.startAsyncTask(function()
 
 			catalog:withWriteAccessDo("Create Collection Set", function()
 				collectionSet = catalog:createCollectionSet(
-					LOC("$$$/LrGeniusAI/AdvancedSearchTask/collectionSetName=Search Results"),
+					LOC("$$$/StyleAI/AdvancedSearchTask/collectionSetName=Search Results"),
 					nil,
 					true
 				)
@@ -408,9 +408,9 @@ LrTasks.startAsyncTask(function()
 
 			if collectionSet == nil then
 				ErrorHandler.handleError(
-					LOC("$$$/LrGeniusAI/AdvancedSearchTask/collectionSetErrorTitle=Collection Set Error"),
+					LOC("$$$/StyleAI/AdvancedSearchTask/collectionSetErrorTitle=Collection Set Error"),
 					LOC(
-						"$$$/LrGeniusAI/AdvancedSearchTask/collectionSetErrorMessage=Failed to create or find collection set for search results."
+						"$$$/StyleAI/AdvancedSearchTask/collectionSetErrorMessage=Failed to create or find collection set for search results."
 					)
 				)
 				return
@@ -422,9 +422,9 @@ LrTasks.startAsyncTask(function()
 
 			if collection == nil then
 				ErrorHandler.handleError(
-					LOC("$$$/LrGeniusAI/AdvancedSearchTask/collectionErrorTitle=Collection Error"),
+					LOC("$$$/StyleAI/AdvancedSearchTask/collectionErrorTitle=Collection Error"),
 					LOC(
-						"$$$/LrGeniusAI/AdvancedSearchTask/collectionErrorMessage=Failed to create collection for search results."
+						"$$$/StyleAI/AdvancedSearchTask/collectionErrorMessage=Failed to create collection for search results."
 					)
 				)
 				return
@@ -446,24 +446,24 @@ LrTasks.startAsyncTask(function()
 
 			if collection == nil then
 				ErrorHandler.handleError(
-					LOC("$$$/LrGeniusAI/AdvancedSearchTask/collectionErrorTitle=Collection Error"),
+					LOC("$$$/StyleAI/AdvancedSearchTask/collectionErrorTitle=Collection Error"),
 					LOC(
-						"$$$/LrGeniusAI/AdvancedSearchTask/collectionErrorMessage=Failed to create collection for search results."
+						"$$$/StyleAI/AdvancedSearchTask/collectionErrorMessage=Failed to create collection for search results."
 					)
 				)
 			elseif #collection:getPhotos() > 0 then
 				LrDialogs.messageWithDoNotShow({
-					message = LOC("$$$/LrGeniusAI/AdvancedSearchTask/successTitle=Search Completed"),
+					message = LOC("$$$/StyleAI/AdvancedSearchTask/successTitle=Search Completed"),
 					info = LOC(
-						"$$$/LrGeniusAI/AdvancedSearchTask/sortOrder=Please set the sort order to 'Custom Order' to see the results in the correct order."
+						"$$$/StyleAI/AdvancedSearchTask/sortOrder=Please set the sort order to 'Custom Order' to see the results in the correct order."
 					),
-					actionPrefKey = "LrGeniusAI_AdvancedSearch_SortOrder",
+					actionPrefKey = "StyleAI_AdvancedSearch_SortOrder",
 				})
 			end
 		else
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/AdvancedSearchTask/noResults=No Results"),
-				LOC("$$$/LrGeniusAI/AdvancedSearchTask/noResultsMessage=No photos found matching the criteria.")
+				LOC("$$$/StyleAI/AdvancedSearchTask/noResults=No Results"),
+				LOC("$$$/StyleAI/AdvancedSearchTask/noResultsMessage=No photos found matching the criteria.")
 			)
 		end
 	end)

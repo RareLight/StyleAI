@@ -162,18 +162,18 @@ LrTasks.startAsyncTask(function()
 			width = 450,
 			f:static_text({
 				title = LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/WarningIntro=This tool uses AI (SigLIP similarity + LLM validation) to find\nleaf keywords that are true synonyms and suggests merging them.\nPhotos are re-tagged with the canonical keyword. Duplicate entries\nremain in the catalog with 0 photos — remove via\nMetadata > Purge Unused Keywords."
+					"$$$/StyleAI/DeduplicateKeywords/WarningIntro=This tool uses AI (SigLIP similarity + LLM validation) to find\nleaf keywords that are true synonyms and suggests merging them.\nPhotos are re-tagged with the canonical keyword. Duplicate entries\nremain in the catalog with 0 photos — remove via\nMetadata > Purge Unused Keywords."
 				),
 				fill_horizontal = 1,
 				wrap = true,
 			}),
 			f:separator({ fill_horizontal = 1 }),
 			f:group_box({
-				title = LOC("$$$/LrGeniusAI/AnalyzeAndIndex/AISettings=AI Model"),
+				title = LOC("$$$/StyleAI/AnalyzeAndIndex/AISettings=AI Model"),
 				fill_horizontal = 1,
 				f:row({
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/DeduplicateKeywords/AIModelLabel=AI Model:"),
+						title = LOC("$$$/StyleAI/DeduplicateKeywords/AIModelLabel=AI Model:"),
 						width = 120,
 					}),
 					f:popup_menu({
@@ -185,7 +185,7 @@ LrTasks.startAsyncTask(function()
 				f:spacer({ height = 6 }),
 				f:row({
 					f:static_text({
-						title = LOC("$$$/LrGeniusAI/DeduplicateKeywords/ThresholdLabel=Matching strictness:"),
+						title = LOC("$$$/StyleAI/DeduplicateKeywords/ThresholdLabel=Matching strictness:"),
 						width = 120,
 					}),
 					f:slider({
@@ -210,7 +210,7 @@ LrTasks.startAsyncTask(function()
 				}),
 				f:static_text({
 					title = LOC(
-						"$$$/LrGeniusAI/DeduplicateKeywords/ThresholdHint=Lower: more suggestions (may include false positives) — Higher: fewer, more precise matches"
+						"$$$/StyleAI/DeduplicateKeywords/ThresholdHint=Lower: more suggestions (may include false positives) — Higher: fewer, more precise matches"
 					),
 					fill_horizontal = 1,
 					wrap = true,
@@ -220,7 +220,7 @@ LrTasks.startAsyncTask(function()
 			f:separator({ fill_horizontal = 1 }),
 			f:static_text({
 				title = LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/WarningRisk=Warning: This permanently modifies your catalog.\nDeleted keywords cannot be recovered.\nBack up first: File > Catalog Settings > Back Up Catalog."
+					"$$$/StyleAI/DeduplicateKeywords/WarningRisk=Warning: This permanently modifies your catalog.\nDeleted keywords cannot be recovered.\nBack up first: File > Catalog Settings > Back Up Catalog."
 				),
 				fill_horizontal = 1,
 				wrap = true,
@@ -228,7 +228,7 @@ LrTasks.startAsyncTask(function()
 			}),
 			f:static_text({
 				title = LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/LLMCostNote=Note: When using ChatGPT or Gemini, AI analysis will incur API costs."
+					"$$$/StyleAI/DeduplicateKeywords/LLMCostNote=Note: When using ChatGPT or Gemini, AI analysis will incur API costs."
 				),
 				fill_horizontal = 1,
 				wrap = true,
@@ -238,17 +238,17 @@ LrTasks.startAsyncTask(function()
 			f:checkbox({
 				value = bind("hasBackup"),
 				title = LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/BackupConfirm=I have a recent catalog backup and understand\nthis operation cannot be undone."
+					"$$$/StyleAI/DeduplicateKeywords/BackupConfirm=I have a recent catalog backup and understand\nthis operation cannot be undone."
 				),
 				wrap = true,
 			}),
 		})
 
 		local warnResult = LrDialogs.presentModalDialog({
-			title = LOC("$$$/LrGeniusAI/DeduplicateKeywords/WarningTitle=Deduplicate Keyword Synonyms"),
+			title = LOC("$$$/StyleAI/DeduplicateKeywords/WarningTitle=Deduplicate Keyword Synonyms"),
 			contents = warnView,
-			actionVerb = LOC("$$$/LrGeniusAI/DeduplicateKeywords/ContinueToSelect=Continue"),
-			cancelVerb = LOC("$$$/LrGeniusAI/common/Cancel=Cancel"),
+			actionVerb = LOC("$$$/StyleAI/DeduplicateKeywords/ContinueToSelect=Continue"),
+			cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
 		})
 		if warnResult ~= "ok" then
 			return
@@ -257,7 +257,7 @@ LrTasks.startAsyncTask(function()
 		if not warnProps.hasBackup then
 			LrDialogs.showError(
 				LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/BackupRequiredMessage=Please confirm you have a catalog backup before continuing."
+					"$$$/StyleAI/DeduplicateKeywords/BackupRequiredMessage=Please confirm you have a catalog backup before continuing."
 				)
 			)
 			return
@@ -274,14 +274,14 @@ LrTasks.startAsyncTask(function()
 		if not okTopKw then
 			log:error("DeduplicateKeywords: getKeywords failed: " .. tostring(topKeywords))
 			LrDialogs.showError(
-				LOC("$$$/LrGeniusAI/DeduplicateKeywords/GetKeywordsError=Failed to read catalog keywords.")
+				LOC("$$$/StyleAI/DeduplicateKeywords/GetKeywordsError=Failed to read catalog keywords.")
 			)
 			return
 		end
 		if #topKeywords == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/DeduplicateKeywords/NoKeywordsTitle=No Keywords"),
-				LOC("$$$/LrGeniusAI/DeduplicateKeywords/NoKeywordsMessage=The catalog has no keywords to process.")
+				LOC("$$$/StyleAI/DeduplicateKeywords/NoKeywordsTitle=No Keywords"),
+				LOC("$$$/StyleAI/DeduplicateKeywords/NoKeywordsMessage=The catalog has no keywords to process.")
 			)
 			return
 		end
@@ -321,7 +321,7 @@ LrTasks.startAsyncTask(function()
 			width = 520,
 			f:static_text({
 				title = LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/SelectPathsHint=Select the top-level keyword branches to scan for duplicates.\nOnly leaf keywords (without sub-keywords) are considered."
+					"$$$/StyleAI/DeduplicateKeywords/SelectPathsHint=Select the top-level keyword branches to scan for duplicates.\nOnly leaf keywords (without sub-keywords) are considered."
 				),
 				fill_horizontal = 1,
 				wrap = true,
@@ -329,7 +329,7 @@ LrTasks.startAsyncTask(function()
 			f:spacer({ height = 4 }),
 			f:row({
 				f:push_button({
-					title = LOC("$$$/LrGeniusAI/MetadataManager/SelectAll=Select All"),
+					title = LOC("$$$/StyleAI/MetadataManager/SelectAll=Select All"),
 					action = function()
 						for i = 1, #kwEntries do
 							configProps["kwSel_" .. i] = true
@@ -337,7 +337,7 @@ LrTasks.startAsyncTask(function()
 					end,
 				}),
 				f:push_button({
-					title = LOC("$$$/LrGeniusAI/MetadataManager/DeselectAll=Deselect All"),
+					title = LOC("$$$/StyleAI/MetadataManager/DeselectAll=Deselect All"),
 					action = function()
 						for i = 1, #kwEntries do
 							configProps["kwSel_" .. i] = false
@@ -353,10 +353,10 @@ LrTasks.startAsyncTask(function()
 		})
 
 		local configResult = LrDialogs.presentModalDialog({
-			title = LOC("$$$/LrGeniusAI/DeduplicateKeywords/ConfigTitle=Select Keyword Branches to Scan"),
+			title = LOC("$$$/StyleAI/DeduplicateKeywords/ConfigTitle=Select Keyword Branches to Scan"),
 			contents = configView,
-			actionVerb = LOC("$$$/LrGeniusAI/DeduplicateKeywords/Analyze=Scan for Duplicates"),
-			cancelVerb = LOC("$$$/LrGeniusAI/common/Cancel=Cancel"),
+			actionVerb = LOC("$$$/StyleAI/DeduplicateKeywords/Analyze=Scan for Duplicates"),
+			cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
 		})
 		if configResult ~= "ok" then
 			return
@@ -370,9 +370,9 @@ LrTasks.startAsyncTask(function()
 		end
 		if #selectedRoots == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/DeduplicateKeywords/NoSelectionTitle=Nothing Selected"),
+				LOC("$$$/StyleAI/DeduplicateKeywords/NoSelectionTitle=Nothing Selected"),
 				LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/NoSelectionMessage=No keyword branches were selected. Please select at least one branch."
+					"$$$/StyleAI/DeduplicateKeywords/NoSelectionMessage=No keyword branches were selected. Please select at least one branch."
 				)
 			)
 			return
@@ -380,10 +380,10 @@ LrTasks.startAsyncTask(function()
 
 		-- ── Step 3: Scan — AI semantic clustering per parent keyword ──────────
 		local scanScope = LrProgressScope({
-			title = LOC("$$$/LrGeniusAI/DeduplicateKeywords/ScanProgressTitle=Scanning keyword catalog..."),
+			title = LOC("$$$/StyleAI/DeduplicateKeywords/ScanProgressTitle=Scanning keyword catalog..."),
 			functionContext = context,
 		})
-		scanScope:setCaption(LOC("$$$/LrGeniusAI/DeduplicateKeywords/ScanningCaption=Building keyword index..."))
+		scanScope:setCaption(LOC("$$$/StyleAI/DeduplicateKeywords/ScanningCaption=Building keyword index..."))
 		LrTasks.yield()
 
 		-- Group leaf keywords by their direct parent so clustering stays within
@@ -421,7 +421,7 @@ LrTasks.startAsyncTask(function()
 			end
 			scanScope:setCaption(
 				LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/SemanticScanCaptionN=Querying AI: ^1 (^2/^3)",
+					"$$$/StyleAI/DeduplicateKeywords/SemanticScanCaptionN=Querying AI: ^1 (^2/^3)",
 					group.parentName,
 					gi,
 					#leafGroups
@@ -469,7 +469,7 @@ LrTasks.startAsyncTask(function()
 				end
 			elseif clusterErr then
 				semanticWarning = LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/SemanticUnavailable=AI semantic clustering unavailable (CLIP model not loaded)."
+					"$$$/StyleAI/DeduplicateKeywords/SemanticUnavailable=AI semantic clustering unavailable (CLIP model not loaded)."
 				)
 				log:warn(
 					"DeduplicateKeywords: cluster call failed for '"
@@ -486,12 +486,12 @@ LrTasks.startAsyncTask(function()
 
 		if #semanticPairs == 0 then
 			local msg = LOC(
-				"$$$/LrGeniusAI/DeduplicateKeywords/NoDuplicatesMessage=No similar leaf keywords were found in the selected branches. Your catalog is already clean."
+				"$$$/StyleAI/DeduplicateKeywords/NoDuplicatesMessage=No similar leaf keywords were found in the selected branches. Your catalog is already clean."
 			)
 			if semanticWarning then
 				msg = msg .. "\n\n" .. semanticWarning
 			end
-			LrDialogs.message(LOC("$$$/LrGeniusAI/DeduplicateKeywords/NoDuplicatesTitle=No Duplicates Found"), msg)
+			LrDialogs.message(LOC("$$$/StyleAI/DeduplicateKeywords/NoDuplicatesTitle=No Duplicates Found"), msg)
 			return
 		end
 
@@ -506,7 +506,7 @@ LrTasks.startAsyncTask(function()
 		local function makeSelectButtons(prefix, count, props)
 			return f:row({
 				f:push_button({
-					title = LOC("$$$/LrGeniusAI/MetadataManager/SelectAll=Select All"),
+					title = LOC("$$$/StyleAI/MetadataManager/SelectAll=Select All"),
 					action = function()
 						for i = 1, count do
 							props[prefix .. i] = true
@@ -514,7 +514,7 @@ LrTasks.startAsyncTask(function()
 					end,
 				}),
 				f:push_button({
-					title = LOC("$$$/LrGeniusAI/MetadataManager/DeselectAll=Deselect All"),
+					title = LOC("$$$/StyleAI/MetadataManager/DeselectAll=Deselect All"),
 					action = function()
 						for i = 1, count do
 							props[prefix .. i] = false
@@ -540,11 +540,11 @@ LrTasks.startAsyncTask(function()
 
 		local semanticSection = f:group_box({
 			bind_to_object = previewProps,
-			title = LOC("$$$/LrGeniusAI/DeduplicateKeywords/SemanticHeader=AI Suggestions (^1)", #semanticPairs),
+			title = LOC("$$$/StyleAI/DeduplicateKeywords/SemanticHeader=AI Suggestions (^1)", #semanticPairs),
 			fill_horizontal = 1,
 			f:static_text({
 				title = LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/SemanticNote=These keywords are semantically similar according to the AI.\nUncheck any pair you want to keep separate."
+					"$$$/StyleAI/DeduplicateKeywords/SemanticNote=These keywords are semantically similar according to the AI.\nUncheck any pair you want to keep separate."
 				),
 				fill_horizontal = 1,
 				wrap = true,
@@ -563,7 +563,7 @@ LrTasks.startAsyncTask(function()
 			width = 520,
 			f:static_text({
 				title = LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/PreviewHint=^1 duplicate(s) found. Photos will be re-tagged with the canonical keyword.\nThe duplicate entry remains empty in the catalog.",
+					"$$$/StyleAI/DeduplicateKeywords/PreviewHint=^1 duplicate(s) found. Photos will be re-tagged with the canonical keyword.\nThe duplicate entry remains empty in the catalog.",
 					#semanticPairs
 				),
 				fill_horizontal = 1,
@@ -576,7 +576,7 @@ LrTasks.startAsyncTask(function()
 				f:checkbox({ value = bind("syncBackend") }),
 				f:static_text({
 					title = LOC(
-						"$$$/LrGeniusAI/DeduplicateKeywords/SyncBackendLabel=Also update AI search index (recommended)"
+						"$$$/StyleAI/DeduplicateKeywords/SyncBackendLabel=Also update AI search index (recommended)"
 					),
 				}),
 			}),
@@ -584,12 +584,12 @@ LrTasks.startAsyncTask(function()
 
 		local previewResult = LrDialogs.presentModalDialog({
 			title = LOC(
-				"$$$/LrGeniusAI/DeduplicateKeywords/PreviewTitle=Preview: ^1 Duplicate(s) to Merge",
+				"$$$/StyleAI/DeduplicateKeywords/PreviewTitle=Preview: ^1 Duplicate(s) to Merge",
 				#semanticPairs
 			),
 			contents = previewView,
-			actionVerb = LOC("$$$/LrGeniusAI/DeduplicateKeywords/MergeSelected=Merge Selected"),
-			cancelVerb = LOC("$$$/LrGeniusAI/common/Cancel=Cancel"),
+			actionVerb = LOC("$$$/StyleAI/DeduplicateKeywords/MergeSelected=Merge Selected"),
+			cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
 		})
 		if previewResult ~= "ok" then
 			return
@@ -604,15 +604,15 @@ LrTasks.startAsyncTask(function()
 
 		if #finalPairs == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/DeduplicateKeywords/NoSelectionTitle=Nothing Selected"),
-				LOC("$$$/LrGeniusAI/DeduplicateKeywords/NoMergesSelected=No pairs were selected for merging.")
+				LOC("$$$/StyleAI/DeduplicateKeywords/NoSelectionTitle=Nothing Selected"),
+				LOC("$$$/StyleAI/DeduplicateKeywords/NoMergesSelected=No pairs were selected for merging.")
 			)
 			return
 		end
 
 		-- ── Step 5: Execute merges ─────────────────────────────────────────
 		local mergeScope = LrProgressScope({
-			title = LOC("$$$/LrGeniusAI/DeduplicateKeywords/MergeProgressTitle=Merging duplicate keywords..."),
+			title = LOC("$$$/StyleAI/DeduplicateKeywords/MergeProgressTitle=Merging duplicate keywords..."),
 			functionContext = context,
 		})
 
@@ -629,7 +629,7 @@ LrTasks.startAsyncTask(function()
 
 			mergeScope:setCaption(
 				LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/MergingCaption=Merging ^1 of ^2: ^3",
+					"$$$/StyleAI/DeduplicateKeywords/MergingCaption=Merging ^1 of ^2: ^3",
 					i,
 					#finalPairs,
 					pair.duplicateName
@@ -652,7 +652,7 @@ LrTasks.startAsyncTask(function()
 		-- Sync backend database if the user opted in
 		local backendUpdated = nil
 		if previewProps.syncBackend and #successfulPairs > 0 then
-			mergeScope:setCaption(LOC("$$$/LrGeniusAI/DeduplicateKeywords/SyncingBackend=Updating AI search index..."))
+			mergeScope:setCaption(LOC("$$$/StyleAI/DeduplicateKeywords/SyncingBackend=Updating AI search index..."))
 			LrTasks.yield()
 			local syncResp, syncErr = SearchIndexAPI.applyKeywordMerges(successfulPairs)
 			if syncErr then
@@ -667,19 +667,19 @@ LrTasks.startAsyncTask(function()
 
 		-- ── Results ────────────────────────────────────────────────────────
 		local resultMsg =
-			LOC("$$$/LrGeniusAI/DeduplicateKeywords/ResultSuccess=^1 keyword(s) merged successfully.", mergedCount)
+			LOC("$$$/StyleAI/DeduplicateKeywords/ResultSuccess=^1 keyword(s) merged successfully.", mergedCount)
 		if mergedCount > 0 then
 			resultMsg = resultMsg
 				.. "\n\n"
 				.. LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/ResultPurgeHint=The duplicate keyword entries are now empty. To remove them from the keyword list, choose Metadata > Purge Unused Keywords in Lightroom."
+					"$$$/StyleAI/DeduplicateKeywords/ResultPurgeHint=The duplicate keyword entries are now empty. To remove them from the keyword list, choose Metadata > Purge Unused Keywords in Lightroom."
 				)
 		end
 		if #skippedNames > 0 then
 			resultMsg = resultMsg
 				.. "\n\n"
 				.. LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/ResultSkipped=^1 keyword(s) could not be processed:\n^2",
+					"$$$/StyleAI/DeduplicateKeywords/ResultSkipped=^1 keyword(s) could not be processed:\n^2",
 					#skippedNames,
 					table.concat(skippedNames, "\n")
 				)
@@ -688,18 +688,18 @@ LrTasks.startAsyncTask(function()
 			resultMsg = resultMsg
 				.. "\n\n"
 				.. LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/ResultBackendSyncFailed=Warning: The AI search index could not be updated. Your Lightroom catalog was merged successfully, but semantic search may show outdated results. Re-run indexing to fix this."
+					"$$$/StyleAI/DeduplicateKeywords/ResultBackendSyncFailed=Warning: The AI search index could not be updated. Your Lightroom catalog was merged successfully, but semantic search may show outdated results. Re-run indexing to fix this."
 				)
 		elseif backendUpdated ~= nil then
 			resultMsg = resultMsg
 				.. "\n\n"
 				.. LOC(
-					"$$$/LrGeniusAI/DeduplicateKeywords/ResultBackendSync=AI search index updated: ^1 photo(s) updated.",
+					"$$$/StyleAI/DeduplicateKeywords/ResultBackendSync=AI search index updated: ^1 photo(s) updated.",
 					tostring(backendUpdated)
 				)
 		end
 
-		LrDialogs.message(LOC("$$$/LrGeniusAI/DeduplicateKeywords/ResultTitle=Deduplication Complete"), resultMsg)
+		LrDialogs.message(LOC("$$$/StyleAI/DeduplicateKeywords/ResultTitle=Deduplication Complete"), resultMsg)
 
 		log:info("DeduplicateKeywords complete: merged=" .. mergedCount .. " skipped=" .. #skippedNames)
 	end)

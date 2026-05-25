@@ -2,7 +2,7 @@
 
 import pytest
 
-from geniusai_server import app
+from styleai_server import app
 
 
 @pytest.fixture

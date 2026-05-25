@@ -13,29 +13,29 @@ local function showCullDialog(ctx)
 		bind_to_object = props,
 		spacing = f:control_spacing(),
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/CullTask/ScopeGroup=Scope"),
+			title = LOC("$$$/StyleAI/CullTask/ScopeGroup=Scope"),
 			fill_horizontal = 1,
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/CullTask/ScopeLabel=Apply to:"),
+					title = LOC("$$$/StyleAI/CullTask/ScopeLabel=Apply to:"),
 					width = share("labelWidth"),
 				}),
 				f:popup_menu({
 					value = bind("scope"),
 					items = {
-						{ title = LOC("$$$/LrGeniusAI/common/ScopeSelected=Selected photos only"), value = "selected" },
-						{ title = LOC("$$$/LrGeniusAI/common/ScopeView=Current view"), value = "view" },
+						{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
+						{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
 					},
 					width = 260,
 				}),
 			}),
 		}),
 		f:group_box({
-			title = LOC("$$$/LrGeniusAI/CullTask/OptionsGroup=Options"),
+			title = LOC("$$$/StyleAI/CullTask/OptionsGroup=Options"),
 			fill_horizontal = 1,
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/CullTask/TimeDeltaLabel=Burst time window (seconds):"),
+					title = LOC("$$$/StyleAI/CullTask/TimeDeltaLabel=Burst time window (seconds):"),
 					width = share("labelWidth"),
 				}),
 				f:combo_box({
@@ -51,27 +51,27 @@ local function showCullDialog(ctx)
 			}),
 			f:row({
 				f:static_text({
-					title = LOC("$$$/LrGeniusAI/CullTask/PresetLabel=Culling preset:"),
+					title = LOC("$$$/StyleAI/CullTask/PresetLabel=Culling preset:"),
 					width = share("labelWidth"),
 				}),
 				f:popup_menu({
 					value = bind("cullingPreset"),
 					items = {
-						{ title = LOC("$$$/LrGeniusAI/CullTask/PresetDefault=Default (balanced)"), value = "default" },
+						{ title = LOC("$$$/StyleAI/CullTask/PresetDefault=Default (balanced)"), value = "default" },
 						{
-							title = LOC("$$$/LrGeniusAI/CullTask/PresetPortrait=Portrait (face-focused)"),
+							title = LOC("$$$/StyleAI/CullTask/PresetPortrait=Portrait (face-focused)"),
 							value = "portrait",
 						},
 						{
-							title = LOC("$$$/LrGeniusAI/CullTask/PresetStreet=Street (technical-focused)"),
+							title = LOC("$$$/StyleAI/CullTask/PresetStreet=Street (technical-focused)"),
 							value = "street",
 						},
 						{
-							title = LOC("$$$/LrGeniusAI/CullTask/PresetEvent=Event (people + moments)"),
+							title = LOC("$$$/StyleAI/CullTask/PresetEvent=Event (people + moments)"),
 							value = "event",
 						},
 						{
-							title = LOC("$$$/LrGeniusAI/CullTask/PresetSports=Sports (motion-tolerant)"),
+							title = LOC("$$$/StyleAI/CullTask/PresetSports=Sports (motion-tolerant)"),
 							value = "sports",
 						},
 					},
@@ -81,17 +81,17 @@ local function showCullDialog(ctx)
 			f:checkbox({
 				value = bind("createDuplicatesCollection"),
 				title = LOC(
-					"$$$/LrGeniusAI/CullTask/CreateDuplicates=Create 'Duplicates / Near Duplicates' collection"
+					"$$$/StyleAI/CullTask/CreateDuplicates=Create 'Duplicates / Near Duplicates' collection"
 				),
 			}),
 		}),
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/LrGeniusAI/CullTask/WindowTitle=Cull Similar Photos"),
+		title = LOC("$$$/StyleAI/CullTask/WindowTitle=Cull Similar Photos"),
 		contents = contents,
-		actionVerb = LOC("$$$/LrGeniusAI/CullTask/Run=Cull"),
-		cancelVerb = LOC("$$$/LrGeniusAI/common/Cancel=Cancel"),
+		actionVerb = LOC("$$$/StyleAI/CullTask/Run=Cull"),
+		cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
 	})
 
 	if result ~= "ok" then
@@ -165,15 +165,15 @@ LrTasks.startAsyncTask(function()
 		if not photosToProcess or #photosToProcess == 0 then
 			if status == "Invalid view" then
 				LrDialogs.message(
-					LOC("$$$/LrGeniusAI/common/InvalidViewTitle=Invalid View"),
+					LOC("$$$/StyleAI/common/InvalidViewTitle=Invalid View"),
 					LOC(
-						"$$$/LrGeniusAI/common/InvalidViewMessage=The 'Current view' scope only works when a folder or collection is selected."
+						"$$$/StyleAI/common/InvalidViewMessage=The 'Current view' scope only works when a folder or collection is selected."
 					)
 				)
 			else
 				LrDialogs.message(
-					LOC("$$$/LrGeniusAI/common/NoPhotosTitle=No Photos Found"),
-					LOC("$$$/LrGeniusAI/common/NoPhotosMessage=No photos found in the selected scope.")
+					LOC("$$$/StyleAI/common/NoPhotosTitle=No Photos Found"),
+					LOC("$$$/StyleAI/common/NoPhotosMessage=No photos found in the selected scope.")
 				)
 			end
 			return
@@ -193,16 +193,16 @@ LrTasks.startAsyncTask(function()
 
 		if #photoIds == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/CullTask/NoPhotoIdsTitle=No usable photos"),
+				LOC("$$$/StyleAI/CullTask/NoPhotoIdsTitle=No usable photos"),
 				LOC(
-					"$$$/LrGeniusAI/CullTask/NoPhotoIdsMessage=No usable photo IDs could be computed for the selected photos."
+					"$$$/StyleAI/CullTask/NoPhotoIdsMessage=No usable photo IDs could be computed for the selected photos."
 				)
 			)
 			return
 		end
 
 		local progressScope = LrProgressScope({
-			title = LOC("$$$/LrGeniusAI/CullTask/ProgressTitle=Culling similar photos..."),
+			title = LOC("$$$/StyleAI/CullTask/ProgressTitle=Culling similar photos..."),
 			functionContext = context,
 		})
 		progressScope:setPortionComplete(0, 1)
@@ -221,15 +221,15 @@ LrTasks.startAsyncTask(function()
 
 		if err or type(groups) ~= "table" then
 			ErrorHandler.handleError(
-				LOC("$$$/LrGeniusAI/CullTask/ErrorTitle=Culling failed"),
-				err or LOC("$$$/LrGeniusAI/CullTask/ErrorMessage=Could not create culling groups.")
+				LOC("$$$/StyleAI/CullTask/ErrorTitle=Culling failed"),
+				err or LOC("$$$/StyleAI/CullTask/ErrorMessage=Could not create culling groups.")
 			)
 			return
 		end
 
 		if cullResult and cullResult.warning then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/common/BackendWarning=Backend Warning"),
+				LOC("$$$/StyleAI/common/BackendWarning=Backend Warning"),
 				cullResult.warning,
 				"warning"
 			)
@@ -237,8 +237,8 @@ LrTasks.startAsyncTask(function()
 
 		if #groups == 0 then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/CullTask/NoGroupsTitle=No groups found"),
-				LOC("$$$/LrGeniusAI/CullTask/NoGroupsMessage=The selected photos could not be grouped for culling.")
+				LOC("$$$/StyleAI/CullTask/NoGroupsTitle=No groups found"),
+				LOC("$$$/StyleAI/CullTask/NoGroupsMessage=The selected photos could not be grouped for culling.")
 			)
 			return
 		end
@@ -360,7 +360,7 @@ LrTasks.startAsyncTask(function()
 
 		catalog:withWriteAccessDo("Create culling collections", function()
 			resultSet = catalog:createCollectionSet(
-				LOC("$$$/LrGeniusAI/CullTask/ResultSet=Culling Results @ ^1", timestamp),
+				LOC("$$$/StyleAI/CullTask/ResultSet=Culling Results @ ^1", timestamp),
 				nil,
 				true
 			)
@@ -373,12 +373,12 @@ LrTasks.startAsyncTask(function()
 				return collection
 			end
 
-			picksCollection = createResultCollection(LOC("$$$/LrGeniusAI/CullTask/Picks=Picks"), picksPhotos)
-			createResultCollection(LOC("$$$/LrGeniusAI/CullTask/Alternates=Alternates"), alternatePhotos)
-			createResultCollection(LOC("$$$/LrGeniusAI/CullTask/Rejects=Reject Candidates"), rejectPhotos)
+			picksCollection = createResultCollection(LOC("$$$/StyleAI/CullTask/Picks=Picks"), picksPhotos)
+			createResultCollection(LOC("$$$/StyleAI/CullTask/Alternates=Alternates"), alternatePhotos)
+			createResultCollection(LOC("$$$/StyleAI/CullTask/Rejects=Reject Candidates"), rejectPhotos)
 			if options.createDuplicatesCollection then
 				createResultCollection(
-					LOC("$$$/LrGeniusAI/CullTask/Duplicates=Duplicates / Near Duplicates"),
+					LOC("$$$/StyleAI/CullTask/Duplicates=Duplicates / Near Duplicates"),
 					duplicatePhotos
 				)
 			end
@@ -390,9 +390,9 @@ LrTasks.startAsyncTask(function()
 		end
 
 		LrDialogs.message(
-			LOC("$$$/LrGeniusAI/CullTask/CompletionTitle=Culling Complete"),
+			LOC("$$$/StyleAI/CullTask/CompletionTitle=Culling Complete"),
 			LOC(
-				"$$$/LrGeniusAI/CullTask/CompletionMessage=Created culling collections for ^1 groups. Picks: ^2, Alternates: ^3, Reject candidates: ^4. Near-duplicate groups: ^5. Preset: ^6.",
+				"$$$/StyleAI/CullTask/CompletionMessage=Created culling collections for ^1 groups. Picks: ^2, Alternates: ^3, Reject candidates: ^4. Near-duplicate groups: ^5. Preset: ^6.",
 				tostring(summary.group_count or #groups),
 				tostring(summary.pick_count or #picksPhotos),
 				tostring(summary.alternate_count or #alternatePhotos),

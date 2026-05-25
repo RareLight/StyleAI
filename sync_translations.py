@@ -2,9 +2,9 @@ import os
 import re
 
 def extract_loc_keys(directory):
-    # Matches LOC "$$$/LrGeniusAI/Module/Key=Default Value"
-    # and LOC("$$$/LrGeniusAI/Module/Key=Default Value", ...)
-    pattern = re.compile(r'LOC\s*\(?\s*["\'](\$\$\$/LrGeniusAI/[^"\']+)["\']')
+    # Matches LOC "$$$/StyleAI/Module/Key=Default Value"
+    # and LOC("$$$/StyleAI/Module/Key=Default Value", ...)
+    pattern = re.compile(r'LOC\s*\(?\s*["\'](\$\$\$/StyleAI/[^"\']+)["\']')
     
     keys = {}
     for root, _, files in os.walk(directory):
@@ -57,7 +57,7 @@ def sync_translations(lua_dir, target_path, base_strings=None):
     new_content = []
     for key in keys_to_use:
         # Ignore old keys from previous project names if they aren't in current extraction
-        if not key.startswith('$$$/LrGeniusAI/'):
+        if not key.startswith('$$$/StyleAI/'):
             if key not in extracted_keys and (not base_strings or key not in base_strings):
                 continue
 
@@ -82,10 +82,10 @@ def sync_translations(lua_dir, target_path, base_strings=None):
     return load_translated_strings(target_path)
 
 if __name__ == "__main__":
-    lua_dir = "/Users/bm/src/LrGeniusAI/plugin/LrGeniusAI.lrdevplugin"
-    trans_en = "/Users/bm/src/LrGeniusAI/plugin/LrGeniusAI.lrdevplugin/TranslatedStrings_en.txt"
-    trans_de = "/Users/bm/src/LrGeniusAI/plugin/LrGeniusAI.lrdevplugin/TranslatedStrings_de.txt"
-    trans_fr = "/Users/bm/src/LrGeniusAI/plugin/LrGeniusAI.lrdevplugin/TranslatedStrings_fr.txt"
+    lua_dir = "/Users/bm/src/StyleAI/plugin/StyleAI.lrdevplugin"
+    trans_en = "/Users/bm/src/StyleAI/plugin/StyleAI.lrdevplugin/TranslatedStrings_en.txt"
+    trans_de = "/Users/bm/src/StyleAI/plugin/StyleAI.lrdevplugin/TranslatedStrings_de.txt"
+    trans_fr = "/Users/bm/src/StyleAI/plugin/StyleAI.lrdevplugin/TranslatedStrings_fr.txt"
     
     en_strings = sync_translations(lua_dir, trans_en)
     print("Synched English.")

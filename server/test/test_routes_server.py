@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock
 
-from geniusai_server import app
+from styleai_server import app
 
 
 @pytest.fixture

@@ -18,7 +18,7 @@ return {
 		},
 		{
 			id = "aiEditLastRun",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/AiEditLastRun=Last AI edit run"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditLastRun=Last AI edit run"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -26,7 +26,7 @@ return {
 		},
 		{
 			id = "aiEditModel",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/AiEditModel=AI edit model"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditModel=AI edit model"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -34,7 +34,7 @@ return {
 		},
 		{
 			id = "aiEditStatus",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/AiEditStatus=AI edit status"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditStatus=AI edit status"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -42,7 +42,7 @@ return {
 		},
 		{
 			id = "aiEditSummary",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/AiEditSummary=AI edit summary"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditSummary=AI edit summary"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -50,7 +50,7 @@ return {
 		},
 		{
 			id = "aiEditWarnings",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/AiEditWarnings=AI edit warnings"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditWarnings=AI edit warnings"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -58,7 +58,7 @@ return {
 		},
 		{
 			id = "aiEditRecipe",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/AiEditRecipeJson=AI edit recipe JSON"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditRecipeJson=AI edit recipe JSON"),
 			dataType = "string",
 			readOnly = true,
 			searchable = false,
@@ -74,7 +74,7 @@ return {
 		},
 		{
 			id = "cullDecision",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullDecision=Culling decision"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullDecision=Culling decision"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -82,7 +82,7 @@ return {
 		},
 		{
 			id = "cullGroupId",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullGroupId=Culling group ID"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullGroupId=Culling group ID"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -90,7 +90,7 @@ return {
 		},
 		{
 			id = "cullGroupType",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullGroupType=Culling group type"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullGroupType=Culling group type"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -98,7 +98,7 @@ return {
 		},
 		{
 			id = "cullGroupRank",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullGroupRank=Culling rank"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullGroupRank=Culling rank"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -106,7 +106,7 @@ return {
 		},
 		{
 			id = "cullGroupWinner",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullGroupWinner=Group winner"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullGroupWinner=Group winner"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -114,7 +114,7 @@ return {
 		},
 		{
 			id = "cullScore",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullScore=Culling score"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullScore=Culling score"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -122,7 +122,7 @@ return {
 		},
 		{
 			id = "cullReasonCodes",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullReasonCodes=Culling reason codes"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullReasonCodes=Culling reason codes"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -130,7 +130,7 @@ return {
 		},
 		{
 			id = "cullExplanation",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullExplanation=Culling explanation"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullExplanation=Culling explanation"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -138,7 +138,7 @@ return {
 		},
 		{
 			id = "cullSharpness",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullSharpness=Sharpness"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullSharpness=Sharpness"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -146,7 +146,7 @@ return {
 		},
 		{
 			id = "cullExposure",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullExposure=Exposure"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullExposure=Exposure"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -154,7 +154,7 @@ return {
 		},
 		{
 			id = "cullNoise",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullNoise=Noise penalty"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullNoise=Noise penalty"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -162,7 +162,7 @@ return {
 		},
 		{
 			id = "cullTechnicalScore",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullTechnicalScore=Technical score"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullTechnicalScore=Technical score"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -170,7 +170,7 @@ return {
 		},
 		{
 			id = "cullAesthetic",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullAesthetic=Aesthetic score"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullAesthetic=Aesthetic score"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -178,7 +178,7 @@ return {
 		},
 		{
 			id = "cullFaceCount",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullFaceCount=Face count"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullFaceCount=Face count"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -186,7 +186,7 @@ return {
 		},
 		{
 			id = "cullFaceSharpness",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullFaceSharpness=Face sharpness"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullFaceSharpness=Face sharpness"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -194,7 +194,7 @@ return {
 		},
 		{
 			id = "cullFaceProminence",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullFaceProminence=Face prominence"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullFaceProminence=Face prominence"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -202,7 +202,7 @@ return {
 		},
 		{
 			id = "cullFaceVisibility",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullFaceVisibility=Face visibility"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullFaceVisibility=Face visibility"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -210,7 +210,7 @@ return {
 		},
 		{
 			id = "cullFaceScore",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullFaceScore=Face score"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullFaceScore=Face score"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -218,7 +218,7 @@ return {
 		},
 		{
 			id = "cullOcclusion",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullOcclusion=Occlusion penalty"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullOcclusion=Occlusion penalty"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -226,7 +226,7 @@ return {
 		},
 		{
 			id = "cullEyeOpenness",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullEyeOpenness=Eye openness"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullEyeOpenness=Eye openness"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -234,7 +234,7 @@ return {
 		},
 		{
 			id = "cullBlinkPenalty",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/cullBlinkPenalty=Blink penalty"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/cullBlinkPenalty=Blink penalty"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -250,7 +250,7 @@ return {
 		},
 		{
 			id = "globalPhotoId",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/GlobalPhotoId=Global Photo ID"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/GlobalPhotoId=Global Photo ID"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -259,7 +259,7 @@ return {
 		},
 		{
 			id = "globalPhotoIdFileSize",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/GlobalPhotoIdFileSize=Global Photo ID File Size"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/GlobalPhotoIdFileSize=Global Photo ID File Size"),
 			dataType = "string",
 			readOnly = true,
 			searchable = false,
@@ -268,7 +268,7 @@ return {
 		{
 			id = "globalPhotoIdFileModificationDate",
 			title = LOC(
-				"$$$/LrGeniusAI/AIMetadataProvider/GlobalPhotoIdModificationDate=Global Photo ID File Modification Date"
+				"$$$/StyleAI/AIMetadataProvider/GlobalPhotoIdModificationDate=Global Photo ID File Modification Date"
 			),
 			dataType = "string",
 			readOnly = true,
@@ -277,7 +277,7 @@ return {
 		},
 		{
 			id = "globalPhotoIdAlgorithm",
-			title = LOC("$$$/LrGeniusAI/AIMetadataProvider/GlobalPhotoIdAlgorithm=Global Photo ID Algorithm"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/GlobalPhotoIdAlgorithm=Global Photo ID Algorithm"),
 			dataType = "string",
 			readOnly = true,
 			searchable = false,
@@ -296,7 +296,7 @@ return {
 						"$$$/lrc-ai-assistant/MetadataProvider/MigrationDetected=Migration from LrGeniusTagAI detected."
 					),
 					LOC(
-						"$$$/lrc-ai-assistant/MetadataProvider/MigrationMessage=It is recommended to run 'Import Metadata from Catalog' from the LrGeniusAI menu to import AI-generated keywords into the new database of LrGeniusAI."
+						"$$$/lrc-ai-assistant/MetadataProvider/MigrationMessage=It is recommended to run 'Import Metadata from Catalog' from the StyleAI menu to import AI-generated keywords into the new database of StyleAI."
 					),
 					LOC("$$$/lrc-ai-assistant/MetadataProvider/MigrationRunNow=Run now"),
 					LOC("$$$/lrc-ai-assistant/MetadataProvider/MigrationSkip=Skip (Can be run later manually)")
@@ -308,12 +308,12 @@ return {
 
 		if previousSchemaVersion ~= nil and previousSchemaVersion < 24 then
 			local migrationChoice = LrDialogs.confirm(
-				LOC("$$$/LrGeniusAI/MetadataProvider/MigrationRequiredTitle=Backend ID migration required"),
+				LOC("$$$/StyleAI/MetadataProvider/MigrationRequiredTitle=Backend ID migration required"),
 				LOC(
-					"$$$/LrGeniusAI/MetadataProvider/MigrationRequiredMsg=This update introduces file-based photo_id values (breaking change).\n\nIf you already have an indexed backend database from older versions, run the one-time migration now."
+					"$$$/StyleAI/MetadataProvider/MigrationRequiredMsg=This update introduces file-based photo_id values (breaking change).\n\nIf you already have an indexed backend database from older versions, run the one-time migration now."
 				),
-				LOC("$$$/LrGeniusAI/MetadataProvider/RunMigrationNow=Run migration now"),
-				LOC("$$$/LrGeniusAI/common/Later=Later")
+				LOC("$$$/StyleAI/MetadataProvider/RunMigrationNow=Run migration now"),
+				LOC("$$$/StyleAI/common/Later=Later")
 			)
 
 			if migrationChoice == "ok" then
@@ -331,28 +331,28 @@ return {
 					if not status then
 						log:error("Photo-ID migration crashed during schema upgrade.")
 						LrDialogs.message(
-							LOC("$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
+							LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
 							tostring(ok),
 							"critical"
 						)
 					elseif ok then
 						LrDialogs.message(
-							LOC("$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateTitle=Photo-ID Migration"),
-							msg or LOC("$$$/LrGeniusAI/common/MigrationCompleted=Migration completed.")
+							LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateTitle=Photo-ID Migration"),
+							msg or LOC("$$$/StyleAI/common/MigrationCompleted=Migration completed.")
 						)
 					else
 						LrDialogs.message(
-							LOC("$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
-							msg or LOC("$$$/LrGeniusAI/common/UnknownError=Unknown error"),
+							LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
+							msg or LOC("$$$/StyleAI/common/UnknownError=Unknown error"),
 							"critical"
 						)
 					end
 				end)
 			else
 				LrDialogs.message(
-					LOC("$$$/LrGeniusAI/MetadataProvider/MigrationReminderTitle=Migration reminder"),
+					LOC("$$$/StyleAI/MetadataProvider/MigrationReminderTitle=Migration reminder"),
 					LOC(
-						"$$$/LrGeniusAI/MetadataProvider/MigrationReminderMsg=Please run 'Migrate existing DB IDs to photo_id' later from:\nPlug-in Manager -> LrGeniusAI -> Backend Server."
+						"$$$/StyleAI/MetadataProvider/MigrationReminderMsg=Please run 'Migrate existing DB IDs to photo_id' later from:\nPlug-in Manager -> StyleAI -> Backend Server."
 					),
 					"info"
 				)
@@ -361,12 +361,12 @@ return {
 
 		if previousSchemaVersion ~= nil and previousSchemaVersion < 25 then
 			local migrationChoice = LrDialogs.confirm(
-				LOC("$$$/LrGeniusAI/MetadataProvider/MigrationRecommendedTitle=Backend ID migration recommended"),
+				LOC("$$$/StyleAI/MetadataProvider/MigrationRecommendedTitle=Backend ID migration recommended"),
 				LOC(
-					"$$$/LrGeniusAI/MetadataProvider/MigrationRecommendedMsg=The photo_id algorithm was updated to remain stable when metadata is written to files (for example DNG updates).\n\nPlease run the backend ID migration once so existing indexed data matches the new stable IDs."
+					"$$$/StyleAI/MetadataProvider/MigrationRecommendedMsg=The photo_id algorithm was updated to remain stable when metadata is written to files (for example DNG updates).\n\nPlease run the backend ID migration once so existing indexed data matches the new stable IDs."
 				),
-				LOC("$$$/LrGeniusAI/MetadataProvider/RunMigrationNow=Run migration now"),
-				LOC("$$$/LrGeniusAI/common/Later=Later")
+				LOC("$$$/StyleAI/MetadataProvider/RunMigrationNow=Run migration now"),
+				LOC("$$$/StyleAI/common/Later=Later")
 			)
 
 			if migrationChoice == "ok" then
@@ -384,19 +384,19 @@ return {
 					if not status then
 						log:error("Photo-ID migration crashed during schema upgrade to 25.")
 						LrDialogs.message(
-							LOC("$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
+							LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
 							tostring(ok),
 							"critical"
 						)
 					elseif ok then
 						LrDialogs.message(
-							LOC("$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateTitle=Photo-ID Migration"),
-							msg or LOC("$$$/LrGeniusAI/common/MigrationCompleted=Migration completed.")
+							LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateTitle=Photo-ID Migration"),
+							msg or LOC("$$$/StyleAI/common/MigrationCompleted=Migration completed.")
 						)
 					else
 						LrDialogs.message(
-							LOC("$$$/LrGeniusAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
-							msg or LOC("$$$/LrGeniusAI/common/UnknownError=Unknown error"),
+							LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
+							msg or LOC("$$$/StyleAI/common/UnknownError=Unknown error"),
 							"critical"
 						)
 					end

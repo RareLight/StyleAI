@@ -29,12 +29,12 @@ end
 LrTasks.startAsyncTask(function()
 	LrFunctionContext.callWithContext("automatedTestsTask", function(ctx)
 		local confirm = LrDialogs.confirm(
-			LOC("$$$/LrGeniusAI/TaskAutomatedTests/RunConfirmTitle=Run Automated Tests?"),
+			LOC("$$$/StyleAI/TaskAutomatedTests/RunConfirmTitle=Run Automated Tests?"),
 			LOC(
-				"$$$/LrGeniusAI/TaskAutomatedTests/RunConfirmMsg=This will run a series of integrity checks for JSON parsers, utilities, and backend connectivity. Do you want to proceed?"
+				"$$$/StyleAI/TaskAutomatedTests/RunConfirmMsg=This will run a series of integrity checks for JSON parsers, utilities, and backend connectivity. Do you want to proceed?"
 			),
-			LOC("$$$/LrGeniusAI/TaskAutomatedTests/RunConfirmOk=Yes, Run Tests"),
-			LOC("$$$/LrGeniusAI/common/Cancel=Cancel")
+			LOC("$$$/StyleAI/TaskAutomatedTests/RunConfirmOk=Yes, Run Tests"),
+			LOC("$$$/StyleAI/common/Cancel=Cancel")
 		)
 
 		if confirm == "cancel" then
@@ -112,15 +112,15 @@ LrTasks.startAsyncTask(function()
 			end
 			if #errorMessages > 5 then
 				combinedError = combinedError
-					.. LOC("$$$/LrGeniusAI/common/MoreErrors=... and ^1 more errors", #errorMessages - 5)
+					.. LOC("$$$/StyleAI/common/MoreErrors=... and ^1 more errors", #errorMessages - 5)
 			end
 
 			ErrorHandler.handleError(
-				LOC("$$$/LrGeniusAI/TaskAutomatedTests/FailedTitle=Some Tests Failed"),
+				LOC("$$$/StyleAI/TaskAutomatedTests/FailedTitle=Some Tests Failed"),
 				combinedError
 			)
 		else
-			LrDialogs.message(LOC("$$$/LrGeniusAI/TaskAutomatedTests/PassedTitle=All Tests Passed"), summary, "info")
+			LrDialogs.message(LOC("$$$/StyleAI/TaskAutomatedTests/PassedTitle=All Tests Passed"), summary, "info")
 		end
 	end)
 end)

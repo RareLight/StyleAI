@@ -37,15 +37,15 @@ function OnboardingWizard.show(manualTrigger)
 
 					-- BACKEND TAB
 					f:tab_view_item({
-						title = LOC("$$$/LrGeniusAI/Onboarding/BackendTitle=Backend Server"),
+						title = LOC("$$$/StyleAI/Onboarding/BackendTitle=Backend Server"),
 						identifier = "backend",
 
 						f:group_box({
-							title = LOC("$$$/LrGeniusAI/Onboarding/WelcomeTitle=Welcome to LrGeniusAI!"),
+							title = LOC("$$$/StyleAI/Onboarding/WelcomeTitle=Welcome to StyleAI!"),
 							fill_horizontal = 1,
 							f:static_text({
 								title = LOC(
-									"$$$/LrGeniusAI/Onboarding/WelcomeMessage=Thank you for choosing LrGeniusAI. This wizard will guide you through the initial setup to ensure everything is running smoothly."
+									"$$$/StyleAI/Onboarding/WelcomeMessage=Thank you for choosing StyleAI. This wizard will guide you through the initial setup to ensure everything is running smoothly."
 								),
 								width_in_chars = 60,
 								wrap = true,
@@ -53,11 +53,11 @@ function OnboardingWizard.show(manualTrigger)
 						}),
 
 						f:group_box({
-							title = LOC("$$$/LrGeniusAI/Onboarding/BackendTitle=Backend Server"),
+							title = LOC("$$$/StyleAI/Onboarding/BackendTitle=Backend Server"),
 							fill_horizontal = 1,
 							f:static_text({
 								title = LOC(
-									"$$$/LrGeniusAI/Onboarding/BackendDesc=LrGeniusAI requires a local backend server to process your photos. We will attempt to start it now."
+									"$$$/StyleAI/Onboarding/BackendDesc=StyleAI requires a local backend server to process your photos. We will attempt to start it now."
 								),
 								width_in_chars = 60,
 								wrap = true,
@@ -65,7 +65,7 @@ function OnboardingWizard.show(manualTrigger)
 							f:spacer({ height = 5 }),
 							f:row({
 								f:static_text({
-									title = LOC("$$$/LrGeniusAI/Onboarding/BackendStatus=Server Status:"),
+									title = LOC("$$$/StyleAI/Onboarding/BackendStatus=Server Status:"),
 									width = share("label"),
 								}),
 								f:static_text({
@@ -73,12 +73,12 @@ function OnboardingWizard.show(manualTrigger)
 										key = "backendRunning",
 										transform = function(v)
 											if v == true then
-												return LOC("$$$/LrGeniusAI/Onboarding/BackendRunning=Running")
+												return LOC("$$$/StyleAI/Onboarding/BackendRunning=Running")
 											end
 											if v == "starting" then
-												return LOC("$$$/LrGeniusAI/Onboarding/BackendStarting=Starting...")
+												return LOC("$$$/StyleAI/Onboarding/BackendStarting=Starting...")
 											end
-											return LOC("$$$/LrGeniusAI/Onboarding/BackendError=Failed to start")
+											return LOC("$$$/StyleAI/Onboarding/BackendError=Failed to start")
 										end,
 									}),
 									text_color = bind({
@@ -95,7 +95,7 @@ function OnboardingWizard.show(manualTrigger)
 									}),
 								}),
 								f:push_button({
-									title = LOC("$$$/LrGeniusAI/common/Start=Start"),
+									title = LOC("$$$/StyleAI/common/Start=Start"),
 									action = startBackend,
 									enabled = bind({
 										key = "backendRunning",
@@ -108,7 +108,7 @@ function OnboardingWizard.show(manualTrigger)
 							f:spacer({ height = 5 }),
 							f:static_text({
 								title = LOC(
-									"$$$/LrGeniusAI/Onboarding/BackendHint=If the server fails to start, check if another application is using port 19819 or if your firewall is blocking it."
+									"$$$/StyleAI/Onboarding/BackendHint=If the server fails to start, check if another application is using port 19819 or if your firewall is blocking it."
 								),
 								size = "small",
 								width_in_chars = 60,
@@ -119,15 +119,15 @@ function OnboardingWizard.show(manualTrigger)
 
 					-- PROVIDERS TAB
 					f:tab_view_item({
-						title = LOC("$$$/LrGeniusAI/Onboarding/ProvidersTitle=AI Providers"),
+						title = LOC("$$$/StyleAI/Onboarding/ProvidersTitle=AI Providers"),
 						identifier = "providers",
 
 						f:group_box({
-							title = LOC("$$$/LrGeniusAI/Onboarding/ProvidersTitle=AI Providers"),
+							title = LOC("$$$/StyleAI/Onboarding/ProvidersTitle=AI Providers"),
 							fill_horizontal = 1,
 							f:static_text({
 								title = LOC(
-									"$$$/LrGeniusAI/Onboarding/ProvidersDesc=Choose which AI models you want to use for metadata generation and edits."
+									"$$$/StyleAI/Onboarding/ProvidersDesc=Choose which AI models you want to use for metadata generation and edits."
 								),
 								width_in_chars = 60,
 								wrap = true,
@@ -135,11 +135,11 @@ function OnboardingWizard.show(manualTrigger)
 						}),
 
 						f:group_box({
-							title = LOC("$$$/LrGeniusAI/Onboarding/GeminiTitle=Google Gemini (Recommended)"),
+							title = LOC("$$$/StyleAI/Onboarding/GeminiTitle=Google Gemini (Recommended)"),
 							fill_horizontal = 1,
 							f:row({
 								f:static_text({
-									title = LOC("$$$/LrGeniusAI/Onboarding/ApiKeyLabel=API Key:"),
+									title = LOC("$$$/StyleAI/Onboarding/ApiKeyLabel=API Key:"),
 									width = share("label"),
 								}),
 								f:edit_field({ value = bind("geminiApiKey"), width_in_chars = 40 }),
@@ -152,11 +152,11 @@ function OnboardingWizard.show(manualTrigger)
 							}),
 						}),
 						f:group_box({
-							title = LOC("$$$/LrGeniusAI/Onboarding/ChatGPTTitle=OpenAI ChatGPT"),
+							title = LOC("$$$/StyleAI/Onboarding/ChatGPTTitle=OpenAI ChatGPT"),
 							fill_horizontal = 1,
 							f:row({
 								f:static_text({
-									title = LOC("$$$/LrGeniusAI/Onboarding/ApiKeyLabel=API Key:"),
+									title = LOC("$$$/StyleAI/Onboarding/ApiKeyLabel=API Key:"),
 									width = share("label"),
 								}),
 								f:edit_field({ value = bind("chatgptApiKey"), width_in_chars = 40 }),
@@ -169,13 +169,13 @@ function OnboardingWizard.show(manualTrigger)
 							}),
 						}),
 						f:group_box({
-							title = LOC("$$$/LrGeniusAI/Onboarding/LocalTitle=Local AI (Ollama / LM Studio)"),
+							title = LOC("$$$/StyleAI/Onboarding/LocalTitle=Local AI (Ollama / LM Studio)"),
 							fill_horizontal = 1,
 							f:row({
 								f:push_button({
-									title = LOC("$$$/LrGeniusAI/Onboarding/LocalTitle=Local AI (Ollama / LM Studio)"),
+									title = LOC("$$$/StyleAI/Onboarding/LocalTitle=Local AI (Ollama / LM Studio)"),
 									action = function()
-										LrHttp.openUrlInBrowser("https://lrgenius.com/help/ollama-setup/")
+										LrHttp.openUrlInBrowser("https://styleai.com/help/ollama-setup/")
 									end,
 								}),
 							}),
@@ -184,15 +184,15 @@ function OnboardingWizard.show(manualTrigger)
 
 					-- SEMANTIC SEARCH TAB
 					f:tab_view_item({
-						title = LOC("$$$/LrGeniusAI/Onboarding/SemanticTitle=Semantic Search"),
+						title = LOC("$$$/StyleAI/Onboarding/SemanticTitle=Semantic Search"),
 						identifier = "semantic",
 
 						f:group_box({
-							title = LOC("$$$/LrGeniusAI/Onboarding/SemanticTitle=Semantic Search"),
+							title = LOC("$$$/StyleAI/Onboarding/SemanticTitle=Semantic Search"),
 							fill_horizontal = 1,
 							f:static_text({
 								title = LOC(
-									"$$$/LrGeniusAI/Onboarding/SemanticDesc=To enable advanced search by content, you need the OpenCLIP AI model. This is a ~4GB download."
+									"$$$/StyleAI/Onboarding/SemanticDesc=To enable advanced search by content, you need the OpenCLIP AI model. This is a ~4GB download."
 								),
 								width_in_chars = 60,
 								wrap = true,
@@ -201,7 +201,7 @@ function OnboardingWizard.show(manualTrigger)
 							f:row({
 								f:checkbox({
 									title = LOC(
-										"$$$/LrGeniusAI/Onboarding/ClipAlreadyDownloaded=OpenCLIP model is already available."
+										"$$$/StyleAI/Onboarding/ClipAlreadyDownloaded=OpenCLIP model is already available."
 									),
 									value = bind("clipReady"),
 									enabled = false,
@@ -209,7 +209,7 @@ function OnboardingWizard.show(manualTrigger)
 							}),
 							f:row({
 								f:push_button({
-									title = LOC("$$$/LrGeniusAI/Onboarding/DownloadClip=Download OpenCLIP Model"),
+									title = LOC("$$$/StyleAI/Onboarding/DownloadClip=Download OpenCLIP Model"),
 									action = function()
 										LrTasks.startAsyncTask(function()
 											SearchIndexAPI.startClipDownload()
@@ -226,11 +226,11 @@ function OnboardingWizard.show(manualTrigger)
 							}),
 						}),
 						f:group_box({
-							title = LOC("$$$/LrGeniusAI/Onboarding/FinishTitle=All Set!"),
+							title = LOC("$$$/StyleAI/Onboarding/FinishTitle=All Set!"),
 							fill_horizontal = 1,
 							f:static_text({
 								title = LOC(
-									"$$$/LrGeniusAI/Onboarding/FinishDesc=Configuration complete. LrGeniusAI is ready to help you manage your Lightroom catalog."
+									"$$$/StyleAI/Onboarding/FinishDesc=Configuration complete. StyleAI is ready to help you manage your Lightroom catalog."
 								),
 								width_in_chars = 60,
 								wrap = true,
@@ -241,11 +241,11 @@ function OnboardingWizard.show(manualTrigger)
 			})
 
 			local result = LrDialogs.presentModalDialog({
-				title = LOC("$$$/LrGeniusAI/Onboarding/WizardTitle=LrGeniusAI Setup"),
+				title = LOC("$$$/StyleAI/Onboarding/WizardTitle=StyleAI Setup"),
 				contents = dialogContents,
-				actionVerb = LOC("$$$/LrGeniusAI/common/OK=OK"),
-				cancelVerb = LOC("$$$/LrGeniusAI/common/Cancel=Cancel"),
-				otherVerb = LOC("$$$/LrGeniusAI/Onboarding/Skip=Skip Setup"),
+				actionVerb = LOC("$$$/StyleAI/common/OK=OK"),
+				cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
+				otherVerb = LOC("$$$/StyleAI/Onboarding/Skip=Skip Setup"),
 				resizable = false,
 			})
 

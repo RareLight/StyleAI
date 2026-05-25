@@ -31,7 +31,7 @@ class TestPerformCodeUpdate:
         service_update._update_in_progress = False
 
     def test_starts_thread_and_writes_manifest(self, mocker, tmp_path):
-        manifest_path = tmp_path / ".lrgeniusai" / "manifest_to_apply.json"
+        manifest_path = tmp_path / ".styleai" / "manifest_to_apply.json"
         mocker.patch(
             "services.update.os.path.expanduser",
             return_value=str(manifest_path),
