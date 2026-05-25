@@ -223,13 +223,8 @@ if _G.prefs.knownTopLevelKeywords == nil then
 	_G.prefs.knownTopLevelKeywords = Defaults.defaultTopLevelKeywords
 end
 
-if _G.prefs.useClip == nil then
-	_G.prefs.useClip = false
-end
-
--- Advanced Search dialog options (persisted for convenience)
-if _G.prefs.searchScope == nil then
-	_G.prefs.searchScope = "all"
+if _G.prefs.shutdownServerOnExit == nil then
+	_G.prefs.shutdownServerOnExit = true -- default: shut down backend when Lightroom exits
 end
 if _G.prefs.searchInSemanticSiglip == nil then
 	_G.prefs.searchInSemanticSiglip = true

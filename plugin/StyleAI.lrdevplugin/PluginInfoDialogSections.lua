@@ -31,6 +31,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	end)
 
 	propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck
+	propertyTable.shutdownServerOnExit = prefs.shutdownServerOnExit
 	propertyTable.dbStoragePath = prefs.dbStoragePath or ""
 	propertyTable.backendServerUrl = prefs.backendServerUrl or Defaults.defaultBackendServerUrl
 	propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
@@ -713,6 +714,22 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						end,
 					}),
 				}),
+				f:row({
+					fill_horizontal = 1,
+					f:checkbox({
+						value = bind("shutdownServerOnExit"),
+						title = LOC("$$$/StyleAI/PluginInfo/ShutdownOnExit=Shut down backend server when Lightroom exits"),
+					}),
+					f:static_text({
+						title = LOC(
+							"$$$/StyleAI/PluginInfo/ShutdownOnExitHint=Frees memory immediately. Increases startup time next session."
+						),
+						size = "small",
+						font = "italic",
+						fill_horizontal = 1,
+						wrap = true,
+					}),
+				}),
 			}),
 			f:group_box({
 				width = groupBoxWidth,
@@ -1061,6 +1078,7 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 	end
 
 	prefs.periodicalUpdateCheck = propertyTable.periodicalUpdateCheck
+	prefs.shutdownServerOnExit = (propertyTable.shutdownServerOnExit ~= false)
 	prefs.dbStoragePath = (propertyTable.dbStoragePath and propertyTable.dbStoragePath:gsub("^%s*(.-)%s*$", "%1")) or ""
 
 	if prefs.dbStoragePath ~= "" then
