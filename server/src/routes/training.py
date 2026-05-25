@@ -188,6 +188,110 @@ def add_training_example():
 
 
 # ---------------------------------------------------------------------------
+# POST /training/add-batch
+# ---------------------------------------------------------------------------
+
+
+@training_bp.route("/training/add-batch", methods=["POST"])
+def add_training_batch():
+    """Add multiple training examples in one request.
+
+    JSON body:
+        examples: list of dicts, each with:
+            photo_id (str, required)
+            develop_settings (dict, required)
+            label (str, optional)
+            summary (str, optional)
+            focal_length (float, optional)
+            capture_time (float, optional)
+            camera_make (str, optional)
+            camera_model (str, optional)
+            camera_profile (str, optional)
+            user_keywords (list of str, optional)
+            iso (float, optional)
+            aperture (float, optional)
+            shutter_speed (str, optional)
+    """
+    data = request.get_json() or {}
+    examples = data.get("examples", [])
+
+    if not examples:
+        return jsonify({"error": "Missing 'examples' array in body"}), 400
+
+    results: list[dict[str, Any]] = []
+    for item in examples:
+        photo_id = item.get("photo_id", "").strip()
+        if not photo_id:
+            results.append({
+                "status": "error",
+                "photo_id": "",
+                "error": "photo_id is required",
+            })
+            continue
+
+        develop_settings = item.get("develop_settings", {})
+        if not isinstance(develop_settings, dict):
+            results.append({
+                "status": "error",
+                "photo_id": photo_id,
+                "error": "develop_settings must be a dict",
+            })
+            continue
+
+        label = item.get("label")
+        summary = item.get("summary")
+        filename = item.get("filename")
+
+        focal_length = item.get("focal_length")
+        capture_time_unix = item.get("capture_time")
+        camera_make = item.get("camera_make")
+        camera_model = item.get("camera_model")
+        camera_profile = item.get("camera_profile")
+        user_keywords = item.get("user_keywords")
+        iso = item.get("iso")
+        aperture = item.get("aperture")
+        shutter_speed = item.get("shutter_speed")
+
+        try:
+            training_service.add_training_example(
+                photo_id=photo_id,
+                develop_settings=develop_settings,
+                embedding=None,
+                label=label,
+                filename=filename,
+                summary=summary,
+                image_bytes=None,
+                focal_length=focal_length,
+                capture_time_unix=capture_time_unix,
+                camera_make=camera_make,
+                camera_model=camera_model,
+                camera_profile=camera_profile,
+                user_keywords=user_keywords,
+                iso=iso,
+                aperture=aperture,
+                shutter_speed=shutter_speed,
+            )
+            results.append({"status": "ok", "photo_id": photo_id})
+        except Exception as exc:
+            logger.error("Batch add failed for photo_id=%s: %s", photo_id, exc)
+            results.append({
+                "status": "error",
+                "photo_id": photo_id,
+                "error": str(exc),
+            })
+
+    success_count = sum(1 for r in results if r["status"] == "ok")
+    total_count = training_service.get_training_count()
+
+    return jsonify({
+        "status": "ok",
+        "added": success_count,
+        "total_count": total_count,
+        "results": results,
+    }), 200
+
+
+# ---------------------------------------------------------------------------
 # GET /training/list
 # ---------------------------------------------------------------------------
 

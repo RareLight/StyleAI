@@ -34,10 +34,6 @@ return {
 			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Style Catalog..."),
 			file = "TaskStyleCatalog.lua",
 		},
-		{
-			title = LOC("$$$/StyleAI/Menu/AnalyzeAndIndex=Index Photos for Style Matching..."),
-			file = "TaskAnalyzeAndIndex.lua",
-		},
 	},
 
 	LrExportMenuItems = {
@@ -52,10 +48,6 @@ return {
 		{
 			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Style Catalog..."),
 			file = "TaskStyleCatalog.lua",
-		},
-		{
-			title = LOC("$$$/StyleAI/Menu/AnalyzeAndIndex=Index Photos for Style Matching..."),
-			file = "TaskAnalyzeAndIndex.lua",
 		},
 	},
 
