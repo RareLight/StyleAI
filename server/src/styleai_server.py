@@ -220,11 +220,11 @@ if __name__ == "__main__":
     version_info = get_backend_version_info()
     logger.info("=" * 60)
     logger.info(
-        "LrGenius Server version %s (build %s)",
+        "StyleAI Server version %s (build %s)",
         version_info.get("backend_version", "?"),
         version_info.get("backend_build", "?"),
     )
-    logger.info("LrGenius Server starting...")
+    logger.info("StyleAI Server starting...")
     logger.info(f"Python: {sys.version.split()[0]}")
     logger.info(
         f"Database Path: {config.DB_PATH or 'Idle (waiting for plugin initialize)'}"

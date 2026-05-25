@@ -2,7 +2,7 @@
 trigger: always_on
 ---
 
-# LrGeniusAI General Development Rules
+# StyleAI General Development Rules
 
 These rules ensure consistency across the Lightroom plugin and the Python backend.
 

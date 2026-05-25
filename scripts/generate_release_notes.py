@@ -21,8 +21,8 @@ STATIC_FOOTER = """
 - The backend now runs as a persistent system service (LaunchAgent on macOS, Startup Registry on Windows).
 - It starts automatically at login and remains active to manage background AI tasks even when Lightroom is closed.
 - Manual management (troubleshooting):
-  - Windows: Run `{commonpf}\\StyleAI\\backend\\lrgenius-server.cmd`
-  - macOS: Service `com.lrgenius.server` (managed via `launchctl`)
+  - Windows: Run `{commonpf}\\StyleAI\\backend\\styleai-server.cmd`
+  - macOS: Service `com.styleai.server` (managed via `launchctl`)
 
 ### Security & Permissions
 - **Windows**: You may see a SmartScreen warning ("Windows protected your PC") during installation because the installer is not signed. Click "More info" and "Run anyway" to proceed.

@@ -2,9 +2,9 @@
 
 > Auto-generated from `server/README.md`. Do not edit this page manually.
 
-# 🖥️ LrGeniusAI - Backend Server
+# 🖥️ StyleAI - Backend Server
 
-This is the Python-based core of **LrGeniusAI**. It acts as the bridge between Adobe Lightroom Classic (Lua) and various AI models, handling image processing, metadata storage, and high-speed semantic search.
+This is the Python-based core of **StyleAI**. It acts as the bridge between Adobe Lightroom Classic (Lua) and various AI models, handling image processing, metadata storage, and high-speed semantic search.
 
 ---
 
@@ -62,7 +62,7 @@ The ZIP is created temporarily on the server for download and removed again afte
 
 ### Lightroom plugin integration
 
-In `Plug-in Manager -> LrGeniusAI -> Backend Server`, the button `Download DB backup` downloads this ZIP from the backend and reveals the saved file in Finder or Explorer.
+In `Plug-in Manager -> StyleAI -> Backend Server`, the button `Download DB backup` downloads this ZIP from the backend and reveals the saved file in Finder or Explorer.
 
 ---
 
@@ -109,7 +109,7 @@ If you run an existing database, perform a one-time migration.
 ### Migration options
 
 - Trigger from Lightroom plugin UI:
-  - `File -> Plug-in Manager -> LrGeniusAI -> Backend Server -> Migrate existing DB IDs to photo_id`
+  - `File -> Plug-in Manager -> StyleAI -> Backend Server -> Migrate existing DB IDs to photo_id`
 - Trigger via API:
   - `POST /db/migrate-photo-ids`
   - Body: `{ "mappings": [{ "old_id": "...", "new_id": "..." }] }`

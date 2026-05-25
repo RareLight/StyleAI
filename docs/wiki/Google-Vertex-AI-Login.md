@@ -1,6 +1,6 @@
 # ☁️ Google Vertex AI Login (gcloud)
 
-If you want to use Vertex AI with LrGeniusAI, run the login on the machine where `geniusai-server` is running.
+If you want to use Vertex AI with StyleAI, run the login on the machine where `geniusai-server` is running.
 
 ## macOS
 

@@ -10,7 +10,7 @@ the full installer.
 Usage (in CI):
     python3 scripts/generate_update_manifest.py \
         --version v2.15.0 \
-        --repo LrGenius/StyleAI \
+        --repo RareLight/StyleAI \
         --output update-manifest.json
 """
 
@@ -158,7 +158,7 @@ def main():
     parser.add_argument("--version", required=True, help="Version tag (e.g. v2.15.0)")
     parser.add_argument(
         "--repo",
-        default="LrGenius/StyleAI",
+        default="RareLight/StyleAI",
         help="GitHub repo in owner/name format",
     )
     parser.add_argument(

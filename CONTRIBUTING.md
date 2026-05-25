@@ -1,6 +1,6 @@
-# Contributing to LrGeniusAI
+# Contributing to StyleAI
 
-Welcome! We're excited that you're interested in contributing to **LrGeniusAI**. This project aims to bring powerful AI capabilities to Adobe Lightroom Classic, and your help is vital to making it better for everyone.
+Welcome! We're excited that you're interested in contributing to **StyleAI**. This project aims to bring powerful AI capabilities to Adobe Lightroom Classic, and your help is vital to making it better for everyone.
 
 By contributing, you agree to abide by the terms of our [LICENSE](LICENSE) (AGPL-3.0).
 
@@ -12,8 +12,8 @@ By contributing, you agree to abide by the terms of our [LICENSE](LICENSE) (AGPL
 - Fork the repository on GitHub.
 - Clone your fork locally:
   ```bash
-  git clone https://github.com/YOUR_USERNAME/LrGeniusAI.git
-  cd LrGeniusAI
+  git clone https://github.com/YOUR_USERNAME/StyleAI.git
+  cd StyleAI
   ```
 
 ### 2. Set Up the Development Environment
@@ -28,7 +28,7 @@ We use `uv` for dependency management.
 - This will create a `.venv`, install dependencies, and set up the environment.
 
 #### Plugin (Lua)
-- The plugin code is located in the `plugin/LrGeniusAI.lrdevplugin` directory.
+- The plugin code is located in the `plugin/StyleAI.lrdevplugin` directory.
 - To test changes, you can link this directory into your Lightroom `Modules` folder or add it via the Lightroom **Plug-in Manager**.
 
 #### Pre-commit Hooks
@@ -101,4 +101,4 @@ You can use the `sync_translations.py` script to help maintain consistency.
 
 ---
 
-Thank you for contributing to LrGeniusAI! 📸✨
+Thank you for contributing to StyleAI! 📸✨

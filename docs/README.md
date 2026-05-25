@@ -35,5 +35,5 @@ bash scripts/build-wiki-pages.sh
 
 Required env variables:
 
-- `GITHUB_REPOSITORY` (for example `LrGenius/LrGeniusAI`)
+- `GITHUB_REPOSITORY` (for example `RareLight/StyleAI`)
 - `GITHUB_TOKEN` with write access to the wiki

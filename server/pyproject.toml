@@ -1,5 +1,5 @@
 [project]
-name = "genius-server"
+name = "styleai-server"
 version = "0.1.0"
 description = "Flask server to handle plugin requests to LLMs and Metadata"
 readme = "README.md"

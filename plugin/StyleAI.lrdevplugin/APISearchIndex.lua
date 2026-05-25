@@ -1,4 +1,4 @@
--- lrgenius-server API Wrapper
+-- StyleAI Server API Wrapper
 -- Provides functions to interact with the Python-based search index server.
 
 SearchIndexAPI = {}
@@ -121,7 +121,7 @@ local CATALOG_DB_MIGRATIONS = {
         run = function(progressScope)
             local ok, err, result = SearchIndexAPI.claimPhotosForCatalog(progressScope)
             local msg = (ok and result and (result.claimed or 0) >= 0) and
-                (LOC("$$$/LrGeniusAI/SearchIndexAPI/PhotosClaimedCount=^1 photos claimed for this catalog.", tostring(result.claimed or 0))) or
+                (LOC("$$$/StyleAI/SearchIndexAPI/PhotosClaimedCount=^1 photos claimed for this catalog.", tostring(result.claimed or 0))) or
                 nil
             return ok, err, msg
         end,
@@ -287,7 +287,7 @@ local function ensureDbMigrationsDone()
                 local progressScope
                 if m.id == "claim_photos_v1" then
                     progressScope = LrProgressScope({
-                        title = LOC "$$$/LrGeniusAI/SearchIndexAPI/claimingPhotos=Claiming photos for this catalog...",
+                        title = LOC "$$$/StyleAI/SearchIndexAPI/claimingPhotos=Claiming photos for this catalog...",
                         functionContext = nil,
                     })
                 end
@@ -312,16 +312,16 @@ local function ensureDbMigrationsDone()
                     end)
                     log:info("Catalog DB migration completed: " .. tostring(m.id))
                     if userMessage and userMessage ~= "" then
-                        LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/ClaimPhotosTitle=Claim photos", userMessage,
+                        LrDialogs.message(LOC "$$$/StyleAI/PluginInfo/ClaimPhotosTitle=Claim photos", userMessage,
                             "info")
                     end
                 else
                     log:warn("Catalog DB migration failed: " .. tostring(m.id) .. " - " .. tostring(err))
                     if m.id == "claim_photos_v1" then
-                        LrDialogs.message(LOC "$$$/LrGeniusAI/PluginInfo/ClaimPhotosFailed=Claim photos failed",
-                            tostring(err or LOC "$$$/LrGeniusAI/common/UnknownError=Unknown error") ..
+                        LrDialogs.message(LOC "$$$/StyleAI/PluginInfo/ClaimPhotosFailed=Claim photos failed",
+                            tostring(err or LOC "$$$/StyleAI/common/UnknownError=Unknown error") ..
                             "\n\n" ..
-                            LOC "$$$/LrGeniusAI/SearchIndexAPI/ClaimPhotosRetryHint=You can try again from Plug-in Manager → LrGeniusAI → Backend Server → Claim photos for this catalog.",
+                            LOC "$$$/StyleAI/SearchIndexAPI/ClaimPhotosRetryHint=You can try again from Plug-in Manager → StyleAI → Backend Server → Claim photos for this catalog.",
                             "critical")
                     end
                 end
@@ -1328,7 +1328,7 @@ function SearchIndexAPI.syncCleanup()
     local updateInterval = math.max(1, math.floor(#allPhotos / 50))
 
     local progressScope = LrProgressScope({
-        title = LOC "$$$/LrGeniusAI/SearchIndexAPI/cleaningIndex=Cleaning search index",
+        title = LOC "$$$/StyleAI/SearchIndexAPI/cleaningIndex=Cleaning search index",
         functionContext = nil,
     })
 
@@ -1344,12 +1344,12 @@ function SearchIndexAPI.syncCleanup()
         if i % updateInterval == 0 or i == #allPhotos then
             progressScope:setPortionComplete(i, #allPhotos)
             progressScope:setCaption(
-                LOC "$$$/LrGeniusAI/SearchIndexAPI/cleaningIndexProgress=Cleaning index. Photo ^1/^2", tostring(i),
+                LOC "$$$/StyleAI/SearchIndexAPI/cleaningIndexProgress=Cleaning index. Photo ^1/^2", tostring(i),
                 tostring(#allPhotos))
         end
     end
 
-    progressScope:setCaption(LOC "$$$/LrGeniusAI/SearchIndexAPI/syncCleanupSending=Syncing with backend...")
+    progressScope:setCaption(LOC "$$$/StyleAI/SearchIndexAPI/syncCleanupSending=Syncing with backend...")
     local batchSize = 5000
     local disassociated = 0
     for startIdx = 1, #photoIds, batchSize do
@@ -1408,7 +1408,7 @@ function SearchIndexAPI.claimPhotosForCatalog(progressScope)
     if progressScope then
         progressScope:setPortionComplete(0, totalPhotos)
         progressScope:setCaption(LOC(
-            "$$$/LrGeniusAI/SearchIndexAPI/claimingPhotosPreparing=Preparing ^1 photos for this catalog...",
+            "$$$/StyleAI/SearchIndexAPI/claimingPhotosPreparing=Preparing ^1 photos for this catalog...",
             tostring(totalPhotos)))
     end
     local progressStride = math.max(50, math.floor(totalPhotos / 200))
@@ -1424,7 +1424,7 @@ function SearchIndexAPI.claimPhotosForCatalog(progressScope)
         if progressScope and (i % progressStride == 0 or i == totalPhotos) then
             progressScope:setPortionComplete(i, totalPhotos)
             progressScope:setCaption(LOC(
-                "$$$/LrGeniusAI/SearchIndexAPI/claimingPhotosPreparingCount=Preparing ^1 of ^2 photos...",
+                "$$$/StyleAI/SearchIndexAPI/claimingPhotosPreparingCount=Preparing ^1 of ^2 photos...",
                 tostring(i), tostring(totalPhotos)))
         end
     end
@@ -1444,7 +1444,7 @@ function SearchIndexAPI.claimPhotosForCatalog(progressScope)
             end
             local batchNum = math.floor((startIdx - 1) / batchSize) + 1
             progressScope:setCaption(LOC(
-                "$$$/LrGeniusAI/SearchIndexAPI/claimingPhotosBatch=Claiming photos... batch ^1/^2", tostring(batchNum),
+                "$$$/StyleAI/SearchIndexAPI/claimingPhotosBatch=Claiming photos... batch ^1/^2", tostring(batchNum),
                 tostring(totalBatches)))
         end
         local stopIdx = math.min(startIdx + batchSize - 1, #photoIds)
@@ -1508,7 +1508,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     options = options or {}
     local shouldCloseScope = (closeProgressScope ~= false)
 
-    progressScope:setCaption(LOC("$$$/LrGeniusAI/AnalyzeAndIndex/ProcessingPhotos=Processing ^1 photos with ^2...",
+    progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhotos=Processing ^1 photos with ^2...",
         #selectedPhotos, options.model or "AI"))
     progressScope:setPortionComplete(0, numPhotos)
 
@@ -1670,7 +1670,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 table.insert(processedPhotos, photo)
                 progressScope:setPortionComplete(stats.processed, numPhotos)
                 progressScope:setCaption(
-                    LOC("$$$/LrGeniusAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
+                    LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
                         stats.success, numPhotos, stats.failed)
                 )
             else
@@ -1781,7 +1781,7 @@ function SearchIndexAPI.importMetadataFromCatalog(photosToProcess, progressScope
 	local shouldUpdateProgress = (updateProgress ~= false)
 
 	if shouldUpdateProgress then
-		progressScope:setCaption(LOC("$$$/LrGeniusAI/ImportMetadata/ProgressTitle=Importing metadata for photos..."))
+		progressScope:setCaption(LOC("$$$/StyleAI/ImportMetadata/ProgressTitle=Importing metadata for photos..."))
 		progressScope:setPortionComplete(0, numPhotos)
 	end
 
@@ -1838,7 +1838,7 @@ function SearchIndexAPI.importMetadataFromCatalog(photosToProcess, progressScope
 				progressScope:setPortionComplete(stats.processed, numPhotos)
 				progressScope:setCaption(
 					LOC(
-						"$$$/LrGeniusAI/ImportMetadata/Processing=Importing metadata... ^1/^2 (^3 failed)",
+						"$$$/StyleAI/ImportMetadata/Processing=Importing metadata... ^1/^2 (^3 failed)",
 						stats.processed,
 						numPhotos,
 						stats.failed
@@ -1988,14 +1988,14 @@ end
 -- -----------------------------
 -- Structured backend lifecycle
 -- -----------------------------
-local SERVER_PID_FILENAME = "lrgenius-server.pid"
-local SERVER_OK_FILENAME = "lrgenius-server.OK"
-local SERVER_LOCK_FILENAME = "lrgenius-server.lock"
+local SERVER_PID_FILENAME = "styleai-server.pid"
+local SERVER_OK_FILENAME = "styleai-server.OK"
+local SERVER_LOCK_FILENAME = "styleai-server.lock"
 
 local serverStartInProgress = false
 
 local function getServerControlDir()
-    -- Backend uses --db-path = "<catalogParent>/lrgenius.db", and writes pid/OK files next to it.
+    -- Backend uses --db-path = "<catalogParent>/styleai.db", and writes pid/OK files next to it.
     return LrPathUtils.parent(LrApplication.activeCatalog():getPath())
 end
 
@@ -2145,7 +2145,7 @@ function SearchIndexAPI.restartBackend()
     while LrDate.currentTime() < deadline do
         if SearchIndexAPI.pingServer() then
             log:info("Backend restarted successfully")
-            local dbPath = LrPathUtils.child(getServerControlDir(), "lrgenius.db")
+            local dbPath = LrPathUtils.child(getServerControlDir(), "styleai.db")
             SearchIndexAPI.initializeCatalog(dbPath)
             return true
         end
@@ -2161,7 +2161,7 @@ function SearchIndexAPI.initializeCatalog(dbPath)
     end
 
     if not dbPath then
-        dbPath = LrPathUtils.child(getServerControlDir(), "lrgenius.db")
+        dbPath = LrPathUtils.child(getServerControlDir(), "styleai.db")
     end
 
     local url = getBaseUrl() .. ENDPOINTS.INITIALIZE
@@ -2240,7 +2240,7 @@ function SearchIndexAPI.startServer(opts)
 
     if SearchIndexAPI.pingServer() then
         log:trace("Search index server is already running, triggering initialization")
-        local dbPath = LrPathUtils.child(getServerControlDir(), "lrgenius.db")
+        local dbPath = LrPathUtils.child(getServerControlDir(), "styleai.db")
         if SearchIndexAPI.initializeCatalog(dbPath) then
             return true
         end
@@ -2257,7 +2257,7 @@ function SearchIndexAPI.startServer(opts)
         return false
     end
 
-    local dbPath = LrPathUtils.child(getServerControlDir(), "lrgenius.db")
+    local dbPath = LrPathUtils.child(getServerControlDir(), "styleai.db")
 
     -- Make sure we don't leave the lock behind on early returns.
     local ok, startResult = LrTasks.pcall(function()
@@ -2270,15 +2270,15 @@ function SearchIndexAPI.startServer(opts)
         -- Check standard system locations first (if installed via PKG/EXE)
         local serverBinary = nil
         if MAC_ENV then
-            serverBinary = "/Applications/LrGeniusAI/Server/lrgenius-server"
+            serverBinary = "/Applications/StyleAI/Server/styleai-server"
         elseif WIN_ENV then
-            serverBinary = "C:\\Program Files\\LrGeniusAI\\backend\\lrgenius-server.cmd"
+            serverBinary = "C:\\Program Files\\StyleAI\\backend\\styleai-server.cmd"
         end
 
         -- Fallback to plugin-local binary (development or old installs)
         if not serverBinary or not LrFileUtils.exists(serverBinary) then
-            local serverDir = LrPathUtils.child(LrPathUtils.parent(_PLUGIN.path), "lrgenius-server")
-            serverBinary = LrPathUtils.child(serverDir, "lrgenius-server")
+            local serverDir = LrPathUtils.child(LrPathUtils.parent(_PLUGIN.path), "styleai-server")
+            serverBinary = LrPathUtils.child(serverDir, "styleai-server")
             if WIN_ENV then
                 local serverLauncherCmd = serverBinary .. ".cmd"
                 local serverExe = serverBinary .. ".exe"
@@ -2304,7 +2304,7 @@ function SearchIndexAPI.startServer(opts)
         elseif MAC_ENV then
             if serverBinary:match("^/Applications") then
                 -- System install: use launchctl to trigger the system-wide service
-                startServerCmd = "launchctl kickstart -k gui/$(id -u)/com.lrgenius.server"
+                startServerCmd = "launchctl kickstart -k gui/$(id -u)/com.styleai.server"
             else
                 -- Local/Dev fallback
                 local envPrefix = "KMP_DUPLICATE_LIB_OK=TRUE "
@@ -2340,12 +2340,12 @@ function SearchIndexAPI.startServer(opts)
         -- Diagnose failure
         local diag = SearchIndexAPI.diagnoseStartupFailure()
         if diag.binaryMissing then
-            log:error(LOC "$$$/LrGeniusAI/Diagnostics/BinaryMissing=The backend server binary is missing from the plugin folder.")
+            log:error(LOC "$$$/StyleAI/Diagnostics/BinaryMissing=The backend server binary is missing from the plugin folder.")
         elseif diag.portBusy then
-            log:error(LOC "$$$/LrGeniusAI/Diagnostics/PortBusy=Port 19819 is already in use by another application.")
+            log:error(LOC "$$$/StyleAI/Diagnostics/PortBusy=Port 19819 is already in use by another application.")
         end
         if diag.logSnippet then
-            log:error(LOC "$$$/LrGeniusAI/Diagnostics/LogSnippet=Recent server errors:" .. "\n" .. diag.logSnippet)
+            log:error(LOC "$$$/StyleAI/Diagnostics/LogSnippet=Recent server errors:" .. "\n" .. diag.logSnippet)
         end
         return false
     end)
@@ -2493,7 +2493,7 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
         if lookupProgressScope and not lookupProgressScope:isCanceled() then
             lookupProgressScope:setPortionComplete(current, total)
             lookupProgressScope:setCaption(
-                LOC("$$$/LrGeniusAI/AnalyzeAndIndex/LookupProgress=Looking up which photos need processing... ^1/^2",
+                LOC("$$$/StyleAI/AnalyzeAndIndex/LookupProgress=Looking up which photos need processing... ^1/^2",
                     tostring(current), tostring(total)))
         end
     end
@@ -2501,7 +2501,7 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
     -- New behavior: use backend to check which photos need processing based on selected tasks
     if taskOptions and type(taskOptions) == "table" then
         if lookupProgressScope then
-            lookupProgressScope:setCaption(LOC "$$$/LrGeniusAI/AnalyzeAndIndex/LookupPhase1=Preparing catalog photos for lookup...")
+            lookupProgressScope:setCaption(LOC "$$$/StyleAI/AnalyzeAndIndex/LookupPhase1=Preparing catalog photos for lookup...")
             lookupProgressScope:setPortionComplete(0, totalCatalog)
         end
 
@@ -2526,7 +2526,7 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
         end
 
         if lookupProgressScope then
-            lookupProgressScope:setCaption(LOC "$$$/LrGeniusAI/AnalyzeAndIndex/LookupPhase2=Checking server for unprocessed photos...")
+            lookupProgressScope:setCaption(LOC "$$$/StyleAI/AnalyzeAndIndex/LookupPhase2=Checking server for unprocessed photos...")
         end
 
 
@@ -2556,7 +2556,7 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
         for _, pid in ipairs(needingPhotoIds) do photoIdSet[pid] = true end
 
         if lookupProgressScope then
-            lookupProgressScope:setCaption(LOC "$$$/LrGeniusAI/AnalyzeAndIndex/LookupPhase3=Matching photos to process...")
+            lookupProgressScope:setCaption(LOC "$$$/StyleAI/AnalyzeAndIndex/LookupPhase3=Matching photos to process...")
             lookupProgressScope:setPortionComplete(0, totalCatalog)
         end
 
@@ -3047,7 +3047,7 @@ function SearchIndexAPI.startClipDownload()
     end
 
     local progressScope = LrProgressScope({
-        title = LOC "$$$/LrGeniusAI/ClipDownload/ProgressTitle=Downloading CLIP AI model for advanced search",
+        title = LOC "$$$/StyleAI/ClipDownload/ProgressTitle=Downloading CLIP AI model for advanced search",
         functionContext = nil,
     })
 
@@ -3067,7 +3067,7 @@ function SearchIndexAPI.startClipDownload()
             if err then
                 ErrorHandler.handleError("Error downloading CLIP model", err)
                 if progressScope ~= nil then
-                    progressScope:setCaption(LOC "$$$/LrGeniusAI/ClipDownload/Error=Error downloading CLIP model: ^1",
+                    progressScope:setCaption(LOC "$$$/StyleAI/ClipDownload/Error=Error downloading CLIP model: ^1",
                         err)
                     progressScope:done()
                 end
@@ -3076,19 +3076,19 @@ function SearchIndexAPI.startClipDownload()
 
             if status ~= nil then
                 if progressScope ~= nil then
-                    progressScope:setCaption(LOC "$$$/LrGeniusAI/ClipDownload/Downloading=Downloading CLIP model...")
+                    progressScope:setCaption(LOC "$$$/StyleAI/ClipDownload/Downloading=Downloading CLIP model...")
                 end
                 if status.status == "downloading" then
                     progressScope:setPortionComplete(status.progress, status.total)
                 elseif status.status == "completed" then
                     log:trace("CLIP model download completed")
                     progressScope:done()
-                    LrDialogs.message(LOC "$$$/LrGeniusAI/ClipDownload/SuccessTitle=CLIP Download",
-                        LOC "$$$/LrGeniusAI/ClipDownload/SuccessMessage=CLIP model downloaded successfully.")
+                    LrDialogs.message(LOC "$$$/StyleAI/ClipDownload/SuccessTitle=CLIP Download",
+                        LOC "$$$/StyleAI/ClipDownload/SuccessMessage=CLIP model downloaded successfully.")
                     break
                 elseif status.status == "error" or (status.error and status.error ~= "null" and status.error ~= "") then
                     local error_msg = status.error or "Unknown download error"
-                    ErrorHandler.handleError(LOC "$$$/LrGeniusAI/ClipDownload/ErrorTitle=Error downloading CLIP model",
+                    ErrorHandler.handleError(LOC "$$$/StyleAI/ClipDownload/ErrorTitle=Error downloading CLIP model",
                         error_msg)
                     progressScope:done()
                     break
@@ -3146,7 +3146,7 @@ function SearchIndexAPI.checkServerHealth()
         -- 1. Check CLIP model
         if res.clip_model == "failed" then
             ErrorHandler.handleError(
-                LOC "$$$/LrGeniusAI/Health/ClipFailed=AI search model failed to load.",
+                LOC "$$$/StyleAI/Health/ClipFailed=AI search model failed to load.",
                 res.clip_error or "Unknown error loading CLIP model."
             )
         end
@@ -3171,8 +3171,8 @@ function SearchIndexAPI.checkServerHealth()
 
         if not hasAvailable and next(providers) ~= nil then
             ErrorHandler.handleError(
-                LOC "$$$/LrGeniusAI/Health/NoProviders=No AI metadata providers are available.",
-                LOC "$$$/LrGeniusAI/Health/NoProvidersDetail=Please configure Ollama, LM Studio, ChatGPT, or Gemini in the plugin preferences."
+                LOC "$$$/StyleAI/Health/NoProviders=No AI metadata providers are available.",
+                LOC "$$$/StyleAI/Health/NoProvidersDetail=Please configure Ollama, LM Studio, ChatGPT, or Gemini in the plugin preferences."
             )
         elseif #failedProviders > 0 then
             log:warn("Some AI providers failed to initialize: " .. table.concat(failedProviders, ", "))
@@ -3190,8 +3190,8 @@ function SearchIndexAPI.diagnoseStartupFailure()
     }
 
     -- 1. Check binary existence
-    local serverDir = LrPathUtils.child(LrPathUtils.parent(_PLUGIN.path), "lrgenius-server")
-    local serverBinary = LrPathUtils.child(serverDir, "lrgenius-server")
+    local serverDir = LrPathUtils.child(LrPathUtils.parent(_PLUGIN.path), "styleai-server")
+    local serverBinary = LrPathUtils.child(serverDir, "styleai-server")
     if WIN_ENV then
         local serverLauncherCmd = serverBinary .. ".cmd"
         local serverExe = serverBinary .. ".exe"
@@ -3218,7 +3218,7 @@ function SearchIndexAPI.diagnoseStartupFailure()
     end
 
     -- 3. Check logs for errors
-    local logPath = LrPathUtils.child(getServerControlDir(), "lrgenius-server.log")
+    local logPath = LrPathUtils.child(getServerControlDir(), "styleai-server.log")
     if LrFileUtils.exists(logPath) then
         local f = io.open(logPath, "r")
         if f then

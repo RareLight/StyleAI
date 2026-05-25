@@ -56,7 +56,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.useKeywordHierarchy = prefs.useKeywordHierarchy or false
     props.useCatalogKeywordStructure = prefs.useCatalogKeywordStructure or false
     props.useTopLevelKeyword = prefs.useTopLevelKeyword or false
-    props.topLevelKeyword = prefs.topLevelKeyword or "LrGeniusAI"
+    props.topLevelKeyword = prefs.topLevelKeyword or "StyleAI"
     props.bilingualKeywords = prefs.bilingualKeywords or false
     props.keywordSecondaryLanguage = prefs.keywordSecondaryLanguage or Defaults.defaultKeywordSecondaryLanguage
 
@@ -126,26 +126,26 @@ local function showAnalyzeAndIndexDialog(ctx)
             -- GENERAL TAB
             --------------------------------------------------------
             f:tab_view_item {
-                title = LOC "$$$/LrGeniusAI/UI/TabGeneral=General",
+                title = LOC "$$$/StyleAI/UI/TabGeneral=General",
                 identifier = 'general',
 
                 -- Scope Selection
                 f:group_box {
-                    title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/Scope=Scope",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/Scope=Scope",
                     fill_horizontal = 1,
                     f:row {
                         f:static_text {
-                            title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/Scope=Scope:",
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/Scope=Scope:",
                             width = share 'labelWidth',
                         },
                         f:popup_menu {
                             value = bind 'scope',
                             width = 300,
                             items = {
-                                { title = LOC "$$$/LrGeniusAI/common/ScopeSelected=Selected photos only",              value = 'selected' },
-                                { title = LOC "$$$/LrGeniusAI/common/ScopeView=Current view",                          value = 'view' },
-                                { title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ScopeAll=All photos in catalog",         value = 'all' },
-                                { title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", value = 'missing' },
+                                { title = LOC "$$$/StyleAI/common/ScopeSelected=Selected photos only",              value = 'selected' },
+                                { title = LOC "$$$/StyleAI/common/ScopeView=Current view",                          value = 'view' },
+                                { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeAll=All photos in catalog",         value = 'all' },
+                                { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", value = 'missing' },
                             },
                         },
                     },
@@ -153,7 +153,7 @@ local function showAnalyzeAndIndexDialog(ctx)
 
                 -- AI Model Settings
                 f:group_box {
-                    title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/AISettings=AI Model",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/AISettings=AI Model",
                     fill_horizontal = 1,
                     f:row {
                         f:static_text {
@@ -168,7 +168,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                     f:row {
                         f:static_text {
-                            title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/Temperature=Temperature:",
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/Temperature=Temperature:",
                             width = share 'labelWidth',
                         },
                         f:slider {
@@ -201,16 +201,16 @@ local function showAnalyzeAndIndexDialog(ctx)
 
                 -- Core Tasks
                 f:group_box {
-                    title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/Tasks=Primary Tasks",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/Tasks=Primary Tasks",
                     fill_horizontal = 1,
                     f:row {
                         f:checkbox {
                             value = bind 'enableEmbeddings',
-                            title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/EnableEmbeddings=Create search embeddings",
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddings=Create search embeddings",
                             enabled = props.clipReady,
                         },
                         f:static_text {
-                            title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ClipNotReady=(OpenCLIP model is missing. Please download it in the Plugin Manager)",
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/ClipNotReady=(OpenCLIP model is missing. Please download it in the Plugin Manager)",
                             text_color = LrColor(1, 0, 0),
                             visible = not props.clipReady,
                             size = "small",
@@ -219,19 +219,19 @@ local function showAnalyzeAndIndexDialog(ctx)
                     f:row {
                         f:checkbox {
                             value = bind 'enableMetadata',
-                            title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/EnableMetadata=Generate AI metadata (Keywords, Title, Caption)",
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableMetadata=Generate AI metadata (Keywords, Title, Caption)",
                         },
                     },
                     f:row {
                         f:checkbox {
                             value = bind 'enableFaces',
-                            title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/EnableFaces=Create face embeddings (Find similar people)",
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableFaces=Create face embeddings (Find similar people)",
                         },
                     },
                     f:row {
                         f:checkbox {
                             value = bind 'enableVertexAI',
-                            title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/EnableVertexAI=Create Vertex AI embeddings (Cloud-based search)",
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableVertexAI=Create Vertex AI embeddings (Cloud-based search)",
                         },
                     },
                 },
@@ -241,11 +241,11 @@ local function showAnalyzeAndIndexDialog(ctx)
             -- METADATA TAB
             --------------------------------------------------------
             f:tab_view_item {
-                title = LOC "$$$/LrGeniusAI/UI/TabMetadata=Metadata Options",
+                title = LOC "$$$/StyleAI/UI/TabMetadata=Metadata Options",
                 identifier = 'metadata',
 
                 f:group_box {
-                    title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/MetadataOptions=Metadata Tasks",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/MetadataOptions=Metadata Tasks",
                     fill_horizontal = 1,
                     f:row {
                         f:checkbox { value = bind 'generateKeywords', title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/keywords=Keywords" },
@@ -259,13 +259,13 @@ local function showAnalyzeAndIndexDialog(ctx)
                 },
 
                 f:group_box {
-                    title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/HierarchyOptions=Hierarchy & Language",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/HierarchyOptions=Hierarchy & Language",
                     fill_horizontal = 1,
                     f:row {
                         f:static_text { title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/useKeywordHierarchy=Keyword Hierarchy:", width = share 'labelWidth' },
                         f:checkbox {
                             value = bind 'useKeywordHierarchy',
-                            title = LOC "$$$/LrGeniusAI/UI/EnableHierarchy=Enable",
+                            title = LOC "$$$/StyleAI/UI/EnableHierarchy=Enable",
                         },
                         f:push_button {
                             enabled = bind 'useKeywordHierarchy',
@@ -277,7 +277,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         f:spacer { width = share 'labelWidth' },
                         f:checkbox {
                             value = bind 'useCatalogKeywordStructure',
-                            title = LOC "$$$/LrGeniusAI/UI/UseCatalogKeywordStructure=Use existing catalog structure"
+                            title = LOC "$$$/StyleAI/UI/UseCatalogKeywordStructure=Use existing catalog structure"
                         }
                     },
                     f:row {
@@ -290,7 +290,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         },
                     },
                     f:row {
-                        f:static_text { title = LOC "$$$/LrGeniusAI/UI/BilingualKeywords=Bilingual Synonyms:", width = share 'labelWidth' },
+                        f:static_text { title = LOC "$$$/StyleAI/UI/BilingualKeywords=Bilingual Synonyms:", width = share 'labelWidth' },
                         f:checkbox { value = bind 'bilingualKeywords', enabled = bind 'generateKeywords' },
                         f:combo_box {
                             value = bind 'keywordSecondaryLanguage',
@@ -302,7 +302,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                 },
 
                 f:group_box {
-                    title = LOC "$$$/LrGeniusAI/UI/PromptTitle=Instructions / Prompt",
+                    title = LOC "$$$/StyleAI/UI/PromptTitle=Instructions / Prompt",
                     fill_horizontal = 1,
                     f:row {
                         f:static_text { title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/editPrompts=Template:", width = share 'labelWidth' },
@@ -317,7 +317,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         },
                     },
                     f:row {
-                        f:static_text { title = LOC "$$$/LrGeniusAI/PromptConfig/PromptField=Custom Prompt:", width = share 'labelWidth' },
+                        f:static_text { title = LOC "$$$/StyleAI/PromptConfig/PromptField=Custom Prompt:", width = share 'labelWidth' },
                         f:scrolled_view {
                             height_in_lines = 8,
                             fill_horizontal = 1,
@@ -338,21 +338,21 @@ local function showAnalyzeAndIndexDialog(ctx)
             -- CONTEXT & SAVE TAB
             --------------------------------------------------------
             f:tab_view_item {
-                title = LOC "$$$/LrGeniusAI/UI/TabContext=Context & Save",
+                title = LOC "$$$/StyleAI/UI/TabContext=Context & Save",
                 identifier = 'context',
 
                 -- Section 1: What context to send to the AI
                 f:group_box {
-                    title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ContextOptions=AI Context",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextOptions=AI Context",
                     fill_horizontal = 1,
                     f:static_text {
-                        title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ContextHint=Extra information sent alongside photos to improve AI accuracy.",
+                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextHint=Extra information sent alongside photos to improve AI accuracy.",
                         fill_horizontal = 1,
                     },
                     f:spacer { height = 4 },
                     f:row {
-                        f:static_text { title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ContextAutoLabel=Automatic:", width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'submitGPS', title = LOC "$$$/LrGeniusAI/MetadataProvider/GPS=GPS Coordinates" },
+                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextAutoLabel=Automatic:", width = share 'ctxLabelWidth' },
+                        f:checkbox { value = bind 'submitGPS', title = LOC "$$$/StyleAI/MetadataProvider/GPS=GPS Coordinates" },
                     },
                     f:row {
                         f:spacer { width = share 'ctxLabelWidth' },
@@ -364,18 +364,18 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                     f:separator { fill_horizontal = 1 },
                     f:row {
-                        f:static_text { title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ContextManualLabel=Manual:", width = share 'ctxLabelWidth' },
+                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextManualLabel=Manual:", width = share 'ctxLabelWidth' },
                         f:checkbox { value = bind 'showPhotoContextDialog', title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/showPhotoContextDialog=Ask for context before each batch" },
                     },
                 },
 
                 -- Section 2: What to do with the results
                 f:group_box {
-                    title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/CatalogIntegration=Catalog Integration",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/CatalogIntegration=Catalog Integration",
                     fill_horizontal = 1,
                     f:row {
-                        f:static_text { title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/SaveLabel=Save:", width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'saveDataToCatalog', title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/SaveDataToCatalog=Write generated data to Lightroom catalog" },
+                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/SaveLabel=Save:", width = share 'ctxLabelWidth' },
+                        f:checkbox { value = bind 'saveDataToCatalog', title = LOC "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalog=Write generated data to Lightroom catalog" },
                     },
                     f:row {
                         f:spacer { width = share 'ctxLabelWidth' },
@@ -387,27 +387,27 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                     f:separator { fill_horizontal = 1 },
                     f:row {
-                        f:static_text { title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/PreSyncLabel=Pre-sync:", width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'enableImportBeforeIndex', title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/EnableImportBeforeIndex=Import metadata from catalog before indexing" },
+                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/PreSyncLabel=Pre-sync:", width = share 'ctxLabelWidth' },
+                        f:checkbox { value = bind 'enableImportBeforeIndex', title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableImportBeforeIndex=Import metadata from catalog before indexing" },
                     },
                 },
 
                 -- Section 3: How to handle existing data
                 f:group_box {
-                    title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/DataHandling=Data Handling",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/DataHandling=Data Handling",
                     fill_horizontal = 1,
                     f:row {
-                        f:static_text { title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/ModeLabel=Mode:", width = share 'ctxLabelWidth' },
-                        f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/RegenerateMetadata=Regenerate all (overwrite existing AI data)", checked_value = true },
+                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ModeLabel=Mode:", width = share 'ctxLabelWidth' },
+                        f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/RegenerateMetadata=Regenerate all (overwrite existing AI data)", checked_value = true },
                     },
                     f:row {
                         f:spacer { width = share 'ctxLabelWidth' },
-                        f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/SkipExisting=Skip photos with existing data (Default)", checked_value = false },
+                        f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/SkipExisting=Skip photos with existing data (Default)", checked_value = false },
                     },
                     f:separator { fill_horizontal = 1 },
                     f:row {
-                        f:static_text { title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/WriteMode=Write:", width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'appendMetadata', title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/AppendMetadata=Append to existing values instead of replacing" },
+                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/WriteMode=Write:", width = share 'ctxLabelWidth' },
+                        f:checkbox { value = bind 'appendMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadata=Append to existing values instead of replacing" },
                     },
                 },
             }, -- end Context & Save tab
@@ -415,10 +415,10 @@ local function showAnalyzeAndIndexDialog(ctx)
     }
 
     local result = LrDialogs.presentModalDialog {
-        title = LOC "$$$/LrGeniusAI/AnalyzeAndIndex/WindowTitle=Analyze and Index Photos",
+        title = LOC "$$$/StyleAI/AnalyzeAndIndex/WindowTitle=Analyze and Index Photos",
         contents = contents,
-        actionVerb = LOC "$$$/LrGeniusAI/common/Start=Start",
-        cancelVerb = LOC "$$$/LrGeniusAI/common/Cancel=Cancel",
+        actionVerb = LOC "$$$/StyleAI/common/Start=Start",
+        cancelVerb = LOC "$$$/StyleAI/common/Cancel=Cancel",
         resizable = true,
     }
 
@@ -615,7 +615,7 @@ LrTasks.startAsyncTask(function()
 			and not props.enableVertexAI
 		then
 			LrDialogs.showError(
-				LOC("$$$/LrGeniusAI/AnalyzeAndIndex/NoTasksSelected=Please select at least one task to perform.")
+				LOC("$$$/StyleAI/AnalyzeAndIndex/NoTasksSelected=Please select at least one task to perform.")
 			)
 			return
 		end
@@ -624,12 +624,12 @@ LrTasks.startAsyncTask(function()
 		-- the backend will treat every photo as needing processing, so delta filtering has no effect.
 		if props.scope == "missing" and props.regenerateMetadata then
 			local confirm = LrDialogs.confirm(
-				LOC("$$$/LrGeniusAI/AnalyzeAndIndex/RegenerateWithDeltaTitle=Scope conflict"),
+				LOC("$$$/StyleAI/AnalyzeAndIndex/RegenerateWithDeltaTitle=Scope conflict"),
 				LOC(
-					'$$$/LrGeniusAI/AnalyzeAndIndex/RegenerateWithDeltaMessage=You selected "New or unprocessed photos" but "Regenerate all" is also enabled. All photos will be processed — the delta filter has no effect. Continue?'
+					'$$$/StyleAI/AnalyzeAndIndex/RegenerateWithDeltaMessage=You selected "New or unprocessed photos" but "Regenerate all" is also enabled. All photos will be processed — the delta filter has no effect. Continue?'
 				),
-				LOC("$$$/LrGeniusAI/common/Continue=Continue"),
-				LOC("$$$/LrGeniusAI/common/Cancel=Cancel")
+				LOC("$$$/StyleAI/common/Continue=Continue"),
+				LOC("$$$/StyleAI/common/Cancel=Cancel")
 			)
 			if confirm ~= "ok" then
 				return
@@ -701,7 +701,7 @@ LrTasks.startAsyncTask(function()
 			if prefs.chatgptApiKey == nil or prefs.chatgptApiKey == "" then
 				LrDialogs.showError(
 					LOC(
-						"$$$/LrGeniusAI/AnalyzeAndIndex/MissingChatGPTAPIKey=ChatGPT API key is not configured. Please set it in the plugin preferences."
+						"$$$/StyleAI/AnalyzeAndIndex/MissingChatGPTAPIKey=ChatGPT API key is not configured. Please set it in the plugin preferences."
 					)
 				)
 				return
@@ -711,7 +711,7 @@ LrTasks.startAsyncTask(function()
 			if prefs.geminiApiKey == nil or prefs.geminiApiKey == "" then
 				LrDialogs.showError(
 					LOC(
-						"$$$/LrGeniusAI/AnalyzeAndIndex/MissingGeminiAPIKey=Gemini API key is not configured. Please set it in the plugin preferences."
+						"$$$/StyleAI/AnalyzeAndIndex/MissingGeminiAPIKey=Gemini API key is not configured. Please set it in the plugin preferences."
 					)
 				)
 				return
@@ -725,7 +725,7 @@ LrTasks.startAsyncTask(function()
 			if projectId == "" then
 				LrDialogs.showError(
 					LOC(
-						"$$$/LrGeniusAI/AnalyzeAndIndex/MissingVertexConfig=Vertex AI Project ID is not configured. Please set it in the plugin preferences."
+						"$$$/StyleAI/AnalyzeAndIndex/MissingVertexConfig=Vertex AI Project ID is not configured. Please set it in the plugin preferences."
 					)
 				)
 				return
@@ -742,7 +742,7 @@ LrTasks.startAsyncTask(function()
 
 		-- Create progress scope
 		local progressScope = LrProgressScope({
-			title = LOC("$$$/LrGeniusAI/AnalyzeAndIndex/ProgressTitle=Processing photos..."),
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/ProgressTitle=Processing photos..."),
 			functionContext = context,
 		})
 
@@ -767,9 +767,9 @@ LrTasks.startAsyncTask(function()
 			progressScope:done()
 			if errorStatus == "Invalid view" then
 				LrDialogs.message(
-					LOC("$$$/LrGeniusAI/common/InvalidViewTitle=Invalid View"),
+					LOC("$$$/StyleAI/common/InvalidViewTitle=Invalid View"),
 					LOC(
-						"$$$/LrGeniusAI/common/InvalidViewMessage=The 'Current view' scope only works when a folder or collection is selected."
+						"$$$/StyleAI/common/InvalidViewMessage=The 'Current view' scope only works when a folder or collection is selected."
 					)
 				)
 			else
@@ -777,8 +777,8 @@ LrTasks.startAsyncTask(function()
 					"No photos found to process in scope: " .. props.scope .. " errorStatus: " .. (errorStatus or "nil")
 				)
 				LrDialogs.message(
-					LOC("$$$/LrGeniusAI/common/NoPhotosTitle=No Photos Found"),
-					LOC("$$$/LrGeniusAI/common/NoPhotosInScope=No photos found in the selected scope.")
+					LOC("$$$/StyleAI/common/NoPhotosTitle=No Photos Found"),
+					LOC("$$$/StyleAI/common/NoPhotosInScope=No photos found in the selected scope.")
 				)
 			end
 			return
@@ -786,7 +786,7 @@ LrTasks.startAsyncTask(function()
 
 		-- Per-photo progress for import and analysis (denominator = photos to process, not 1)
 		progressScope:setCaption(
-			LOC("$$$/LrGeniusAI/AnalyzeAndIndex/ProgressCount=^1 photos to process", tostring(#photosToProcess))
+			LOC("$$$/StyleAI/AnalyzeAndIndex/ProgressCount=^1 photos to process", tostring(#photosToProcess))
 		)
 		progressScope:setPortionComplete(0, #photosToProcess)
 
@@ -866,7 +866,7 @@ LrTasks.startAsyncTask(function()
 			and status ~= "allfailed"
 			and #processedPhotos > 0
 		then
-			progressScope:setCaption(LOC("$$$/LrGeniusAI/AnalyzeAndIndex/DeClutterProgress=Deduplicating keywords..."))
+			progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/DeClutterProgress=Deduplicating keywords..."))
 			LrTasks.yield()
 
 			local allNewNames = {}
@@ -1058,19 +1058,19 @@ LrTasks.startAsyncTask(function()
 		-- Show completion message based on status
 		if status == "canceled" then
 			LrDialogs.message(
-				LOC("$$$/LrGeniusAI/common/TaskCanceled/Title=Task Canceled"),
-				LOC("$$$/LrGeniusAI/common/TaskCanceled/Message=The task was canceled by the user.")
+				LOC("$$$/StyleAI/common/TaskCanceled/Title=Task Canceled"),
+				LOC("$$$/StyleAI/common/TaskCanceled/Message=The task was canceled by the user.")
 			)
 		elseif status == "allfailed" then
 			if combinedError then
 				ErrorHandler.handleError(
-					LOC("$$$/LrGeniusAI/AnalyzeAndIndex/AllFailedMessage=All ^1 photos failed to process.", processed),
+					LOC("$$$/StyleAI/AnalyzeAndIndex/AllFailedMessage=All ^1 photos failed to process.", processed),
 					combinedError
 				)
 			else
 				LrDialogs.message(
-					LOC("$$$/LrGeniusAI/common/TaskFailed/Title=Task Failed"),
-					LOC("$$$/LrGeniusAI/AnalyzeAndIndex/AllFailedMessage=All ^1 photos failed to process.", processed)
+					LOC("$$$/StyleAI/common/TaskFailed/Title=Task Failed"),
+					LOC("$$$/StyleAI/AnalyzeAndIndex/AllFailedMessage=All ^1 photos failed to process.", processed)
 				)
 			end
 		elseif status == "somefailed" then
@@ -1078,7 +1078,7 @@ LrTasks.startAsyncTask(function()
 			if combinedError then
 				ErrorHandler.handleError(
 					LOC(
-						"$$$/LrGeniusAI/AnalyzeAndIndex/SomeFailedMessage=^1 of ^2 photos processed successfully. ^3 failed.",
+						"$$$/StyleAI/AnalyzeAndIndex/SomeFailedMessage=^1 of ^2 photos processed successfully. ^3 failed.",
 						successCount,
 						processed,
 						failed
@@ -1087,9 +1087,9 @@ LrTasks.startAsyncTask(function()
 				)
 			else
 				LrDialogs.message(
-					LOC("$$$/LrGeniusAI/common/TaskCompleted/Title=Task Completed with Errors"),
+					LOC("$$$/StyleAI/common/TaskCompleted/Title=Task Completed with Errors"),
 					LOC(
-						"$$$/LrGeniusAI/AnalyzeAndIndex/SomeFailedMessage=^1 of ^2 photos processed successfully. ^3 failed.",
+						"$$$/StyleAI/AnalyzeAndIndex/SomeFailedMessage=^1 of ^2 photos processed successfully. ^3 failed.",
 						successCount,
 						processed,
 						failed
@@ -1098,12 +1098,12 @@ LrTasks.startAsyncTask(function()
 			end
 		else -- success
 			local msg =
-				LOC("$$$/LrGeniusAI/AnalyzeAndIndex/SuccessMessage=Successfully processed ^1 photos.", processed)
+				LOC("$$$/StyleAI/AnalyzeAndIndex/SuccessMessage=Successfully processed ^1 photos.", processed)
 			if combinedWarnings then
 				msg = msg .. "\n\nWarnings:\n" .. combinedWarnings
-				LrDialogs.message(LOC("$$$/LrGeniusAI/common/TaskCompleted/Title=Task Completed with Warnings"), msg)
+				LrDialogs.message(LOC("$$$/StyleAI/common/TaskCompleted/Title=Task Completed with Warnings"), msg)
 			else
-				LrDialogs.message(LOC("$$$/LrGeniusAI/common/TaskCompleted/Title=Task Completed"), msg)
+				LrDialogs.message(LOC("$$$/StyleAI/common/TaskCompleted/Title=Task Completed"), msg)
 			end
 		end
 

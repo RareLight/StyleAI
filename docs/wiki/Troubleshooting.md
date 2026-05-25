@@ -1,10 +1,10 @@
 # Troubleshooting
 
-> Tips and solutions for common issues when running LrGeniusAI.
+> Tips and solutions for common issues when running StyleAI.
 
 ## GUI Error Reporting
 
-Recent versions of LrGeniusAI have transitioned from silent, log-file-based error tracking to transparent, actionable GUI error dialogs directly within Lightroom. This means that if something fails behind the scenes—whether during batch indexing or AI editing—you will be notified immediately.
+Recent versions of StyleAI have transitioned from silent, log-file-based error tracking to transparent, actionable GUI error dialogs directly within Lightroom. This means that if something fails behind the scenes—whether during batch indexing or AI editing—you will be notified immediately.
 
 ### Task Completion Summaries
 
@@ -18,9 +18,9 @@ A detailed report of the errors will be attached to the dialog, enabling you to 
 
 ### 0. Installer & Security Warnings (SmartScreen / Gatekeeper)
 
-Since LrGeniusAI installers are not currently code-signed, your OS may block them.
+Since StyleAI installers are not currently code-signed, your OS may block them.
 
-- **Symptom**: "Windows protected your PC" or "LrGeniusAI.pkg cannot be opened because it is from an unidentified developer".
+- **Symptom**: "Windows protected your PC" or "StyleAI.pkg cannot be opened because it is from an unidentified developer".
 - **Resolution**: Refer to the [Getting Started](Getting-Started#%E2%9A%A0%EF%B8%8F-bypassing-security-warnings-unsigned-installers) guide for OS-specific bypass steps. This is a one-time requirement during installation.
 
 ### 1. Missing OpenCLIP Model
@@ -36,7 +36,7 @@ Lightroom communicates with the `geniusai-server` over a local network port (def
 
 - **Symptom**: "Cannot connect to server" or "Connection Refused" errors.
 - **Resolution**: 
-  1. Open `File -> Plug-in Manager -> LrGeniusAI -> Backend Server`.
+  1. Open `File -> Plug-in Manager -> StyleAI -> Backend Server`.
   2. Verify the server URL `http://127.0.0.1:8000` matches where your server is running.
   3. Ensure the server terminal/console hasn't crashed.
 
