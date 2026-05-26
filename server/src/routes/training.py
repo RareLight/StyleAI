@@ -14,6 +14,7 @@ DELETE /training        – Clear all training examples
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from flask import Blueprint, jsonify, request
 from PIL import Image

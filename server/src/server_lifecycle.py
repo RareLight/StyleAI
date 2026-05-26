@@ -1,6 +1,5 @@
 import os
 import time
-import signal
 import config
 from config import logger, IMAGE_MODEL_ID, CLIP_MODEL_NAME, TORCH_DEVICE
 import open_clip

@@ -24,6 +24,7 @@ from routes.style_edit import style_edit_bp
 from routes.style_catalog import style_catalog_bp
 from services import chroma as service_chroma
 from services import db as service_db
+from services import persons as service_persons
 
 app = Flask(__name__)
 logger.info("Flask app created")

@@ -264,9 +264,6 @@ def main():
 
     # Try to load edited JPEGs and compute histogram signatures
     try:
-        import numpy as np
-        from PIL import Image
-
         edited_jpgs = list(edited_dir.glob("*.jpg"))
         if edited_jpgs:
             print(f"\nLoading {len(edited_jpgs)} edited JPEGs for histogram analysis...")
