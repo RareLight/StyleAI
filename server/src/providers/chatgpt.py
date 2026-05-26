@@ -2,7 +2,7 @@
 ChatGPT/OpenAI Provider for metadata generation using OpenAI API
 """
 import json
-from typing import Any, override
+from typing import Any
 from .base import (
     LLMProviderBase,
     EditGenerationRequest,

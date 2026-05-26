@@ -12,6 +12,8 @@ the regular LLM-backed edit pipeline (re-using existing few-shot injection).
 
 from __future__ import annotations
 
+from typing import Any
+
 from flask import Blueprint, jsonify, request
 
 from config import logger
