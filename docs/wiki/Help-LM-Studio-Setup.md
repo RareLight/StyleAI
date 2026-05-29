@@ -1,6 +1,6 @@
 # Help: LM Studio Setup
 
-> Migrated from `lrgenius.com/help/lmstudio-setup` and curated for repo docs.  
+> Migrated from `github.com/RareLight/StyleAI/wiki/lmstudio-setup` and curated for repo docs.  
 > Screenshot references were intentionally removed.
 
 ## 1. Install LM Studio

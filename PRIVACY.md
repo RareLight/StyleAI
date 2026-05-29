@@ -72,7 +72,7 @@ If you utilize cloud features, please refer to the privacy policies of the suppo
 
 As the developer, I (Bastian Machek) have no access to your data. If you have questions about how the plugin handles specific workflows, please reach out:
 
-- **Website:** [lrgenius.com/help](http://lrgenius.com/help/)
+- **Website:** [github.com/RareLight/StyleAI/wiki](https://github.com/RareLight/StyleAI/wiki)
 - **GitHub:** [Report an Issue](https://github.com/RareLight/StyleAI/issues)
 
 > [!TIP]

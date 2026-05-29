@@ -1,4 +1,4 @@
-name: Build LrGeniusAI Plugin and Server
+name: Build StyleAI Plugin and Server
 
 on:
   push:
@@ -27,7 +27,7 @@ jobs:
             python_arch: '3.12'
             miniconda_arch: arm64
 
-    name: Build LrGeniusAI - ${{ matrix.os_name }}-${{ matrix.arch }}
+    name: Build StyleAI - ${{ matrix.os_name }}-${{ matrix.arch }}
 
     steps:
       - name: Checkout repository
@@ -60,7 +60,7 @@ jobs:
           MINOR=${MINOR:-0}
           REVISION=${REVISION:-0}
           BUILD_DATE=$(date +%Y%m%d)
-          INFO_LUA="plugin/LrGeniusAI.lrdevplugin/Info.lua"
+          INFO_LUA="plugin/StyleAI.lrdevplugin/Info.lua"
           sed 's/Info.MAJOR = .*/Info.MAJOR = '"$MAJOR"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
           sed 's/Info.MINOR = .*/Info.MINOR = '"$MINOR"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
           sed 's/Info.REVISION = .*/Info.REVISION = '"$REVISION"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
@@ -84,7 +84,7 @@ jobs:
       - name: Setup Miniconda
         uses: conda-incubator/setup-miniconda@v3
         with:
-          activate-environment: geniusai_server
+          activate-environment: styleai_server
           environment-file: environment.yml
           python-version: ${{ matrix.python_arch }}
           auto-activate-base: false
@@ -97,17 +97,17 @@ jobs:
           pip uninstall -y pillow
           pip install --force-reinstall --no-cache-dir pillow
 
-      - name: Build geniusai-server
+      - name: Build styleai-server
         shell: bash -l {0}
         env:
           KMP_DUPLICATE_LIB_OK: 'TRUE'
-        run: pyinstaller geniusai_server.spec --noconfirm
+        run: pyinstaller styleai_server.spec --noconfirm
           
       - name: Prepare plugin files
         shell: bash
         run: |
           BUILD_DIR="build"
-          PLUGIN_DIR="$BUILD_DIR/LrGeniusAI.lrplugin"
+          PLUGIN_DIR="$BUILD_DIR/StyleAI.lrplugin"
           
           mkdir -p $PLUGIN_DIR
           
@@ -115,20 +115,20 @@ jobs:
           cp -r dist/* $BUILD_DIR/
           
           echo "Copying plugin files..."
-          cp plugin/LrGeniusAI.lrdevplugin/*.lua $PLUGIN_DIR/
-          cp plugin/LrGeniusAI.lrdevplugin/TranslatedStrings_*.txt $PLUGIN_DIR/
+          cp plugin/StyleAI.lrdevplugin/*.lua $PLUGIN_DIR/
+          cp plugin/StyleAI.lrdevplugin/TranslatedStrings_*.txt $PLUGIN_DIR/
 
           if [ "${{ matrix.os_name }}" == "macos" ]; then
-            if [ -f "$BUILD_DIR/lrgenius-server/lrgenius-server" ]; then
+            if [ -f "$BUILD_DIR/styleai-server/styleai-server" ]; then
               echo "Setting executable permissions for macOS server binary..."
-              chmod +x $BUILD_DIR/lrgenius-server/lrgenius-server
+              chmod +x $BUILD_DIR/styleai-server/styleai-server
             fi
           fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
-          name: lrgenius-ai-${{ matrix.os_name }}-${{ matrix.arch }}
+          name: styleai-${{ matrix.os_name }}-${{ matrix.arch }}
           path: build/
           retention-days: 1
 
@@ -168,7 +168,7 @@ jobs:
           MINOR=${MINOR:-0}
           REVISION=${REVISION:-0}
           BUILD_DATE=$(date +%Y%m%d)
-          INFO_LUA="plugin/LrGeniusAI.lrdevplugin/Info.lua"
+          INFO_LUA="plugin/StyleAI.lrdevplugin/Info.lua"
           sed 's/Info.MAJOR = .*/Info.MAJOR = '"$MAJOR"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
           sed 's/Info.MINOR = .*/Info.MINOR = '"$MINOR"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
           sed 's/Info.REVISION = .*/Info.REVISION = '"$REVISION"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
@@ -180,12 +180,12 @@ jobs:
         run: |
           BUILD_DIR="build-plugin-only"
           mkdir -p "$BUILD_DIR"
-          cp -r plugin/LrGeniusAI.lrdevplugin "$BUILD_DIR/"
+          cp -r plugin/StyleAI.lrdevplugin "$BUILD_DIR/"
 
       - name: Upload plugin-only artifact
         uses: actions/upload-artifact@v6
         with:
-          name: lrgenius-ai-plugin-docker-backend
+          name: styleai-plugin-docker-backend
           path: build-plugin-only/
           retention-days: 1
 
@@ -231,7 +231,7 @@ jobs:
         shell: bash
         run: |
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "registry_image=ghcr.io/${OWNER_LC}/lrgeniusai" >> "$GITHUB_OUTPUT"
+          echo "registry_image=ghcr.io/${OWNER_LC}/styleai" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -254,8 +254,8 @@ jobs:
           platforms: ${{ matrix.docker_platform }}
           push: true
           tags: ${{ steps.image-name.outputs.registry_image }}:${{ github.ref_name }}-${{ matrix.arch }}
-          cache-from: type=gha,scope=lrgeniusai-server-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=lrgeniusai-server-${{ matrix.arch }}
+          cache-from: type=gha,scope=styleai-server-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=styleai-server-${{ matrix.arch }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ github.ref_name }}
@@ -264,7 +264,7 @@ jobs:
           # generate-summary: false
 
   # Combine per-arch pushes into one multi-arch :latest so `docker compose pull` works
-  # with ghcr.io/.../lrgeniusai:latest (amd64 and arm64 clients resolve correctly).
+  # with ghcr.io/.../styleai:latest (amd64 and arm64 clients resolve correctly).
   publish-docker-manifest:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-docker-images, create-release]
@@ -290,7 +290,7 @@ jobs:
         run: |
           set -euo pipefail
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          IMG="ghcr.io/${OWNER_LC}/lrgeniusai"
+          IMG="ghcr.io/${OWNER_LC}/styleai"
           TAG="${{ github.ref_name }}"
           docker buildx imagetools create \
             --tag "${IMG}:latest" \
@@ -309,7 +309,7 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: lrgenius-ai-*
+          pattern: styleai-*
           path: artifacts
       
       - name: Zip artifacts
@@ -318,21 +318,21 @@ jobs:
           
           cd artifacts
           
-          if [ -d "lrgenius-ai-windows-x64" ]; then
-            cd lrgenius-ai-windows-x64
-            zip -r ../LrGeniusAI-windows-x64-${VERSION}.zip .
+          if [ -d "styleai-windows-x64" ]; then
+            cd styleai-windows-x64
+            zip -r ../StyleAI-windows-x64-${VERSION}.zip .
             cd ..
           fi
 
-          if [ -d "lrgenius-ai-macos-arm64" ]; then
-            cd lrgenius-ai-macos-arm64
-            zip -r ../LrGeniusAI-macos-arm64-${VERSION}.zip .
+          if [ -d "styleai-macos-arm64" ]; then
+            cd styleai-macos-arm64
+            zip -r ../StyleAI-macos-arm64-${VERSION}.zip .
             cd ..
           fi
 
-          if [ -d "lrgenius-ai-plugin-docker-backend" ]; then
-            cd lrgenius-ai-plugin-docker-backend
-            zip -r ../LrGeniusAI-plugin-docker-backend-${VERSION}.zip .
+          if [ -d "styleai-plugin-docker-backend" ]; then
+            cd styleai-plugin-docker-backend
+            zip -r ../StyleAI-plugin-docker-backend-${VERSION}.zip .
             cd ..
           fi
           
@@ -358,25 +358,25 @@ jobs:
           cat >> release_notes.md << 'NOTES'
 
           ## Known issues
-          This release has issues with Windows Smartscreen and macOS Gatekeeper, which will prevent the start of the LrGenius backend. You will get an error in Lightroom that the LrGeniusAI database cannot be started.
+          This release has issues with Windows Smartscreen and macOS Gatekeeper, which will prevent the start of the StyleAI backend. You will get an error in Lightroom that the StyleAI database cannot be started.
           Which means depending on your platform there are necessary manual steps to do before the first use. 
 
           ## Manual steps
           **macOS**
           - Open a Terminal
           - `cd <directory with contents of the downloaded zip file>`
-          - `chmod +x lrgenius-server/lrgenius-server`
-          - `xattr -dr com.apple.quarantine lrgenius-server`
+          - `chmod +x styleai-server/styleai-server`
+          - `xattr -dr com.apple.quarantine styleai-server`
 
           **Windows**
           - Open Explorer go to folder where you extracted the zip file.
-          - Go to the lrgenius-server sub directory.
-          - Double-click lrgenius-server.exe
+          - Go to the styleai-server sub directory.
+          - Double-click styleai-server.exe
           - A Windows Smartscreen warning will appear.
           - Click More -> Run anyway
 
           ## Docker backend
-          - Users running the backend via Docker can use the `LrGeniusAI-plugin-docker-backend-<version>.zip` asset.
+          - Users running the backend via Docker can use the `StyleAI-plugin-docker-backend-<version>.zip` asset.
           NOTES
 
       - name: Create release
@@ -386,7 +386,7 @@ jobs:
           name: ${{ steps.release-meta.outputs.release_name }}
           body_path: release_notes.md
           files: |
-            artifacts/LrGeniusAI-plugin-docker-backend-${{ github.ref_name }}.zip
+            artifacts/StyleAI-plugin-docker-backend-${{ github.ref_name }}.zip
           draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: false

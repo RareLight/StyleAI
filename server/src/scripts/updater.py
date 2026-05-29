@@ -227,9 +227,7 @@ def _apply_elevated_macos(ops: list[tuple[Path, Path]]) -> None:
 
 def _apply_elevated_windows(ops: list[tuple[Path, Path]]) -> None:
     """Run all (src, dst) copies in a single UAC-elevated PowerShell call (one prompt)."""
-    script_path = Path(
-        os.path.expanduser("~/.styleai/update_tmp/apply_elevated.ps1")
-    )
+    script_path = Path(os.path.expanduser("~/.styleai/update_tmp/apply_elevated.ps1"))
     script_path.parent.mkdir(parents=True, exist_ok=True)
     with open(script_path, "w", encoding="utf-8") as f:
         f.write("$ErrorActionPreference = 'Stop'\n")

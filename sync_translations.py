@@ -82,10 +82,11 @@ def sync_translations(lua_dir, target_path, base_strings=None):
     return load_translated_strings(target_path)
 
 if __name__ == "__main__":
-    lua_dir = "/Users/bm/src/StyleAI/plugin/StyleAI.lrdevplugin"
-    trans_en = "/Users/bm/src/StyleAI/plugin/StyleAI.lrdevplugin/TranslatedStrings_en.txt"
-    trans_de = "/Users/bm/src/StyleAI/plugin/StyleAI.lrdevplugin/TranslatedStrings_de.txt"
-    trans_fr = "/Users/bm/src/StyleAI/plugin/StyleAI.lrdevplugin/TranslatedStrings_fr.txt"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    lua_dir = os.path.join(base_dir, "plugin", "StyleAI.lrdevplugin")
+    trans_en = os.path.join(lua_dir, "TranslatedStrings_en.txt")
+    trans_de = os.path.join(lua_dir, "TranslatedStrings_de.txt")
+    trans_fr = os.path.join(lua_dir, "TranslatedStrings_fr.txt")
     
     en_strings = sync_translations(lua_dir, trans_en)
     print("Synched English.")

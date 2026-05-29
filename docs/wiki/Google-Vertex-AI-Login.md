@@ -1,6 +1,6 @@
 # ☁️ Google Vertex AI Login (gcloud)
 
-If you want to use Vertex AI with StyleAI, run the login on the machine where `geniusai-server` is running.
+If you want to use Vertex AI with StyleAI, run the login on the machine where `styleai-server` is running.
 
 ## macOS
 
@@ -52,25 +52,25 @@ docker compose up -d --build
 2. Set the Vertex project inside the running container:
 
 ```bash
-docker compose exec geniusai-server gcloud config set project YOUR_PROJECT_ID
+docker compose exec styleai-server gcloud config set project YOUR_PROJECT_ID
 ```
 
 3. Login for Application Default Credentials (ADC):
 
 ```bash
-docker compose exec geniusai-server gcloud auth application-default login
+docker compose exec styleai-server gcloud auth application-default login
 ```
 
 4. Optional verification:
 
 ```bash
-docker compose exec geniusai-server gcloud auth application-default print-access-token
+docker compose exec styleai-server gcloud auth application-default print-access-token
 ```
 
 For headless SSH hosts without a browser, use:
 
 ```bash
-docker compose exec geniusai-server gcloud auth application-default login --no-browser
+docker compose exec styleai-server gcloud auth application-default login --no-browser
 ```
 
 Then follow the remote bootstrap flow shown by `gcloud` on a second trusted machine that has a browser and Google Cloud CLI installed.

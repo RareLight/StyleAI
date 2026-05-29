@@ -128,9 +128,7 @@ def test_import_invalid_data():
 
 
 def test_migrate_skips_when_no_examples(monkeypatch):
-    monkeypatch.setattr(
-        training_service, "list_training_examples", lambda: []
-    )
+    monkeypatch.setattr(training_service, "list_training_examples", lambda: [])
     result = sc.migrate_legacy_training()
     assert result["status"] == "skipped"
 
@@ -160,7 +158,11 @@ def test_find_matching_styles_exact_camera_and_genre(sample_style):
         camera_make="NIKON CORPORATION",
         camera_model="NIKON Z 7",
         scene_tags=["scene_architecture"],
-        exposure_metrics={"exp_lum_mean": 0.45, "exp_contrast": 0.30, "exp_warmth_proxy": 0.28},
+        exposure_metrics={
+            "exp_lum_mean": 0.45,
+            "exp_contrast": 0.30,
+            "exp_warmth_proxy": 0.28,
+        },
         camera_profile="Nikon Z7 Linear",
     )
     assert len(matches) == 1
@@ -218,11 +220,18 @@ def test_get_style_recipe_computes_mean(monkeypatch):
 
     # Mock linked examples with canonical settings
     monkeypatch.setattr(
-        training_service, "list_training_examples",
+        training_service,
+        "list_training_examples",
         lambda: [
-            {"photo_id": "p1", "canonical_settings": '{"exposure": -0.3, "contrast": 15}'},
-            {"photo_id": "p2", "canonical_settings": '{"exposure": -0.1, "contrast": 13}'},
-        ]
+            {
+                "photo_id": "p1",
+                "canonical_settings": '{"exposure": -0.3, "contrast": 15}',
+            },
+            {
+                "photo_id": "p2",
+                "canonical_settings": '{"exposure": -0.1, "contrast": 13}',
+            },
+        ],
     )
 
     recipe = sc.get_style_recipe("test-recipe")
@@ -255,14 +264,10 @@ def test_update_style_for_example_triggers_discovery(monkeypatch, sample_style):
             "exp_luminance_mean": "0.48",
         },
     ]
-    monkeypatch.setattr(
-        training_service, "list_training_examples", lambda: examples
-    )
+    monkeypatch.setattr(training_service, "list_training_examples", lambda: examples)
 
     # Mock _fetch_rich_examples to return the same data
-    monkeypatch.setattr(
-        sc, "_fetch_rich_examples", lambda pids: examples
-    )
+    monkeypatch.setattr(sc, "_fetch_rich_examples", lambda pids: examples)
 
     sc.update_style_for_example(
         photo_id="photo_1",
@@ -335,12 +340,8 @@ def test_user_keywords_override_genre_in_update(monkeypatch):
             "exp_luminance_mean": "0.48",
         },
     ]
-    monkeypatch.setattr(
-        training_service, "list_training_examples", lambda: examples
-    )
-    monkeypatch.setattr(
-        sc, "_fetch_rich_examples", lambda pids: examples
-    )
+    monkeypatch.setattr(training_service, "list_training_examples", lambda: examples)
+    monkeypatch.setattr(sc, "_fetch_rich_examples", lambda pids: examples)
 
     sc.update_style_for_example(
         photo_id="photo_1",
@@ -356,3 +357,41 @@ def test_user_keywords_override_genre_in_update(monkeypatch):
     # Should create a scene_macro style, not scene_portrait
     genres = [s["genre"] for s in styles]
     assert "scene_macro" in genres
+
+
+def test_update_style_for_example_incremental_update(monkeypatch, sample_style):
+    sc._ensure_initialized()
+    # Insert existing style to trigger the else branch
+    sc.upsert_style(sample_style)
+
+    examples = [
+        {
+            "photo_id": "photo_1",
+            "camera_make": "NIKON CORPORATION",
+            "camera_model": "NIKON Z 7",
+            "camera_profile": "Nikon Z7 Linear",
+            "scene_tags": '["scene_architecture"]',
+            "canonical_settings": '{"exposure": -0.3}',
+        },
+        {
+            "photo_id": "photo_2",
+            "camera_make": "NIKON CORPORATION",
+            "camera_model": "NIKON Z 7",
+            "camera_profile": "Nikon Z7 Linear",
+            "scene_tags": '["scene_architecture"]',
+            "canonical_settings": '{"exposure": -0.2}',
+        },
+    ]
+    monkeypatch.setattr(training_service, "list_training_examples", lambda: examples)
+    monkeypatch.setattr(sc, "_fetch_rich_examples", lambda pids: examples)
+
+    sc.update_style_for_example(
+        photo_id="photo_1",
+        camera_make="NIKON CORPORATION",
+        camera_model="NIKON Z 7",
+        camera_profile="Nikon Z7 Linear",
+        scene_tags=["scene_architecture"],
+    )
+
+    styles = sc.list_styles()
+    assert len(styles) >= 1

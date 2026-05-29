@@ -32,7 +32,7 @@ When you first launch the backend, it may need to download the selected OpenCLIP
 
 ### 2. Backend Server Connection Failed
 
-Lightroom communicates with the `geniusai-server` over a local network port (default: 8000).
+Lightroom communicates with the `styleai-server` over a local network port (default: 8000).
 
 - **Symptom**: "Cannot connect to server" or "Connection Refused" errors.
 - **Resolution**: 

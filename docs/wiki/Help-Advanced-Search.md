@@ -1,6 +1,6 @@
 # Help: Advanced Search
 
-> Migrated from `lrgenius.com/help` and curated for repo docs.  
+> Migrated from `github.com/RareLight/StyleAI/wiki` and curated for repo docs.  
 > Screenshot references were intentionally removed.
 
 ## Open advanced search

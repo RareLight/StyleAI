@@ -1,4 +1,4 @@
-name: geniusai_server
+name: styleai_server
 channels:
   - conda-forge
   - defaults

@@ -245,11 +245,13 @@ def style_edit():
         )
         results.append(result)
 
-    return jsonify({
-        "status": "ok",
-        "batch_size": len(results),
-        "results": results,
-    }), 200
+    return jsonify(
+        {
+            "status": "ok",
+            "batch_size": len(results),
+            "results": results,
+        }
+    ), 200
 
     # -------------------------------------------------------------------
     # Style engine had no result and fallback disabled — return error

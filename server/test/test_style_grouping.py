@@ -66,9 +66,17 @@ def example_sony_landscape():
 
 
 def test_group_examples_splits_by_camera_profile_and_genre(
-    example_nikon_arch, example_nikon_arch_2, example_nikon_portrait, example_sony_landscape
+    example_nikon_arch,
+    example_nikon_arch_2,
+    example_nikon_portrait,
+    example_sony_landscape,
 ):
-    examples = [example_nikon_arch, example_nikon_arch_2, example_nikon_portrait, example_sony_landscape]
+    examples = [
+        example_nikon_arch,
+        example_nikon_arch_2,
+        example_nikon_portrait,
+        example_sony_landscape,
+    ]
     groups = sg.group_examples_by_camera_genre(examples)
 
     assert len(groups) == 3
@@ -267,17 +275,13 @@ def test_generate_style_description_no_settings():
 
 def test_primary_genre_with_keywords_overrides_scene_tags():
     # User keywords should override AI scene tags
-    genre = sg._primary_genre_with_keywords(
-        ["scene_portrait"], ["macro", "nature"]
-    )
+    genre = sg._primary_genre_with_keywords(["scene_portrait"], ["macro", "nature"])
     assert genre == "scene_macro"
 
 
 def test_primary_genre_with_keywords_falls_back_to_scene_tags():
     # When no keywords match, fall back to AI scene tags
-    genre = sg._primary_genre_with_keywords(
-        ["scene_landscape"], ["unknown_keyword"]
-    )
+    genre = sg._primary_genre_with_keywords(["scene_landscape"], ["unknown_keyword"])
     assert genre == "scene_landscape"
 
 
@@ -288,7 +292,7 @@ def test_group_examples_uses_user_keywords_for_genre():
             "camera_make": "Canon",
             "camera_model": "EOS R5",
             "scene_tags": '["scene_portrait"]',  # AI says portrait
-            "user_keywords": '["macro"]',       # User says macro
+            "user_keywords": '["macro"]',  # User says macro
             "canonical_settings": "{}",
         }
     ]

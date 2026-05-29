@@ -1,6 +1,6 @@
 # Help: Ollama Setup
 
-> Migrated from `lrgenius.com/help/ollama-setup` and curated for repo docs.  
+> Migrated from `github.com/RareLight/StyleAI/wiki/ollama-setup` and curated for repo docs.  
 > Screenshot references were intentionally removed.
 
 ## 1. Install Ollama

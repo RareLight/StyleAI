@@ -62,9 +62,9 @@ manifest = {
         ],
         "backend_src": [
             {
-                "path": "geniusai_server.py",
-                "url": "http://localhost:8080/backend_src/geniusai_server.py",
-                "sha256": sha("test_update_env/source_files/backend_src/geniusai_server.py"),
+                "path": "styleai_server.py",
+                "url": "http://localhost:8080/backend_src/styleai_server.py",
+                "sha256": sha("test_update_env/source_files/backend_src/styleai_server.py"),
             }
         ]
     }
@@ -115,7 +115,7 @@ Tests `services/update.py` and the `/update/apply` route end-to-end, including t
 ### 1. Start the backend
 
 ```bash
-cd server && uv run python src/geniusai_server.py
+cd server && uv run python src/styleai_server.py
 ```
 
 ### 2. POST the manifest
@@ -195,6 +195,6 @@ The confirmation dialog should show version 9.9.9 with the file counts from the 
 | Stale temp dir cleaned | Pre-create `~/.styleai/update_tmp/` with junk files before running |
 | Backup created and cleaned on success | Run with a real existing file at the target path; confirm no `.bak` left behind |
 | Backup survives a mid-apply failure | Kill the updater process during the apply phase; confirm `.bak` file still exists |
-| Backend restart fails gracefully | Remove the `geniusai_server.py` entry point from the throwaway directory |
+| Backend restart fails gracefully | Remove the `styleai_server.py` entry point from the throwaway directory |
 | `breaking_changes: true` blocks apply | Set the flag in the manifest and trigger from Lightroom |
 | Inline `content` field (version_info.py) | Generate a manifest with `generate_update_manifest.py` and confirm no URL is fetched for that entry |

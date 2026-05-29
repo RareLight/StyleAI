@@ -510,7 +510,8 @@ def generate_style_edit(
                     return StyleEngineResult(
                         recipe=recipe,
                         confidence=round(best_confidence, 3),
-                        matched_count=style1.get("example_count", 0) + style2.get("example_count", 0),
+                        matched_count=style1.get("example_count", 0)
+                        + style2.get("example_count", 0),
                         engine="style_catalog_blend",
                         matched_filenames=[
                             style1.get("style_name", ""),

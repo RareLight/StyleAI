@@ -2,7 +2,7 @@ return {
 	metadataFieldsForPhotos = {
 		{
 			id = "aiLastRun",
-			title = LOC("$$$/lrc-ai-assistant/AIMetadataProvider/aiLastRun=Last AI run"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/aiLastRun=Last AI run"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -10,7 +10,7 @@ return {
 		},
 		{
 			id = "aiModel",
-			title = LOC("$$$/lrc-ai-assistant/AIMetadataProvider/aiModel=AI model"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/aiModel=AI model"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -66,7 +66,7 @@ return {
 		},
 		{
 			id = "photoContext",
-			title = LOC("$$$/lrc-ai-assistant/AIMetadataProvider/photoContext=Photo context"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/photoContext=Photo context"),
 			dataType = "string",
 			readOnly = false,
 			searchable = true,
@@ -242,7 +242,7 @@ return {
 		},
 		{
 			id = "keywords",
-			title = LOC("$$$/lrc-ai-assistant/AIMetadataProvider/keywords=AI Keywords"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/keywords=AI Keywords"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -293,13 +293,13 @@ return {
 			if
 				LrDialogs.confirm(
 					LOC(
-						"$$$/lrc-ai-assistant/MetadataProvider/MigrationDetected=Migration from LrGeniusTagAI detected."
+						"$$$/StyleAI/MetadataProvider/MigrationDetected=Migration from LrGeniusTagAI detected."
 					),
 					LOC(
-						"$$$/lrc-ai-assistant/MetadataProvider/MigrationMessage=It is recommended to run 'Import Metadata from Catalog' from the StyleAI menu to import AI-generated keywords into the new database of StyleAI."
+						"$$$/StyleAI/MetadataProvider/MigrationMessage=It is recommended to run 'Import Metadata from Catalog' from the StyleAI menu to import AI-generated keywords into the new database of StyleAI."
 					),
-					LOC("$$$/lrc-ai-assistant/MetadataProvider/MigrationRunNow=Run now"),
-					LOC("$$$/lrc-ai-assistant/MetadataProvider/MigrationSkip=Skip (Can be run later manually)")
+					LOC("$$$/StyleAI/MetadataProvider/MigrationRunNow=Run now"),
+					LOC("$$$/StyleAI/MetadataProvider/MigrationSkip=Skip (Can be run later manually)")
 				) == "ok"
 			then
 				require("TaskImportMetadata")

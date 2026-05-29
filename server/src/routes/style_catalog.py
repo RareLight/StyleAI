@@ -185,7 +185,11 @@ def match_styles():
         scene_tags.append(primary_genre)
 
     user_keywords_raw = request.args.get("user_keywords")
-    user_keywords = [k.strip() for k in user_keywords_raw.split(",") if k.strip()] if user_keywords_raw else []
+    user_keywords = (
+        [k.strip() for k in user_keywords_raw.split(",") if k.strip()]
+        if user_keywords_raw
+        else []
+    )
 
     exposure_metrics: dict[str, float] = {}
     for key in ("lum_mean", "contrast", "warmth_proxy"):

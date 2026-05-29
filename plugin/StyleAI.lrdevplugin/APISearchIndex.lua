@@ -221,6 +221,7 @@ end
 
 --- Ensures all registered catalog DB migrations have been run for the active catalog. Runs pending ones in background; uses catalog plugin property catalogDbMigrations so each migration runs once per catalog.
 local function ensureDbMigrationsDone()
+    local _
     local catalog = LrApplication.activeCatalog()
     if not catalog then
         return
@@ -242,7 +243,7 @@ local function ensureDbMigrationsDone()
             catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", stripInProgressMarkers(cur))
         end)
         raw = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
-        completed, inProgress, inProgressSince = parseCompletedMigrations(raw)
+        completed, inProgress, _ = parseCompletedMigrations(raw)
     end
 
     if inProgress then
@@ -297,7 +298,7 @@ local function ensureDbMigrationsDone()
                     if type(LrTasks) == "table" and type(LrTasks.pcall) == "function" then
                         status, a, b, c = LrTasks.pcall(function() return m.run(progressScope) end)
                     else
-                        status, a, b, c = LrTasks.pcall(function() return m.run(progressScope) end)
+                        status, a, b, c = pcall(function() return m.run(progressScope) end)
                     end
                     if status then
                         ok, err, userMessage = a, b, c
@@ -526,8 +527,6 @@ function SearchIndexAPI.exportPhotoForIndexing(photo)
 
     local tempDir = LrPathUtils.getStandardFilePath('temp')
     local photoName = LrPathUtils.leafName(photo:getFormattedMetadata('fileName'))
-    local catalog = LrApplication.activeCatalog()
-
     EXPORT_SETTINGS.LR_export_destinationPathPrefix = tempDir
 
     local exportSession = LrExportSession({
@@ -535,7 +534,13 @@ function SearchIndexAPI.exportPhotoForIndexing(photo)
         exportSettings = EXPORT_SETTINGS
     })
 
+    local renditions = {}
     for _, rendition in exportSession:renditions() do
+        renditions[#renditions + 1] = rendition
+    end
+
+    if #renditions > 0 then
+        local rendition = renditions[1]
         local success, path = rendition:waitForRender()
         log:trace("Export completed for photo: " ..
             photoName .. " Success: " .. tostring(success) .. " Path: " .. tostring(path))
@@ -717,7 +722,6 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
     end
     if response.status == "processed" then
         local success_count = response.success_count or 0
-        local failure_count = response.failure_count or 0
         if success_count > 0 then
             log:trace("Successfully processed photo (base64): " .. tostring(filename))
             return true, response
@@ -962,11 +966,8 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
         return false, err or "Unknown error"
     end
 
-    -- Check response status
     if response.status == "processed" then
         local success_count = response.success_count or 0
-        local failure_count = response.failure_count or 0
-
         if success_count > 0 then
             log:trace("Successfully processed photo: " .. filename)
             return true, response
@@ -1277,7 +1278,7 @@ function SearchIndexAPI.removePhotoId(photoId)
     local body = { photo_id = photoId }
     log:trace("Removing photo_id: " .. photoId)
 
-    local result, err = _request('POST', url, body)
+    local _, err = _request('POST', url, body)
     if not err then
         return true
     else
@@ -1297,7 +1298,7 @@ function SearchIndexAPI.removePhotoMetadata(photoId)
     local body = { photo_id = photoId }
     log:trace("Removing metadata for photo_id: " .. photoId)
 
-    local result, err = _request('POST', url, body)
+    local _, err = _request('POST', url, body)
     if not err then
         return true
     else
@@ -1337,7 +1338,7 @@ function SearchIndexAPI.syncCleanup()
             progressScope:done()
             return false, "canceled"
         end
-        local photoId, err = getPhotoIdForPhoto(photo)
+        local photoId = getPhotoIdForPhoto(photo)
         if photoId then
             photoIds[#photoIds + 1] = photoId
         end
@@ -1520,10 +1521,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local maxWorkers = 1 -- tonumber(prefs.indexingParallelTasks) or 2
     local stats = { processed = 0, success = 0, failed = 0 }
     local processedPhotos = {}
-    local responses = {}
     local activeWorkers = 0
     local keepRunning = true
-    local catalog = LrApplication.activeCatalog()
     local previewRequestState = {
         enabled = (prefs and prefs.usePreviewThumbnails ~= false),
         timeoutSeconds = tonumber(prefs and prefs.previewThumbnailTimeoutSeconds) or 12,
@@ -1623,7 +1622,6 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                             else
                                 previewRequestState.consecutiveTimeouts = 0
                             end
-                            jpegData = nil
                         end
                     end
 
@@ -1689,7 +1687,6 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end
 
     -- Monitor workers and server availability
-    local notReached = 0
     while activeWorkers > 0 do
         if progressScope:isCanceled() then break end
         if MAC_ENV then
@@ -2115,7 +2112,6 @@ function SearchIndexAPI.shutdownServer(opts)
 end
 
 function SearchIndexAPI.unloadResources(opts)
-    opts = opts or {}
     local url = getBaseUrl() .. ENDPOINTS.UNLOAD
     log:trace("Requesting backend model unload")
     local status, response = LrTasks.pcall(function()
@@ -2133,7 +2129,7 @@ end
 function SearchIndexAPI.restartBackend()
     local url = getBaseUrl() .. ENDPOINTS.RESTART
     log:info("Requesting backend restart via API")
-    local response, err = _request("POST", url, {}, 5)
+    local _, err = _request("POST", url, {}, 5)
     if err then
         log:error("Failed to request backend restart: " .. tostring(err))
         return false, err
@@ -2200,7 +2196,7 @@ function SearchIndexAPI.killServer(opts)
         return true
     end
 
-    local killCmd = nil
+    local killCmd
     if WIN_ENV then
         killCmd = "taskkill /PID " .. tostring(pid) .. " /F"
     elseif MAC_ENV then
@@ -2295,7 +2291,7 @@ function SearchIndexAPI.startServer(opts)
             return false
         end
 
-        local startServerCmd = nil
+        local startServerCmd
         local serverDir = LrPathUtils.parent(serverBinary)
         if WIN_ENV then
             -- The .cmd launcher handles environment variables and uses pythonw.exe for invisible execution.
@@ -2650,7 +2646,7 @@ end
 function SearchIndexAPI.setPersonName(personId, name)
     if not personId or personId == "" then return false, "person_id required" end
     local url = getBaseUrl() .. ENDPOINTS.FACES_PERSON_PHOTOS .. "/" .. personId
-    local result, err = _request('PUT', url, { name = name or "" })
+    local _, err = _request('PUT', url, { name = name or "" })
     if err then
         log:error("setPersonName failed: " .. err)
         return false, err
@@ -2736,7 +2732,7 @@ function SearchIndexAPI.getModels(openaiApiKey, geminiApiKey)
         ollama_base_url = (prefs and prefs.ollamaBaseUrl) or nil,
         lmstudio_base_url = (prefs and prefs.lmstudioBaseUrl) or nil,
     }
-    local result, err = _request('POST', url, body)
+    local result = _request('POST', url, body)
     return result
 end
 
@@ -3054,40 +3050,40 @@ function SearchIndexAPI.startClipDownload()
     local url = getBaseUrl() .. ENDPOINTS.START_CLIP_DOWNLOAD
     local body = {}
 
-    local res, err = _request('POST', url, body)
+    local _, requestErr = _request('POST', url, body)
 
-    if err then
-        log:error("startClipDownload failed: " .. err)
-        return nil, err
+    if requestErr then
+        log:error("startClipDownload failed: " .. requestErr)
+        return nil, requestErr
     end
 
     LrTasks.startAsyncTask(function()
         while true do
-            local status, err = _request('GET', getBaseUrl() .. ENDPOINTS.STATUS_CLIP_DOWNLOAD)
-            if err then
-                ErrorHandler.handleError("Error downloading CLIP model", err)
+            local pollStatus, pollErr = _request('GET', getBaseUrl() .. ENDPOINTS.STATUS_CLIP_DOWNLOAD)
+            if pollErr then
+                ErrorHandler.handleError("Error downloading CLIP model", pollErr)
                 if progressScope ~= nil then
                     progressScope:setCaption(LOC "$$$/StyleAI/ClipDownload/Error=Error downloading CLIP model: ^1",
-                        err)
+                        pollErr)
                     progressScope:done()
                 end
                 break
             end
 
-            if status ~= nil then
+            if pollStatus ~= nil then
                 if progressScope ~= nil then
                     progressScope:setCaption(LOC "$$$/StyleAI/ClipDownload/Downloading=Downloading CLIP model...")
                 end
-                if status.status == "downloading" then
-                    progressScope:setPortionComplete(status.progress, status.total)
-                elseif status.status == "completed" then
+                if pollStatus.status == "downloading" then
+                    progressScope:setPortionComplete(pollStatus.progress, pollStatus.total)
+                elseif pollStatus.status == "completed" then
                     log:trace("CLIP model download completed")
                     progressScope:done()
                     LrDialogs.message(LOC "$$$/StyleAI/ClipDownload/SuccessTitle=CLIP Download",
                         LOC "$$$/StyleAI/ClipDownload/SuccessMessage=CLIP model downloaded successfully.")
                     break
-                elseif status.status == "error" or (status.error and status.error ~= "null" and status.error ~= "") then
-                    local error_msg = status.error or "Unknown download error"
+                elseif pollStatus.status == "error" or (pollStatus.error and pollStatus.error ~= "null" and pollStatus.error ~= "") then
+                    local error_msg = pollStatus.error or "Unknown download error"
                     ErrorHandler.handleError(LOC "$$$/StyleAI/ClipDownload/ErrorTitle=Error downloading CLIP model",
                         error_msg)
                     progressScope:done()
@@ -3253,7 +3249,7 @@ function SearchIndexAPI.getDetailedHealth()
     -- Try to ping local LLMs if they are not default localhost but maybe they are
     if not Util.nilOrEmpty(prefs.ollamaBaseUrl) then
         local url = prefs.ollamaBaseUrl .. "/api/tags"
-        local res, hdrs = LrHttp.get(url, nil, 500)
+        local _, hdrs = LrHttp.get(url, nil, 500)
         local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status)
         if status == 200 then health.ollama = true end
     end
@@ -3262,7 +3258,7 @@ function SearchIndexAPI.getDetailedHealth()
         local baseUrl = prefs.lmstudioBaseUrl
         if not baseUrl:match("^https?://") then baseUrl = "http://" .. baseUrl end
         local url = baseUrl .. "/v1/models"
-        local res, hdrs = LrHttp.get(url, nil, 500)
+        local _, hdrs = LrHttp.get(url, nil, 500)
         local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status)
         if status == 200 then health.lmstudio = true end
     end

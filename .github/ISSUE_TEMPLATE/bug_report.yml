@@ -8,16 +8,16 @@ body:
       value: |
         Before submitting, please attach **log files** when relevant (see below). Redact API keys or other secrets before uploading.
 
-        ### Lightroom plugin — `LrGeniusAI.log`
+        ### Lightroom plugin — `StyleAI.log`
 
         The plugin always logs to a file. Location depends on **Lightroom Classic major version** and OS:
 
         | OS | Lightroom Classic 14+ | Older Lightroom Classic |
         |----|-------------------------|-------------------------|
-        | **macOS** | `~/Library/Logs/Adobe/Lightroom/LrClassicLogs/LrGeniusAI.log` | `~/Documents/LrClassicLogs/LrGeniusAI.log` |
-        | **Windows** | `%LOCALAPPDATA%\Adobe\Lightroom\Logs\LrClassicLogs\LrGeniusAI.log` | `%USERPROFILE%\Documents\LrClassicLogs\LrGeniusAI.log` |
+        | **macOS** | `~/Library/Logs/Adobe/Lightroom/LrClassicLogs/StyleAI.log` | `~/Documents/LrClassicLogs/StyleAI.log` |
+        | **Windows** | `%LOCALAPPDATA%\Adobe\Lightroom\Logs\LrClassicLogs\StyleAI.log` | `%USERPROFILE%\Documents\LrClassicLogs\StyleAI.log` |
 
-        **Tip:** In **LrGeniusAI → Plugin Manager → LrGeniusAI Settings**, use **Copy Log Files to Desktop** to gather `LrGeniusAI.log`, optional Ollama logs, and `lrgenius-server.log` from beside your catalog. **Show Log File** opens the plugin log in Finder / Explorer.
+        **Tip:** In **StyleAI → Plugin Manager → StyleAI Settings**, use **Copy Log Files to Desktop** to gather `StyleAI.log`, optional Ollama logs, and `styleai-server.log` from beside your catalog. **Show Log File** opens the plugin log in Finder / Explorer.
 
         ### Optional — Ollama (if you use local Ollama)
 
@@ -40,7 +40,7 @@ body:
       placeholder: |
         - OS (macOS / Windows + version):
         - Lightroom Classic version:
-        - LrGenius AI plugin version (if known):
+        - StyleAI plugin version (if known):
         - Backend (Docker / standalone):
     validations:
       required: true

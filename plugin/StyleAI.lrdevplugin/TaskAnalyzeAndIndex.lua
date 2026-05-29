@@ -32,7 +32,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     -- Metadata generation options
     props.temperature = prefs.temperature or 0.1
     props.promptTitles = {}
-    for title, prompt in pairs(prefs.prompts) do
+    for title, _ in pairs(prefs.prompts) do
         table.insert(props.promptTitles, { title = title, value = title })
     end
 
@@ -157,7 +157,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                     fill_horizontal = 1,
                     f:row {
                         f:static_text {
-                            title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/aiModel=AI Model:",
+                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/aiModel=AI Model:",
                             width = share 'labelWidth',
                         },
                         f:popup_menu {
@@ -185,7 +185,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                     f:row {
                         f:static_text {
-                            title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/generateLanguage=Language:",
+                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/generateLanguage=Language:",
                             width = share 'labelWidth',
                         },
                         f:combo_box {
@@ -194,7 +194,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         },
                         f:checkbox {
                             value = bind 'replaceSS',
-                            title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/replaceSS=Replace ß with ss",
+                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/replaceSS=Replace ß with ss",
                         },
                     },
                 },
@@ -248,13 +248,13 @@ local function showAnalyzeAndIndexDialog(ctx)
                     title = LOC "$$$/StyleAI/AnalyzeAndIndex/MetadataOptions=Metadata Tasks",
                     fill_horizontal = 1,
                     f:row {
-                        f:checkbox { value = bind 'generateKeywords', title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/keywords=Keywords" },
+                        f:checkbox { value = bind 'generateKeywords', title = LOC "$$$/StyleAI/PluginInfoDialogSections/keywords=Keywords" },
                         f:spacer { width = 10 },
-                        f:checkbox { value = bind 'generateTitle', title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/title=Title" },
+                        f:checkbox { value = bind 'generateTitle', title = LOC "$$$/StyleAI/PluginInfoDialogSections/title=Title" },
                         f:spacer { width = 10 },
-                        f:checkbox { value = bind 'generateCaption', title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/caption=Caption" },
+                        f:checkbox { value = bind 'generateCaption', title = LOC "$$$/StyleAI/PluginInfoDialogSections/caption=Caption" },
                         f:spacer { width = 10 },
-                        f:checkbox { value = bind 'generateAltText', title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/alttext=Alt Text" },
+                        f:checkbox { value = bind 'generateAltText', title = LOC "$$$/StyleAI/PluginInfoDialogSections/alttext=Alt Text" },
                     },
                 },
 
@@ -262,14 +262,14 @@ local function showAnalyzeAndIndexDialog(ctx)
                     title = LOC "$$$/StyleAI/AnalyzeAndIndex/HierarchyOptions=Hierarchy & Language",
                     fill_horizontal = 1,
                     f:row {
-                        f:static_text { title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/useKeywordHierarchy=Keyword Hierarchy:", width = share 'labelWidth' },
+                        f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/useKeywordHierarchy=Keyword Hierarchy:", width = share 'labelWidth' },
                         f:checkbox {
                             value = bind 'useKeywordHierarchy',
                             title = LOC "$$$/StyleAI/UI/EnableHierarchy=Enable",
                         },
                         f:push_button {
                             enabled = bind 'useKeywordHierarchy',
-                            title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/editKeywordHierarchy=Edit categories",
+                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/editKeywordHierarchy=Edit categories",
                             action = function() KeywordConfigProvider.showKeywordCategoryDialog() end,
                         },
                     },
@@ -281,7 +281,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         }
                     },
                     f:row {
-                        f:static_text { title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/useTopLevelKeyword=Top-level Keyword:", width = share 'labelWidth' },
+                        f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/useTopLevelKeyword=Top-level Keyword:", width = share 'labelWidth' },
                         f:checkbox { value = bind 'useTopLevelKeyword' },
                         f:edit_field {
                             value = bind 'topLevelKeyword',
@@ -305,14 +305,14 @@ local function showAnalyzeAndIndexDialog(ctx)
                     title = LOC "$$$/StyleAI/UI/PromptTitle=Instructions / Prompt",
                     fill_horizontal = 1,
                     f:row {
-                        f:static_text { title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/editPrompts=Template:", width = share 'labelWidth' },
+                        f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/editPrompts=Template:", width = share 'labelWidth' },
                         props.promptTitleMenu,
                         f:push_button {
-                            title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/add=Add",
+                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/add=Add",
                             action = function() PromptConfigProvider.addPrompt(props) end,
                         },
                         f:push_button {
-                            title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/delete=Delete",
+                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/delete=Delete",
                             action = function() PromptConfigProvider.deletePrompt(props) end,
                         },
                     },
@@ -356,16 +356,16 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                     f:row {
                         f:spacer { width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'submitKeywords', title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/submitKeywords=Existing Keywords" },
+                        f:checkbox { value = bind 'submitKeywords', title = LOC "$$$/StyleAI/PluginInfoDialogSections/submitKeywords=Existing Keywords" },
                     },
                     f:row {
                         f:spacer { width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'submitFolderName', title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/folderNames=Folder Names" },
+                        f:checkbox { value = bind 'submitFolderName', title = LOC "$$$/StyleAI/PluginInfoDialogSections/folderNames=Folder Names" },
                     },
                     f:separator { fill_horizontal = 1 },
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextManualLabel=Manual:", width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'showPhotoContextDialog', title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/showPhotoContextDialog=Ask for context before each batch" },
+                        f:checkbox { value = bind 'showPhotoContextDialog', title = LOC "$$$/StyleAI/PluginInfoDialogSections/showPhotoContextDialog=Ask for context before each batch" },
                     },
                 },
 
@@ -382,7 +382,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         f:checkbox {
                             enabled = bind 'saveDataToCatalog',
                             value = bind 'enableValidation',
-                            title = LOC "$$$/lrc-ai-assistant/PluginInfoDialogSections/validation=Review/Edit each photo before saving",
+                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/validation=Review/Edit each photo before saving",
                         },
                     },
                     f:separator { fill_horizontal = 1 },
@@ -478,7 +478,6 @@ end
 local function showPhotoContextDialog(photo)
     local f = LrView.osFactory()
     local bind = LrView.bind
-    local share = LrView.share
 
     local props = {}
     props.skipFromHere = SkipPhotoContextDialog
@@ -515,7 +514,7 @@ local function showPhotoContextDialog(photo)
         },
         f:row {
             f:static_text {
-                title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/PhotoContextDialogData=Photo Context",
+                title = LOC "$$$/StyleAI/AnalyzeImageTask/PhotoContextDialogData=Photo Context",
             },
         },
         f:row {
@@ -537,12 +536,12 @@ local function showPhotoContextDialog(photo)
         },
         f:checkbox {
             value = bind 'skipFromHere',
-            title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/SkipPreflightFromHere=Use for all following pictures.",
+            title = LOC "$$$/StyleAI/AnalyzeImageTask/SkipPreflightFromHere=Use for all following pictures.",
         },
     }
 
     local result = LrDialogs.presentModalDialog({
-        title = LOC "$$$/lrc-ai-assistant/AnalyzeImageTask/PhotoContextDialogData=Photo Context",
+        title = LOC "$$$/StyleAI/AnalyzeImageTask/PhotoContextDialogData=Photo Context",
         contents = dialogView,
     })
 

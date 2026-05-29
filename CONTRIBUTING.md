@@ -61,8 +61,8 @@ To ensure code consistency, we use `pre-commit` for automatic formatting and lin
 
 ### Backend Development (Python/Flask)
 - **Structure**:
-    - Endpoints: Use Flask Blueprints (`routes_*.py`).
-    - Business Logic: Keep in the service layer (`service_*.py`).
+    - Endpoints: Use Flask Blueprints (`routes/*.py`).
+    - Business Logic: Keep in the service layer (`services/*.py`).
 - **API Response**: Return structured JSON with `results`, `error`, and `warning` fields.
 - **Lifecycle**: Respect `server_lifecycle.py` for PID management.
 - **Formatting**: Format code with `uv run ruff format` and ensure `server/scripts/lint_format.sh` passes.

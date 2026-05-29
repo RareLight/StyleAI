@@ -236,6 +236,6 @@ The StyleAI plugin is released under the **GNU Affero General Public License v3 
 
 ## Documentation
 
-- **Website/Help:** [https://lrgenius.com/help/](https://lrgenius.com/help/) (updated for v2.13.0)
+- **Website/Help:** [https://github.com/RareLight/StyleAI/wiki](https://github.com/RareLight/StyleAI/wiki) (updated for v2.13.0)
 - **GitHub Wiki:** [https://github.com/RareLight/StyleAI/wiki](https://github.com/RareLight/StyleAI/wiki)
 - **Repository:** [https://github.com/RareLight/StyleAI](https://github.com/RareLight/StyleAI)
