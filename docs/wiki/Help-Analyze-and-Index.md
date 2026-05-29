@@ -1,6 +1,6 @@
 # Help: Analyze and Index
 
-> Migrated from `lrgenius.com/help` and curated for repo docs.  
+> Migrated from `github.com/RareLight/StyleAI/wiki` and curated for repo docs.  
 > Screenshot references were intentionally removed.
 
 ## Start the task

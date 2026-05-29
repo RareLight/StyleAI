@@ -20,8 +20,8 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           version: latest
-          args: --check plugin/LrGeniusAI.lrdevplugin
+          args: --check plugin/StyleAI.lrdevplugin
       - name: Linting (Lua)
         uses: lunarmodules/luacheck@v1
         with:
-          args: plugin/LrGeniusAI.lrdevplugin
+          args: plugin/StyleAI.lrdevplugin

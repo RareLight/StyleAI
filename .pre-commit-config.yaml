@@ -15,4 +15,4 @@ repos:
     rev: v2.4.1
     hooks:
       - id: stylua-github
-        files: ^plugin/LrGeniusAI.lrdevplugin/
+        files: ^plugin/StyleAI.lrdevplugin/

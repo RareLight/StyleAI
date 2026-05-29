@@ -26,7 +26,7 @@ datas += copy_metadata('scikit-learn')
 # datas += collect_data_files('Pillow')
 
 a = Analysis(
-    ['src/geniusai_server.py'],
+    ['src/styleai_server.py'],
     pathex=['src'],
     binaries=[],
     datas=datas,
@@ -46,7 +46,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='lrgenius-server',
+    name='styleai-server',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -65,5 +65,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='lrgenius-server',
+    name='styleai-server',
 )

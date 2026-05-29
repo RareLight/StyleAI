@@ -20,11 +20,11 @@ These rules ensure consistency across the Lightroom plugin and the Python backen
 - **Photo Identity**: Prefer the stable `globalPhotoId` (metadata-based) generated via `Util.getGlobalPhotoIdForPhoto` for cross-catalog consistency.
 
 ## Backend Development (Python/Flask)
-- **Structure**: Organize endpoints using Flask Blueprints (`routes_*.py`). Keep business logic in the service layer (`service_*.py`).
+- **Structure**: Organize endpoints using Flask Blueprints (`routes/*.py`). Keep business logic in the service layer (`services/*.py`).
 - **API Response Format**: Return structured JSON. Standard fields include `results`, `error`, and `warning` (actionable short message for the GUI).
-- **Environment**: Configuration should be driven by environment variables (e.g., `GENIUSAI_PORT`, `GENIUSAI_BACKUP_ENABLED`).
+- **Environment**: Configuration should be driven by environment variables (e.g., `STYLEAI_PORT`, `STYLEAI_BACKUP_ENABLED`).
 - **Lifecycle**: Respect `server_lifecycle.py` for PID management and "OK" file signaling.
-- **Code Style**: Code should be formatted with `uv run ruff format` and should have no errors from `server/src/scripts/lint_format.sh`:w
+- **Code Style**: Code should be formatted with `uv run ruff format` and should have no errors from `server/scripts/lint_format.sh`.
 
 ## Infrastructure & Testing
 - **Docker**: Always update `Dockerfile`, `docker-compose-dev.yml`, and `docker-compose-prod.yml` when changing dependencies or environment requirements.

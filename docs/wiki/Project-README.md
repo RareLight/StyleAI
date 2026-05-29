@@ -4,11 +4,11 @@
 
 <div align="center">
   <h1>🌟 StyleAI</h1>
-  <p><b>A smart Lightroom Classic plugin for AI-powered tagging, describing, and semantic image search.</b></p>
+  <p><b>A smart Lightroom Classic plugin for AI-powered tagging, describing, semantic search, and develop edits.</b></p>
   
   [![Lua](https://img.shields.io/badge/Lua-2C2D72?style=for-the-badge&logo=lua&logoColor=white)]()
   [![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)]()
-  [![Website](https://img.shields.io/badge/Website-lrgenius.com-00B2FF?style=for-the-badge)]()
+  [![Website](https://img.shields.io/badge/Website-github.com/RareLight/StyleAI-00B2FF?style=for-the-badge)]()
   [![Downloads](https://img.shields.io/github/downloads/RareLight/StyleAI/total?style=for-the-badge&label=Downloads)](https://github.com/RareLight/StyleAI/releases)
 </div>
 
@@ -16,7 +16,7 @@
 
 ## 📖 About the Project
 
-**StyleAI** brings the power of modern Large Language Models (LLMs) directly into Adobe Lightroom Classic. It analyzes your photos, automatically generates accurate tags and detailed descriptions, and lets you rediscover your library with a semantic free-text search using natural language.
+**StyleAI** brings the power of modern Large Language Models (LLMs) directly into Adobe Lightroom Classic. It analyzes your photos, automatically generates accurate tags and detailed descriptions, creates AI-guided Lightroom develop edit recipes, and lets you rediscover your library with semantic free-text search using natural language.
 
 Whether you prefer running local models to ensure maximum privacy or want to leverage powerful cloud APIs, StyleAI seamlessly adapts to your photography workflow.
 
@@ -25,11 +25,13 @@ Whether you prefer running local models to ensure maximum privacy or want to lev
 ## ✨ Core Features
 
 - **🤖 AI-Powered Tagging & Describing:** Uses advanced LLMs to accurately recognize image content, generate metadata, and provide detailed descriptions of your photos.
+- **🎛️ AI Lightroom Edit (Develop):** Generates a structured Lightroom edit recipe per photo (global adjustments and optional masks) and can apply it directly in Develop mode. Includes per-photo review, style presets, style strength, composition/crop mode, and per-photo instruction overrides.
 - **🔍 Semantic Free-Text Search (Advanced Search):** Find images naturally through descriptive queries (e.g., *"Red sports car parked in front of a garage"* or *"Sunset over the mountains"*). StyleAI automatically creates a relevance-sorted Collection in Lightroom based on your prompt.
-- **☁️ Local & Cloud Models:** Full support for local AI models via **Ollama** and **LM Studio**, as well as integration with cloud providers like **Google Gemini** and **Vertex AI**.
+- **📸 Image Culling:** Group similar photos into bursts or near-duplicate stacks, automatically pick the strongest frames, and create Lightroom collections for picks, alternates, reject candidates, and optional duplicates.
+- **☁️ Local & Cloud Models:** Full support for local AI models via **Ollama** and **LM Studio**, as well as integration with cloud providers like **ChatGPT/OpenAI**, **Google Gemini**, and **Vertex AI**.
 - **🎨 Customizable Prompts & Temperature Control:** System prompts for the AI can be added, edited, and deleted directly within the Lightroom Plug-In Manager. Use the temperature slider to control whether the AI should be highly creative or strictly consistent.
 - **📝 Photo Context (Contextual Info):** Provide manual hints to the AI before analysis (e.g., names of people or specific background details) that aren't immediately obvious from the image itself. This can be done via a popup dialog or directly in Lightroom's metadata panel.
-- **🗄️ Custom Python Backend & Database:** The plugin utilizes a high-performance local server (`geniusai-server`). Existing metadata from your Lightroom catalog can easily be imported prior to the first AI analysis.
+- **🗄️ Custom Python Backend & Database:** The plugin utilizes a high-performance local server (`styleai-server`). Existing metadata from your Lightroom catalog can easily be imported prior to the first AI analysis.
 
 ---
 
@@ -38,153 +40,54 @@ Whether you prefer running local models to ensure maximum privacy or want to lev
 1. Download the latest release from the [GitHub Releases page](https://github.com/RareLight/StyleAI/releases).
 2. Extract the ZIP file and add the plugin via the **Plug-in Manager** in Lightroom Classic.
 3. **Backend Server Setup (First Launch):**
-   - The backend now starts automatically from Lightroom.
-   - The previous SmartScreen/Gatekeeper manual unblock steps are no longer required with the current release package.
+   - The backend starts automatically from Lightroom.
+   - **Bypassing Security Warnings:** Because the installers are currently not code-signed, you will see warnings from **Windows SmartScreen** or **macOS Gatekeeper**.
+     - **Windows:** Click *More info* -> *Run anyway*.
+     - **macOS:** Right-click the `.pkg` -> *Open* -> *Open anyway*.
    - Optional troubleshooting: if you want to start it manually, run `styleai-server/styleai-server.cmd` on Windows or `styleai-server/styleai-server` on macOS.
-4. Select your photos in the library and choose from the menu: **Library -> Plug-in Extras -> Analyze & Index photos**.
+4. Select photos in the library and choose one of the AI actions from **Library -> Plug-in Extras**:
+   - **Analyze & Index Photos...** for tags/descriptions/search index
+   - **AI Edit Photos...** to generate and apply Lightroom develop edits
+   - **Advanced Search...** for semantic free-text search
+5. For AI Edit, start with defaults, keep **Review each proposed edit before applying it** enabled, and tune style via **Overall look** + **Style strength**.
 
-*For comprehensive details, model setup guides, and tips, see the wiki — in particular [Getting Started](Getting-Started), [Help: Choosing AI Model](Help-Choosing-AI-Model), [Help: Ollama Setup](Help-Ollama-Setup), and [Help: LM Studio Setup](Help-LM-Studio-Setup).*
-
----
-
-## ⚠️ Breaking Change: `photo_id` Migration
-
-Recent versions switched the backend identity key from Lightroom catalog UUIDs to file-based `photo_id` values.
-The stable ID algorithm was later adjusted to remain stable when metadata is written to files (for example DNG updates).
-
-If you upgrade from an older version, run a one-time migration to keep existing index/search data usable.
-
-### Recommended migration path (from Lightroom)
-
-1. Open `File -> Plug-in Manager`
-2. Open StyleAI settings
-3. In `Backend Server`, click **Migrate existing DB IDs to photo_id**
-4. Wait until the progress dialog is complete
-
-The migration updates all relevant backend collections:
-
-- main image embeddings
-- vertex embeddings
-- face/person references
-
-### Identity scope note
-
-The current `photo_id` / hash / derived `canonicalId` strategy is more stable than Lightroom catalog UUIDs, but it is still not guaranteed to be 100% cross-catalog safe in every workflow.
-
-Treat backend identity as best-effort and primarily catalog-scoped for now, especially when:
-
-- the same files exist in multiple Lightroom catalogs
-- files were duplicated, re-exported, or rewritten outside Lightroom
-- the plugin had to fall back to partial file hashes because stable metadata IDs were unavailable
-
-If strict cross-catalog identity is important for your workflow, plan for re-indexing or migration checks when moving photos between catalogs or restoring older databases.
+*For comprehensive details, model setup guides, and tips, please visit [github.com/RareLight/StyleAI/wiki](https://github.com/RareLight/StyleAI/wiki).*
 
 ---
 
-## ☁️ Google Vertex AI Login (gcloud)
+For detailed instructions on how to use Google Vertex AI, please see our [Google Vertex AI Login Wiki Page](https://github.com/RareLight/StyleAI/wiki/Google-Vertex-AI-Login).
 
-If you want to use Vertex AI with StyleAI, run the login on the machine where `geniusai-server` is running.
+## ⚖️ License
 
-### macOS
+The StyleAI core, plugin, and backend are released under the **GNU Affero General Public License v3 (AGPL-3.0)**. 
 
-1. Install Google Cloud CLI (if needed):  
-   [https://cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install)
-2. Open Terminal and run:
+This project is built on the belief that AI tooling for creatives should remain open, transparent, and community-driven. See the [LICENSE](LICENSE) file for the full license text.
 
-```bash
-gcloud init
-gcloud config set project YOUR_PROJECT_ID
-gcloud auth application-default login
-```
-
-3. Optional verification:
-
-```bash
-gcloud auth application-default print-access-token
-```
-
-### Windows (PowerShell)
-
-1. Install Google Cloud CLI (if needed):  
-   [https://cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install)
-2. Open **Google Cloud SDK Shell** (or PowerShell with `gcloud` in PATH) and run:
-
-```powershell
-gcloud init
-gcloud config set project YOUR_PROJECT_ID
-gcloud auth application-default login
-```
-
-3. Optional verification:
-
-```powershell
-gcloud auth application-default print-access-token
-```
-
-### Remote backend with Docker Compose
-
-If your backend runs as a remote Docker container, authenticate inside the container and persist the Google Cloud CLI state with the bind mount in `docker-compose.yml`.
-
-1. Open a shell on the server in the repository root:
-
-```bash
-mkdir -p gcloud
-docker compose up -d --build
-```
-
-2. Set the Vertex project inside the running container:
-
-```bash
-docker compose exec geniusai-server gcloud config set project YOUR_PROJECT_ID
-```
-
-3. Login for Application Default Credentials (ADC):
-
-```bash
-docker compose exec geniusai-server gcloud auth application-default login
-```
-
-4. Optional verification:
-
-```bash
-docker compose exec geniusai-server gcloud auth application-default print-access-token
-```
-
-For headless SSH hosts without a browser, use:
-
-```bash
-docker compose exec geniusai-server gcloud auth application-default login --no-browser
-```
-
-Then follow the remote bootstrap flow shown by `gcloud` on a second trusted machine that has a browser and Google Cloud CLI installed.
-
-### Notes
-
-- `gcloud auth application-default login` creates local Application Default Credentials (ADC).
-- In Docker Compose, the bind mount `./gcloud:/root/.config/gcloud` keeps ADC and the active gcloud project across container restarts and rebuilds.
-- Set `Vertex AI Project ID` and `Vertex AI Location` in the Lightroom plugin settings.
-- Do not set `GOOGLE_APPLICATION_CREDENTIALS` when you want the container to use ADC created by `gcloud auth application-default login`.
-- For headless/server deployments, prefer service-account auth via `GOOGLE_APPLICATION_CREDENTIALS`.
-
----
 
 ## 🛠️ Tech Stack
 
-- **Frontend / Lightroom Plugin:** Lua
-- **Backend / Server:** Python (`geniusai-server`) / FastAPI / Flask
-- **AI & Embedding:** Open-CLIP (SigLIP2), PyTorch, ONNX
+- **Frontend / Lightroom Plugin:** Lua (Lightroom SDK)
+- **Backend / Server:** Python (`styleai-server`) / FastAPI / Flask
+- **AI & Embedding:** Open-CLIP (SigLIP2), PyTorch, ONNX Runtime
 - **Identity & Faces:** InsightFace
-- **Database:** ChromaDB (Vector), SQLite (Metadata)
+- **Database:** ChromaDB (Vector Search), SQLite (Metadata & Cache)
 - **Supported Interfaces:** Google Gemini, Vertex AI, ChatGPT/OpenAI, Ollama, LM-Studio
 
+
 ---
+
+## 🛠️ Development
+
+For more detailed information on how to contribute, please see our [CONTRIBUTING.md](CONTRIBUTING.md).
+
 
 ## 🤝 Credits
 
 Developed with a passion for photography and IT by:
 
 - **Bastian Machek (LrGenius / Fokuspunk)** – *Creator & Lead Developer*
-- **AI agents**
+- **Community** – *Special thanks to all contributors and testers for your valuable input and support.*
+- **Various AI agents** - *For the great support in developing this project.*
 
 This project leverages many incredible open-source libraries, including **InsightFace**, **OpenCLIP**, **PyTorch**, **Hugging Face Transformers**, **ChromaDB**, and **Flask**. 
 

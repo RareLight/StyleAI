@@ -207,9 +207,21 @@ def _rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
     linear = np.where(mask, ((rgb + 0.055) / 1.055) ** 2.4, rgb / 12.92)
 
     # XYZ conversion (D65)
-    x = 0.4124564 * linear[:, :, 0] + 0.3575761 * linear[:, :, 1] + 0.1804375 * linear[:, :, 2]
-    y = 0.2126729 * linear[:, :, 0] + 0.7151522 * linear[:, :, 1] + 0.0721750 * linear[:, :, 2]
-    z = 0.0193339 * linear[:, :, 0] + 0.1191920 * linear[:, :, 1] + 0.9503041 * linear[:, :, 2]
+    x = (
+        0.4124564 * linear[:, :, 0]
+        + 0.3575761 * linear[:, :, 1]
+        + 0.1804375 * linear[:, :, 2]
+    )
+    y = (
+        0.2126729 * linear[:, :, 0]
+        + 0.7151522 * linear[:, :, 1]
+        + 0.0721750 * linear[:, :, 2]
+    )
+    z = (
+        0.0193339 * linear[:, :, 0]
+        + 0.1191920 * linear[:, :, 1]
+        + 0.9503041 * linear[:, :, 2]
+    )
 
     # Normalize for D65
     xn, yn, zn = 0.95047, 1.00000, 1.08883
@@ -269,7 +281,7 @@ def compute_histogram_signature(image_bytes: bytes) -> dict[str, Any]:
         L_sorted = np.sort(L)
         n = len(L_sorted)
         shadow_level = float(L_sorted[int(n * 0.10)])  # 10th percentile
-        mid_level = float(L_sorted[int(n * 0.50)])     # median
+        mid_level = float(L_sorted[int(n * 0.50)])  # median
         highlight_level = float(L_sorted[int(n * 0.90)])  # 90th percentile
 
         return {
@@ -321,15 +333,19 @@ def histogram_distance(sig1: dict[str, Any], sig2: dict[str, Any]) -> float:
             # Add epsilon to avoid division by zero
             denom = h1 + h2 + 1e-8
             diff = h1 - h2
-            chi_sq += float(np.sum(diff ** 2 / denom))
+            chi_sq += float(np.sum(diff**2 / denom))
 
         # Normalize chi-square (empirical: max useful value ~4.0 for these bin counts)
         chi_component = min(1.0, chi_sq / 4.0)
 
         # Euclidean on summary stats (all normalized 0..1)
         stat_keys = [
-            "hist_L_mean", "hist_L_std", "hist_chroma",
-            "hist_shadow_level", "hist_mid_level", "hist_highlight_level",
+            "hist_L_mean",
+            "hist_L_std",
+            "hist_chroma",
+            "hist_shadow_level",
+            "hist_mid_level",
+            "hist_highlight_level",
         ]
         stat_diffs = []
         for key in stat_keys:
@@ -576,7 +592,9 @@ def add_training_example(
         metadata["summary"] = summary
     if user_keywords:
         # Store as comma-separated, normalized (lowercase, no spaces)
-        normalized = [k.strip().lower().replace(" ", "_") for k in user_keywords if k.strip()]
+        normalized = [
+            k.strip().lower().replace(" ", "_") for k in user_keywords if k.strip()
+        ]
         metadata["user_keywords"] = json.dumps(normalized, ensure_ascii=False)
 
     # EXIF categorical fields

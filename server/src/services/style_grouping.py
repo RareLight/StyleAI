@@ -154,9 +154,7 @@ def _normalise_value(raw: float, key: str) -> float:
 # ---------------------------------------------------------------------------
 
 
-def _compute_variance(
-    examples: list[dict[str, Any]], key: str
-) -> float:
+def _compute_variance(examples: list[dict[str, Any]], key: str) -> float:
     """Compute population variance for a single canonical develop key.
 
     Values are normalised by their typical slider range so that
@@ -209,15 +207,19 @@ def _histogram_distance(sig1: dict[str, Any], sig2: dict[str, Any]) -> float:
             continue
         denom = h1 + h2 + 1e-8
         diff = h1 - h2
-        chi_sq += float(np.sum(diff ** 2 / denom))
+        chi_sq += float(np.sum(diff**2 / denom))
 
     # Normalize (empirical max ~4.0 for these bin counts)
     chi_component = min(1.0, chi_sq / 4.0)
 
     # Euclidean on summary stats
     stat_keys = [
-        "hist_L_mean", "hist_L_std", "hist_chroma",
-        "hist_shadow_level", "hist_mid_level", "hist_highlight_level",
+        "hist_L_mean",
+        "hist_L_std",
+        "hist_chroma",
+        "hist_shadow_level",
+        "hist_mid_level",
+        "hist_highlight_level",
     ]
     stat_diffs = []
     for key in stat_keys:
@@ -354,7 +356,10 @@ def _auto_split(
         - example_photo_ids (list[str])
     """
     # Check if histograms are available for most examples
-    has_histograms = sum(1 for ex in examples if _load_histogram_signature(ex).get("hist_L")) >= len(examples) // 2
+    has_histograms = (
+        sum(1 for ex in examples if _load_histogram_signature(ex).get("hist_L"))
+        >= len(examples) // 2
+    )
 
     if has_histograms:
         # Use histogram distance as primary splitting criterion
@@ -661,9 +666,7 @@ def generate_style_description(
         top_scenes = sorted(
             scene_distribution.items(), key=lambda x: x[1], reverse=True
         )[:2]
-        scene_names = [
-            s.replace("scene_", "").replace("_", " ") for s, _ in top_scenes
-        ]
+        scene_names = [s.replace("scene_", "").replace("_", " ") for s, _ in top_scenes]
         if scene_names:
             desc += f" Commonly includes: {', '.join(scene_names)}."
 

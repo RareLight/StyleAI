@@ -124,7 +124,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	-- Update Check initialization
 	propertyTable.updateStatus = ""
 	propertyTable.updateStatusColor = { 0.7, 0.7, 0.7 }
-	propertyTable.updateButtonTitle = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/UpdateCheck=Check for updates")
+	propertyTable.updateButtonTitle = LOC("$$$/StyleAI/PluginInfoDialogSections/UpdateCheck=Check for updates")
 	propertyTable.updateAvailable = false
 	propertyTable.latestReleaseInfo = nil
 
@@ -146,7 +146,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 				propertyTable.updateStatus = LOC("$$$/StyleAI/PluginInfo/UpToDate=Plugin is up to date")
 				propertyTable.updateStatusColor = { 0.5, 0.5, 0.5 }
 				propertyTable.updateButtonTitle =
-					LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/UpdateCheck=Check for updates")
+					LOC("$$$/StyleAI/PluginInfoDialogSections/UpdateCheck=Check for updates")
 				propertyTable.updateAvailable = false
 			end
 		end)
@@ -179,7 +179,7 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 				}),
 				f:row({
 					f:push_button({
-						title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/ShowLogfile=Show logfile"),
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/ShowLogfile=Show logfile"),
 						action = function(button)
 							LrShell.revealInShell(Util.getLogfilePath())
 						end,
@@ -187,7 +187,7 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 					}),
 					f:push_button({
 						title = LOC(
-							"$$$/lrc-ai-assistant/PluginInfoDialogSections/CopyLogToDesktop=Copy logfiles to Desktop"
+							"$$$/StyleAI/PluginInfoDialogSections/CopyLogToDesktop=Copy logfiles to Desktop"
 						),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
@@ -219,7 +219,7 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 					f:checkbox({
 						value = bind("periodicalUpdateCheck"),
 						title = LOC(
-							"$$$/lrc-ai-assistant/PluginInfoDialogSections/periodUpdateCheck=Periodically check for Updates"
+							"$$$/StyleAI/PluginInfoDialogSections/periodUpdateCheck=Periodically check for Updates"
 						),
 					}),
 				}),
@@ -260,7 +260,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 		{
 			bind_to_object = propertyTable,
 
-			title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/header=StyleAI configuration"),
+			title = LOC("$$$/StyleAI/PluginInfoDialogSections/header=StyleAI configuration"),
 
 			f:group_box({
 				width = groupBoxWidth,
@@ -320,7 +320,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:row({
 				f:push_button({
-					title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/Docs=Read documentation online"),
+					title = LOC("$$$/StyleAI/PluginInfoDialogSections/Docs=Read documentation online"),
 					action = function(button)
 						LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki")
 					end,
@@ -328,11 +328,11 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/ApiKeys=API keys"),
+				title = LOC("$$$/StyleAI/PluginInfoDialogSections/ApiKeys=API keys"),
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/GoogleApiKey=Google API key"),
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GoogleApiKey=Google API key"),
 						alignment = "right",
 						width = share("apiKeyLabelWidth"),
 					}),
@@ -341,7 +341,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						fill_horizontal = 1,
 					}),
 					f:push_button({
-						title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/GetAPIkey=Get API key"),
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
 						action = function(button)
 							LrHttp.openUrlInBrowser("https://aistudio.google.com/app/apikey")
 						end,
@@ -351,7 +351,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/ChatGPTApiKey=ChatGPT API key"),
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/ChatGPTApiKey=ChatGPT API key"),
 						alignment = "right",
 						width = share("apiKeyLabelWidth"),
 					}),
@@ -360,7 +360,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						fill_horizontal = 1,
 					}),
 					f:push_button({
-						title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/GetAPIkey=Get API key"),
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
 						action = function(button)
 							LrHttp.openUrlInBrowser("https://platform.openai.com/api-keys")
 						end,
@@ -394,12 +394,12 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/BackendServer=Backend Server"),
+				title = LOC("$$$/StyleAI/PluginInfoDialogSections/BackendServer=Backend Server"),
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
 						title = LOC(
-							"$$$/lrc-ai-assistant/PluginInfoDialogSections/BackendServerUrl=Backend server URL (IP/hostname)"
+							"$$$/StyleAI/PluginInfoDialogSections/BackendServerUrl=Backend server URL (IP/hostname)"
 						),
 						alignment = "right",
 						width = share("labelWidth"),
@@ -733,11 +733,11 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/ollamaSettings=Ollama Settings"),
+				title = LOC("$$$/StyleAI/PluginInfoDialogSections/ollamaSettings=Ollama Settings"),
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/OllamaBaseUrl=Ollama Base URL"),
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaBaseUrl=Ollama Base URL"),
 						width = share("setupLabelWidth"),
 					}),
 				}),
@@ -748,7 +748,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						width_in_chars = 40,
 					}),
 					f:push_button({
-						title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
 						action = function(button)
 							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-Ollama-Setup")
 						end,
@@ -793,13 +793,13 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 					propertyTable.promptTitleMenu,
 					f:push_button({
-						title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/add=Add"),
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/add=Add"),
 						action = function(button)
 							PromptConfigProvider.addPrompt(propertyTable)
 						end,
 					}),
 					f:push_button({
-						title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/delete=Delete"),
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/delete=Delete"),
 						action = function(button)
 							PromptConfigProvider.deletePrompt(propertyTable)
 						end,
@@ -830,12 +830,12 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("$$$/lrc-ai-assistant/PluginInfoDialogSections/exportSettings=Export settings"),
+				title = LOC("$$$/StyleAI/PluginInfoDialogSections/exportSettings=Export settings"),
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
 						title = LOC(
-							"$$$/lrc-ai-assistant/PluginInfoDialogSections/exportSize=Export size in pixel (long edge)"
+							"$$$/StyleAI/PluginInfoDialogSections/exportSize=Export size in pixel (long edge)"
 						),
 						alignment = "right",
 						width = share("labelWidth"),
@@ -849,7 +849,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					fill_horizontal = 1,
 					f:static_text({
 						title = LOC(
-							"$$$/lrc-ai-assistant/PluginInfoDialogSections/exportQuality=Export JPEG quality in percent"
+							"$$$/StyleAI/PluginInfoDialogSections/exportQuality=Export JPEG quality in percent"
 						),
 						alignment = "right",
 						width = share("labelWidth"),

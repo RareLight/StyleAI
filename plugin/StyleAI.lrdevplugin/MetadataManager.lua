@@ -118,7 +118,7 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 
 	log:trace("Saving title, caption, altText, keywords to catalog")
 	catalog:withWriteAccessDo(
-		LOC("$$$/lrc-ai-assistant/AnalyzeImageTask/saveTitleCaption=Save AI generated title and caption"),
+		LOC("$$$/StyleAI/AnalyzeImageTask/saveTitleCaption=Save AI generated title and caption"),
 		function()
 			if saveCaption and caption and caption ~= "" then
 				photo:setRawMetadata("caption", caption)
@@ -156,7 +156,7 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 		local topKeyword = nil
 		if prefs.useKeywordHierarchy and options.useTopLevelKeyword then
 			catalog:withWriteAccessDo(
-				"$$$/lrc-ai-assistant/AnalyzeImageTask/saveTopKeyword=Save AI generated keywords",
+				"$$$/StyleAI/AnalyzeImageTask/saveTopKeyword=Save AI generated keywords",
 				function()
 					topKeyword = createKeywordSafely(
 						catalog,
@@ -184,7 +184,7 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 		local existingKeywordNames = nil
 		local currentTopLevelKeyword = options.useTopLevelKeyword and (options.topLevelKeyword or "StyleAI") or nil
 		catalog:withWriteAccessDo(
-			"$$$/lrc-ai-assistant/AnalyzeImageTask/saveTopKeyword=Save AI generated keywords",
+			"$$$/StyleAI/AnalyzeImageTask/saveTopKeyword=Save AI generated keywords",
 			function()
 				MetadataManager.addKeywordRecursively(
 					photo,
@@ -948,7 +948,7 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 					}),
 					f:checkbox({
 						value = bind("saveKeywords"),
-						title = LOC("$$$/lrc-ai-assistant/AnalyzeImageTask/SaveKeywords=Save keywords"),
+						title = LOC("$$$/StyleAI/AnalyzeImageTask/SaveKeywords=Save keywords"),
 					}),
 				}),
 				f:scrolled_view({
@@ -964,7 +964,7 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 				f:row({
 					f:checkbox({
 						value = bind("saveTitle"),
-						title = LOC("$$$/lrc-ai-assistant/AnalyzeImageTask/SaveTitle=Save title"),
+						title = LOC("$$$/StyleAI/AnalyzeImageTask/SaveTitle=Save title"),
 					}),
 					f:edit_field({
 						value = bind("title"),
@@ -976,7 +976,7 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 				f:row({
 					f:checkbox({
 						value = bind("saveCaption"),
-						title = LOC("$$$/lrc-ai-assistant/AnalyzeImageTask/SaveCaption=Save caption"),
+						title = LOC("$$$/StyleAI/AnalyzeImageTask/SaveCaption=Save caption"),
 					}),
 					f:edit_field({
 						value = bind("caption"),
@@ -988,7 +988,7 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 				f:row({
 					f:checkbox({
 						value = bind("saveAltText"),
-						title = LOC("$$$/lrc-ai-assistant/AnalyzeImageTask/SaveAltText=Save alt text"),
+						title = LOC("$$$/StyleAI/AnalyzeImageTask/SaveAltText=Save alt text"),
 					}),
 					f:edit_field({
 						value = bind("altText"),
@@ -1002,9 +1002,9 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/lrc-ai-assistant/AnalyzeImageTask/ReviewWindowTitle=Review results")
+		title = LOC("$$$/StyleAI/AnalyzeImageTask/ReviewWindowTitle=Review results")
 			.. (photo and (": " .. photo:getFormattedMetadata("fileName")) or ""),
-		otherVerb = LOC("$$$/lrc-ai-assistant/AnalyzeImageTask/discard=Discard"),
+		otherVerb = LOC("$$$/StyleAI/AnalyzeImageTask/discard=Discard"),
 		contents = dialogView,
 	})
 

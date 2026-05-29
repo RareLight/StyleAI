@@ -1,6 +1,6 @@
 # Docker-Image bauen und zu GitHub Container Registry (ghcr.io) pushen
 # Auslöser: Push auf main, Tags v*, oder manuell (workflow_dispatch)
-# Repo-Root = geniusai-server. Bei Monorepo: context/file auf ./geniusai-server stellen.
+# Repo-Root = styleai-server. Bei Monorepo: context/file auf ./styleai-server stellen.
 
 name: Docker Build and Push
 
@@ -46,7 +46,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/geniusai-server
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/styleai-server
           tags: |
             type=raw,value=${{ github.event.inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
             type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' }}

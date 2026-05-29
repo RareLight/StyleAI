@@ -4,7 +4,7 @@
   
   [![Lua](https://img.shields.io/badge/Lua-2C2D72?style=for-the-badge&logo=lua&logoColor=white)]()
   [![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)]()
-  [![Website](https://img.shields.io/badge/Website-lrgenius.com-00B2FF?style=for-the-badge)]()
+  [![Website](https://img.shields.io/badge/Website-github.com/RareLight/StyleAI-00B2FF?style=for-the-badge)]()
   [![Downloads](https://img.shields.io/github/downloads/RareLight/StyleAI/total?style=for-the-badge&label=Downloads)](https://github.com/RareLight/StyleAI/releases)
 </div>
 
@@ -27,7 +27,7 @@ Whether you prefer running local models to ensure maximum privacy or want to lev
 - **☁️ Local & Cloud Models:** Full support for local AI models via **Ollama** and **LM Studio**, as well as integration with cloud providers like **ChatGPT/OpenAI**, **Google Gemini**, and **Vertex AI**.
 - **🎨 Customizable Prompts & Temperature Control:** System prompts for the AI can be added, edited, and deleted directly within the Lightroom Plug-In Manager. Use the temperature slider to control whether the AI should be highly creative or strictly consistent.
 - **📝 Photo Context (Contextual Info):** Provide manual hints to the AI before analysis (e.g., names of people or specific background details) that aren't immediately obvious from the image itself. This can be done via a popup dialog or directly in Lightroom's metadata panel.
-- **🗄️ Custom Python Backend & Database:** The plugin utilizes a high-performance local server (`geniusai-server`). Existing metadata from your Lightroom catalog can easily be imported prior to the first AI analysis.
+- **🗄️ Custom Python Backend & Database:** The plugin utilizes a high-performance local server (`styleai-server`). Existing metadata from your Lightroom catalog can easily be imported prior to the first AI analysis.
 
 ---
 
@@ -47,7 +47,7 @@ Whether you prefer running local models to ensure maximum privacy or want to lev
    - **Advanced Search...** for semantic free-text search
 5. For AI Edit, start with defaults, keep **Review each proposed edit before applying it** enabled, and tune style via **Overall look** + **Style strength**.
 
-*For comprehensive details, model setup guides, and tips, please visit [lrgenius.com/help](http://lrgenius.com/help/).*
+*For comprehensive details, model setup guides, and tips, please visit [github.com/RareLight/StyleAI/wiki](https://github.com/RareLight/StyleAI/wiki).*
 
 ---
 
@@ -63,7 +63,7 @@ This project is built on the belief that AI tooling for creatives should remain 
 ## 🛠️ Tech Stack
 
 - **Frontend / Lightroom Plugin:** Lua (Lightroom SDK)
-- **Backend / Server:** Python (`geniusai-server`) / FastAPI / Flask
+- **Backend / Server:** Python (`styleai-server`) / FastAPI / Flask
 - **AI & Embedding:** Open-CLIP (SigLIP2), PyTorch, ONNX Runtime
 - **Identity & Faces:** InsightFace
 - **Database:** ChromaDB (Vector Search), SQLite (Metadata & Cache)

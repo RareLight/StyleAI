@@ -223,20 +223,24 @@ def add_training_batch():
     for item in examples:
         photo_id = item.get("photo_id", "").strip()
         if not photo_id:
-            results.append({
-                "status": "error",
-                "photo_id": "",
-                "error": "photo_id is required",
-            })
+            results.append(
+                {
+                    "status": "error",
+                    "photo_id": "",
+                    "error": "photo_id is required",
+                }
+            )
             continue
 
         develop_settings = item.get("develop_settings", {})
         if not isinstance(develop_settings, dict):
-            results.append({
-                "status": "error",
-                "photo_id": photo_id,
-                "error": "develop_settings must be a dict",
-            })
+            results.append(
+                {
+                    "status": "error",
+                    "photo_id": photo_id,
+                    "error": "develop_settings must be a dict",
+                }
+            )
             continue
 
         label = item.get("label")
@@ -275,21 +279,25 @@ def add_training_batch():
             results.append({"status": "ok", "photo_id": photo_id})
         except Exception as exc:
             logger.error("Batch add failed for photo_id=%s: %s", photo_id, exc)
-            results.append({
-                "status": "error",
-                "photo_id": photo_id,
-                "error": str(exc),
-            })
+            results.append(
+                {
+                    "status": "error",
+                    "photo_id": photo_id,
+                    "error": str(exc),
+                }
+            )
 
     success_count = sum(1 for r in results if r["status"] == "ok")
     total_count = training_service.get_training_count()
 
-    return jsonify({
-        "status": "ok",
-        "added": success_count,
-        "total_count": total_count,
-        "results": results,
-    }), 200
+    return jsonify(
+        {
+            "status": "ok",
+            "added": success_count,
+            "total_count": total_count,
+            "results": results,
+        }
+    ), 200
 
 
 # ---------------------------------------------------------------------------

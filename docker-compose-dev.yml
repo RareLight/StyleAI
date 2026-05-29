@@ -1,18 +1,18 @@
-# geniusai-server built from ./server (local backend development).
+# styleai-server built from ./server (local backend development).
 # The image embeds version_info.py from your working tree; use a release-matching
 # plugin or dev placeholders as usual.
 #
 # Start: docker compose -f docker-compose-dev.yml up -d --build
 # Stop:  docker compose -f docker-compose-dev.yml down
-# Logs:  docker compose -f docker-compose-dev.yml logs -f geniusai-server
+# Logs:  docker compose -f docker-compose-dev.yml logs -f styleai-server
 
 services:
-  geniusai-server:
+  styleai-server:
     build:
       context: ./server
       dockerfile: Dockerfile
-    image: geniusai-server:dev
-    container_name: geniusai-server
+    image: styleai-server:dev
+    container_name: styleai-server
     restart: unless-stopped
     ports:
       - "19819:19819"
@@ -21,16 +21,16 @@ services:
       - ./models:/models
       - ./gcloud:/root/.config/gcloud
     environment:
-      - GENIUSAI_HOST=0.0.0.0
-      - GENIUSAI_PORT=19819
+      - STYLEAI_HOST=0.0.0.0
+      - STYLEAI_PORT=19819
       - CLOUDSDK_CONFIG=/root/.config/gcloud
 
-      - GENIUSAI_FACES_CLUSTER_ENABLED=true
-      - GENIUSAI_FACES_CLUSTER_INTERVAL=3600
-      - GENIUSAI_FACES_CLUSTER_DISTANCE=0.5
-      - GENIUSAI_FACES_CLUSTER_MIN_FACES=3
-      - GENIUSAI_FACES_CLUSTER_LINKAGE=complete
+      - STYLEAI_FACES_CLUSTER_ENABLED=true
+      - STYLEAI_FACES_CLUSTER_INTERVAL=3600
+      - STYLEAI_FACES_CLUSTER_DISTANCE=0.5
+      - STYLEAI_FACES_CLUSTER_MIN_FACES=3
+      - STYLEAI_FACES_CLUSTER_LINKAGE=complete
 
-      - GENIUSAI_BACKUP_ENABLED=true
-      - GENIUSAI_BACKUP_INTERVAL=86400
-      - GENIUSAI_BACKUP_MAX_KEEP=14
+      - STYLEAI_BACKUP_ENABLED=true
+      - STYLEAI_BACKUP_INTERVAL=86400
+      - STYLEAI_BACKUP_MAX_KEEP=14

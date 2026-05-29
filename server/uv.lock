@@ -745,79 +745,6 @@ wheels = [
 ]
 
 [[package]]
-name = "genius-server"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "chromadb" },
-    { name = "flask" },
-    { name = "ftfy" },
-    { name = "google-cloud-aiplatform" },
-    { name = "google-genai" },
-    { name = "huggingface-hub" },
-    { name = "insightface" },
-    { name = "lmstudio" },
-    { name = "numpy" },
-    { name = "ollama" },
-    { name = "onnxruntime" },
-    { name = "open-clip-torch" },
-    { name = "openai" },
-    { name = "pillow" },
-    { name = "psutil" },
-    { name = "regex" },
-    { name = "requests" },
-    { name = "safetensors" },
-    { name = "scikit-learn" },
-    { name = "timm" },
-    { name = "tokenizers" },
-    { name = "torch" },
-    { name = "torchvision" },
-    { name = "transformers" },
-    { name = "waitress" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-mock" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "chromadb", specifier = ">=1.5.8" },
-    { name = "flask", specifier = ">=3.1.3" },
-    { name = "ftfy", specifier = ">=6.3.1" },
-    { name = "google-cloud-aiplatform", specifier = ">=1.148.1" },
-    { name = "google-genai", specifier = ">=1.73.1" },
-    { name = "huggingface-hub", specifier = ">=1.12.0" },
-    { name = "insightface", specifier = ">=0.7.3" },
-    { name = "lmstudio", specifier = ">=1.5.0" },
-    { name = "numpy", specifier = ">=2.4.4" },
-    { name = "ollama", specifier = ">=0.6.1" },
-    { name = "onnxruntime", specifier = ">=1.25.0" },
-    { name = "open-clip-torch", specifier = ">=3.3.0" },
-    { name = "openai", specifier = ">=2.32.0" },
-    { name = "pillow", specifier = ">=12.2.0" },
-    { name = "psutil", specifier = ">=7.2.2" },
-    { name = "regex", specifier = ">=2026.4.4" },
-    { name = "requests", specifier = ">=2.33.1" },
-    { name = "safetensors", specifier = ">=0.7.0" },
-    { name = "scikit-learn", specifier = ">=1.8.0" },
-    { name = "timm", specifier = ">=1.0.26" },
-    { name = "tokenizers", specifier = ">=0.22.0" },
-    { name = "torch", specifier = ">=2.11.0" },
-    { name = "torchvision", specifier = ">=0.26.0" },
-    { name = "transformers", specifier = ">=4.46" },
-    { name = "waitress", specifier = ">=3.0.2" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.0.0" },
-    { name = "pytest-mock", specifier = ">=3.12.0" },
-]
-
-[[package]]
 name = "google-api-core"
 version = "2.30.3"
 source = { registry = "https://pypi.org/simple" }
@@ -3438,6 +3365,79 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/99/fab077604f45c8ff1d330c26d1cccf94a58ea0a9155c8ba63c038117543a/stringzilla-4.6.0-cp313-cp313-win32.whl", hash = "sha256:51d3c8504a8038b3d1699f366a56a8d4571741c3993af9562b6f227d56c5ad67", size = 114753, upload-time = "2025-12-26T23:43:49.71Z" },
     { url = "https://files.pythonhosted.org/packages/0e/21/b9bd35292a126a0c2fde103ad5ce5bfe7384cb6eba4ca34fc5cbcaa7ac96/stringzilla-4.6.0-cp313-cp313-win_amd64.whl", hash = "sha256:0e18442332b72d37465f7959bb72f0be480f4d604c86d165863587113401bb45", size = 162434, upload-time = "2025-12-26T23:43:51.486Z" },
     { url = "https://files.pythonhosted.org/packages/6b/89/1f5a6b4f8fc405e1e76125be9629ad7390bfcf1be9683a6e2e5602911b68/stringzilla-4.6.0-cp313-cp313-win_arm64.whl", hash = "sha256:33192fe820704803a52b90c566838373f45b295e4064e0679ba4f76bb76b6ce7", size = 123350, upload-time = "2025-12-26T23:43:53.097Z" },
+]
+
+[[package]]
+name = "styleai-server"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "chromadb" },
+    { name = "flask" },
+    { name = "ftfy" },
+    { name = "google-cloud-aiplatform" },
+    { name = "google-genai" },
+    { name = "huggingface-hub" },
+    { name = "insightface" },
+    { name = "lmstudio" },
+    { name = "numpy" },
+    { name = "ollama" },
+    { name = "onnxruntime" },
+    { name = "open-clip-torch" },
+    { name = "openai" },
+    { name = "pillow" },
+    { name = "psutil" },
+    { name = "regex" },
+    { name = "requests" },
+    { name = "safetensors" },
+    { name = "scikit-learn" },
+    { name = "timm" },
+    { name = "tokenizers" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "transformers" },
+    { name = "waitress" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-mock" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "chromadb", specifier = ">=1.5.8" },
+    { name = "flask", specifier = ">=3.1.3" },
+    { name = "ftfy", specifier = ">=6.3.1" },
+    { name = "google-cloud-aiplatform", specifier = ">=1.148.1" },
+    { name = "google-genai", specifier = ">=1.73.1" },
+    { name = "huggingface-hub", specifier = ">=1.12.0" },
+    { name = "insightface", specifier = ">=0.7.3" },
+    { name = "lmstudio", specifier = ">=1.5.0" },
+    { name = "numpy", specifier = ">=2.4.4" },
+    { name = "ollama", specifier = ">=0.6.1" },
+    { name = "onnxruntime", specifier = ">=1.25.0" },
+    { name = "open-clip-torch", specifier = ">=3.3.0" },
+    { name = "openai", specifier = ">=2.32.0" },
+    { name = "pillow", specifier = ">=12.2.0" },
+    { name = "psutil", specifier = ">=7.2.2" },
+    { name = "regex", specifier = ">=2026.4.4" },
+    { name = "requests", specifier = ">=2.33.1" },
+    { name = "safetensors", specifier = ">=0.7.0" },
+    { name = "scikit-learn", specifier = ">=1.8.0" },
+    { name = "timm", specifier = ">=1.0.26" },
+    { name = "tokenizers", specifier = ">=0.22.0" },
+    { name = "torch", specifier = ">=2.11.0" },
+    { name = "torchvision", specifier = ">=0.26.0" },
+    { name = "transformers", specifier = ">=4.46" },
+    { name = "waitress", specifier = ">=3.0.2" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "pytest-mock", specifier = ">=3.12.0" },
 ]
 
 [[package]]

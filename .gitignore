@@ -19,9 +19,9 @@ dist/
 models/
 tests/results/*.json
 chroma.sqlite3
-lrgenius-server.log
-lrgenius-server.OK
-lrgenius-server.pid
+styleai-server.log
+styleai-server.OK
+styleai-server.pid
 
 run.sh
 run.bat

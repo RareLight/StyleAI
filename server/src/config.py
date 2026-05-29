@@ -263,7 +263,9 @@ def get_current_log_path() -> str:
 
     # Default paths determined at startup
     if sys.platform == "darwin":  # macOS
-        return os.path.join(os.path.expanduser("~"), "Library", "Logs", "StyleAI", "service.log")
+        return os.path.join(
+            os.path.expanduser("~"), "Library", "Logs", "StyleAI", "service.log"
+        )
     elif sys.platform == "win32":  # Windows
         return os.path.join(
             os.environ.get("LOCALAPPDATA", ""),

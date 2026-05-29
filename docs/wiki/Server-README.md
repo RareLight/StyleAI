@@ -77,9 +77,9 @@ The Compose file mounts `./gcloud` to `/root/.config/gcloud`, which keeps the ac
 ```bash
 mkdir -p gcloud
 docker compose up -d --build
-docker compose exec geniusai-server gcloud config set project YOUR_PROJECT_ID
-docker compose exec geniusai-server gcloud auth application-default login
-docker compose exec geniusai-server gcloud auth application-default print-access-token
+docker compose exec styleai-server gcloud config set project YOUR_PROJECT_ID
+docker compose exec styleai-server gcloud auth application-default login
+docker compose exec styleai-server gcloud auth application-default print-access-token
 ```
 
 ### Headless remote servers
@@ -87,7 +87,7 @@ docker compose exec geniusai-server gcloud auth application-default print-access
 If the server is only reachable via SSH and has no browser, use:
 
 ```bash
-docker compose exec geniusai-server gcloud auth application-default login --no-browser
+docker compose exec styleai-server gcloud auth application-default login --no-browser
 ```
 
 Then complete the remote bootstrap flow on a second trusted machine with a browser and Google Cloud CLI installed.
@@ -114,7 +114,7 @@ If you run an existing database, perform a one-time migration.
   - `POST /db/migrate-photo-ids`
   - Body: `{ "mappings": [{ "old_id": "...", "new_id": "..." }] }`
 - Trigger on server startup:
-  - Set `GENIUSAI_MIGRATION_FILE` to a JSON mapping file path
+  - Set `STYLEAI_MIGRATION_FILE` to a JSON mapping file path
 
 ### Affected collections
 

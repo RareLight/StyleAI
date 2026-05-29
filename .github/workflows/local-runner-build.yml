@@ -21,7 +21,7 @@ on:
       local_artifact_dir:
         description: "Runner-local directory for test artifacts"
         required: false
-        default: "~/lrgenius-local-artifacts"
+        default: "~/styleai-local-artifacts"
         type: string
       python_version:
         description: "Python version for uv venv"
@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_DIR="build"
-          SERVER_DIR="$BUILD_DIR/lrgenius-server"
+          SERVER_DIR="$BUILD_DIR/styleai-server"
           SERVER_APP_DIR="$SERVER_DIR/app"
           SERVER_ENV_DIR="$SERVER_DIR/env"
           mkdir -p "$SERVER_APP_DIR"
@@ -131,9 +131,9 @@ jobs:
             echo '    xattr -d com.apple.quarantine "$SCRIPT_DIR" 2>/dev/null || true'
             echo '  fi'
             echo 'fi'
-            echo 'exec "$SCRIPT_DIR/env/bin/python" "$SCRIPT_DIR/app/src/geniusai_server.py" "$@"'
-          } > "$SERVER_DIR/lrgenius-server"
-          chmod +x "$SERVER_DIR/lrgenius-server"
+            echo 'exec "$SCRIPT_DIR/env/bin/python" "$SCRIPT_DIR/app/src/styleai_server.py" "$@"'
+          } > "$SERVER_DIR/styleai-server"
+          chmod +x "$SERVER_DIR/styleai-server"
 
           # Keep artifacts portable if uploaded via GitHub artifact service.
           echo "Normalizing macOS runtime (dereferencing symlinks)..."
@@ -150,16 +150,16 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_DIR="build"
-          PLUGIN_DIR="$BUILD_DIR/LrGeniusAI.lrplugin"
+          PLUGIN_DIR="$BUILD_DIR/StyleAI.lrplugin"
           mkdir -p "$PLUGIN_DIR"
-          cp plugin/LrGeniusAI.lrdevplugin/*.lua "$PLUGIN_DIR/"
-          cp plugin/LrGeniusAI.lrdevplugin/TranslatedStrings_*.txt "$PLUGIN_DIR/"
+          cp plugin/StyleAI.lrdevplugin/*.lua "$PLUGIN_DIR/"
+          cp plugin/StyleAI.lrdevplugin/TranslatedStrings_*.txt "$PLUGIN_DIR/"
 
       - name: Shrink build
         shell: bash
         run: |
           set -euo pipefail
-          ENV_DIR="build/lrgenius-server/env"
+          ENV_DIR="build/styleai-server/env"
           find "$ENV_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
           find "$ENV_DIR" -name "*.pyc" -delete 2>/dev/null || true
           find "$ENV_DIR" -path "*.dist-info/RECORD" -delete 2>/dev/null || true
@@ -176,12 +176,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DB_DIR="$RUNNER_TEMP/lrgenius-smoke-db"
-          DB_PATH="$DB_DIR/lrgenius.db"
+          DB_DIR="$RUNNER_TEMP/styleai-smoke-db"
+          DB_PATH="$DB_DIR/styleai.db"
           SMOKE_STDOUT="$DB_DIR/smoke-backend.out"
           mkdir -p "$DB_DIR"
           URL="http://127.0.0.1:19819/ping"
-          "build/lrgenius-server/lrgenius-server" --db-path "$DB_PATH" >"$SMOKE_STDOUT" 2>&1 &
+          "build/styleai-server/styleai-server" --db-path "$DB_PATH" >"$SMOKE_STDOUT" 2>&1 &
           BACKEND_PID=$!
 
           READY=0
@@ -205,7 +205,7 @@ jobs:
             exit 1
           fi
 
-          TEST_PY="$GITHUB_WORKSPACE/build/lrgenius-server/env/bin/python"
+          TEST_PY="$GITHUB_WORKSPACE/build/styleai-server/env/bin/python"
           "$TEST_PY" "server/test/api_test_client.py" \
             --base-url "http://127.0.0.1:19819" \
             --iterations 60 \
@@ -220,7 +220,7 @@ jobs:
           LOCAL_DIR="${{ inputs.local_artifact_dir }}"
           LOCAL_DIR="${LOCAL_DIR/#\~/$HOME}"
           mkdir -p "$LOCAL_DIR"
-          ARTIFACT_NAME="LrGeniusAI-local-macos-arm64-${GITHUB_RUN_NUMBER}"
+          ARTIFACT_NAME="StyleAI-local-macos-arm64-${GITHUB_RUN_NUMBER}"
           ARTIFACT_PATH="$LOCAL_DIR/$ARTIFACT_NAME"
           rm -rf "$ARTIFACT_PATH"
           cp -a build "$ARTIFACT_PATH"
@@ -231,7 +231,7 @@ jobs:
         if: ${{ inputs.upload_artifact }}
         uses: actions/upload-artifact@v6
         with:
-          name: lrgenius-ai-local-macos-arm64-${{ github.run_number }}
+          name: styleai-local-macos-arm64-${{ github.run_number }}
           path: build/
           retention-days: 3
           compression-level: 6

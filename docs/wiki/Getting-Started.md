@@ -84,13 +84,13 @@ If your backend is running in the remote Docker Compose environment:
 ```bash
 mkdir -p gcloud
 docker compose up -d --build
-docker compose exec geniusai-server gcloud config set project YOUR_PROJECT_ID
-docker compose exec geniusai-server gcloud auth application-default login
+docker compose exec styleai-server gcloud config set project YOUR_PROJECT_ID
+docker compose exec styleai-server gcloud auth application-default login
 ```
 
 For headless servers without a GUI/browser:
 ```bash
-docker compose exec geniusai-server gcloud auth application-default login --no-browser
+docker compose exec styleai-server gcloud auth application-default login --no-browser
 ```
 The `./gcloud:/root/.config/gcloud` bind mount keeps your ADC credentials intact between container restarts.
 

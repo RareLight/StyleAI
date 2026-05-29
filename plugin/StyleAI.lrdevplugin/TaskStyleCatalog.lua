@@ -160,7 +160,6 @@ LrTasks.startAsyncTask(function()
 			local catalog = LrApplication.activeCatalog()
 			local catalogPath = catalog:getPath()
 			local catalogDir = LrPathUtils.parent(catalogPath)
-			local defaultPath = LrPathUtils.child(catalogDir, "StyleAI-Styles.json")
 
 			local path = LrDialogs.runSavePanel({
 				title = LOC("$$$/StyleAI/StyleCatalog/ExportDialogTitle=Export Style Catalog"),

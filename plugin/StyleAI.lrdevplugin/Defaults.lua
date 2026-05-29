@@ -26,19 +26,19 @@ Defaults.defaultTemperature = 0.1
 Defaults.defaultMaxTokens = 2048
 
 Defaults.defaultKeywordCategories = {
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Activities=Activities"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Buildings=Buildings"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Location=Location"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Objects=Objects"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/People=People"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Moods=Moods"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Sceneries=Sceneries"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Texts=Texts"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Companies=Companies"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Weather=Weather"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Plants=Plants"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Animals=Animals"),
-	LOC("$$$/lrc-ai-assistant/Defaults/ResponseStructure/keywords/Vehicles=Vehicles"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Activities=Activities"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Buildings=Buildings"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Location=Location"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Objects=Objects"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/People=People"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Moods=Moods"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Sceneries=Sceneries"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Texts=Texts"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Companies=Companies"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Weather=Weather"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Plants=Plants"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Animals=Animals"),
+	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Vehicles=Vehicles"),
 }
 
 Defaults.exportSizes = {

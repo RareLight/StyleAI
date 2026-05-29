@@ -96,9 +96,7 @@ def _ensure_initialized() -> sqlite3.Connection:
     conn.executescript(SCHEMA_SQL)
     conn.row_factory = sqlite3.Row
     # Migrate: ensure camera_profile column exists
-    cols = [
-        r[1] for r in conn.execute("PRAGMA table_info(styles)")
-    ]
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(styles)")]
     if "camera_profile" not in cols:
         conn.execute("ALTER TABLE styles ADD COLUMN camera_profile TEXT")
         conn.commit()
@@ -254,7 +252,13 @@ def get_style_recipe(style_id: str) -> dict[str, Any]:
         raw = ex.get("canonical_settings", "{}")
         try:
             settings = json.loads(raw) if isinstance(raw, str) else dict(raw)
-            settings_list.append({k: float(v) for k, v in settings.items() if isinstance(v, (int, float))})
+            settings_list.append(
+                {
+                    k: float(v)
+                    for k, v in settings.items()
+                    if isinstance(v, (int, float))
+                }
+            )
         except (ValueError, TypeError):
             continue
 
@@ -344,7 +348,10 @@ def discover_styles_from_examples(
                 "genre": genre,
                 "subgenre": subgenre,
                 "description": grouping.generate_style_description(
-                    sg["mean_develop_settings"], genre, sg["scene_distribution"], camera_profile=profile
+                    sg["mean_develop_settings"],
+                    genre,
+                    sg["scene_distribution"],
+                    camera_profile=profile,
                 ),
                 "example_count": len(sg["example_photo_ids"]),
                 "mean_exposure_dna": sg["mean_exposure_dna"],
@@ -459,7 +466,9 @@ def find_matching_styles(
                 grouping._safe_json_loads(style.get("user_keywords"), [])
             )
             if style_keywords:
-                overlap = len(keywords & style_keywords) / max(len(keywords), len(style_keywords))
+                overlap = len(keywords & style_keywords) / max(
+                    len(keywords), len(style_keywords)
+                )
                 score += 0.10 * overlap
 
         # Exposure component (25%)
@@ -666,8 +675,8 @@ def update_style_for_example(
             if ex.get("camera_model", "").strip() == cam
             and (ex.get("camera_profile") or "default").strip() == profile
             and grouping._primary_genre_with_keywords(
-                grouping._safe_json_list(ex.get("scene_tags"), []),
-                grouping._safe_json_list(ex.get("user_keywords"), []),
+                grouping._safe_json_loads(ex.get("scene_tags"), []),
+                grouping._safe_json_loads(ex.get("user_keywords"), []),
             )
             == primary_genre
         ]
