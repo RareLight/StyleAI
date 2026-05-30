@@ -33,7 +33,11 @@ DB_PATH = args.db_path
 # Platform-specific device selection:
 # - macOS: Use Metal GPU (MPS) if available
 # - Windows: CPU-only for now to avoid VRAM issues with open_clip on CUDA and local LLMs using CUDA
-if sys.platform == "darwin":  # macOS
+force_cpu_clip = os.environ.get("STYLEAI_FORCE_CPU_CLIP", "0").lower() in ("1", "true", "yes")
+
+if force_cpu_clip:
+    TORCH_DEVICE = "cpu"
+elif sys.platform == "darwin":  # macOS
     TORCH_DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 elif sys.platform == "win32":  # Windows
     TORCH_DEVICE = "cpu"

@@ -9,7 +9,7 @@ Info.VERSION = { major = Info.MAJOR, minor = Info.MINOR, revision = Info.REVISIO
 return {
 
 	LrSdkVersion = 14.0,
-	LrSdkMinimumVersion = 14.0,
+	LrSdkMinimumVersion = 7.0,
 	LrToolkitIdentifier = "StyleAI",
 	LrPluginName = "StyleAI",
 	LrInitPlugin = "Init.lua",
@@ -23,11 +23,15 @@ return {
 
 	LrLibraryMenuItems = {
 		{
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index Photos..."),
+			file = "TaskAnalyzeAndIndex.lua",
+		},
+		{
 			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
 			file = "TaskAiEditPhotos.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Training/MenuItem=Save Edits as AI Training Examples..."),
+			title = LOC("$$$/StyleAI/Training/MenuItem=Save as AI Training Examples..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
@@ -38,11 +42,15 @@ return {
 
 	LrExportMenuItems = {
 		{
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index Photos..."),
+			file = "TaskAnalyzeAndIndex.lua",
+		},
+		{
 			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
 			file = "TaskAiEditPhotos.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Training/MenuItem=Save Edits as AI Training Examples..."),
+			title = LOC("$$$/StyleAI/Training/MenuItem=Save as AI Training Examples..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{

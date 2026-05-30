@@ -36,6 +36,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.backendServerUrl = prefs.backendServerUrl or Defaults.defaultBackendServerUrl
 	propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
 	propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
+	propertyTable.indexingParallelTasks = tostring(prefs.indexingParallelTasks or "2")
 
 	-- Training/Style Profile stats (loaded asynchronously).
 	propertyTable.trainingCount = 0
@@ -668,7 +669,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 												.. tostring(
 													result.reason or LOC("$$$/StyleAI/common/Unknown=unknown")
 												)
-												.. "\n\n"
+										.. "\n\n"
 												.. buildInfo,
 											"warning"
 										)
@@ -683,7 +684,18 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							end)
 						end,
 					}),
-
+					f:push_button({
+						title = LOC("Re-analyze Indexed Photos"),
+						width = share("backendButtonWidth"),
+						action = function(button)
+							local prefs = import("LrPrefs").prefsForPlugin()
+							prefs.indexScope = "indexed"
+							prefs.regenerateMetadata = true
+							-- Clear cache to allow re-running the task script
+							package.loaded["TaskAnalyzeAndIndex"] = nil
+							require("TaskAnalyzeAndIndex")
+						end,
+					}),
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Backend"),
 						width = share("backendButtonWidth"),
@@ -778,6 +790,36 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-LM-Studio-Setup")
 						end,
 						width = share("setupButtonWidth"),
+					}),
+				}),
+			}),
+			f:group_box({
+				width = groupBoxWidth,
+				title = LOC("86195$/StyleAI/PluginInfo/AdvancedSettings=Advanced Settings"),
+				f:row({
+					fill_horizontal = 1,
+					f:static_text({
+						title = LOC("86195$/StyleAI/PluginInfo/ParallelTasks=Parallel Indexing Tasks"),
+						width = share("setupLabelWidth"),
+					}),
+					f:popup_menu({
+						value = bind("indexingParallelTasks"),
+						items = {
+							{ title = "1", value = "1" },
+							{ title = "2 (Default)", value = "2" },
+							{ title = "3", value = "3" },
+							{ title = "4", value = "4" },
+						},
+						fill_horizontal = 1,
+					}),
+				}),
+				f:row({
+					f:spacer({ width = share("setupLabelWidth") }),
+					f:static_text({
+						title = LOC("86195$/StyleAI/PluginInfo/ParallelTasksHint=Higher values process photos faster but use more memory. 2 is recommended for Apple Silicon."),
+						size = "small",
+						fill_horizontal = 1,
+						wrap = true,
 					}),
 				}),
 			}),

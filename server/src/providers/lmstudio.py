@@ -77,7 +77,12 @@ class LMStudioProvider(LLMProviderBase):
             # Use a scoped client for this host instead of global default client
             with lms.Client(host) as client:
                 # Prepare image via client so we don't depend on the default client
-                image_handle = client.files.prepare_image(request.image_data)
+                if isinstance(request.image_data, list):
+                    image_handles = [
+                        client.files.prepare_image(img) for img in request.image_data
+                    ]
+                else:
+                    image_handles = [client.files.prepare_image(request.image_data)]
                 model = client.llm.model(request.model)
 
                 # Prepare prompts
@@ -91,7 +96,7 @@ class LMStudioProvider(LLMProviderBase):
                 logger.debug("Sending request to LM Studio")
 
                 chat = lms.Chat(system_prompt)
-                chat.add_user_message(user_prompt, images=[image_handle])
+                chat.add_user_message(user_prompt, images=image_handles)
 
                 response = model.respond(
                     chat,
@@ -107,6 +112,10 @@ class LMStudioProvider(LLMProviderBase):
             # Normalize to a dict so that `.get(...)` access below is always safe.
             if isinstance(content, str):
                 try:
+                    start_idx = content.find('{')
+                    end_idx = content.rfind('}')
+                    if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
+                        content = content[start_idx:end_idx+1]
                     content = json.loads(content)
                 except Exception as parse_err:
                     raise ValueError(
@@ -193,14 +202,19 @@ class LMStudioProvider(LLMProviderBase):
         try:
             host = getattr(request, "lmstudio_base_url", None) or self.host
             with lms.Client(host) as client:
-                image_handle = client.files.prepare_image(request.image_data)
+                if isinstance(request.image_data, list):
+                    image_handles = [
+                        client.files.prepare_image(img) for img in request.image_data
+                    ]
+                else:
+                    image_handles = [client.files.prepare_image(request.image_data)]
                 model = client.llm.model(request.model)
                 system_prompt = self._prepare_edit_system_prompt(request)
                 user_prompt = self._prepare_edit_user_prompt(request)
                 response_schema = self._prepare_edit_response_structure()
 
                 chat = lms.Chat(system_prompt)
-                chat.add_user_message(user_prompt, images=[image_handle])
+                chat.add_user_message(user_prompt, images=image_handles)
                 response = model.respond(
                     chat,
                     response_format=response_schema,
@@ -209,7 +223,16 @@ class LMStudioProvider(LLMProviderBase):
 
             content = response.parsed
             if isinstance(content, str):
-                content = json.loads(content)
+                try:
+                    start_idx = content.find('{')
+                    end_idx = content.rfind('}')
+                    if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
+                        content = content[start_idx:end_idx+1]
+                    content = json.loads(content)
+                except Exception as parse_err:
+                    raise ValueError(
+                        f"Unexpected non-JSON response from LM Studio: {content}"
+                    ) from parse_err
             if not isinstance(content, dict):
                 raise ValueError(
                     f"Unexpected response type from LM Studio: {type(content)}"

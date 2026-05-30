@@ -102,7 +102,15 @@ class OllamaProvider(LLMProviderBase):
                 model=model_to_use,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt, "images": [image_b64]},
+                    {
+                        "role": "user",
+                        "content": user_prompt,
+                        "images": [
+                            self._image_to_base64(img) for img in request.image_data
+                        ]
+                        if isinstance(request.image_data, list)
+                        else [image_b64],
+                    },
                 ],
                 format=response_schema,
                 options={
@@ -209,7 +217,15 @@ class OllamaProvider(LLMProviderBase):
                 model=request.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt, "images": [image_b64]},
+                    {
+                        "role": "user",
+                        "content": user_prompt,
+                        "images": [
+                            self._image_to_base64(img) for img in request.image_data
+                        ]
+                        if isinstance(request.image_data, list)
+                        else [image_b64],
+                    },
                 ],
                 format=response_schema,
                 options={

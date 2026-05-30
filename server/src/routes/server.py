@@ -130,6 +130,9 @@ def list_models():
         gemini_apikey = data.get("gemini_apikey")
         ollama_base_url = data.get("ollama_base_url")
         lmstudio_base_url = data.get("lmstudio_base_url")
+        logger.info(
+            f"Received models request with lmstudio_base_url: {lmstudio_base_url}"
+        )
     else:
         # Support GET for backward compatibility
         openai_apikey = request.args.get("openai_apikey")
@@ -188,13 +191,12 @@ def health():
     # Add face model status (simplified for now)
     from services import face as service_face
 
-    try:
-        service_face._get_face_app()
+    if service_face._face_app is not None:
         health_data["face_model"] = "loaded"
         health_data["face_error"] = None
-    except Exception as e:
-        health_data["face_model"] = "failed"
-        health_data["face_error"] = str(e)
+    else:
+        health_data["face_model"] = "not_loaded"
+        health_data["face_error"] = None
 
     return jsonify(health_data)
 

@@ -96,6 +96,19 @@ function PhotoSelector.getPhotosInScope(scope, taskOptions, lookupProgressScope)
 		local success
 		success, photosToProcess = SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressScope)
 		status = success and "ok" or "indexerror"
+	elseif scope == "indexed" then
+		local SearchIndexAPI = require("APISearchIndex")
+		local indexedIds, err = SearchIndexAPI.getAllIndexedPhotoIds()
+		if type(indexedIds) == "table" then
+			local indexedSet = {}
+			for _, id in ipairs(indexedIds) do indexedSet[id] = true end
+			local allPhotos = catalog:getAllPhotos()
+			for _, photo in ipairs(allPhotos) do
+				local Util = require("Util")
+				local pId = Util.getGlobalPhotoIdForPhoto(photo)
+				if pId and indexedSet[pId] then table.insert(photosToProcess, photo) end
+			end
+		end
 	end
 
 	return photosToProcess, status

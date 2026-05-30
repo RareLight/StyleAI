@@ -49,6 +49,8 @@ def _run_single_style_edit(
     filename: str,
     options: dict[str, Any],
     *,
+    image_bytes_dark: bytes | None = None,
+    image_bytes_bright: bytes | None = None,
     focal_length: float | None = None,
     capture_time_unix: float | None = None,
     camera_make: str | None = None,
@@ -95,8 +97,13 @@ def _run_single_style_edit(
         options["_injected_training_examples"] = training_examples
 
         analysis_service = get_analysis_service()
+        if image_bytes_dark and image_bytes_bright:
+            image_data = [image_bytes_dark, image_bytes, image_bytes_bright]
+        else:
+            image_data = image_bytes
+
         llm_response = analysis_service.generate_edit_recipe_single(
-            photo_id, image_bytes, options
+            photo_id, image_data, options
         )
 
         if not llm_response.success or not llm_response.recipe:
@@ -171,6 +178,8 @@ def style_edit():
     logger.info("Style edit request received")
 
     images = request.files.getlist("image")
+    images_dark = request.files.getlist("image_dark")
+    images_bright = request.files.getlist("image_bright")
     photo_ids = _extract_photo_ids(request.form)
     options = _extract_options(request.form)
 
@@ -218,7 +227,7 @@ def style_edit():
 
     # Process each photo
     results: list[dict[str, Any]] = []
-    for file, photo_id in zip(images, photo_ids):
+    for i, (file, photo_id) in enumerate(zip(images, photo_ids)):
         if not file or not photo_id:
             results.append(
                 {
@@ -230,11 +239,16 @@ def style_edit():
             continue
 
         image_bytes = file.read()
+        image_bytes_dark = images_dark[i].read() if i < len(images_dark) else None
+        image_bytes_bright = images_bright[i].read() if i < len(images_bright) else None
+
         result = _run_single_style_edit(
             photo_id=photo_id,
             image_bytes=image_bytes,
             filename=file.filename or "",
             options=options,
+            image_bytes_dark=image_bytes_dark,
+            image_bytes_bright=image_bytes_bright,
             focal_length=focal_length,
             capture_time_unix=capture_time_unix,
             camera_make=camera_make,
@@ -245,6 +259,13 @@ def style_edit():
         )
         results.append(result)
 
+    if len(results) == 1:
+        res = results[0]
+        status_code = 200
+        if res.get("status") == "error":
+            status_code = 422 if res.get("engine") == "none" else 500
+        return jsonify(res), status_code
+
     return jsonify(
         {
             "status": "ok",
@@ -252,40 +273,3 @@ def style_edit():
             "results": results,
         }
     ), 200
-
-    # -------------------------------------------------------------------
-    # Style engine had no result and fallback disabled — return error
-    # -------------------------------------------------------------------
-    if result.engine == "none":
-        return jsonify(
-            {
-                "status": "error",
-                "engine": "none",
-                "confidence": 0.0,
-                "matched_examples": 0,
-                "error": result.warning or "Style engine could not produce a result.",
-            }
-        ), 422  # Unprocessable – not a server error, just insufficient data
-
-    # -------------------------------------------------------------------
-    # Successful style engine result
-    # -------------------------------------------------------------------
-    if not result.recipe:
-        return jsonify(
-            {
-                "status": "error",
-                "engine": "style",
-                "confidence": round(result.confidence, 3),
-                "matched_examples": result.matched_count,
-                "error": "Style engine returned an empty recipe.",
-            }
-        ), 500
-
-    _persist_edit_recipe(photo_id, file.filename, result.recipe, options)
-
-    payload = _success_payload(photo_id, result.recipe, options, warning=result.warning)
-    payload["engine"] = "style"
-    payload["confidence"] = round(result.confidence, 3)
-    payload["matched_examples"] = result.matched_count
-    payload["matched_filenames"] = result.matched_filenames
-    return jsonify(payload), 200

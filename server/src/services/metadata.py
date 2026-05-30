@@ -400,6 +400,34 @@ class AnalysisService:
         selected_provider = self.providers[provider]
         logger.info(f"Generating edit recipe for {uuid} using {provider}")
 
+        try:
+            base_image = (
+                image_data[1]
+                if isinstance(image_data, list) and len(image_data) >= 3
+                else image_data
+            )
+            histogram_signature = training_service.compute_histogram_signature(
+                base_image
+            )
+            dominant_colors = training_service.compute_dominant_colors(
+                base_image, n_colors=5
+            )
+            exp_metrics = training_service.compute_exposure_metrics(base_image)
+            luminance_zones = {
+                "zone_deep_shadows": exp_metrics.get("zone_deep_shadows", 0.0),
+                "zone_shadows": exp_metrics.get("zone_shadows", 0.0),
+                "zone_midtones": exp_metrics.get("zone_midtones", 0.0),
+                "zone_highlights": exp_metrics.get("zone_highlights", 0.0),
+                "zone_bright_highlights": exp_metrics.get(
+                    "zone_bright_highlights", 0.0
+                ),
+            }
+        except Exception as e:
+            logger.warning(f"Failed to compute histogram signature or colors: {e}")
+            histogram_signature = None
+            dominant_colors = None
+            luminance_zones = None
+
         request = EditGenerationRequest(
             image_data=image_data,
             uuid=uuid,
@@ -415,6 +443,10 @@ class AnalysisService:
             existing_keywords=options.get("existing_keywords"),
             location_data=options.get("location_data"),
             folder_names=options.get("folder_names"),
+            camera_profile=options.get("camera_profile"),
+            histogram_signature=histogram_signature,
+            dominant_colors=dominant_colors,
+            luminance_zones=luminance_zones,
             user_context=options.get("user_context"),
             system_prompt=options.get("prompt"),
             date_time=options.get("date_time"),
@@ -543,10 +575,7 @@ class AnalysisService:
                     # Reuse existing provider instance but point it to a different host
                     provider_instance.host = lmstudio_base_url
 
-                if (
-                    provider_name in ["ollama", "lmstudio"]
-                    and not provider_instance.is_available()
-                ):
+                if not provider_instance.is_available():
                     result[provider_name] = []
                     continue
 

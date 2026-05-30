@@ -258,10 +258,24 @@ def add_training_batch():
         shutter_speed = item.get("shutter_speed")
 
         try:
+            embedding = None
+            try:
+                from services import chroma
+
+                chroma_data = chroma.get_image(photo_id)
+                if (
+                    chroma_data
+                    and chroma_data.get("embeddings")
+                    and len(chroma_data["embeddings"]) > 0
+                ):
+                    embedding = chroma_data["embeddings"][0]
+            except Exception:
+                pass
+
             training_service.add_training_example(
                 photo_id=photo_id,
                 develop_settings=develop_settings,
-                embedding=None,
+                embedding=embedding,
                 label=label,
                 filename=filename,
                 summary=summary,
@@ -275,6 +289,7 @@ def add_training_batch():
                 iso=iso,
                 aperture=aperture,
                 shutter_speed=shutter_speed,
+                skip_discovery=True,
             )
             results.append({"status": "ok", "photo_id": photo_id})
         except Exception as exc:
@@ -289,6 +304,14 @@ def add_training_batch():
 
     success_count = sum(1 for r in results if r["status"] == "ok")
     total_count = training_service.get_training_count()
+
+    # Trigger a single full recalculation of all styles after the batch completes
+    try:
+        from services import style_catalog
+
+        style_catalog.recalculate_all_styles()
+    except Exception as exc:
+        logger.error("Failed to recalculate styles after batch: %s", exc)
 
     return jsonify(
         {

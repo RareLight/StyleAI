@@ -229,7 +229,13 @@ def main():
     variance_threshold = 0.15
     high_variance_keys = []
     for canon_key in (
-        "exposure", "contrast", "temperature", "highlights", "shadows", "clarity", "dehaze"
+        "exposure",
+        "contrast",
+        "temperature",
+        "highlights",
+        "shadows",
+        "clarity",
+        "dehaze",
     ):
         vals = []
         for meta in example_metas:
@@ -239,8 +245,15 @@ def main():
         if len(vals) > 1:
             raw_var = statistics.pvariance(vals)
             # Normalize by slider range
-            divisor = {"exposure": 5.0, "contrast": 100.0, "temperature": 10000.0,
-                       "highlights": 100.0, "shadows": 100.0, "clarity": 100.0, "dehaze": 100.0}.get(canon_key, 100.0)
+            divisor = {
+                "exposure": 5.0,
+                "contrast": 100.0,
+                "temperature": 10000.0,
+                "highlights": 100.0,
+                "shadows": 100.0,
+                "clarity": 100.0,
+                "dehaze": 100.0,
+            }.get(canon_key, 100.0)
             norm_vals = [v / divisor for v in vals]
             norm_var = statistics.pvariance(norm_vals)
             status = "*** SPLIT" if norm_var > variance_threshold else "ok"
@@ -249,7 +262,9 @@ def main():
             print(f"{canon_key:<20} {raw_var:>12.2f} {norm_var:>12.4f} {status:>10}")
 
     if high_variance_keys:
-        print(f"\nKeys exceeding NORMALIZED variance threshold ({variance_threshold}): {high_variance_keys}")
+        print(
+            f"\nKeys exceeding NORMALIZED variance threshold ({variance_threshold}): {high_variance_keys}"
+        )
         print("These would trigger subgenre splitting in the current algorithm.")
     else:
         print(f"\nNo keys exceed NORMALIZED variance threshold ({variance_threshold}).")
@@ -266,13 +281,19 @@ def main():
     try:
         edited_jpgs = list(edited_dir.glob("*.jpg"))
         if edited_jpgs:
-            print(f"\nLoading {len(edited_jpgs)} edited JPEGs for histogram analysis...")
+            print(
+                f"\nLoading {len(edited_jpgs)} edited JPEGs for histogram analysis..."
+            )
             print("(Using ~3MP downsample for speed)\n")
 
             # Import the histogram function from training service
             import sys
+
             sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-            from services.training import compute_histogram_signature, histogram_distance
+            from services.training import (
+                compute_histogram_signature,
+                histogram_distance,
+            )
 
             signatures = {}
             for jpg_path in edited_jpgs[:25]:  # limit to 25 for demo
@@ -288,12 +309,16 @@ def main():
                 names = list(signatures.keys())
                 distances = []
                 print(f"\nPairwise histogram distances among {len(names)} images:")
-                print(f"{'Image 1':<25} {'Image 2':<25} {'Distance':>10} {'Similar?':>10}")
+                print(
+                    f"{'Image 1':<25} {'Image 2':<25} {'Distance':>10} {'Similar?':>10}"
+                )
                 print("-" * 75)
 
                 for i in range(len(names)):
                     for j in range(i + 1, len(names)):
-                        dist = histogram_distance(signatures[names[i]], signatures[names[j]])
+                        dist = histogram_distance(
+                            signatures[names[i]], signatures[names[j]]
+                        )
                         distances.append((names[i], names[j], dist))
 
                 # Show closest and furthest pairs
@@ -311,8 +336,12 @@ def main():
                 # Show distance distribution
                 all_dists = [d[2] for d in distances]
                 mean_dist = statistics.mean(all_dists)
-                print(f"\nDistance statistics: mean={mean_dist:.3f}, min={min(all_dists):.3f}, max={max(all_dists):.3f}")
-                print(f"Threshold 0.35 would group these into ~{len([d for d in all_dists if d < 0.35])} similar pairs")
+                print(
+                    f"\nDistance statistics: mean={mean_dist:.3f}, min={min(all_dists):.3f}, max={max(all_dists):.3f}"
+                )
+                print(
+                    f"Threshold 0.35 would group these into ~{len([d for d in all_dists if d < 0.35])} similar pairs"
+                )
 
                 # Cluster demonstration
                 print("\n" + "-" * 75)
@@ -327,7 +356,9 @@ def main():
                     for j, name_j in enumerate(names):
                         if name_j in used or i == j:
                             continue
-                        dist = histogram_distance(signatures[name_i], signatures[name_j])
+                        dist = histogram_distance(
+                            signatures[name_i], signatures[name_j]
+                        )
                         if dist < 0.35:
                             cluster.append(name_j)
                             used.add(name_j)
@@ -357,7 +388,9 @@ def main():
     else:
         print(f"⚠ Multiple camera profiles: {profiles_seen}")
         print("  Styles are now grouped by PROFILE-INDEPENDENT histogram similarity.")
-        print("  The same visual style across different profiles will be clustered together.")
+        print(
+            "  The same visual style across different profiles will be clustered together."
+        )
 
     # Check if most photos are same camera
     cameras = set()

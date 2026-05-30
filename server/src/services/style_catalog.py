@@ -642,7 +642,7 @@ def update_style_for_example(
     triggers auto-discovery for that photo.  User keywords override AI
     scene tags for genre classification.
     """
-    conn = _ensure_initialized()
+    _ensure_initialized()
 
     # User keywords take precedence over AI scene tags for genre
     primary_genre = grouping._primary_genre_with_keywords(
@@ -651,34 +651,24 @@ def update_style_for_example(
     cam = (camera_model or "unknown").strip()
     profile = (camera_profile or "default").strip()
 
-    # Check if any style already exists for this camera + profile + genre
-    row = conn.execute(
-        "SELECT 1 FROM styles WHERE camera_model = ? AND camera_profile = ? AND genre = ? LIMIT 1",
-        (cam, profile, primary_genre),
-    ).fetchone()
-
-    if not row:
-        # First example for this combo — trigger discovery
-        logger.info(
-            "First training example for %s + %s + %s — triggering style discovery",
-            cam,
-            profile,
-            primary_genre,
+    # Trigger discovery for all examples matching this camera+profile+genre combo
+    logger.info(
+        "Triggering style discovery for %s + %s + %s",
+        cam,
+        profile,
+        primary_genre,
+    )
+    all_examples = training_service.list_training_examples()
+    combo_ids = [
+        ex["photo_id"]
+        for ex in all_examples
+        if (ex.get("camera_model") or "unknown").strip() == cam
+        and (ex.get("camera_profile") or "default").strip() == profile
+        and grouping._primary_genre_with_keywords(
+            grouping._safe_json_loads(ex.get("scene_tags"), []),
+            grouping._safe_json_loads(ex.get("user_keywords"), []),
         )
-        discover_styles_from_examples([photo_id])
-    else:
-        # Incremental update: re-run discovery for this camera+profile+genre
-        all_examples = training_service.list_training_examples()
-        combo_ids = [
-            ex["photo_id"]
-            for ex in all_examples
-            if ex.get("camera_model", "").strip() == cam
-            and (ex.get("camera_profile") or "default").strip() == profile
-            and grouping._primary_genre_with_keywords(
-                grouping._safe_json_loads(ex.get("scene_tags"), []),
-                grouping._safe_json_loads(ex.get("user_keywords"), []),
-            )
-            == primary_genre
-        ]
-        if combo_ids:
-            discover_styles_from_examples(combo_ids)
+        == primary_genre
+    ]
+    if combo_ids:
+        discover_styles_from_examples(combo_ids)
