@@ -1,39 +1,42 @@
 #!/usr/bin/env bash
 # styleai-installer.sh
-# Install / uninstall helper for StyleAI Lightroom plugin + backend server.
+# Unified installer, manager, and redeployment tool for StyleAI.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-PLUGIN_SRC_ZIP="${PROJECT_ROOT}/build/StyleAI-Plugin-v1.0.0.zip"
 PLUGIN_NAME="StyleAI.lrdevplugin"
+PLUGIN_SRC_ZIP="${PROJECT_ROOT}/build/StyleAI-Plugin-v1.0.0.zip"
+PLUGIN_SRC_DIR="${PROJECT_ROOT}/plugin/${PLUGIN_NAME}"
 PLUGIN_DEST_DIR="${HOME}/Library/Application Support/Adobe/Lightroom/Modules"
 PLUGIN_DEST="${PLUGIN_DEST_DIR}/${PLUGIN_NAME}"
 SERVER_PORT="19819"
 SERVER_DIR="${PROJECT_ROOT}/server"
+LOG_DIR="${HOME}/Library/Logs/StyleAI"
+LAUNCH_LOG="${LOG_DIR}/styleai-server-launcher.log"
 
 echo "========================================"
-echo "  StyleAI Installer"
+echo "  StyleAI Installer & Manager"
 echo "========================================"
 echo ""
 
 # ── Helper functions ────────────────────────────────────────────────────────
 
 port_in_use() {
-    lsof -ti:"$SERVER_PORT" >/dev/null 2>&1
+    lsof -sTCP:LISTEN -ti:"$SERVER_PORT" >/dev/null 2>&1
 }
 
 find_server_pid() {
-    lsof -ti:"$SERVER_PORT" 2>/dev/null || true
+    lsof -sTCP:LISTEN -ti:"$SERVER_PORT" 2>/dev/null || true
 }
 
 print_usage() {
     echo "Usage:"
     echo "  $(basename "$0") install   — Install plugin to Lightroom"
-    echo "  $(basename "$0") uninstall — Remove plugin from Lightroom"
+    echo "  $(basename "$0") redeploy  — Stop server, redeploy dev plugin, and restart server in background"
     echo "  $(basename "$0") status    — Check installation & server status"
-    echo "  $(basename "$0") server    — Start the backend server"
+    echo "  $(basename "$0") server    — Start the backend server in foreground"
     echo ""
 }
 
@@ -46,7 +49,7 @@ cmd_install() {
     # 1. Check for old LrGeniusAI conflict
     if [ -d "${HOME}/Library/Application Support/Adobe/Lightroom/Modules/LrGeniusAI.lrplugin" ]; then
         echo "WARNING: Old LrGeniusAI plugin detected."
-        echo "Run: bash ${SCRIPT_DIR}/uninstall-lrgeniusai.sh"
+        echo "Please run: ./scripts/styleai.sh"
         echo ""
         read -r -p "Continue anyway? [y/N] " yn
         case "$yn" in
@@ -59,7 +62,7 @@ cmd_install() {
     if port_in_use; then
         OLD_PID=$(find_server_pid)
         echo "WARNING: Port $SERVER_PORT is already in use (PID $OLD_PID)."
-        echo "This is likely the old LrGeniusAI server."
+        echo "This is likely the running StyleAI or legacy server."
         echo ""
         read -r -p "Kill it and continue? [y/N] " yn
         case "$yn" in
@@ -115,55 +118,91 @@ cmd_install() {
     fi
 }
 
-# ── Uninstall ───────────────────────────────────────────────────────────────
+# ── Redeploy ────────────────────────────────────────────────────────────────
 
-cmd_uninstall() {
-    echo "=== Uninstalling StyleAI ==="
+cmd_redeploy() {
+    echo "=== Redeploying StyleAI (Local Dev Mode) ==="
     echo ""
 
-    # 1. Stop server if running from our source
-    if port_in_use; then
-        PID=$(find_server_pid)
-        # Only kill if it's our uv/python process (not a system-wide install)
-        if ps -p "$PID" -o command= 2>/dev/null | grep -q "styleai_server.py"; then
-            echo "Stopping StyleAI server (PID $PID)..."
-            kill "$PID" 2>/dev/null || true
-            sleep 1
-            if port_in_use; then
-                kill -9 "$PID" 2>/dev/null || true
+    # 1. Stop backend server if running
+    PID=$(find_server_pid)
+    if [ -n "$PID" ]; then
+        echo "Stopping backend server on port $SERVER_PORT (PID: $PID)..."
+        kill "$PID" 2>/dev/null || true
+        
+        # Wait up to 5 seconds for it to exit
+        for i in {1..5}; do
+            if ! port_in_use; then
+                break
             fi
-            echo "Server stopped."
-        else
-            echo "Another server is running on port $SERVER_PORT (PID $PID)."
-            echo "Not killing — may be the old LrGeniusAI server."
+            sleep 1
+        done
+        
+        # If still running, force kill
+        if port_in_use; then
+            echo "Server did not exit gracefully; sending SIGKILL..."
+            kill -9 "$PID" 2>/dev/null || true
+            sleep 1
         fi
-    fi
-
-    # 2. Remove plugin
-    if [ -d "$PLUGIN_DEST" ]; then
-        echo "Removing Lightroom plugin..."
-        rm -rf "$PLUGIN_DEST"
+        echo "Server stopped successfully."
     else
-        echo "Lightroom plugin not found."
+        echo "No running server detected on port $SERVER_PORT."
+    fi
+    echo ""
+
+    # 2. Clean up old installation files
+    if [ -d "$PLUGIN_DEST" ]; then
+        echo "Removing old installation files at:"
+        echo "  $PLUGIN_DEST"
+        rm -rf "$PLUGIN_DEST"
+        echo "Cleanup complete."
+    else
+        echo "No previous installation directory found at destination."
+    fi
+    echo ""
+
+    # 3. Install updated files directly from source
+    echo "Installing updated plugin files directly from source..."
+    mkdir -p "$PLUGIN_DEST_DIR"
+    cp -R "$PLUGIN_SRC_DIR" "$PLUGIN_DEST"
+    echo "Plugin successfully installed to:"
+    echo "  $PLUGIN_DEST"
+    echo ""
+
+    # 4. Restart backend server in background
+    mkdir -p "$LOG_DIR"
+    echo "Restarting backend server in background..."
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "ERROR: 'uv' not found in PATH."
+        echo "Please make sure 'uv' is installed and available in your environment."
+        exit 1
     fi
 
-    # 3. Remove user data (optional)
-    echo ""
-    read -r -p "Also remove user data (logs, training DB)? [y/N] " yn
-    case "$yn" in
-        [Yy]*)
-            rm -rf "${HOME}/Library/Logs/StyleAI"
-            rm -rf "${HOME}/Library/Application Support/StyleAI"
-            echo "User data removed."
-            ;;
-        *)
-            echo "User data preserved."
-            ;;
-    esac
+    cd "$SERVER_DIR"
+    # Run in background via nohup
+    nohup uv run python src/styleai_server.py > "$LAUNCH_LOG" 2>&1 &
 
+    # Wait up to 5 seconds to verify it starts up on port 19819
+    NEW_PID=""
+    for i in {1..5}; do
+        sleep 1
+        NEW_PID=$(find_server_pid)
+        if [ -n "$NEW_PID" ]; then
+            break
+        fi
+    done
+
+    if [ -n "$NEW_PID" ]; then
+        echo "========================================"
+        echo "  Redeployment successful!"
+        echo "========================================"
+        echo "Backend server is running (PID: $NEW_PID)"
+        echo "Launcher log: $LAUNCH_LOG"
+    else
+        echo "WARNING: Server launched but not yet responding on port $SERVER_PORT."
+        echo "Please check launcher logs: $LAUNCH_LOG"
+    fi
     echo ""
-    echo "StyleAI has been uninstalled."
-    echo "Restart Lightroom Classic to complete removal."
 }
 
 # ── Status ──────────────────────────────────────────────────────────────────
@@ -188,16 +227,6 @@ cmd_status() {
         echo "  Command:    $CMD"
     else
         echo "  Server:     Not running"
-    fi
-
-    # Port conflict check
-    if port_in_use; then
-        PID=$(find_server_pid)
-        if ! ps -p "$PID" -o command= 2>/dev/null | grep -q "styleai_server.py"; then
-            echo ""
-            echo "  WARNING: Port $SERVER_PORT is in use by a non-StyleAI process!"
-            echo "  This may be the old LrGeniusAI server."
-        fi
     fi
 
     echo ""
@@ -245,6 +274,18 @@ cmd_server() {
     uv run python src/styleai_server.py
 }
 
+cmd_reset_db() {
+    echo "Resetting StyleAI databases..."
+    if port_in_use; then
+        PID=$(find_server_pid)
+        echo "Stopping server (PID $PID) before resetting DB..."
+        kill "$PID"
+        sleep 2
+    fi
+    find "${HOME}/Pictures" -type d -name "styleai.db" -prune -exec rm -rf {} +
+    echo "All styleai.db directories in ~/Pictures have been deleted."
+}
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 if [ $# -eq 0 ]; then
@@ -259,14 +300,17 @@ case "$COMMAND" in
     install|i)
         cmd_install
         ;;
-    uninstall|remove|rm|u)
-        cmd_uninstall
+    redeploy|r)
+        cmd_redeploy
         ;;
     status|s)
         cmd_status
         ;;
     server|start)
         cmd_server
+        ;;
+    reset-db)
+        cmd_reset_db
         ;;
     *)
         echo "Unknown command: $COMMAND"
