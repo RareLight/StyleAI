@@ -1,4 +1,5 @@
 import sys
+
 sys.path.insert(0, "/Users/anna/Documents/Coding/StyleAI/server/src")
 
 from services import chroma

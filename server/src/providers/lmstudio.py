@@ -112,10 +112,10 @@ class LMStudioProvider(LLMProviderBase):
             # Normalize to a dict so that `.get(...)` access below is always safe.
             if isinstance(content, str):
                 try:
-                    start_idx = content.find('{')
-                    end_idx = content.rfind('}')
+                    start_idx = content.find("{")
+                    end_idx = content.rfind("}")
                     if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
-                        content = content[start_idx:end_idx+1]
+                        content = content[start_idx : end_idx + 1]
                     content = json.loads(content)
                 except Exception as parse_err:
                     raise ValueError(
@@ -224,10 +224,10 @@ class LMStudioProvider(LLMProviderBase):
             content = response.parsed
             if isinstance(content, str):
                 try:
-                    start_idx = content.find('{')
-                    end_idx = content.rfind('}')
+                    start_idx = content.find("{")
+                    end_idx = content.rfind("}")
                     if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
-                        content = content[start_idx:end_idx+1]
+                        content = content[start_idx : end_idx + 1]
                     content = json.loads(content)
                 except Exception as parse_err:
                     raise ValueError(

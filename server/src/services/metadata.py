@@ -185,7 +185,10 @@ class AnalysisService:
         uuids_needing_metadata = set(uuids_needing_metadata)
 
         embeddings = None
-        if len(uuids_needing_embeddings) > 0:
+        metadata_results = None
+
+        def _do_embeddings():
+            nonlocal embeddings
             logger.debug(
                 f"Generating embeddings for {len(uuids_needing_embeddings)} images..."
             )
@@ -197,12 +200,10 @@ class AnalysisService:
                     )
                     embeddings.append(emb[0] if emb else None)
                 else:
-                    embeddings.append(
-                        None
-                    )  # Placeholder for images not needing embeddings
+                    embeddings.append(None)
 
-        metadata_results = None
-        if len(uuids_needing_metadata) > 0:
+        def _do_metadata():
+            nonlocal metadata_results
             logger.info(
                 f"Generating metadata for {len(uuids_needing_metadata)} images out of {len(uuids)} total"
             )
@@ -233,6 +234,19 @@ class AnalysisService:
                     partial_idx += 1
                 else:
                     metadata_results.append(None)
+
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = []
+            if len(uuids_needing_embeddings) > 0:
+                futures.append(executor.submit(_do_embeddings))
+            if len(uuids_needing_metadata) > 0:
+                futures.append(executor.submit(_do_metadata))
+
+            # Wait for all submitted tasks to complete
+            for f in concurrent.futures.as_completed(futures):
+                f.result()  # raise exception if any
 
         # Datetime/capture_time extraction is handled entirely by the client
         # (Lightroom plugin) via explicit fields in the request and stored in
