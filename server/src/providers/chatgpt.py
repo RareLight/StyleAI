@@ -78,8 +78,15 @@ class ChatGPTProvider(LLMProviderBase):
 
         try:
             # Convert image to base64 data URI
-            image_b64 = self._image_to_base64(request.image_data)
-            data_uri = f"data:image/jpeg;base64,{image_b64}"
+            if isinstance(request.image_data, list):
+                data_uris = [
+                    f"data:image/jpeg;base64,{self._image_to_base64(img)}"
+                    for img in request.image_data
+                ]
+            else:
+                data_uris = [
+                    f"data:image/jpeg;base64,{self._image_to_base64(request.image_data)}"
+                ]
 
             # Prepare prompts
             system_prompt = self._prepare_system_prompt(request)
@@ -99,7 +106,14 @@ class ChatGPTProvider(LLMProviderBase):
                 {"role": "user", "content": user_prompt},
                 {
                     "role": "user",
-                    "content": [{"type": "image_url", "image_url": {"url": data_uri}}],
+                    "content": [
+                        *(
+                            [
+                                {"type": "image_url", "image_url": {"url": uri}}
+                                for uri in data_uris
+                            ]
+                        )
+                    ],
                 },
             ]
 
@@ -206,8 +220,15 @@ class ChatGPTProvider(LLMProviderBase):
                 )
 
         try:
-            image_b64 = self._image_to_base64(request.image_data)
-            data_uri = f"data:image/jpeg;base64,{image_b64}"
+            if isinstance(request.image_data, list):
+                data_uris = [
+                    f"data:image/jpeg;base64,{self._image_to_base64(img)}"
+                    for img in request.image_data
+                ]
+            else:
+                data_uris = [
+                    f"data:image/jpeg;base64,{self._image_to_base64(request.image_data)}"
+                ]
             system_prompt = self._prepare_edit_system_prompt(request)
             user_prompt = self._prepare_edit_user_prompt(request)
             response_format = self._prepare_openai_edit_response_format()
@@ -221,10 +242,12 @@ class ChatGPTProvider(LLMProviderBase):
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": data_uri},
-                        }
+                        *(
+                            [
+                                {"type": "image_url", "image_url": {"url": uri}}
+                                for uri in data_uris
+                            ]
+                        )
                     ],
                 },
             ]

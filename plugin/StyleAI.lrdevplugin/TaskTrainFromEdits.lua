@@ -208,20 +208,29 @@ LrTasks.startAsyncTask(function()
 				-- Collect EXIF metadata for richer style matching using standardized utility.
 				local exifOptions = Util.getPhotoExif(photo)
 
-			local example = {
-				photo_id = photoId,
-				develop_settings = developSettings or {},
-				label = options.label,
-				summary = options.summary,
-				focal_length = exifOptions.focal_length,
-				capture_time = exifOptions.capture_time,
-				camera_make = exifOptions.camera_make,
-				camera_model = exifOptions.camera_model,
-				camera_profile = exifOptions.camera_profile,
-				iso = exifOptions.iso,
-				aperture = exifOptions.aperture,
-				shutter_speed = exifOptions.shutter_speed,
-			}
+				local actualProfile = nil
+				if developSettings then
+					if type(developSettings.Look) == "table" and developSettings.Look.Name then
+						actualProfile = developSettings.Look.Name
+					else
+						actualProfile = developSettings.CameraProfile
+					end
+				end
+
+				local example = {
+					photo_id = photoId,
+					develop_settings = developSettings or {},
+					label = options.label,
+					summary = options.summary,
+					focal_length = exifOptions.focal_length,
+					capture_time = exifOptions.capture_time,
+					camera_make = exifOptions.camera_make,
+					camera_model = exifOptions.camera_model,
+					camera_profile = actualProfile,
+					iso = exifOptions.iso,
+					aperture = exifOptions.aperture,
+					shutter_speed = exifOptions.shutter_speed,
+				}
 				if options.userKeywords and options.userKeywords ~= "" then
 					example.user_keywords = options.userKeywords
 				end

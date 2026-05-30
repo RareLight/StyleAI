@@ -94,7 +94,7 @@ class MetadataGenerationResponse:
 class EditGenerationRequest:
     """Request structure for Lightroom edit recipe generation."""
 
-    image_data: bytes
+    image_data: bytes | list[bytes]
     uuid: str
 
     provider: str
@@ -116,6 +116,10 @@ class EditGenerationRequest:
     # Keys: city, state, country, location, country_code, gps_latitude, gps_longitude
     location_data: dict[str, Any] | None = None
     folder_names: str | None = None
+    camera_profile: str | None = None
+    histogram_signature: dict[str, Any] | None = None
+    dominant_colors: list[str] | None = None
+    luminance_zones: dict[str, float] | None = None
     user_context: str | None = None
     date_time: str | None = None
     edit_intent: str | None = None
@@ -421,6 +425,31 @@ class LLMProviderBase(ABC):
         lines = [f"  [{idx}] {label}"]
         if summary:
             lines.append(f"      Summary: {summary}")
+
+        dom_colors = example.get("dominant_colors", "[]")
+        if isinstance(dom_colors, str) and dom_colors != "[]":
+            import json
+
+            try:
+                dc = json.loads(dom_colors)
+                if dc:
+                    lines.append(f"      Dominant Colors: {', '.join(dc)}")
+            except Exception:
+                pass
+        elif isinstance(dom_colors, list) and dom_colors:
+            lines.append(f"      Dominant Colors: {', '.join(dom_colors)}")
+
+        if "zone_deep_shadows" in example:
+            zds = float(example.get("zone_deep_shadows", 0)) * 100
+            zs = float(example.get("zone_shadows", 0)) * 100
+            zm = float(example.get("zone_midtones", 0)) * 100
+            zh = float(example.get("zone_highlights", 0)) * 100
+            zbh = float(example.get("zone_bright_highlights", 0)) * 100
+            if any([zds, zs, zm, zh, zbh]):
+                lines.append(
+                    f"      Luminance Zones: DeepShadows={zds:.0f}%, Shadows={zs:.0f}%, Midtones={zm:.0f}%, Highlights={zh:.0f}%, BrightHighlights={zbh:.0f}%"
+                )
+
         if compact:
             params = ", ".join(f"{k}={v}" for k, v in sorted(compact.items()))
             lines.append(f"      Settings: {params}")
@@ -444,6 +473,7 @@ class LLMProviderBase(ABC):
         base_prompt += (
             "\n\nEdit recipe rules:\n"
             "* Return only numeric Lightroom-friendly adjustments\n"
+            "* IMPORTANT: The `exposure` slider is strictly on a scale from -5.0 to +5.0. Do NOT output values outside this range. Other basic tone sliders (contrast, highlights, shadows, whites, blacks) are on a scale of -100 to +100.\n"
             "* Build edits in this order: white balance and exposure foundation -> tonal shaping -> color refinement -> detail/effects\n"
             "* For white balance use global `temperature` and `tint` (or `white_balance.temperature` / `white_balance.tint`)\n"
             "* Use global controls first; add masks only when global edits cannot solve the problem cleanly\n"
@@ -501,6 +531,35 @@ class LLMProviderBase(ABC):
         context_additions: list[str] = []
         if request.edit_intent:
             context_additions.append(f"Requested editing intent: {request.edit_intent}")
+        if getattr(request, "camera_profile", None):
+            prof_name = request.camera_profile
+            prof_str = (
+                f"The active Lightroom camera profile for this image is '{prof_name}'."
+            )
+            if "Adobe" not in prof_name and "Camera " not in prof_name:
+                prof_str += " This is a custom camera profile. It heavily influences the starting baseline."
+            else:
+                prof_str += " Adjust edits accordingly, noting that this profile already provides a baseline curve and color rendition."
+            context_additions.append(prof_str)
+        if isinstance(request.image_data, list) and len(request.image_data) >= 3:
+            context_additions.append(
+                "You have been provided with 3 bracketed exposures (-2 EV, 0 EV, +2 EV) of the image. This is an approximation of the actual 14-bit RAW data. Use the dark and bright images to evaluate recoverable details in the highlights and shadows that may appear clipped in the 0 EV image."
+            )
+        if getattr(request, "dominant_colors", None):
+            context_additions.append(
+                f"Image dominant colors (HEX): {', '.join(request.dominant_colors)}"
+            )
+        if getattr(request, "luminance_zones", None):
+            lz = request.luminance_zones
+            context_additions.append(
+                f"Image luminance zones: DeepShadows={lz.get('zone_deep_shadows', 0) * 100:.0f}%, Shadows={lz.get('zone_shadows', 0) * 100:.0f}%, Midtones={lz.get('zone_midtones', 0) * 100:.0f}%, Highlights={lz.get('zone_highlights', 0) * 100:.0f}%, BrightHighlights={lz.get('zone_bright_highlights', 0) * 100:.0f}%"
+            )
+        if getattr(request, "histogram_signature", None):
+            import json
+
+            context_additions.append(
+                f"Image perceptual histogram signature (L*a*b* space, stats and bins): {json.dumps(request.histogram_signature)}"
+            )
 
         strength = request.style_strength
 

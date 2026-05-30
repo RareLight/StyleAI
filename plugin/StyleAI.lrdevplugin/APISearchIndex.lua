@@ -58,12 +58,19 @@ local ENDPOINTS = {
     SYNC_CLEANUP = "/sync/cleanup",
     SYNC_CLAIM = "/sync/claim",
     TRAINING_ADD = "/training/add",
+    TRAINING_ADD_BATCH = "/training/add-batch",
     TRAINING_LIST = "/training/list",
     TRAINING_COUNT = "/training/count",
     TRAINING_DELETE = "/training", -- DELETE /training/<photo_id>
     TRAINING_CLEAR = "/training",  -- DELETE /training (all)
     TRAINING_STATS = "/training/stats",
     STYLE_EDIT = "/style_edit",
+    STYLE_LIST = "/styles",
+    STYLE_DISCOVER = "/styles/discover",
+    STYLE_RESET = "/styles/%s/reset",
+    STYLE_RESET_ALL = "/styles/reset-all",
+    STYLE_EXPORT = "/styles/export",
+    STYLE_IMPORT = "/styles/import",
     LOGS = "/logs",
     LOGS_RAW = "/logs/raw",
     INITIALIZE = "/initialize",
@@ -172,18 +179,18 @@ local function parseCompletedMigrations(raw)
     local inProgressSince = nil
     if raw and raw ~= "" then
         for part in string.gmatch(raw, "([^,]+)") do
-            part = part:match("^%s*(.-)%s*$") or part
-            if part == MIGRATION_IN_PROGRESS_PREFIX then
+            local p = part:match("^%s*(.-)%s*$") or part
+            if p == MIGRATION_IN_PROGRESS_PREFIX then
                 -- Legacy unversioned marker (pre-timestamp plugin version): treat as stale.
                 inProgress = true
                 inProgressSince = inProgressSince or 0
             else
-                local ts = part:match("^" .. MIGRATION_IN_PROGRESS_PREFIX .. ":(%d+)$")
+                local ts = p:match("^" .. MIGRATION_IN_PROGRESS_PREFIX .. ":(%d+)$")
                 if ts then
                     inProgress = true
                     inProgressSince = tonumber(ts) or 0
                 else
-                    completed[part] = true
+                    completed[p] = true
                 end
             end
         end
@@ -554,6 +561,41 @@ function SearchIndexAPI.exportPhotoForIndexing(photo)
     end
 end
 
+function SearchIndexAPI.exportBracketedPhotosForIndexing(photo)
+    if photo == nil then return nil, nil, nil end
+
+    local catalog = photo.catalog
+
+    -- Save original settings
+    local ok, devSettings = LrTasks.pcall(function() return photo:getDevelopSettings() end)
+    local originalExposure = 0.0
+    if ok and type(devSettings) == "table" and type(devSettings.Exposure2012) == "number" then
+        originalExposure = devSettings.Exposure2012
+    end
+
+    -- Export baseline (0 EV) first
+    local base_path = SearchIndexAPI.exportPhotoForIndexing(photo)
+
+    -- Export -2 EV (dark)
+    catalog:withWriteAccessDo("Apply -2 EV Bracket", function()
+        photo:applyDevelopSettings({Exposure2012 = originalExposure - 2.0})
+    end)
+    local dark_path = SearchIndexAPI.exportPhotoForIndexing(photo)
+
+    -- Export +2 EV (bright)
+    catalog:withWriteAccessDo("Apply +2 EV Bracket", function()
+        photo:applyDevelopSettings({Exposure2012 = originalExposure + 2.0})
+    end)
+    local bright_path = SearchIndexAPI.exportPhotoForIndexing(photo)
+
+    -- Restore original exposure
+    catalog:withWriteAccessDo("Restore Original Exposure", function()
+        photo:applyDevelopSettings({Exposure2012 = originalExposure})
+    end)
+
+    return base_path, dark_path, bright_path
+end
+
 function SearchIndexAPI.exportPhotosForIndexing(photos)
     if not photos or #photos == 0 then return {} end
 
@@ -831,6 +873,22 @@ function SearchIndexAPI.generateEditRecipePhoto(photoId, filepath, options)
         filePath = filepath,
         contentType = "image/jpeg"
     })
+    if options.darkPath and LrFileUtils.exists(options.darkPath) then
+        table.insert(mimeChunks, {
+            name = "image_dark",
+            fileName = LrPathUtils.leafName(options.darkPath),
+            filePath = options.darkPath,
+            contentType = "image/jpeg"
+        })
+    end
+    if options.brightPath and LrFileUtils.exists(options.brightPath) then
+        table.insert(mimeChunks, {
+            name = "image_bright",
+            fileName = LrPathUtils.leafName(options.brightPath),
+            filePath = options.brightPath,
+            contentType = "image/jpeg"
+        })
+    end
 
     log:trace("Generating AI edit recipe for photo: " .. filename .. " with id " .. photoId)
     local response, err = _requestMultipart(url, mimeChunks, 720)
@@ -1518,7 +1576,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         table.insert(photoToProcessStack, photo)
     end
 
-    local maxWorkers = 1 -- tonumber(prefs.indexingParallelTasks) or 2
+    local maxWorkers = tonumber(prefs.indexingParallelTasks) or 2
     local stats = { processed = 0, success = 0, failed = 0 }
     local processedPhotos = {}
     local activeWorkers = 0
@@ -2236,7 +2294,10 @@ function SearchIndexAPI.startServer(opts)
 
     if SearchIndexAPI.pingServer() then
         log:trace("Search index server is already running, triggering initialization")
-        local dbPath = LrPathUtils.child(getServerControlDir(), "styleai.db")
+        local catalog = LrApplication.activeCatalog()
+        local catalogPath = catalog:getPath()
+        local catalogDir = LrPathUtils.parent(catalogPath)
+        local dbPath = LrPathUtils.child(catalogDir, "styleai.db")
         if SearchIndexAPI.initializeCatalog(dbPath) then
             return true
         end
@@ -2253,7 +2314,10 @@ function SearchIndexAPI.startServer(opts)
         return false
     end
 
-    local dbPath = LrPathUtils.child(getServerControlDir(), "styleai.db")
+    local catalog = LrApplication.activeCatalog()
+    local catalogPath = catalog:getPath()
+    local catalogDir = LrPathUtils.parent(catalogPath)
+    local dbPath = LrPathUtils.child(catalogDir, "styleai.db")
 
     -- Make sure we don't leave the lock behind on early returns.
     local ok, startResult = LrTasks.pcall(function()
@@ -2286,30 +2350,49 @@ function SearchIndexAPI.startServer(opts)
             end
         end
 
-        if not LrFileUtils.exists(serverBinary) then
-            log:error(tostring(serverBinary) .. " not found. Not trying to start server")
+        local startServerCmd
+        local isDevMode = false
+        local devServerDir = LrPathUtils.child(LrPathUtils.parent(LrPathUtils.parent(_PLUGIN.path)), "server")
+        local devServerScript = LrPathUtils.child(LrPathUtils.child(devServerDir, "src"), "styleai_server.py")
+
+        if LrFileUtils.exists(devServerScript) then
+            isDevMode = true
+        end
+
+        if not LrFileUtils.exists(serverBinary) and not isDevMode then
+            log:error(tostring(serverBinary) .. " not found and not in dev mode. Not trying to start server")
             return false
         end
 
-        local startServerCmd
-        local serverDir = LrPathUtils.parent(serverBinary)
-        if WIN_ENV then
-            -- The .cmd launcher handles environment variables and uses pythonw.exe for invisible execution.
-            startServerCmd = "start /b /d \"" ..
-                serverDir .. "\" \"\" \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
-        elseif MAC_ENV then
-            if serverBinary:match("^/Applications") then
-                -- System install: use launchctl to trigger the system-wide service
-                startServerCmd = "launchctl kickstart -k gui/$(id -u)/com.styleai.server"
+        if isDevMode and not LrFileUtils.exists(serverBinary) then
+            local launchLogPath = LrPathUtils.child(getServerControlDir(), "styleai-server-launcher.log")
+            if WIN_ENV then
+                startServerCmd = string.format("cd /d \"%s\" && start /b \"\" uv run python src/styleai_server.py --db-path \"%s\" > \"%s\" 2>&1",
+                    devServerDir, dbPath, launchLogPath)
             else
-                -- Local/Dev fallback
+                startServerCmd = string.format("cd '%s' && nohup uv run python src/styleai_server.py --db-path '%s' > '%s' 2>&1 &",
+                    devServerDir, dbPath, launchLogPath)
+            end
+        else
+            local serverDir = LrPathUtils.parent(serverBinary)
+            if WIN_ENV then
+                -- The .cmd launcher handles environment variables and uses pythonw.exe for invisible execution.
+                startServerCmd = "start /b /d \"" ..
+                    serverDir .. "\" \"\" \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
+            elseif MAC_ENV then
+                if serverBinary:match("^/Applications") then
+                    -- System install: use launchctl to trigger the system-wide service
+                    startServerCmd = "launchctl kickstart -k gui/$(id -u)/com.styleai.server"
+                else
+                    -- Local/Dev fallback
+                    local envPrefix = "KMP_DUPLICATE_LIB_OK=TRUE "
+                    startServerCmd = envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
+                end
+            else
+                -- Unknown platform fallback
                 local envPrefix = "KMP_DUPLICATE_LIB_OK=TRUE "
                 startServerCmd = envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
             end
-        else
-            -- Unknown platform fallback
-            local envPrefix = "KMP_DUPLICATE_LIB_OK=TRUE "
-            startServerCmd = envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
         end
 
         log:trace("Trying to start search index server with command: " .. tostring(startServerCmd))
@@ -3310,6 +3393,9 @@ function SearchIndexAPI.addTrainingExample(photoId, filepath, developSettings, o
     if options.camera_model and options.camera_model ~= "" then
         table.insert(mimeChunks, { name = "camera_model", value = tostring(options.camera_model) })
     end
+    if options.camera_profile and options.camera_profile ~= "" then
+        table.insert(mimeChunks, { name = "camera_profile", value = tostring(options.camera_profile) })
+    end
     if options.iso and type(options.iso) == "number" then
         table.insert(mimeChunks, { name = "iso", value = tostring(options.iso) })
     end
@@ -3340,6 +3426,30 @@ function SearchIndexAPI.addTrainingExample(photoId, filepath, developSettings, o
         return true, response
     end
     log:error("addTrainingExample unexpected status: " .. tostring(response.status))
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- Add multiple training examples in a single batch request to the backend.
+-- @param examples table        List of training examples.
+-- @return boolean success, table|string response or error message
+---
+function SearchIndexAPI.addTrainingBatch(examples)
+    if not examples or #examples == 0 then
+        return false, "No examples provided"
+    end
+    local url = getBaseUrl() .. ENDPOINTS.TRAINING_ADD_BATCH
+    local body = { examples = examples }
+    log:trace("addTrainingBatch: uploading " .. tostring(#examples) .. " examples")
+    local response, err = _request('POST', url, body, 120)
+    if not response then
+        log:error("addTrainingBatch failed: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" then
+        return true, response
+    end
+    log:error("addTrainingBatch unexpected status: " .. tostring(response.status))
     return false, response.error or "Unexpected response"
 end
 
@@ -3469,6 +3579,7 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
     addStr("capture_time")
     addStr("camera_make")
     addStr("camera_model")
+    addStr("camera_profile")
     addStr("iso")
     addStr("aperture")
     addStr("shutter_speed")
@@ -3503,6 +3614,22 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
             contentType = "image/jpeg",
         })
     end
+    if options.darkPath and LrFileUtils.exists(options.darkPath) then
+        table.insert(mimeChunks, {
+            name = "image_dark",
+            fileName = LrPathUtils.leafName(options.darkPath),
+            filePath = options.darkPath,
+            contentType = "image/jpeg"
+        })
+    end
+    if options.brightPath and LrFileUtils.exists(options.brightPath) then
+        table.insert(mimeChunks, {
+            name = "image_bright",
+            fileName = LrPathUtils.leafName(options.brightPath),
+            filePath = options.brightPath,
+            contentType = "image/jpeg"
+        })
+    end
 
     log:trace("styleEdit: uploading photo_id=" .. tostring(photoId))
     local response, err = _requestMultipart(url, mimeChunks, 180)
@@ -3517,5 +3644,105 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
         return false, response.error or "Style engine error"
     end
     log:error("styleEdit unexpected status: " .. tostring(response.status))
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- List all styles from the style catalog.
+-- @return boolean success, table styles list or error message
+---
+function SearchIndexAPI.listStyles()
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_LIST
+    local response, err = _request('GET', url, {}, 30)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" then
+        return true, response.styles or {}
+    end
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- Discover new styles from the given photo IDs.
+-- @param photoIds table List of photo IDs to process.
+-- @return boolean success, table styles or error message
+---
+function SearchIndexAPI.discoverStyles(photoIds)
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_DISCOVER
+    local body = { photo_ids = photoIds or {} }
+    local response, err = _request('POST', url, body, 300)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" then
+        return true, response
+    end
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- Reset a specific style by ID.
+-- @param styleId string The style ID to reset.
+-- @return boolean success, string error message if any
+---
+function SearchIndexAPI.resetStyle(styleId)
+    local url = getBaseUrl() .. string.format(ENDPOINTS.STYLE_RESET, tostring(styleId))
+    local response, err = _request('POST', url, {}, 30)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" then
+        return true, nil
+    end
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- Reset all styles.
+-- @return boolean success, string error message if any
+---
+function SearchIndexAPI.resetAllStyles()
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_RESET_ALL
+    local response, err = _request('POST', url, {}, 30)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" then
+        return true, nil
+    end
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- Export the style catalog as JSON.
+-- @return boolean success, string json export or error message
+---
+function SearchIndexAPI.exportStyles()
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_EXPORT
+    local response, err = _request('GET', url, {}, 30)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" then
+        return true, response.export
+    end
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- Import a style catalog from JSON data.
+-- @param data table The JSON data representing styles
+-- @return boolean success, string error message if any
+---
+function SearchIndexAPI.importStyles(data)
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_IMPORT
+    local response, err = _request('POST', url, data, 30)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" then
+        return true, nil
+    end
     return false, response.error or "Unexpected response"
 end

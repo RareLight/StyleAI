@@ -39,8 +39,8 @@ WEIGHT_SCENE = 0.15  # Scene-type tag overlap
 WEIGHT_TIME_OF_DAY = 0.10  # Time-of-day / lighting cue
 
 # Confidence thresholds
-CONFIDENCE_GOOD = 0.70  # ≥ this → style engine output direct, no warning
-CONFIDENCE_LOW = 0.45  # < this → LLM fallback recommended
+CONFIDENCE_GOOD = 0.55  # ≥ this → style engine output direct, no warning
+CONFIDENCE_LOW = 0.30  # < this → LLM fallback recommended
 
 # Interpolation: number of top examples to blend
 TOP_K_BLEND = 3

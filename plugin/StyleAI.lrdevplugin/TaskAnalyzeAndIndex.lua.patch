@@ -1,0 +1,34 @@
+--- TaskAnalyzeAndIndex.lua
++++ TaskAnalyzeAndIndex.lua
+@@ -138,20 +138,15 @@
+                             title = LOC "$$$/StyleAI/AnalyzeAndIndex/Scope=Scope:",
+                             width = share 'labelWidth',
+                         },
+-                        f:column {
+-                            f:row {
+-                                f:radio_button { value = bind 'scope', title = LOC "$$$/StyleAI/common/ScopeSelected=Selected photos only", checked_value = 'selected' },
+-                            },
+-                            f:row {
+-                                f:radio_button { value = bind 'scope', title = LOC "$$$/StyleAI/common/ScopeView=Current view", checked_value = 'view' },
+-                            },
+-                            f:row {
+-                                f:radio_button { value = bind 'scope', title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeAll=Entire catalog", checked_value = 'all' },
+-                            },
+-                            f:row {
+-                                f:radio_button { value = bind 'scope', title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", checked_value = 'missing' },
+-                            },
+-                            f:row {
+-                                f:radio_button { value = bind 'scope', title = LOC "Photos already indexed in database", checked_value = 'indexed' },
+-                            },
++                        f:popup_menu {
++                            value = bind 'scope',
++                            width = 300,
++                            items = {
++                                { title = LOC "$$$/StyleAI/common/ScopeSelected=Selected photos only",              value = 'selected' },
++                                { title = LOC "$$$/StyleAI/common/ScopeView=Current view",                          value = 'view' },
++                                { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeAll=All photos in catalog",         value = 'all' },
++                                { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", value = 'missing' },
++                                { title = "Photos already indexed in database", value = 'indexed' },
++                            },
+                         },
+                     },

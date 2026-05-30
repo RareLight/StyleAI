@@ -19,7 +19,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.scope = prefs.indexScope or "selected"
 
     -- Check if CLIP model is ready on server
-    props.clipReady = SearchIndexAPI.isClipReady() and prefs.useClip
+    props.clipReady = SearchIndexAPI.isClipReady()
 
     -- Tasks to perform
     props.enableEmbeddings = (prefs.enableEmbeddings ~= false) and props.clipReady -- default true
@@ -146,6 +146,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                                 { title = LOC "$$$/StyleAI/common/ScopeView=Current view",                          value = 'view' },
                                 { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeAll=All photos in catalog",         value = 'all' },
                                 { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", value = 'missing' },
+                                { title = LOC "Photos already indexed in database", value = 'indexed' },
                             },
                         },
                     },

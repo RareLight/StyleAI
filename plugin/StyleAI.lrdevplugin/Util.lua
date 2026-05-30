@@ -212,6 +212,12 @@ function Util.getPhotoExif(photo)
 		exif.camera_model = model
 	end
 
+	-- Camera Profile
+	local profile = safeGetRawMetadata(photo, "cameraProfile") or safeGetFormattedMetadata(photo, "cameraProfile")
+	if type(profile) == "string" and profile ~= "" then
+		exif.camera_profile = profile
+	end
+
 	-- ISO
 	local iso = safeGetRawMetadata(photo, "isoSpeedRating")
 	if type(iso) == "number" then
@@ -1224,11 +1230,23 @@ function Util.waitForServerDialog(options)
 		local elapsedTime = 0
 		local timeout = 120 -- 120 seconds timeout
 
+		if not SearchIndexAPI.pingServer() then
+			LrTasks.startAsyncTask(function()
+				SearchIndexAPI.startServer({ readyTimeoutSeconds = timeout })
+			end)
+		end
+
 		while not progressScope:isCanceled() and elapsedTime < timeout do
 			if SearchIndexAPI.pingServer() then
 				local compatible, versionMessage = SearchIndexAPI.ensureVersionCompatibility()
 				progressScope:done()
 				if compatible then
+					local catalog = LrApplication.activeCatalog()
+					local catalogPath = catalog:getPath()
+					local catalogDir = LrPathUtils.parent(catalogPath)
+					local dbPath = LrPathUtils.child(catalogDir, "styleai.db")
+					SearchIndexAPI.initializeCatalog(dbPath)
+
 					-- Deep health check for soft warnings
 					local report = Util.checkPluginHealth(options)
 					if not report.healthy then

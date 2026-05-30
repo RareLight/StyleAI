@@ -243,7 +243,7 @@ local function showAiEditDialog(ctx)
 	local modelItems = buildModelItems()
 	log:trace("showAiEditDialog: modelItems count=" .. tostring(#modelItems))
 	if #modelItems == 0 then
-		table.insert(modelItems, { title = "chatgpt: gpt-4.1", value = "chatgpt::gpt-4.1" })
+		table.insert(modelItems, { title = LOC("$$$/StyleAI/TaskAiEditPhotos/NoModels=No AI models available"), value = "none" })
 	end
 	if not props.modelKey or props.modelKey == "" then
 		props.modelKey = modelItems[1].value
@@ -434,128 +434,6 @@ local function showAiEditDialog(ctx)
 					title = LOC(
 						"$$$/StyleAI/TaskAiEditPhotos/AllowPerPhoto=Allow per-photo edit instructions before generation"
 					),
-				}),
-			}),
-		}),
-		f:group_box({
-			title = LOC("$$$/StyleAI/TaskAiEditPhotos/CreativeControls=Creative Controls"),
-			fill_horizontal = 1,
-			f:row({
-				f:column({
-					spacing = f:control_spacing(),
-					f:row({
-						f:checkbox({
-							value = bind("adjustWhiteBalance"),
-						}),
-						f:static_text({
-							title = LOC("$$$/StyleAI/TaskAiEditPhotos/AdjustWB=Adjust white balance"),
-						}),
-					}),
-					f:row({
-						f:checkbox({
-							value = bind("adjustBasicTone"),
-						}),
-						f:static_text({
-							title = LOC(
-								"$$$/StyleAI/TaskAiEditPhotos/AdjustBasicTone=Adjust basic tone (exposure/contrast/highlights/shadows/whites/blacks)"
-							),
-						}),
-					}),
-					f:row({
-						f:checkbox({
-							value = bind("adjustPresence"),
-						}),
-						f:static_text({
-							title = LOC(
-								"$$$/StyleAI/TaskAiEditPhotos/AdjustPresence=Adjust presence (texture/clarity/dehaze)"
-							),
-						}),
-					}),
-					f:row({
-						f:checkbox({
-							value = bind("adjustColorMix"),
-						}),
-						f:static_text({
-							title = LOC(
-								"$$$/StyleAI/TaskAiEditPhotos/AdjustColorMix=Adjust color mix (vibrance/saturation/HSL)"
-							),
-						}),
-					}),
-					f:row({
-						f:checkbox({
-							value = bind("doColorGrading"),
-						}),
-						f:static_text({
-							title = LOC("$$$/StyleAI/TaskAiEditPhotos/DoColorGrading=Do color grading"),
-						}),
-					}),
-				}),
-				f:column({
-					spacing = f:control_spacing(),
-					f:row({
-						f:checkbox({
-							value = bind("useToneCurve"),
-						}),
-						f:static_text({
-							title = LOC("$$$/StyleAI/TaskAiEditPhotos/UseToneCurve=Use tone curve"),
-						}),
-					}),
-					f:row({
-						f:checkbox({
-							value = bind("usePointCurve"),
-							enabled = bind("useToneCurve"),
-						}),
-						f:static_text({
-							title = LOC("$$$/StyleAI/TaskAiEditPhotos/UsePointCurve=Use point curve"),
-						}),
-					}),
-					f:row({
-						f:checkbox({
-							value = bind("adjustDetail"),
-						}),
-						f:static_text({
-							title = LOC(
-								"$$$/StyleAI/TaskAiEditPhotos/AdjustDetail=Adjust detail (sharpening/noise reduction)"
-							),
-						}),
-					}),
-					f:row({
-						f:checkbox({
-							value = bind("adjustEffects"),
-						}),
-						f:static_text({
-							title = LOC(
-								"$$$/StyleAI/TaskAiEditPhotos/AdjustEffects=Adjust effects (vignette/grain)"
-							),
-						}),
-					}),
-					f:row({
-						f:checkbox({
-							value = bind("adjustLensCorrections"),
-						}),
-						f:static_text({
-							title = LOC("$$$/StyleAI/TaskAiEditPhotos/AdjustLens=Adjust lens corrections"),
-						}),
-					}),
-					f:row({
-						f:checkbox({
-							value = bind("allowAutoCrop"),
-						}),
-						f:static_text({
-							title = LOC("$$$/StyleAI/TaskAiEditPhotos/AllowAutoCrop=Allow AI auto crop"),
-						}),
-					}),
-				}),
-			}),
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/TaskAiEditPhotos/CompositionMode=Composition mode:"),
-					width = share("labelWidth"),
-				}),
-				f:popup_menu({
-					value = bind("compositionMode"),
-					items = bind("compositionModes"),
-					width = 300,
 				}),
 			}),
 		}),
@@ -869,30 +747,39 @@ LrTasks.startAsyncTask(function()
 			local response = nil
 			if continueProcessing then
 				local photoOptions = enrichPhotoOptions(photo, options, userContext)
-				local exportedPath = SearchIndexAPI.exportPhotoForIndexing(photo)
-				if not exportedPath then
+				local base_path, dark_path, bright_path = SearchIndexAPI.exportBracketedPhotosForIndexing(photo)
+				if not base_path then
 					log:error("Failed to export photo for AI edit generation: " .. fileName)
 					table.insert(errorMessages, fileName .. ": export failed")
 					errorCount = errorCount + 1
 					continueProcessing = false
+				else
+					photoOptions.darkPath = dark_path
+					photoOptions.brightPath = bright_path
 				end
 
 				if continueProcessing then
-					log:trace("AI Edit calling API for " .. fileName .. " exportedPath=" .. tostring(exportedPath))
+					log:trace("AI Edit calling API for " .. fileName .. " exportedPath=" .. tostring(base_path))
 					local ok, apiOk, apiResponse = LrTasks.pcall(function()
 						if options.use_training_style then
 							-- Route to the new Style Engine (LLM-free matching)
 							-- Fallback to LLM is handled server-side if use_llm_fallback is true
 							photoOptions.use_llm_fallback = true
-							return SearchIndexAPI.styleEdit(photoId, exportedPath, photoOptions)
+							return SearchIndexAPI.styleEdit(photoId, base_path, photoOptions)
 						else
 							-- Regular LLM edit (prompt-driven)
-							return SearchIndexAPI.generateEditRecipePhoto(photoId, exportedPath, photoOptions)
+							return SearchIndexAPI.generateEditRecipePhoto(photoId, base_path, photoOptions)
 						end
 					end)
 					LrTasks.pcall(function()
-						if exportedPath and LrFileUtils.exists(exportedPath) then
-							LrFileUtils.delete(exportedPath)
+						if base_path and LrFileUtils.exists(base_path) then
+							LrFileUtils.delete(base_path)
+						end
+						if photoOptions.darkPath and LrFileUtils.exists(photoOptions.darkPath) then
+							LrFileUtils.delete(photoOptions.darkPath)
+						end
+						if photoOptions.brightPath and LrFileUtils.exists(photoOptions.brightPath) then
+							LrFileUtils.delete(photoOptions.brightPath)
 						end
 					end)
 					if not ok then

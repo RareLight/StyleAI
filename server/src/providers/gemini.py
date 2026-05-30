@@ -177,10 +177,31 @@ class GeminiProvider(LLMProviderBase):
             logger.info(
                 f"Sending metadata request to Gemini: {model_name} (timeout: {self.timeout}s)"
             )
-            contents = [
-                user_prompt,
-                types.Part.from_bytes(data=request.image_data, mime_type="image/jpeg"),
-            ]
+            contents = [user_prompt]
+            if isinstance(request.image_data, list):
+                for img in request.image_data:
+                    contents.append(
+                        types.Part.from_bytes(data=img, mime_type="image/jpeg")
+                    )
+            else:
+                contents.append(
+                    types.Part.from_bytes(
+                        data=request.image_data, mime_type="image/jpeg"
+                    )
+                )
+            contents = [user_prompt]
+            if isinstance(request.image_data, list):
+                for img in request.image_data:
+                    contents.append(
+                        types.Part.from_bytes(data=img, mime_type="image/jpeg")
+                    )
+            else:
+                contents.append(
+                    types.Part.from_bytes(
+                        data=request.image_data, mime_type="image/jpeg"
+                    )
+                )
+
             response = self.client.models.generate_content(
                 model=model_name,
                 contents=contents,
@@ -393,14 +414,22 @@ class GeminiProvider(LLMProviderBase):
                 thinking_config=thinking_config if thinking_config else None,
             )
 
-            response = self.client.models.generate_content(
-                model=model_name,
-                contents=[
-                    user_prompt,
+            contents = [user_prompt]
+            if isinstance(request.image_data, list):
+                for img in request.image_data:
+                    contents.append(
+                        types.Part.from_bytes(data=img, mime_type="image/jpeg")
+                    )
+            else:
+                contents.append(
                     types.Part.from_bytes(
                         data=request.image_data, mime_type="image/jpeg"
-                    ),
-                ],
+                    )
+                )
+
+            response = self.client.models.generate_content(
+                model=model_name,
+                contents=contents,
                 config=config,
             )
 

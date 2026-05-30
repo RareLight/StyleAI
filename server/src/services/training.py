@@ -42,18 +42,29 @@ EMBEDDING_DIM = (
 # ---------------------------------------------------------------------------
 
 _SCENE_PROBES: dict[str, str] = {
-    "scene_portrait": "a portrait photo of a person",
+    # Subject Matter
+    "scene_portrait": "a portrait photo of a single person",
+    "scene_group": "a photo of a group of people",
     "scene_landscape": "a landscape or nature photo",
     "scene_architecture": "an architectural or building photo",
     "scene_wildlife": "a wildlife or animal photo",
     "scene_event": "an event, wedding, or celebration photo",
     "scene_street": "a street photography or urban scene photo",
     "scene_macro": "a macro or close-up detail photo",
+    "scene_flowers": "a photo of flowers or plants",
     "scene_interior": "an interior or indoor room photo",
     "scene_exterior": "an outdoor or exterior photo",
     "scene_golden_hour": "a photo taken at golden hour or sunset",
+    "scene_night": "a night time or astrophotography photo",
     "scene_studio": "a studio or controlled-light photo",
     "scene_action": "an action, sports, or motion photo",
+    # Aesthetics and Style
+    "style_high_key": "a bright, airy, high-key photo with soft light",
+    "style_low_key": "a dark, moody, low-key photo with deep shadows",
+    "style_minimalist": "a minimalist photo with negative space",
+    "style_vintage": "a vintage, retro, or film-like photo",
+    "style_cinematic": "a cinematic or dramatic photo",
+    "style_neon": "a cyberpunk or neon-lit photo",
 }
 
 _SCENE_THRESHOLD = 0.22  # cosine similarity threshold for a tag to be "present"
@@ -142,9 +153,17 @@ def compute_exposure_metrics(image_bytes: bytes) -> dict[str, float]:
         lum_mean = float(np.mean(gray))
         lum_std = float(np.std(gray))
 
+        # Basic Highlights/Shadows
         highlight_ratio = float(np.mean(gray >= 0.92))
         shadow_ratio = float(np.mean(gray <= 0.08))
         midtone_ratio = float(np.mean((gray > 0.2) & (gray < 0.8)))
+
+        # 5-Zone Luminance Mapping
+        zone_deep_shadows = float(np.mean(gray <= 0.1))
+        zone_shadows = float(np.mean((gray > 0.1) & (gray <= 0.35)))
+        zone_midtones = float(np.mean((gray > 0.35) & (gray <= 0.65)))
+        zone_highlights = float(np.mean((gray > 0.65) & (gray <= 0.9)))
+        zone_bright_highlights = float(np.mean(gray > 0.9))
 
         # Colorfulness: mean chroma in rg-yb space
         rg = np.abs(rgb[:, :, 0] - rgb[:, :, 1])
@@ -177,6 +196,11 @@ def compute_exposure_metrics(image_bytes: bytes) -> dict[str, float]:
             "exp_colorfulness": round(colorfulness, 4),
             "exp_warmth_proxy": round(warmth_proxy, 4),
             "exp_contrast": round(contrast, 4),
+            "zone_deep_shadows": round(zone_deep_shadows, 4),
+            "zone_shadows": round(zone_shadows, 4),
+            "zone_midtones": round(zone_midtones, 4),
+            "zone_highlights": round(zone_highlights, 4),
+            "zone_bright_highlights": round(zone_bright_highlights, 4),
         }
     except Exception as exc:
         logger.warning("compute_exposure_metrics failed: %s", exc)
@@ -189,7 +213,57 @@ def compute_exposure_metrics(image_bytes: bytes) -> dict[str, float]:
             "exp_colorfulness": 0.0,
             "exp_warmth_proxy": 0.5,
             "exp_contrast": 0.0,
+            "zone_deep_shadows": 0.0,
+            "zone_shadows": 0.0,
+            "zone_midtones": 0.0,
+            "zone_highlights": 0.0,
+            "zone_bright_highlights": 0.0,
         }
+
+
+# ---------------------------------------------------------------------------
+# Dominant Color Palette Extraction
+# ---------------------------------------------------------------------------
+
+
+def compute_dominant_colors(image_bytes: bytes, n_colors: int = 5) -> list[str]:
+    """Extract the dominant colors from the image using K-Means clustering.
+    Returns a list of HEX color strings.
+    """
+    try:
+        from sklearn.cluster import KMeans
+        import io
+        from PIL import Image
+
+        # Load a very small thumbnail for extremely fast clustering
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image.thumbnail((100, 100), Image.Resampling.LANCZOS)
+
+        # Reshape the image to be a list of pixels
+        pixels = np.asarray(image)
+        pixels = pixels.reshape(-1, 3)
+
+        # Cluster the pixels
+        kmeans = KMeans(n_clusters=n_colors, n_init="auto", random_state=42)
+        kmeans.fit(pixels)
+
+        # Get the colors and convert to hex
+        colors = kmeans.cluster_centers_.astype(int)
+
+        # Sort by frequency (labels)
+        labels = kmeans.labels_
+        counts = np.bincount(labels)
+        sorted_indices = np.argsort(counts)[::-1]
+
+        hex_colors = []
+        for idx in sorted_indices:
+            r, g, b = colors[idx]
+            hex_colors.append(f"#{r:02x}{g:02x}{b:02x}")
+
+        return hex_colors
+    except Exception as exc:
+        logger.warning("compute_dominant_colors failed: %s", exc)
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +469,9 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
         img_vec = F.normalize(img_vec, p=2, dim=1)
 
         tags: list[str] = []
-        tokenize_fn = getattr(clip_model, "tokenize", None) or _get_clip_tokenize()
+        tokenize_fn = (
+            getattr(clip_model, "tokenize", None) or server_lifecycle.get_tokenizer()
+        )
         if tokenize_fn is None:
             return []
 
@@ -544,6 +620,7 @@ def add_training_example(
     iso: float | None = None,
     aperture: float | None = None,
     shutter_speed: str | None = None,
+    skip_discovery: bool = False,
 ) -> None:
     """Store or overwrite a training example.
 
@@ -622,6 +699,10 @@ def add_training_example(
         hist_sig = compute_histogram_signature(image_bytes)
         metadata["histogram_signature"] = json.dumps(hist_sig, ensure_ascii=False)
 
+        # Dominant Colors
+        dom_colors = compute_dominant_colors(image_bytes, n_colors=5)
+        metadata["dominant_colors"] = json.dumps(dom_colors, ensure_ascii=False)
+
     # Scene-type tags from CLIP zero-shot
     scene_tags = compute_scene_tags(embedding)
     metadata["scene_tags"] = json.dumps(scene_tags, ensure_ascii=False)
@@ -647,20 +728,21 @@ def add_training_example(
         )
 
     # Update style catalog
-    try:
-        from services import style_catalog as style_catalog_service
+    if not skip_discovery:
+        try:
+            from services import style_catalog as style_catalog_service
 
-        style_catalog_service.update_style_for_example(
-            photo_id=photo_id,
-            camera_make=camera_make,
-            camera_model=camera_model,
-            camera_profile=camera_profile,
-            scene_tags=scene_tags,
-            exposure_metrics=metadata if image_bytes else None,
-            user_keywords=user_keywords or [],
-        )
-    except Exception as exc:
-        logger.warning("Style catalog update failed for %s: %s", photo_id, exc)
+            style_catalog_service.update_style_for_example(
+                photo_id=photo_id,
+                camera_make=camera_make,
+                camera_model=camera_model,
+                camera_profile=camera_profile,
+                scene_tags=scene_tags,
+                exposure_metrics=metadata if image_bytes else None,
+                user_keywords=user_keywords or [],
+            )
+        except Exception as exc:
+            logger.warning("Style catalog update failed for %s: %s", photo_id, exc)
 
 
 def delete_training_example(photo_id: str) -> bool:
@@ -728,8 +810,14 @@ def list_training_examples() -> list[dict[str, Any]]:
                 "canonical_settings": meta.get("canonical_settings", "{}"),
                 "develop_settings": meta.get("develop_settings", "{}"),
                 "histogram_signature": meta.get("histogram_signature", "{}"),
+                "dominant_colors": meta.get("dominant_colors", "[]"),
                 "exp_luminance_mean": meta.get("exp_luminance_mean", "0.5"),
                 "exp_contrast": meta.get("exp_contrast", "0.0"),
+                "zone_deep_shadows": meta.get("zone_deep_shadows", "0.0"),
+                "zone_shadows": meta.get("zone_shadows", "0.0"),
+                "zone_midtones": meta.get("zone_midtones", "0.0"),
+                "zone_highlights": meta.get("zone_highlights", "0.0"),
+                "zone_bright_highlights": meta.get("zone_bright_highlights", "0.0"),
             }
         )
     examples.sort(key=lambda x: x["captured_at"], reverse=True)
