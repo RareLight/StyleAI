@@ -3,8 +3,10 @@ LM Studio Provider for metadata generation using the lmstudio-python library
 """
 
 import json
-import lmstudio as lms
+import os
+import re
 from typing import Any
+import lmstudio as lms
 from .base import (
     LLMProviderBase,
     EditGenerationRequest,
@@ -12,7 +14,22 @@ from .base import (
     MetadataGenerationRequest,
     MetadataGenerationResponse,
 )
-from config import logger, LMSTUDIO_HOST
+from config import logger, LMSTUDIO_HOST, DEFAULT_MAX_TOKENS, DEBUG_CACHE_DIR
+
+
+def _extract_json_from_prose(text: str) -> dict:
+    open_brace_indices = [i for i, c in enumerate(text) if c == "{"]
+    # Try parsing from each '{' until one succeeds and looks like our schema
+    for start_idx in open_brace_indices:
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(text[start_idx:])
+            if isinstance(obj, dict) and (
+                "summary" in obj or "global" in obj or "keywords" in obj
+            ):
+                return obj
+        except json.JSONDecodeError:
+            continue
+    raise ValueError("No valid JSON schema object found in response string")
 
 
 class LMStudioProvider(LLMProviderBase):
@@ -98,6 +115,28 @@ class LMStudioProvider(LLMProviderBase):
                 chat = lms.Chat(system_prompt)
                 chat.add_user_message(user_prompt, images=image_handles)
 
+                # DEBUG CACHE: Save payload and prompt
+                try:
+                    uuid_str = request.uuid or "unknown_uuid"
+                    # Save image
+                    img_path = os.path.join(
+                        DEBUG_CACHE_DIR, f"{uuid_str}_edit_image.jpg"
+                    )
+                    if isinstance(request.image_data, bytes):
+                        with open(img_path, "wb") as f_img:
+                            f_img.write(request.image_data)
+                    # Save prompt
+                    prompt_path = os.path.join(
+                        DEBUG_CACHE_DIR, f"{uuid_str}_edit_prompt.txt"
+                    )
+                    with open(prompt_path, "w") as f_txt:
+                        f_txt.write("==== SYSTEM PROMPT ====\n")
+                        f_txt.write(system_prompt + "\n\n")
+                        f_txt.write("==== USER PROMPT ====\n")
+                        f_txt.write(user_prompt + "\n")
+                except Exception as cache_err:
+                    logger.warning(f"Failed to write debug cache: {cache_err}")
+
                 response = model.respond(
                     chat,
                     response_format=response_schema,
@@ -112,12 +151,29 @@ class LMStudioProvider(LLMProviderBase):
             # Normalize to a dict so that `.get(...)` access below is always safe.
             if isinstance(content, str):
                 try:
-                    start_idx = content.find("{")
-                    end_idx = content.rfind("}")
-                    if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
-                        content = content[start_idx : end_idx + 1]
-                    content = json.loads(content)
+                    # Strip out <think> blocks if any
+                    content = re.sub(
+                        r"<think>.*?</think>", "", content, flags=re.DOTALL
+                    )
+
+                    content = _extract_json_from_prose(content)
                 except Exception as parse_err:
+                    # Check if it was a max tokens issue before raising the generic error
+                    if hasattr(response, "stats") and hasattr(
+                        response.stats, "stop_reason"
+                    ):
+                        if response.stats.stop_reason in ("length", "max_tokens"):
+                            _max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
+                            return EditGenerationResponse(
+                                uuid=request.uuid,
+                                success=False,
+                                error=(
+                                    f"LM Studio stopped before finishing the response because the token "
+                                    f"limit was reached (num_predict={_max_tokens}). Please raise the "
+                                    f"Max Tokens setting in the plugin (General tab → AI Model section) "
+                                    f"— try 4096 or higher."
+                                ),
+                            )
                     raise ValueError(
                         f"Unexpected non-JSON response from LM Studio: {content}"
                     ) from parse_err
@@ -215,6 +271,41 @@ class LMStudioProvider(LLMProviderBase):
 
                 chat = lms.Chat(system_prompt)
                 chat.add_user_message(user_prompt, images=image_handles)
+                # DEBUG CACHE: Save payload and prompt
+                try:
+                    uuid_str = request.uuid or "unknown_uuid"
+                    # Save image(s)
+                    if isinstance(request.image_data, list):
+                        for i, img_bytes in enumerate(request.image_data):
+                            if i == 0:
+                                suffix = "_edit_dark.jpg"
+                            elif i == 1:
+                                suffix = "_edit_image.jpg"
+                            elif i == 2:
+                                suffix = "_edit_bright.jpg"
+                            else:
+                                suffix = f"_edit_image_{i}.jpg"
+                            
+                            if isinstance(img_bytes, bytes):
+                                img_path = os.path.join(DEBUG_CACHE_DIR, f"{uuid_str}{suffix}")
+                                with open(img_path, "wb") as f_img:
+                                    f_img.write(img_bytes)
+                    elif isinstance(request.image_data, bytes):
+                        img_path = os.path.join(DEBUG_CACHE_DIR, f"{uuid_str}_edit_image.jpg")
+                        with open(img_path, "wb") as f_img:
+                            f_img.write(request.image_data)
+                    # Save prompt
+                    prompt_path = os.path.join(
+                        DEBUG_CACHE_DIR, f"{uuid_str}_edit_prompt.txt"
+                    )
+                    with open(prompt_path, "w") as f_txt:
+                        f_txt.write("==== SYSTEM PROMPT ====\n")
+                        f_txt.write(system_prompt + "\n\n")
+                        f_txt.write("==== USER PROMPT ====\n")
+                        f_txt.write(user_prompt + "\n")
+                except Exception as cache_err:
+                    logger.warning(f"Failed to write debug cache: {cache_err}")
+
                 response = model.respond(
                     chat,
                     response_format=response_schema,
@@ -222,14 +313,49 @@ class LMStudioProvider(LLMProviderBase):
                 )
 
             content = response.parsed
+
+            # DEBUG CACHE: Save raw response
+            try:
+                uuid_str = request.uuid or "unknown_uuid"
+                raw_path = os.path.join(
+                    DEBUG_CACHE_DIR, f"{uuid_str}_edit_raw_response.txt"
+                )
+                with open(raw_path, "w") as f_raw:
+                    f_raw.write(
+                        content
+                        if isinstance(content, str)
+                        else json.dumps(content, indent=2)
+                    )
+            except Exception as cache_err:
+                logger.warning(
+                    f"Failed to write raw response to debug cache: {cache_err}"
+                )
+
             if isinstance(content, str):
                 try:
-                    start_idx = content.find("{")
-                    end_idx = content.rfind("}")
-                    if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
-                        content = content[start_idx : end_idx + 1]
-                    content = json.loads(content)
+                    # Strip out <think> blocks if any
+                    content = re.sub(
+                        r"<think>.*?</think>", "", content, flags=re.DOTALL
+                    )
+
+                    content = _extract_json_from_prose(content)
                 except Exception as parse_err:
+                    # Check if it was a max tokens issue before raising the generic error
+                    if hasattr(response, "stats") and hasattr(
+                        response.stats, "stop_reason"
+                    ):
+                        if response.stats.stop_reason in ("length", "max_tokens"):
+                            _max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
+                            return EditGenerationResponse(
+                                uuid=request.uuid,
+                                success=False,
+                                error=(
+                                    f"LM Studio stopped before finishing the response because the token "
+                                    f"limit was reached (num_predict={_max_tokens}). Please raise the "
+                                    f"Max Tokens setting in the plugin (General tab → AI Model section) "
+                                    f"— try 4096 or higher."
+                                ),
+                            )
                     raise ValueError(
                         f"Unexpected non-JSON response from LM Studio: {content}"
                     ) from parse_err

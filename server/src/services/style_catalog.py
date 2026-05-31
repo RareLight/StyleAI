@@ -363,6 +363,18 @@ def discover_styles_from_examples(
             }
 
             upsert_style(style)
+            # Update the training examples in ChromaDB with the new style label and description
+            try:
+                training_service.update_training_example_labels(
+                    photo_ids=sg["example_photo_ids"],
+                    label=style_name,
+                    summary=style["description"],
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to propagate style labels to training examples: {exc}"
+                )
+
             created_styles.append(style)
 
     logger.info(

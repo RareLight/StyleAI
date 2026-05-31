@@ -756,7 +756,7 @@ LrTasks.startAsyncTask(function()
 			local response = nil
 			if continueProcessing then
 				local photoOptions = enrichPhotoOptions(photo, options, userContext)
-				local base_path, dark_path, bright_path = SearchIndexAPI.exportBracketedPhotosForIndexing(photo)
+				local base_path, dark_path, bright_path = SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
 				if not base_path then
 					log:error("Failed to export photo for AI edit generation: " .. fileName)
 					table.insert(errorMessages, fileName .. ": export failed")
