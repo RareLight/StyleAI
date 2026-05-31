@@ -480,21 +480,21 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
             if has_siglip:
                 scale = clip_model.logit_scale.exp().item()
                 bias = clip_model.logit_bias.item()
-            
+
             for tag_name, probe_text in _SCENE_PROBES.items():
                 try:
                     tokens = tokenize_fn([probe_text]).to(TORCH_DEVICE)
                     text_features = clip_model.encode_text(tokens)
                     text_vec = F.normalize(text_features, p=2, dim=1)
                     sim = float((img_vec * text_vec).sum().cpu())
-                    
+
                     if has_siglip:
                         logit = sim * scale + bias
                         prob = float(torch.sigmoid(torch.tensor(logit)))
                         is_match = prob >= 0.05 or sim >= _SCENE_THRESHOLD
                     else:
                         is_match = sim >= _SCENE_THRESHOLD
-                        
+
                     if is_match:
                         tags.append(tag_name)
                 except Exception:

@@ -1,3 +1,14 @@
+"""
+Indexing and Embedding Pipeline Service.
+
+This module orchestrates the core ingestion pipeline for photos. To maximize hardware
+utilization, it employs a `ThreadPoolExecutor` architecture. CPU-bound tasks (JPEG
+decoding, hashing, face-detection preprocessing) run concurrently on background
+threads, feeding preprocessed data into a thread-safe queue. The main thread (or
+dedicated GPU thread) exclusively handles SigLIP2 and InsightFace model inference,
+eliminating UI blocking and massive pipeline stalls during bulk catalog indexing.
+"""
+
 from config import logger, CULLING_CONFIG, TORCH_DEVICE
 from . import chroma as chroma_service
 from .chroma import DatabaseNotReadyError

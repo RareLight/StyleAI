@@ -1,7 +1,15 @@
--- TaskTrainFromEdits.lua
+---
+-- @module TaskTrainFromEdits
+-- @description Core component of the Advanced Style Detection pipeline.
 -- Allows the user to save their current Lightroom develop settings for selected
--- photos as AI style training examples.  These are stored on the backend and
--- injected as few-shot context the next time AI Edit Photos runs.
+-- photos as AI style training examples. These are stored on the backend where 
+-- SigLIP2 generates a dense visual embedding and an LLM extracts a semantic 
+-- caption of the lighting and composition. 
+--
+-- This data is later injected as few-shot context during the "AI Edit Photos" 
+-- flow, allowing the Style Engine to interpolate a highly personalized edit 
+-- recipe rather than a generic auto-edit.
+---
 
 require("DevelopEditManager")
 
