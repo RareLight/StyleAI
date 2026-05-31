@@ -398,3 +398,10 @@ if not _is_running_in_docker():
         "Log file rotation on startup enabled for %s (STYLEAI_LOG_ROTATE_BACKUPS)",
         LOG_PATH,
     )
+
+
+# Debug caching for LLM requests
+DEBUG_CACHE_DIR = os.path.expanduser(
+    "~/Library/Application Support/StyleAI/debug_cache"
+)
+os.makedirs(DEBUG_CACHE_DIR, exist_ok=True)

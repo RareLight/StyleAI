@@ -240,15 +240,15 @@ def adaptive_compensation(
         return recipe
 
     avg_train_lum = sum(
-        ex.get("exp_luminance_mean", 0.5) * (score / total_weight)
+        float(ex.get("exp_luminance_mean", 0.5)) * (score / total_weight)
         for ex, score in winners
     )
     avg_train_contrast = sum(
-        ex.get("exp_contrast", 0.5) * (score / total_weight) for ex, score in winners
+        float(ex.get("exp_contrast", 0.5)) * (score / total_weight) for ex, score in winners
     )
 
-    query_lum = query_exposure.get("exp_luminance_mean", 0.5)
-    query_contrast = query_exposure.get("exp_contrast", 0.5)
+    query_lum = float(query_exposure.get("exp_luminance_mean", 0.5))
+    query_contrast = float(query_exposure.get("exp_contrast", 0.5))
 
     # Luminance delta → small exposure correction
     lum_delta = query_lum - avg_train_lum

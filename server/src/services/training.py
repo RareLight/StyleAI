@@ -758,6 +758,42 @@ def add_training_example(
             logger.warning("Style catalog update failed for %s: %s", photo_id, exc)
 
 
+def update_training_example_labels(
+    photo_ids: list[str], label: str, summary: str | None = None
+) -> None:
+    """Update the label and summary for a list of training examples."""
+    _ensure_initialized()
+    if _training_collection is None or not photo_ids:
+        return
+
+    try:
+        existing = _training_collection.get(ids=photo_ids, include=["metadatas"])
+    except Exception as exc:
+        logger.warning(f"Failed to fetch training examples for label update: {exc}")
+        return
+
+    ids = existing.get("ids", [])
+    metadatas = existing.get("metadatas", [])
+
+    if not ids or not metadatas:
+        return
+
+    updated_metadatas = []
+    for i, meta in enumerate(metadatas):
+        m = dict(meta) if meta else {}
+        if label:
+            m["label"] = label
+        if summary:
+            m["summary"] = summary
+        updated_metadatas.append(m)
+
+    try:
+        _training_collection.update(ids=ids, metadatas=updated_metadatas)
+        logger.info(f"Updated label for {len(ids)} training examples")
+    except Exception as exc:
+        logger.warning(f"Failed to update training example labels: {exc}")
+
+
 def delete_training_example(photo_id: str) -> bool:
     """Remove a training example.
 

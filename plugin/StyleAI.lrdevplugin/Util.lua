@@ -549,9 +549,8 @@ end
 --
 function Util.formatTimestampSafe(timestamp)
 	timestamp = timestamp or LrDate.currentTime()
-	local w3c = LrDate.timeToW3CDate(timestamp)
-	-- Convert W3C format (YYYY-MM-DDTHH:MM:SSZ) to filesystem safe (YYYY-MM-DD_HH-MM-SS)
-	return w3c:gsub("T", "_"):gsub(":", "-"):sub(1, 19)
+	local formatted = LrDate.timeToUserFormat(timestamp, "%Y-%m-%d_%H-%M-%S")
+	return formatted
 end
 
 function Util.copyLogfilesToDesktop(extraInfo)

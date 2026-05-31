@@ -562,8 +562,69 @@ function SearchIndexAPI.exportPhotoForIndexing(photo)
     end
 end
 
-function SearchIndexAPI.exportBracketedPhotosForIndexing(photo)
+function SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
     if photo == nil then return nil, nil, nil end
+
+    local macPath = LrPathUtils.getStandardFilePath("home") .. "/Library/Application Support/StyleAI/debug_cache/"
+    local winPath = LrPathUtils.getStandardFilePath("home") .. "\\AppData\\Local\\StyleAI\\debug_cache\\"
+    local cacheDir = MAC_ENV and macPath or winPath
+    if photoId then
+        LrFileUtils.createAllDirectories(cacheDir)
+    end
+
+    local tempDir = LrPathUtils.getStandardFilePath("temp")
+    
+    local function getCachePaths()
+        if not photoId then return nil, nil, nil end
+        local cachePhotoId = photoId
+        local bCache = LrPathUtils.child(cacheDir, cachePhotoId .. "_edit_image.jpg")
+        local dCache = LrPathUtils.child(cacheDir, cachePhotoId .. "_edit_dark.jpg")
+        local brCache = LrPathUtils.child(cacheDir, cachePhotoId .. "_edit_bright.jpg")
+        return bCache, dCache, brCache
+    end
+
+    local baseCache, darkCache, brightCache = getCachePaths()
+    
+    local base_path = nil
+    local dark_path = nil
+    local bright_path = nil
+
+    local function copyFromCache(cachePath, suffix)
+        if cachePath and LrFileUtils.exists(cachePath) then
+            local tempPath = LrPathUtils.child(tempDir, (photoId or "temp") .. suffix)
+            LrFileUtils.copy(cachePath, tempPath)
+            return tempPath
+        end
+        return nil
+    end
+
+    local function saveToCache(tempPath, cachePath)
+        if tempPath and cachePath and LrFileUtils.exists(tempPath) then
+            LrFileUtils.copy(tempPath, cachePath)
+        end
+    end
+
+    -- 1. Baseline (0 EV)
+    base_path = copyFromCache(baseCache, "_cached.jpg")
+    if not base_path then
+        base_path = SearchIndexAPI.exportPhotoForIndexing(photo)
+        saveToCache(base_path, baseCache)
+    end
+
+    -- If we still don't have a photoId, or caching isn't fully enabled, just do the old flow
+    -- But since we want to be smart, we only apply brackets if they are MISSING from cache.
+    local needDark = darkCache and not LrFileUtils.exists(darkCache)
+    local needBright = brightCache and not LrFileUtils.exists(brightCache)
+    
+    -- If neither is needed, we can just load them from cache and return!
+    if not needDark and not needBright and darkCache and brightCache then
+        dark_path = copyFromCache(darkCache, "_dark_cached.jpg")
+        bright_path = copyFromCache(brightCache, "_bright_cached.jpg")
+        if dark_path and bright_path then
+            log:trace("Using debug cache for HDR export completely: " .. tostring(baseCache))
+            return base_path, dark_path, bright_path
+        end
+    end
 
     local catalog = photo.catalog
 
@@ -574,25 +635,35 @@ function SearchIndexAPI.exportBracketedPhotosForIndexing(photo)
         originalExposure = devSettings.Exposure2012
     end
 
-    -- Export baseline (0 EV) first
-    local base_path = SearchIndexAPI.exportPhotoForIndexing(photo)
+    -- 2. Dark (-2 EV)
+    dark_path = copyFromCache(darkCache, "_dark_cached.jpg")
+    if not dark_path then
+        catalog:withWriteAccessDo("Apply -2 EV Bracket", function()
+            photo:applyDevelopSettings({Exposure2012 = originalExposure - 2.0})
+        end)
+        dark_path = SearchIndexAPI.exportPhotoForIndexing(photo)
+        saveToCache(dark_path, darkCache)
+    end
 
-    -- Export -2 EV (dark)
-    catalog:withWriteAccessDo("Apply -2 EV Bracket", function()
-        photo:applyDevelopSettings({Exposure2012 = originalExposure - 2.0})
-    end)
-    local dark_path = SearchIndexAPI.exportPhotoForIndexing(photo)
+    -- 3. Bright (+2 EV)
+    bright_path = copyFromCache(brightCache, "_bright_cached.jpg")
+    if not bright_path then
+        catalog:withWriteAccessDo("Apply +2 EV Bracket", function()
+            photo:applyDevelopSettings({Exposure2012 = originalExposure + 2.0})
+        end)
+        bright_path = SearchIndexAPI.exportPhotoForIndexing(photo)
+        saveToCache(bright_path, brightCache)
+    end
 
-    -- Export +2 EV (bright)
-    catalog:withWriteAccessDo("Apply +2 EV Bracket", function()
-        photo:applyDevelopSettings({Exposure2012 = originalExposure + 2.0})
+    -- Restore original exposure, ensuring we wrap in pcall to avoid any silent failures
+    local okRestore, restoreErr = LrTasks.pcall(function()
+        catalog:withWriteAccessDo("Restore Original Exposure", function()
+            photo:applyDevelopSettings({Exposure2012 = originalExposure})
+        end)
     end)
-    local bright_path = SearchIndexAPI.exportPhotoForIndexing(photo)
-
-    -- Restore original exposure
-    catalog:withWriteAccessDo("Restore Original Exposure", function()
-        photo:applyDevelopSettings({Exposure2012 = originalExposure})
-    end)
+    if not okRestore then
+        log:error("Failed to restore original exposure: " .. tostring(restoreErr))
+    end
 
     return base_path, dark_path, bright_path
 end
