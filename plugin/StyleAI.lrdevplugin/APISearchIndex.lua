@@ -55,6 +55,7 @@ local ENDPOINTS = {
     FACES_QUERY = "/faces/query",
     MIGRATE_PHOTO_IDS = "/db/migrate-photo-ids",
     DB_BACKUP = "/db/backup",
+    DB_PRUNE = "/db/prune",
     SYNC_CLEANUP = "/sync/cleanup",
     SYNC_CLAIM = "/sync/claim",
     TRAINING_ADD = "/training/add",
@@ -752,6 +753,7 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
         vertex_project_id = options.vertex_project_id,
         vertex_location = options.vertex_location,
         regenerate_metadata = tostring(options.regenerate_metadata ~= false),
+        semantic_clustering_threshold = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
     }
 
     log:trace("Analyzing and indexing photo (base64): " .. tostring(filename) .. " id " .. photoId)
@@ -1004,6 +1006,8 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
 
     -- Regeneration control: if false, server will only fill missing fields
     table.insert(mimeChunks, { name = "regenerate_metadata", value = tostring(options.regenerate_metadata ~= false) })
+
+    table.insert(mimeChunks, { name = "semantic_clustering_threshold", value = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94) })
 
     -- Add file
     table.insert(mimeChunks, {
@@ -2605,6 +2609,30 @@ end
 -- @param lookupProgressScope LrProgressScope|nil Optional progress for "looking up which photos need processing".
 -- @return boolean success, table photosToProcess
 --
+---
+-- Sends a comprehensive list of valid photo IDs to the backend to safely purge orphaned database entries.
+-- This guarantees the ChromaDB embeddings match the active Lightroom catalog exactly.
+-- @param catalogId string The unique identifier for the current catalog.
+-- @param validPhotoIds table An array of globalPhotoIds that currently exist in Lightroom.
+-- @return table|nil Result summary on success (deleted, disassociated, checked counts), nil on error.
+-- @return string|nil Error message on failure, nil on success.
+---
+function SearchIndexAPI.pruneDatabase(catalogId, validPhotoIds)
+    local body = {
+        catalog_id = catalogId,
+        valid_photo_ids = validPhotoIds
+    }
+    local url = getBaseUrl() .. ENDPOINTS.DB_PRUNE
+    local res, err = _request('POST', url, body)
+    if err then
+        return nil, err
+    end
+    if type(res) == "table" and res.results then
+        return res.results, nil
+    end
+    return res, nil
+end
+
 function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressScope)
     local allPhotos = PhotoSelector.getPhotosInScope('all')
     if allPhotos == nil then
@@ -3185,9 +3213,8 @@ function SearchIndexAPI.startClipDownload()
         return nil, requestErr
     end
 
-    LrTasks.startAsyncTask(function()
-        while true do
-            local pollStatus, pollErr = _request('GET', getBaseUrl() .. ENDPOINTS.STATUS_CLIP_DOWNLOAD)
+    while true do
+        local pollStatus, pollErr = _request('GET', getBaseUrl() .. ENDPOINTS.STATUS_CLIP_DOWNLOAD)
             if pollErr then
                 ErrorHandler.handleError("Error downloading CLIP model", pollErr)
                 if progressScope ~= nil then
@@ -3219,9 +3246,8 @@ function SearchIndexAPI.startClipDownload()
                 end
             end
 
-            LrTasks.sleep(2)
-        end
-    end)
+        LrTasks.sleep(2)
+    end
 end
 
 local lastClipReadyStatus = nil

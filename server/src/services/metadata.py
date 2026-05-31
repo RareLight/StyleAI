@@ -187,8 +187,7 @@ class AnalysisService:
         embeddings = None
         metadata_results = None
 
-        def _do_embeddings():
-            nonlocal embeddings
+        if len(uuids_needing_embeddings) > 0:
             logger.debug(
                 f"Generating embeddings for {len(uuids_needing_embeddings)} images..."
             )
@@ -201,52 +200,97 @@ class AnalysisService:
                     embeddings.append(emb[0] if emb else None)
                 else:
                     embeddings.append(None)
+        else:
+            embeddings = [None] * len(uuids)
 
-        def _do_metadata():
-            nonlocal metadata_results
+        if len(uuids_needing_metadata) > 0:
             logger.info(
                 f"Generating metadata for {len(uuids_needing_metadata)} images out of {len(uuids)} total"
             )
-            logger.info(f"UUIDs needing metadata: {uuids_needing_metadata}")
-            # Filter to only process images that need metadata
+
+            # --- SEMANTIC CLUSTERING ---
+            # Group visually similar photos to avoid redundant LLM calls
+            import numpy as np
+            from . import chroma as chroma_service
+
+            cluster_mapping = {}  # maps uuid -> representative_uuid
+            clusters = []  # list of dicts: {'rep_uid': uid, 'rep_emb': np.array, 'members': [uid]}
+            similarity_threshold = options.get("semantic_clustering_threshold", 0.94)
+
+            def get_embedding(idx, uid):
+                if embeddings and embeddings[idx] is not None:
+                    return embeddings[idx]
+                if uid not in uuids_needing_embeddings:
+                    # Attempt to fetch existing embedding from ChromaDB
+                    res = chroma_service.get_image(uid)
+                    if res and res.get("embeddings") and len(res["embeddings"]) > 0:
+                        return res["embeddings"][0]
+                return None
+
+            for i, uid in enumerate(uuids):
+                if uid not in uuids_needing_metadata:
+                    continue
+
+                emb = get_embedding(i, uid)
+                if emb is None:
+                    # No embedding available, cannot cluster
+                    cluster_mapping[uid] = uid
+                    continue
+
+                emb_arr = np.array(emb, dtype=np.float32)
+                norm = np.linalg.norm(emb_arr)
+                if norm > 0:
+                    emb_arr = emb_arr / norm
+
+                found_cluster = False
+                for cluster in clusters:
+                    similarity = np.dot(emb_arr, cluster["rep_emb"])
+                    if similarity >= similarity_threshold:
+                        cluster["members"].append(uid)
+                        cluster_mapping[uid] = cluster["rep_uid"]
+                        found_cluster = True
+                        break
+
+                if not found_cluster:
+                    clusters.append(
+                        {"rep_uid": uid, "rep_emb": emb_arr, "members": [uid]}
+                    )
+                    cluster_mapping[uid] = uid
+
+            rep_uids = set(cluster_mapping.values())
+            logger.info(
+                f"Semantic Clustering: Reduced {len(uuids_needing_metadata)} LLM calls to {len(rep_uids)} representatives (Threshold: {similarity_threshold})"
+            )
+
+            # Filter triplets to only the representatives
             filtered_triplets = [
                 (image_data[i], uuids[i], "")
                 for i, uuid in enumerate(uuids)
-                if uuid in uuids_needing_metadata
+                if uuid in rep_uids
             ]
-            logger.info(
-                f"Filtered to {len(filtered_triplets)} triplets for metadata generation"
-            )
+
             partial_results = self._generate_metadata_batch(
                 [t[1] for t in filtered_triplets],
                 [t[0] for t in filtered_triplets],
                 options,
                 exif_location_map=exif_location_map,
             )
-            # Reconstruct full results array with None for images that didn't need metadata
+
+            # Map partial_results back to rep_uids for cloning
+            rep_results = {
+                uid: res
+                for uid, res in zip([t[1] for t in filtered_triplets], partial_results)
+            }
+
             metadata_results = []
-            partial_idx = 0
-            for uuid in uuids:
+            for i, uuid in enumerate(uuids):
                 if uuid in uuids_needing_metadata:
-                    metadata_results.append(
-                        partial_results[partial_idx] if partial_results else None
-                    )
-                    partial_idx += 1
+                    rep_uid = cluster_mapping.get(uuid, uuid)
+                    metadata_results.append(rep_results.get(rep_uid))
                 else:
                     metadata_results.append(None)
-
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            futures = []
-            if len(uuids_needing_embeddings) > 0:
-                futures.append(executor.submit(_do_embeddings))
-            if len(uuids_needing_metadata) > 0:
-                futures.append(executor.submit(_do_metadata))
-
-            # Wait for all submitted tasks to complete
-            for f in concurrent.futures.as_completed(futures):
-                f.result()  # raise exception if any
+        else:
+            metadata_results = [None] * len(uuids)
 
         # Datetime/capture_time extraction is handled entirely by the client
         # (Lightroom plugin) via explicit fields in the request and stored in

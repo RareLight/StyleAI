@@ -38,6 +38,10 @@ return {
 			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Style Catalog..."),
 			file = "TaskStyleCatalog.lua",
 		},
+		{
+			title = LOC("$$$/StyleAI/PruneDatabase/MenuItem=Clean / Prune Database..."),
+			file = "TaskPruneDatabase.lua",
+		},
 	},
 
 	LrExportMenuItems = {

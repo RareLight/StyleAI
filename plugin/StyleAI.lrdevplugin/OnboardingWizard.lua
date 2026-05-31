@@ -8,6 +8,7 @@ function OnboardingWizard.show(manualTrigger)
 			-- Initial states with robust defaults
 			propertyTable.backendRunning = SearchIndexAPI.pingServer() or false
 			propertyTable.clipReady = SearchIndexAPI.isClipReady() or false
+			propertyTable.clipDownloading = false
 			propertyTable.geminiApiKey = prefs.geminiApiKey or ""
 			propertyTable.chatgptApiKey = prefs.chatgptApiKey or ""
 
@@ -192,7 +193,7 @@ function OnboardingWizard.show(manualTrigger)
 							fill_horizontal = 1,
 							f:static_text({
 								title = LOC(
-									"$$$/StyleAI/Onboarding/SemanticDesc=To enable advanced search by content, you need the OpenCLIP AI model. This is a ~4GB download."
+									"$$$/StyleAI/Onboarding/SemanticDesc=To enable advanced search by content, you need the SigLIP2 AI model. This is a ~4GB download."
 								),
 								width_in_chars = 60,
 								wrap = true,
@@ -201,7 +202,7 @@ function OnboardingWizard.show(manualTrigger)
 							f:row({
 								f:checkbox({
 									title = LOC(
-										"$$$/StyleAI/Onboarding/ClipAlreadyDownloaded=OpenCLIP model is already available."
+										"$$$/StyleAI/Onboarding/ClipAlreadyDownloaded=SigLIP2 model is already available."
 									),
 									value = bind("clipReady"),
 									enabled = false,
@@ -209,17 +210,27 @@ function OnboardingWizard.show(manualTrigger)
 							}),
 							f:row({
 								f:push_button({
-									title = LOC("$$$/StyleAI/Onboarding/DownloadClip=Download OpenCLIP Model"),
+									title = bind({
+										key = "clipDownloading",
+										transform = function(v)
+											if v then
+												return LOC("$$$/StyleAI/Onboarding/DownloadingClip=Downloading (Check progress bar)...")
+											end
+											return LOC("$$$/StyleAI/Onboarding/DownloadClip=Download SigLIP2 Model")
+										end,
+									}),
 									action = function()
+										propertyTable.clipDownloading = true
 										LrTasks.startAsyncTask(function()
 											SearchIndexAPI.startClipDownload()
 											propertyTable.clipReady = SearchIndexAPI.isClipReady()
+											propertyTable.clipDownloading = false
 										end)
 									end,
 									enabled = bind({
-										key = "clipReady",
+										keys = { "clipReady", "clipDownloading" },
 										transform = function(v)
-											return not v
+											return not propertyTable.clipReady and not propertyTable.clipDownloading
 										end,
 									}),
 								}),

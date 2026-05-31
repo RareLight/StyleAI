@@ -1,3 +1,12 @@
+---
+-- @module TaskAiEditPhotos
+-- @description The execution side of the Advanced Style Detection & AI Editing pipeline.
+-- Evaluates selected photos, gathers context, and asks the backend to generate a highly 
+-- personalized Lightroom edit recipe. If `use_training_style` is true, the request is routed 
+-- to the new Style Engine, which queries ChromaDB for visually and semantically matching 
+-- "AI Training Examples" (stored via TaskTrainFromEdits) to apply a custom edit.
+---
+
 require("DevelopEditManager")
 
 local function copyOptions(source)

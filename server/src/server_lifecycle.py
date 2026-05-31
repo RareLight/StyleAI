@@ -1,3 +1,12 @@
+"""
+Robust State & Lifecycle Management Service.
+
+Controls the startup signaling, heartbeat, and teardown of the Python backend.
+Uses PID tracking and `.OK` files to coordinate gracefully with the Lightroom
+plugin, avoiding zombie processes. Includes an automatic VRAM idle-unload mechanism
+to free GPU resources after a period of inactivity.
+"""
+
 import os
 import time
 import config

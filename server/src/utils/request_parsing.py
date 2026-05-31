@@ -138,6 +138,14 @@ def _extract_options(data) -> dict[str, Any]:
     options["prompt"] = data.get("prompt")
     options["edit_intent"] = data.get("edit_intent")
 
+    # Semantic Clustering Threshold (0.80 to 1.00)
+    try:
+        options["semantic_clustering_threshold"] = float(
+            data.get("semantic_clustering_threshold", 0.94)
+        )
+    except (TypeError, ValueError):
+        options["semantic_clustering_threshold"] = 0.94
+
     # Style strength (clamped 0..1)
     try:
         options["style_strength"] = float(data.get("style_strength", 0.5))

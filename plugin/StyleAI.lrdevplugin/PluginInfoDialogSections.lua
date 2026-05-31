@@ -37,6 +37,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
 	propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
 	propertyTable.indexingParallelTasks = tostring(prefs.indexingParallelTasks or "2")
+	propertyTable.semanticClusteringThresholdInt = math.floor((tonumber(prefs.semanticClusteringThreshold) or 0.94) * 100)
 
 	-- Training/Style Profile stats (loaded asynchronously).
 	propertyTable.trainingCount = 0
@@ -452,14 +453,14 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				}),
 				f:row({
 					fill_horizontal = 1,
-					f:spacer({ width = share("labelWidth") }),
 					f:static_text({
-						title = LOC(
+						title = "\n" .. LOC(
 							"$$$/StyleAI/PluginInfo/DbStoragePathDesc=Leave empty to store next to the catalog (default)."
 						),
 						size = "small",
 						fill_horizontal = 1,
 						wrap = true,
+						alignment = "center",
 					}),
 				}),
 				f:row({
@@ -527,7 +528,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/ClaimPhotos=Claim photos for this catalog"),
-						width = share("backendButtonWidth"),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
 								local progressScope = LrProgressScope({
@@ -562,7 +562,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/ShowDbStats=Show DB stats"),
-						width = share("backendButtonWidth"),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
 								local stats, err = SearchIndexAPI.getStats()
@@ -584,7 +583,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/DownloadDbBackup=Download DB backup"),
-						width = share("backendButtonWidth"),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
 								local result, path = SearchIndexAPI.downloadDatabaseBackup()
@@ -732,14 +730,18 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						value = bind("shutdownServerOnExit"),
 						title = LOC("$$$/StyleAI/PluginInfo/ShutdownOnExit=Shut down backend server when Lightroom exits"),
 					}),
+				}),
+				f:row({
+					fill_horizontal = 1,
 					f:static_text({
-						title = LOC(
+						title = "\n" .. LOC(
 							"$$$/StyleAI/PluginInfo/ShutdownOnExitHint=Frees memory immediately. Increases startup time next session."
 						),
 						size = "small",
 						font = "italic",
 						fill_horizontal = 1,
 						wrap = true,
+						alignment = "center",
 					}),
 				}),
 			}),
@@ -795,12 +797,13 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("86195$/StyleAI/PluginInfo/AdvancedSettings=Advanced Settings"),
+				title = LOC("$$$/StyleAI/PluginInfo/AdvancedSettings=Advanced Settings"),
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("86195$/StyleAI/PluginInfo/ParallelTasks=Parallel Indexing Tasks"),
-						width = share("setupLabelWidth"),
+						title = LOC("$$$/StyleAI/PluginInfo/ParallelTasks=Parallel Indexing\nTasks"),
+						width = share("advancedLabelWidth"),
+						alignment = "right",
 					}),
 					f:popup_menu({
 						value = bind("indexingParallelTasks"),
@@ -810,13 +813,51 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							{ title = "3", value = "3" },
 							{ title = "4", value = "4" },
 						},
+						width = 200,
+					}),
+					f:spacer({ fill_horizontal = 1 }),
+				}),
+				f:row({
+					fill_horizontal = 1,
+					f:spacer({ width = share("advancedLabelWidth") }),
+					f:static_text({
+						title = LOC("$$$/StyleAI/PluginInfo/ParallelTasksHint=Higher values process photos faster but use more memory. 2 is recommended for Apple Silicon."),
+						size = "small",
 						fill_horizontal = 1,
+						wrap = true,
 					}),
 				}),
 				f:row({
-					f:spacer({ width = share("setupLabelWidth") }),
+					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("86195$/StyleAI/PluginInfo/ParallelTasksHint=Higher values process photos faster but use more memory. 2 is recommended for Apple Silicon."),
+						title = LOC("$$$/StyleAI/PluginInfo/SemanticClustering=Clustering\nThreshold:"),
+						width = share("advancedLabelWidth"),
+						alignment = "right",
+					}),
+					f:slider({
+						value = bind("semanticClusteringThresholdInt"),
+						min = 80,
+						max = 100,
+						integral = true,
+						immediate = true,
+						width = 200,
+					}),
+					f:static_text({
+						title = bind({
+							key = "semanticClusteringThresholdInt",
+							transform = function(v)
+								return string.format("%.2f", (v or 94) / 100)
+							end,
+						}),
+						width_in_chars = 5,
+					}),
+					f:spacer({ fill_horizontal = 1 }),
+				}),
+				f:row({
+					fill_horizontal = 1,
+					f:spacer({ width = share("advancedLabelWidth") }),
+					f:static_text({
+						title = LOC("$$$/StyleAI/PluginInfo/SemanticClusteringHint=Higher values require photos to be virtually identical to share generated metadata. Lower values (e.g. 0.80) clump more photos together to save indexing time."),
 						size = "small",
 						fill_horizontal = 1,
 						wrap = true,
@@ -1108,6 +1149,7 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 	prefs.exportSize = propertyTable.exportSize
 	prefs.exportQuality = propertyTable.exportQuality
 	prefs.usePreviewThumbnails = (propertyTable.usePreviewThumbnails ~= false)
+	prefs.semanticClusteringThreshold = tonumber(propertyTable.semanticClusteringThresholdInt) / 100
 
 	prefs.prompt = propertyTable.prompt
 	prefs.prompts = propertyTable.prompts

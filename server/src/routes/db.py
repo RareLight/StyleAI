@@ -1,3 +1,10 @@
+"""
+Flask blueprint for database management and utility endpoints.
+
+Provides routes for fetching database statistics, creating backup zips,
+migrating old photo IDs, and pruning orphaned records.
+"""
+
 from flask import Blueprint, jsonify, send_file, after_this_request, request
 import os
 
@@ -68,3 +75,24 @@ def migrate_photo_ids():
     except Exception as e:
         logger.error("Photo ID migration failed: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@db_bp.route("/db/prune", methods=["POST"])
+def prune_database():
+    """
+    Remove orphaned metadata and embeddings for photos that no longer exist in the catalog.
+    Expects JSON: { "catalog_id": "...", "valid_photo_ids": ["id1", "id2", ...] }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        catalog_id = data.get("catalog_id")
+        valid_photo_ids = data.get("valid_photo_ids")
+
+        if not isinstance(valid_photo_ids, list):
+            return jsonify({"error": "valid_photo_ids must be a list of strings"}), 400
+
+        result = service_db.prune_database(valid_photo_ids, catalog_id)
+        return jsonify({"results": result, "error": None, "warning": None})
+    except Exception as e:
+        logger.error("Database prune failed: %s", e, exc_info=True)
+        return jsonify({"results": None, "error": str(e), "warning": None}), 500

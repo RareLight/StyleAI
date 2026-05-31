@@ -211,7 +211,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                             enabled = props.clipReady,
                         },
                         f:static_text {
-                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/ClipNotReady=(OpenCLIP model is missing. Please download it in the Plugin Manager)",
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/ClipNotReady=(SigLIP2 model is missing. Please download it in the Plugin Manager)",
                             text_color = LrColor(1, 0, 0),
                             visible = not props.clipReady,
                             size = "small",
