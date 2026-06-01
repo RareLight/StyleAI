@@ -172,16 +172,27 @@ local function showAnalyzeAndIndexDialog(ctx)
                             title = LOC "$$$/StyleAI/AnalyzeAndIndex/Temperature=Temperature:",
                             width = share 'labelWidth',
                         },
-                        f:slider {
-                            value = bind 'temperature',
-                            min = 0.0,
-                            max = 0.5,
-                            integral = false,
-                            width = 300,
-                        },
-                        f:static_text {
-                            title = bind 'temperature',
-                            width = 40,
+                        f:column {
+                            f:row {
+                                f:slider {
+                                    value = bind 'temperature',
+                                    min = 0.0,
+                                    max = 0.5,
+                                    integral = false,
+                                    width = 300,
+                                },
+                                f:static_text {
+                                    title = bind 'temperature',
+                                    width = 40,
+                                },
+                            },
+                            f:push_button {
+                                title = LOC "$$$/StyleAI/common/Reset=Reset",
+                                width = 60,
+                                action = function()
+                                    props.temperature = Defaults.defaultTemperature or 0.1
+                                end,
+                            },
                         },
                     },
                     f:row {

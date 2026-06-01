@@ -475,7 +475,7 @@ class LLMProviderBase(ABC):
             "* Return only numeric Lightroom-friendly adjustments\n"
             "* IMPORTANT: The `exposure` slider is strictly on a scale from -5.0 to +5.0. Do NOT output values outside this range. Other basic tone sliders (contrast, highlights, shadows, whites, blacks) are on a scale of -100 to +100.\n"
             "* Build edits in this order: white balance and exposure foundation -> tonal shaping -> color refinement -> detail/effects\n"
-            "* For white balance use global `temperature` and `tint` (or `white_balance.temperature` / `white_balance.tint`)\n"
+            "* White Balance: NEVER predict typical `temperature`/`tint` values from scenes, because white balance differs in every image. Trust the camera's automatic white balance. If the image context/tags imply a particularly strong color cast, engage Lightroom's automatic white balance by setting global `white_balance` to `\"Auto\"`. Otherwise, omit white balance settings entirely or use `\"As Shot\"`.\n"
             "* Use global controls first; add masks only when global edits cannot solve the problem cleanly\n"
             "* Use masks only for subject, sky, or background\n"
             "* Keep saturation and clarity moderate; avoid brittle or crunchy output\n"
@@ -619,7 +619,9 @@ class LLMProviderBase(ABC):
             base_prompt += "\n\n--- YOUR PERSONAL EDIT STYLE (few-shot examples) ---\n"
             base_prompt += (
                 "The following examples are from your own Lightroom edits on visually similar photos. "
-                "Study the slider values and replicate this editing style for the current photo.\n"
+                "Use these as a strong foundational guide, but adapt and balance the values for the current photo's specific lighting. "
+                "Crucially, your final edit must still obey all Aesthetic Rules from your system instructions (e.g., natural colors, protected skin tones, avoiding crushed blacks). "
+                "Do not blindly copy values if they would violate those core guidelines on this specific image.\n"
             )
             for i, ex in enumerate(examples, start=1):
                 base_prompt += self._format_training_example(i, ex) + "\n"

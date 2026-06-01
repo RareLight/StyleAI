@@ -771,6 +771,7 @@
 "$$$/StyleAI/common/OK" = "OK"
 "$$$/StyleAI/common/Prompt" = "Prompt:"
 "$$$/StyleAI/common/Refresh" = "Refresh"
+"$$$/StyleAI/common/Reset" = "Reset"
 "$$$/StyleAI/common/ResetAll" = "Reset All"
 "$$$/StyleAI/common/Save" = "Save"
 "$$$/StyleAI/common/Scope" = "Scope"

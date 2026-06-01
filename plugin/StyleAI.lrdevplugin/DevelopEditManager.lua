@@ -7,6 +7,7 @@ local GLOBAL_KEY_MAP = {
 	shadows = "Shadows2012",
 	whites = "Whites2012",
 	blacks = "Blacks2012",
+	white_balance = "WhiteBalance",
 	temperature = "Temp",
 	tint = "Tint",
 	texture = "Texture",
@@ -509,6 +510,12 @@ local function mergeGlobalDevelopSettings(currentSettings, aiSettings)
 		end
 	end
 
+	-- explicitly drop profile and look data to ensure the AI edit application
+	-- NEVER overrides or resets the user's base camera profile due to SDK bugs
+	merged["CameraProfile"] = nil
+	merged["CameraProfileRaw"] = nil
+	merged["Look"] = nil
+
 	for key, value in pairs(aiSettings or {}) do
 		if ADDITIVE_GLOBAL_KEYS[key] and type(value) == "number" then
 			local baseValue = currentSettings and currentSettings[key]
@@ -702,11 +709,6 @@ local function buildDevelopSettings(recipe, warnings)
 		if value ~= nil then
 			developSettings[lrKey] = value
 		end
-	end
-
-	-- Respect the RAW profile (Adobe Adaptive, etc.) to ensure baseline parity
-	if globalSettings.profile then
-		developSettings["CameraConfig"] = globalSettings.profile
 	end
 
 	mergeSettings(developSettings, buildHslDevelopSettings(globalSettings.hsl))
@@ -1395,7 +1397,6 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 	props.applyMasks = (options and options.applyMasks ~= false) and ((recipe.masks and #recipe.masks > 0) or false)
 	props.details = DevelopEditManager.formatRecipeDetails(response)
 	props.engineTypeDisplay = recipe.engine_type or "Style Engine"
-	props.baseProfileName = (recipe.global and recipe.global.profile) or "Adobe Standard"
 
 	-- Style prediction metadata for the UI
 	props.hasConfidence = response and response.confidence ~= nil
@@ -1463,14 +1464,6 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 			f:static_text({
 				title = bind("engineTypeDisplay"),
 				font = "<system/bold>",
-			}),
-			f:spacer({ width = 10 }),
-			f:static_text({
-				title = LOC("$$$/StyleAI/DevelopEdit/BaseProfile=Base Profile:"),
-			}),
-			f:static_text({
-				title = bind("baseProfileName"),
-				font = "<system/italic>",
 			}),
 		}),
 		f:row({

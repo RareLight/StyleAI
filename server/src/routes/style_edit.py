@@ -30,7 +30,7 @@ def _get_clip_embedding(photo_id: str):
     """Re-use the CLIP embedding already stored in ChromaDB for this photo."""
     try:
         existing = chroma_service.get_image(photo_id)
-        if existing and existing.get("ids") and existing.get("embeddings"):
+        if existing and existing.get("ids") and existing.get("embeddings") is not None and len(existing.get("embeddings")) > 0:
             import numpy as np
 
             raw_emb = existing["embeddings"][0]
@@ -73,6 +73,8 @@ def _run_single_style_edit(
         camera_profile=camera_profile,
         user_keywords=user_keywords,
         min_confidence=CONFIDENCE_LOW,
+        current_settings=options.get("current_settings"),
+        style_strength=options.get("style_strength"),
     )
 
     # LLM fallback when style engine couldn't produce a confident result

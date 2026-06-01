@@ -929,6 +929,12 @@ function SearchIndexAPI.generateEditRecipePhoto(photoId, filepath, options)
     if options.prompt then
         table.insert(mimeChunks, { name = "prompt", value = options.prompt })
     end
+    if options.current_settings then
+        table.insert(mimeChunks, { name = "current_settings", value = JSON:encode(options.current_settings) })
+    end
+    if options.style_strength then
+        table.insert(mimeChunks, { name = "style_strength", value = tostring(options.style_strength) })
+    end
     if options.date_time then
         table.insert(mimeChunks, { name = "date_time", value = options.date_time })
     end
@@ -3727,6 +3733,10 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
     addStr("iso")
     addStr("aperture")
     addStr("shutter_speed")
+    
+    if options.current_settings then
+        table.insert(mimeChunks, { name = "current_settings", value = JSON:encode(options.current_settings) })
+    end
 
     -- Standard edit options forwarded for LLM fallback compatibility
     local function addEditOpt(key, value)
@@ -3748,6 +3758,7 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
     addEditOpt("adjust_detail", options.adjust_detail)
     addEditOpt("adjust_effects", options.adjust_effects)
     addEditOpt("allow_auto_crop", options.allow_auto_crop)
+    addEditOpt("style_strength", options.style_strength)
 
     if filepath and LrFileUtils.exists(filepath) then
         local filename = LrPathUtils.leafName(filepath)

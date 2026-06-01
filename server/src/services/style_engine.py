@@ -297,8 +297,6 @@ _CANONICAL_TO_RECIPE_FIELDS = {
     "shadows": "shadows",
     "whites": "whites",
     "blacks": "blacks",
-    "temperature": "temperature",
-    "tint": "tint",
     "texture": "texture",
     "clarity": "clarity",
     "dehaze": "dehaze",
@@ -371,6 +369,56 @@ class StyleEngineResult:
         self.matched_filenames = matched_filenames or []
 
 
+def _finalize_recipe(
+    recipe: dict[str, Any],
+    query_exposure: dict[str, float],
+    current_settings: dict[str, Any] | None,
+    style_strength: float | None,
+) -> dict[str, Any]:
+    """Apply style strength scaling and auto white balance overrides."""
+    if style_strength is not None and style_strength < 1.0:
+        # Use Lightroom absolute defaults as the baseline for interpolation 
+        # so the slider is stateless and works predictably even if the photo is already edited.
+        lr_defaults = {
+            "exposure": 0.0,
+            "contrast": 0.0,
+            "highlights": 0.0,
+            "shadows": 0.0,
+            "whites": 0.0,
+            "blacks": 0.0,
+            "texture": 0.0,
+            "clarity": 0.0,
+            "dehaze": 0.0,
+            "vibrance": 0.0,
+            "saturation": 0.0,
+            "sharpening": 40.0,
+            "noise_reduction": 0.0,
+            "color_noise_reduction": 25.0,
+            "vignette": 0.0,
+            "grain": 0.0,
+        }
+        
+        global_settings = recipe.get("global", {})
+        for key, target_val in list(global_settings.items()):
+            if isinstance(target_val, (int, float)) and not isinstance(target_val, bool):
+                try:
+                    baseline = lr_defaults.get(key, 0.0)
+                    interpolated = baseline + (float(target_val) - baseline) * style_strength
+                    global_settings[key] = round(interpolated, 2)
+                except (ValueError, TypeError):
+                    pass
+
+    warmth_proxy = query_exposure.get("exp_warmth_proxy", 0.5)
+    if warmth_proxy < 0.2 or warmth_proxy > 0.8:
+        recipe["white_balance"] = "Auto"
+        logger.info(
+            "Style engine detected extreme color cast (warmth_proxy=%.3f), engaging Auto white balance", 
+            warmth_proxy
+        )
+        
+    return recipe
+
+
 def generate_style_edit(
     photo_id: str,
     image_bytes: bytes,
@@ -383,6 +431,8 @@ def generate_style_edit(
     camera_profile: str | None = None,
     user_keywords: list[str] | None = None,
     min_confidence: float = CONFIDENCE_LOW,
+    current_settings: dict[str, Any] | None = None,
+    style_strength: float | None = None,
 ) -> StyleEngineResult:
     """Generate a style-matched edit recipe without an LLM.
 
@@ -465,6 +515,7 @@ def generate_style_edit(
                     f"(confidence {best_confidence:.0%})"
                 )
                 recipe = _canonical_to_edit_recipe(recipe_settings, summary=summary)
+                recipe = _finalize_recipe(recipe, query_exposure, current_settings, style_strength)
                 logger.info(
                     "Style engine catalog match: photo_id=%s style=%s confidence=%.3f",
                     photo_id,
@@ -500,6 +551,7 @@ def generate_style_edit(
                         f"{style2.get('style_name', '?')} (confidence {best_confidence:.0%})"
                     )
                     recipe = _canonical_to_edit_recipe(blended, summary=summary)
+                    recipe = _finalize_recipe(recipe, query_exposure, current_settings, style_strength)
                     logger.info(
                         "Style engine catalog blend: photo_id=%s styles=%s+%s confidence=%.3f",
                         photo_id,
@@ -602,7 +654,8 @@ def generate_style_edit(
     summary = " — ".join(summary_parts)
 
     recipe = _canonical_to_edit_recipe(blended_recipe, summary=summary)
-
+    recipe = _finalize_recipe(recipe, query_exposure, current_settings, style_strength)
+    
     # -----------------------------------------------------------------------
     # Step 9: Attach appropriate warning for low confidence
     # -----------------------------------------------------------------------
