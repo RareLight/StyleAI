@@ -278,46 +278,13 @@ def note_request():
 
 
 def _idle_unloader_loop():
-    """Background thread which periodically checks whether the model should be unloaded
-    and whether the server has been idle long enough to shut down entirely."""
-    global _unloader_thread
-    logger.info(
-        "Starting idle monitor (model unload after %ss, server shutdown after %ss)",
-        IDLE_UNLOAD_SECONDS,
-        IDLE_SHUTDOWN_SECONDS,
-    )
-    try:
-        while True:
-            time.sleep(60)
-            try:
-                # 1. Model unload (free GPU/CPU memory)
-                if _needs_unload():
-                    unload_model()
-
-                # 2. Server idle shutdown (free the whole process)
-                if IDLE_SHUTDOWN_SECONDS > 0:
-                    idle_seconds = time.time() - _last_request_time
-                    if idle_seconds >= IDLE_SHUTDOWN_SECONDS:
-                        logger.info(
-                            "Server idle for %.0fs (threshold %ss) — shutting down",
-                            idle_seconds,
-                            IDLE_SHUTDOWN_SECONDS,
-                        )
-                        request_shutdown()
-                        break  # exit loop; process will die shortly
-            except Exception:
-                logger.exception("Error in idle monitor background thread")
-    finally:
-        logger.info("Idle monitor thread exiting")
+    """Disabled: Backend stays alive and models stay in memory indefinitely."""
+    pass
 
 
 def _ensure_unloader_thread():
-    global _unloader_thread
-    if _unloader_thread is None or not _unloader_thread.is_alive():
-        _unloader_thread = threading.Thread(
-            target=_idle_unloader_loop, daemon=True, name="server_lifecycle_unloader"
-        )
-        _unloader_thread.start()
+    """Disabled: No background unloader thread needed."""
+    pass
 
 
 def get_model():

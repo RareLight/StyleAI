@@ -93,6 +93,9 @@ def _ensure_initialized() -> sqlite3.Connection:
     logger.info("Initialising style catalog SQLite at %s", db_file)
     os.makedirs(os.path.dirname(db_file), exist_ok=True)
     conn = sqlite3.connect(db_file, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
     conn.executescript(SCHEMA_SQL)
     conn.row_factory = sqlite3.Row
     # Migrate: ensure camera_profile column exists
@@ -142,43 +145,43 @@ def upsert_style(style: dict[str, Any]) -> None:
     conn = _ensure_initialized()
 
     style_id = style["style_id"]
-    conn.execute("DELETE FROM styles WHERE style_id = ?", (style_id,))
-    conn.execute("DELETE FROM style_examples WHERE style_id = ?", (style_id,))
+    with conn:
+        conn.execute("DELETE FROM styles WHERE style_id = ?", (style_id,))
+        conn.execute("DELETE FROM style_examples WHERE style_id = ?", (style_id,))
 
-    conn.execute(
-        """
-        INSERT INTO styles (
-            style_id, style_name, camera_make, camera_model, camera_profile, genre, subgenre,
-            description, example_count, mean_exposure_dna, scene_distribution,
-            develop_variance, confidence_threshold, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            style_id,
-            style.get("style_name", ""),
-            style.get("camera_make"),
-            style.get("camera_model"),
-            style.get("camera_profile"),
-            style.get("genre", ""),
-            style.get("subgenre"),
-            style.get("description", ""),
-            style.get("example_count", 0),
-            json.dumps(style.get("mean_exposure_dna", {}), ensure_ascii=False),
-            json.dumps(style.get("scene_distribution", {}), ensure_ascii=False),
-            json.dumps(style.get("develop_variance", {}), ensure_ascii=False),
-            style.get("confidence_threshold", 0.45),
-            style.get("created_at", _now()),
-            _now(),
-        ),
-    )
-
-    for photo_id in style.get("example_photo_ids", []):
         conn.execute(
-            "INSERT INTO style_examples (style_id, photo_id) VALUES (?, ?)",
-            (style_id, photo_id),
+            """
+            INSERT INTO styles (
+                style_id, style_name, camera_make, camera_model, camera_profile, genre, subgenre,
+                description, example_count, mean_exposure_dna, scene_distribution,
+                develop_variance, confidence_threshold, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                style_id,
+                style.get("style_name", ""),
+                style.get("camera_make"),
+                style.get("camera_model"),
+                style.get("camera_profile"),
+                style.get("genre", ""),
+                style.get("subgenre"),
+                style.get("description", ""),
+                style.get("example_count", 0),
+                json.dumps(style.get("mean_exposure_dna", {}), ensure_ascii=False),
+                json.dumps(style.get("scene_distribution", {}), ensure_ascii=False),
+                json.dumps(style.get("develop_variance", {}), ensure_ascii=False),
+                style.get("confidence_threshold", 0.45),
+                style.get("created_at", _now()),
+                _now(),
+            ),
         )
 
-    conn.commit()
+        for photo_id in style.get("example_photo_ids", []):
+            conn.execute(
+                "INSERT INTO style_examples (style_id, photo_id) VALUES (?, ?)",
+                (style_id, photo_id),
+            )
+
     logger.info(
         "Upserted style %s with %d examples", style_id, style.get("example_count", 0)
     )
@@ -187,8 +190,9 @@ def upsert_style(style: dict[str, Any]) -> None:
 def delete_style(style_id: str) -> bool:
     """Remove a style and its example links. Returns True if it existed."""
     conn = _ensure_initialized()
-    cur = conn.execute("DELETE FROM styles WHERE style_id = ?", (style_id,))
-    conn.commit()
+    with conn:
+        cur = conn.execute("DELETE FROM styles WHERE style_id = ?", (style_id,))
+
     deleted = cur.rowcount > 0
     if deleted:
         logger.info("Deleted style %s", style_id)
