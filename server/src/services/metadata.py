@@ -425,21 +425,37 @@ class AnalysisService:
         else:
             logger.debug(f"No additional context for {uuid}")
 
-        try:
-            response = selected_provider.generate_metadata(request)
-            if not response.success:
-                logger.error(
-                    f"[FAIL] Failed to generate metadata for {uuid}: {response.error}"
+        import time
+        response = None
+        for attempt in range(2):
+            try:
+                response = selected_provider.generate_metadata(request)
+                if response.success:
+                    if "warning_msg" in locals():
+                        response.warning = warning_msg
+                    return response
+                logger.warning(
+                    f"[Attempt {attempt+1}/2] Failed to generate metadata for {uuid}: {response.error}"
                 )
+            except Exception as e:
+                logger.warning(
+                    f"[Attempt {attempt+1}/2] Unexpected error during metadata generation for {uuid}: {e}",
+                    exc_info=(attempt == 1),
+                )
+                if attempt == 1:
+                    return MetadataGenerationResponse(uuid=uuid, success=False, error=str(e))
+            
+            if attempt < 1:
+                time.sleep(2)
+        
+        # If we exhausted attempts and have a response object with an error
+        if response:
             if "warning_msg" in locals():
                 response.warning = warning_msg
+            logger.error(f"[FAIL] Failed to generate metadata for {uuid}: {response.error}")
             return response
-        except Exception as e:
-            logger.error(
-                f"Unexpected error during metadata generation for {uuid}: {e}",
-                exc_info=True,
-            )
-            return MetadataGenerationResponse(uuid=uuid, success=False, error=str(e))
+        
+        return MetadataGenerationResponse(uuid=uuid, success=False, error="Unknown error")
 
     def generate_edit_recipe_single(
         self, uuid: str, image_data: bytes, options: dict
@@ -565,49 +581,64 @@ class AnalysisService:
                 logger.warning(training_warning)
 
         request.training_examples = training_examples or []
-
-        try:
-            response = selected_provider.generate_edit_recipe(request)
-            if response.success and isinstance(response.recipe, dict):
-                response.recipe = filter_edit_recipe_by_controls(
-                    response.recipe,
-                    {
-                        "include_masks": request.include_masks,
-                        "adjust_white_balance": request.adjust_white_balance,
-                        "adjust_basic_tone": request.adjust_basic_tone,
-                        "adjust_presence": request.adjust_presence,
-                        "adjust_color_mix": request.adjust_color_mix,
-                        "do_color_grading": request.do_color_grading,
-                        "use_tone_curve": request.use_tone_curve,
-                        "use_point_curve": request.use_point_curve,
-                        "adjust_detail": request.adjust_detail,
-                        "adjust_effects": request.adjust_effects,
-                        "adjust_lens_corrections": request.adjust_lens_corrections,
-                        "allow_auto_crop": request.allow_auto_crop,
-                        "composition_mode": request.composition_mode,
-                    },
+        import time
+        response = None
+        for attempt in range(2):
+            try:
+                response = selected_provider.generate_edit_recipe(request)
+                if response.success and isinstance(response.recipe, dict):
+                    response.recipe = filter_edit_recipe_by_controls(
+                        response.recipe,
+                        {
+                            "include_masks": request.include_masks,
+                            "adjust_white_balance": request.adjust_white_balance,
+                            "adjust_basic_tone": request.adjust_basic_tone,
+                            "adjust_presence": request.adjust_presence,
+                            "adjust_color_mix": request.adjust_color_mix,
+                            "do_color_grading": request.do_color_grading,
+                            "use_tone_curve": request.use_tone_curve,
+                            "use_point_curve": request.use_point_curve,
+                            "adjust_detail": request.adjust_detail,
+                            "adjust_effects": request.adjust_effects,
+                            "adjust_lens_corrections": request.adjust_lens_corrections,
+                            "allow_auto_crop": request.allow_auto_crop,
+                            "composition_mode": request.composition_mode,
+                        },
+                    )
+                    break
+                else:
+                    logger.warning(
+                        f"[Attempt {attempt+1}/2] Failed to generate edit recipe for {uuid}: {response.error if response else 'Unknown'}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"[Attempt {attempt+1}/2] Unexpected error during edit recipe generation for {uuid}: {e}",
+                    exc_info=(attempt == 1),
                 )
-            if not response.success:
-                logger.error(
-                    f"[FAIL] Failed to generate edit recipe for {uuid}: {response.error}"
-                )
+                if attempt == 1:
+                    return EditGenerationResponse(uuid=uuid, success=False, error=str(e))
+            
+            if attempt < 1:
+                time.sleep(2)
 
-            # Aggregate warnings
-            warnings = []
-            if "warning_msg" in locals():
-                warnings.append(warning_msg)
-            if "training_warning" in locals():
-                warnings.append(training_warning)
-            if warnings:
-                response.warning = " | ".join(warnings)
-
-            return response
-        except Exception as e:
+        if not response or not response.success:
             logger.error(
-                f"Unexpected error during edit generation for {uuid}: {e}",
-                exc_info=True,
+                f"[FAIL] Final failure generating edit recipe for {uuid}: {response.error if response else 'Unknown'}"
             )
-            return EditGenerationResponse(uuid=uuid, success=False, error=str(e))
+
+        # Aggregate warnings
+        warnings = []
+        if "warning_msg" in locals():
+            warnings.append(warning_msg)
+        if "training_warning" in locals():
+            warnings.append(training_warning)
+
+        if response and warnings:
+            response.warning = " | ".join(warnings)
+
+        if not response:
+            return EditGenerationResponse(uuid=uuid, success=False, error="Unknown error")
+        return response
 
     def get_available_models(
         self,

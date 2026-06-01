@@ -4,7 +4,29 @@ from chromadb.errors import InternalError as ChromaInternalError
 import json
 import threading
 import numpy as np
+import time
+from functools import wraps
 from config import logger, CULLING_CONFIG, get_culling_config
+
+
+def retry_on_lock(max_retries=3, initial_delay=0.5):
+    """Decorator to retry ChromaDB write operations if the underlying SQLite database is locked."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries or "database is locked" not in str(e).lower():
+                        raise
+                    logger.warning(f"ChromaDB locked, retrying {func.__name__} in {delay}s (attempt {attempt + 1}/{max_retries})...")
+                    time.sleep(delay)
+                    delay *= 2  # Exponential backoff
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 # --- ChromaDB Client and Collection Initialization (Lazy) ---
@@ -231,6 +253,7 @@ def unload_collections():
     logger.info("Unloaded ChromaDB collections.")
 
 
+@retry_on_lock(max_retries=3, initial_delay=0.5)
 def add_image(photo_id, embedding, metadata, *, legacy_uuid=None, catalog_id=None):
     """Add a new image record to the Chroma collection.
 
@@ -274,6 +297,7 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None, catalog_id=Non
         raise
 
 
+@retry_on_lock(max_retries=3, initial_delay=0.5)
 def update_image(
     photo_id, metadata, embedding=None, *, legacy_uuid=None, catalog_id=None
 ):
@@ -408,6 +432,7 @@ def clear_image_metadata(photo_id, *, legacy_uuid=None):
 # --- Vertex AI image embeddings collection API ---
 
 
+@retry_on_lock(max_retries=3, initial_delay=0.5)
 def add_vertex_image(photo_id, embedding, metadata=None, *, legacy_uuid=None):
     """Add or overwrite Vertex AI embedding for an image."""
     _ensure_initialized()
@@ -432,6 +457,7 @@ def add_vertex_image(photo_id, embedding, metadata=None, *, legacy_uuid=None):
         )
 
 
+@retry_on_lock(max_retries=3, initial_delay=0.5)
 def update_vertex_image(photo_id, embedding=None, metadata=None, *, legacy_uuid=None):
     """Update Vertex AI embedding and/or metadata for an existing document."""
     _ensure_initialized()
