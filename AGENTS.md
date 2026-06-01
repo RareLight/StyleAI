@@ -65,6 +65,7 @@ StyleAI/
 ### Backend Setup (Python)
 Dependencies are managed exclusively by [uv](https://docs.astral.sh/uv/). Do not edit or create `requirements.txt`.
 - **Sync Dependencies**: `cd server && uv sync`
+- **Cache Models**: `cd server && uv run python scripts/download_models.py` (Downloads models locally)
 - **Add Dependency**: `cd server && uv add <package>` (or `uv add --dev <package>`)
 - **Format & Lint**: `bash server/scripts/lint_format.sh` (runs ruff check and ruff format)
 - **Run Tests**: `cd server && uv run pytest test/`

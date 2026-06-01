@@ -7,6 +7,12 @@ Welcome to StyleAI! This guide will walk you through setting up the plugin, inde
 To begin, you must install both the Lightroom Classic plugin frontend and the Python backend server. These components communicate locally to process your images without freezing the Lightroom UI. 
 Please refer to the high-level installation instructions on the [root `README.md`](Project-README) or the detailed steps in the [`plugin/README.md`](Plugin-README).
 
+### Pre-Downloading AI Models
+To prevent long delays or network timeouts the first time you run indexing, you should cache the AI models locally. From the `server` directory, run:
+```bash
+uv run python scripts/download_models.py
+```
+
 ### ⚠️ Bypassing Security Warnings (Unsigned Installers)
 
 Because StyleAI is an open-source project and the current installers are not code-signed, your operating system will likely flag them as "untrusted" or "malicious". This is a standard security precaution for any third-party software that has not been notarized by Microsoft or Apple.

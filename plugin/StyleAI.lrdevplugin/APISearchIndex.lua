@@ -3258,67 +3258,69 @@ function SearchIndexAPI.generateGlobalPhotoIdsForCatalog()
 end
 
 function SearchIndexAPI.startClipDownload()
-    if SearchIndexAPI.isClipReady() then
-        log:trace("CLIP model is already cached")
-        return
-    end
+    LrTasks.startAsyncTask(function()
+        if SearchIndexAPI.isClipReady() then
+            log:trace("CLIP model is already cached")
+            return
+        end
 
-    local status, err = _request('GET', getBaseUrl() .. ENDPOINTS.STATUS_CLIP_DOWNLOAD)
-    if not err and status ~= nil and status.status == "downloading" then
-        log:trace("CLIP model download is already in progress")
-        return
-    end
+        local status, err = _request('GET', getBaseUrl() .. ENDPOINTS.STATUS_CLIP_DOWNLOAD)
+        if not err and status ~= nil and status.status == "downloading" then
+            log:trace("CLIP model download is already in progress")
+            return
+        end
 
-    local progressScope = LrProgressScope({
-        title = LOC "$$$/StyleAI/ClipDownload/ProgressTitle=Downloading CLIP AI model for advanced search",
-        functionContext = nil,
-    })
+        local progressScope = LrProgressScope({
+            title = LOC "$$$/StyleAI/ClipDownload/ProgressTitle=Downloading CLIP AI model for advanced search",
+            functionContext = nil,
+        })
 
-    local url = getBaseUrl() .. ENDPOINTS.START_CLIP_DOWNLOAD
-    local body = {}
+        local url = getBaseUrl() .. ENDPOINTS.START_CLIP_DOWNLOAD
+        local body = {}
 
-    local _, requestErr = _request('POST', url, body)
+        local _, requestErr = _request('POST', url, body)
 
-    if requestErr then
-        log:error("startClipDownload failed: " .. requestErr)
-        return nil, requestErr
-    end
+        if requestErr then
+            log:error("startClipDownload failed: " .. requestErr)
+            return nil, requestErr
+        end
 
-    while true do
-        local pollStatus, pollErr = _request('GET', getBaseUrl() .. ENDPOINTS.STATUS_CLIP_DOWNLOAD)
-            if pollErr then
-                ErrorHandler.handleError("Error downloading CLIP model", pollErr)
-                if progressScope ~= nil then
-                    progressScope:setCaption(LOC "$$$/StyleAI/ClipDownload/Error=Error downloading CLIP model: ^1",
-                        pollErr)
-                    progressScope:done()
-                end
-                break
-            end
-
-            if pollStatus ~= nil then
-                if progressScope ~= nil then
-                    progressScope:setCaption(LOC "$$$/StyleAI/ClipDownload/Downloading=Downloading CLIP model...")
-                end
-                if pollStatus.status == "downloading" then
-                    progressScope:setPortionComplete(pollStatus.progress, pollStatus.total)
-                elseif pollStatus.status == "completed" then
-                    log:trace("CLIP model download completed")
-                    progressScope:done()
-                    LrDialogs.message(LOC "$$$/StyleAI/ClipDownload/SuccessTitle=CLIP Download",
-                        LOC "$$$/StyleAI/ClipDownload/SuccessMessage=CLIP model downloaded successfully.")
-                    break
-                elseif pollStatus.status == "error" or (pollStatus.error and pollStatus.error ~= "null" and pollStatus.error ~= "") then
-                    local error_msg = pollStatus.error or "Unknown download error"
-                    ErrorHandler.handleError(LOC "$$$/StyleAI/ClipDownload/ErrorTitle=Error downloading CLIP model",
-                        error_msg)
-                    progressScope:done()
+        while true do
+            local pollStatus, pollErr = _request('GET', getBaseUrl() .. ENDPOINTS.STATUS_CLIP_DOWNLOAD)
+                if pollErr then
+                    ErrorHandler.handleError("Error downloading CLIP model", pollErr)
+                    if progressScope ~= nil then
+                        progressScope:setCaption(LOC "$$$/StyleAI/ClipDownload/Error=Error downloading CLIP model: ^1",
+                            pollErr)
+                        progressScope:done()
+                    end
                     break
                 end
-            end
 
-        LrTasks.sleep(2)
-    end
+                if pollStatus ~= nil then
+                    if progressScope ~= nil then
+                        progressScope:setCaption(LOC "$$$/StyleAI/ClipDownload/Downloading=Downloading CLIP model...")
+                    end
+                    if pollStatus.status == "downloading" then
+                        progressScope:setPortionComplete(pollStatus.progress, pollStatus.total)
+                    elseif pollStatus.status == "completed" then
+                        log:trace("CLIP model download completed")
+                        progressScope:done()
+                        LrDialogs.message(LOC "$$$/StyleAI/ClipDownload/SuccessTitle=CLIP Download",
+                            LOC "$$$/StyleAI/ClipDownload/SuccessMessage=CLIP model downloaded successfully.")
+                        break
+                    elseif pollStatus.status == "error" or (pollStatus.error and pollStatus.error ~= "null" and pollStatus.error ~= "") then
+                        local error_msg = pollStatus.error or "Unknown download error"
+                        ErrorHandler.handleError(LOC "$$$/StyleAI/ClipDownload/ErrorTitle=Error downloading CLIP model",
+                            error_msg)
+                        progressScope:done()
+                        break
+                    end
+                end
+
+            LrTasks.sleep(2)
+        end
+    end)
 end
 
 local lastClipReadyStatus = nil
@@ -3576,12 +3578,12 @@ end
 -- @param examples table        List of training examples.
 -- @return boolean success, table|string response or error message
 ---
-function SearchIndexAPI.addTrainingBatch(examples)
+function SearchIndexAPI.addTrainingBatch(examples, forceRetrain)
     if not examples or #examples == 0 then
         return false, "No examples provided"
     end
     local url = getBaseUrl() .. ENDPOINTS.TRAINING_ADD_BATCH
-    local body = { examples = examples }
+    local body = { examples = examples, force_retrain = forceRetrain or false }
     log:trace("addTrainingBatch: uploading " .. tostring(#examples) .. " examples")
     local response, err = _request('POST', url, body, 120)
     if not response then

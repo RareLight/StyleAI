@@ -87,7 +87,7 @@ def add_training_example():
     except (ValueError, TypeError):
         return jsonify({"error": "develop_settings must be valid JSON"}), 400
 
-    label = request.form.get("label", "").strip() or None
+    label = request.form.get("label", "").strip() or "Uncategorized"
     summary = request.form.get("summary", "").strip() or None
     filename = None
 
@@ -215,6 +215,7 @@ def add_training_batch():
     """
     data = request.get_json() or {}
     examples = data.get("examples", [])
+    force_retrain = data.get("force_retrain", False)
 
     if not examples:
         return jsonify({"error": "Missing 'examples' array in body"}), 400
@@ -244,6 +245,9 @@ def add_training_batch():
             continue
 
         label = item.get("label")
+        if not label:
+            label = "Uncategorized"
+        
         summary = item.get("summary")
         filename = item.get("filename")
 
@@ -257,20 +261,35 @@ def add_training_batch():
         aperture = item.get("aperture")
         shutter_speed = item.get("shutter_speed")
 
+        image_bytes_b64 = item.get("image_bytes")
+        image_bytes_data = None
+        if image_bytes_b64:
+            import base64
+            try:
+                image_bytes_data = base64.b64decode(image_bytes_b64)
+            except Exception as e:
+                logger.warning(f"Failed to decode base64 image bytes for {photo_id}: {e}")
+
         try:
             embedding = None
-            try:
-                from services import chroma
+            if image_bytes_data:
+                embedding = _compute_clip_embedding(image_bytes_data)
+            
+            if embedding is None:
+                try:
+                    from services import chroma
 
-                chroma_data = chroma.get_image(photo_id)
-                if (
-                    chroma_data
-                    and chroma_data.get("embeddings")
-                    and len(chroma_data["embeddings"]) > 0
-                ):
-                    embedding = chroma_data["embeddings"][0]
-            except Exception:
-                pass
+                    chroma_data = chroma.get_image(photo_id)
+                    if (
+                        chroma_data
+                        and chroma_data.get("embeddings") is not None
+                        and len(chroma_data["embeddings"]) > 0
+                    ):
+                        embedding = chroma_data["embeddings"][0]
+                        if hasattr(embedding, "tolist"):
+                            embedding = embedding.tolist()
+                except Exception:
+                    pass
 
             training_service.add_training_example(
                 photo_id=photo_id,
@@ -279,7 +298,7 @@ def add_training_batch():
                 label=label,
                 filename=filename,
                 summary=summary,
-                image_bytes=None,
+                image_bytes=image_bytes_data,
                 focal_length=focal_length,
                 capture_time_unix=capture_time_unix,
                 camera_make=camera_make,
@@ -290,8 +309,21 @@ def add_training_batch():
                 aperture=aperture,
                 shutter_speed=shutter_speed,
                 skip_discovery=True,
+                force_retrain=force_retrain,
             )
             results.append({"status": "ok", "photo_id": photo_id})
+        except ValueError as exc:
+            if "Skipped" in str(exc):
+                results.append({"status": "ok", "photo_id": photo_id, "warning": str(exc)})
+            else:
+                logger.error("Batch add failed for photo_id=%s: %s", photo_id, exc)
+                results.append(
+                    {
+                        "status": "error",
+                        "photo_id": photo_id,
+                        "error": str(exc),
+                    }
+                )
         except Exception as exc:
             logger.error("Batch add failed for photo_id=%s: %s", photo_id, exc)
             results.append(
