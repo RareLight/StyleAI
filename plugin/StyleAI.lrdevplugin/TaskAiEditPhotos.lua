@@ -547,18 +547,6 @@ local function showAiEditDialog(ctx)
 		edit_intent = props.editIntent,
 		style_strength = props.styleStrength,
 		include_masks = props.applyMasks,
-		adjust_white_balance = props.adjustWhiteBalance,
-		adjust_basic_tone = props.adjustBasicTone,
-		adjust_presence = props.adjustPresence,
-		adjust_color_mix = props.adjustColorMix,
-		do_color_grading = props.doColorGrading,
-		use_tone_curve = props.useToneCurve,
-		use_point_curve = props.usePointCurve,
-		adjust_detail = props.adjustDetail,
-		adjust_effects = props.adjustEffects,
-		adjust_lens_corrections = props.adjustLensCorrections,
-		allow_auto_crop = props.allowAutoCrop,
-		composition_mode = props.compositionMode,
 		applyMasks = props.applyMasks,
 		reviewBeforeApply = props.reviewBeforeApply,
 		submit_keywords = props.submitKeywords,
@@ -704,31 +692,115 @@ LrTasks.startAsyncTask(function()
 		local errorCount = 0
 		local errorMessages = {}
 		local backendWarnings = {}
+
+		-- Queue state
+		local userContexts = {}
+		local contextReady = {}
+		local results = {}
+		local producerDone = false
+
+		-- Pre-fill contexts if no dialog is needed
+		if not options.showPhotoContextDialog then
+			for i, p in ipairs(photos) do
+				userContexts[i] = p:getPropertyForPlugin(_PLUGIN, "photoContext") or ""
+				contextReady[i] = true
+			end
+		end
+
+		local consumerIndex = 1
+
+		LrTasks.startAsyncTask(function()
+			LrFunctionContext.callWithContext("ProducerTask", function(producerCtx)
+				for index, photo in ipairs(photos) do
+					if progressScope:isCanceled() then break end
+
+					-- Throttle to avoid unbounded memory/disk usage (max 3 ahead of consumer)
+					while (index > consumerIndex + 2) and not progressScope:isCanceled() do
+						LrTasks.sleep(0.1)
+					end
+
+					-- Wait for consumer to provide context (if dialogs are pending)
+					while not contextReady[index] and not progressScope:isCanceled() do
+						LrTasks.sleep(0.1)
+					end
+					if progressScope:isCanceled() then break end
+
+					local userContext = userContexts[index]
+					local fileName = photo:getFormattedMetadata("fileName") or "Photo"
+					local resultObj = { fileName = fileName, continueProcessing = true }
+
+					local photoId, photoIdErr = SearchIndexAPI.getPhotoIdForPhoto(photo)
+					if not photoId then
+						log:error("Failed to resolve photo ID for " .. fileName .. ": " .. tostring(photoIdErr))
+						resultObj.errorMsg = fileName .. ": " .. tostring(photoIdErr)
+						resultObj.continueProcessing = false
+					else
+						local photoOptions = enrichPhotoOptions(photo, options, userContext)
+						local base_path, dark_path, bright_path = SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
+						if not base_path then
+							log:error("Failed to export photo for AI edit generation: " .. fileName)
+							resultObj.errorMsg = fileName .. ": export failed"
+							resultObj.continueProcessing = false
+						else
+							photoOptions.darkPath = dark_path
+							photoOptions.brightPath = bright_path
+
+							local ok, apiOk, apiResponse = LrTasks.pcall(function()
+								if options.use_training_style then
+									photoOptions.use_llm_fallback = true
+									return SearchIndexAPI.styleEdit(photoId, base_path, photoOptions)
+								else
+									return SearchIndexAPI.generateEditRecipePhoto(photoId, base_path, photoOptions)
+								end
+							end)
+
+							LrTasks.pcall(function()
+								if base_path and LrFileUtils.exists(base_path) then LrFileUtils.delete(base_path) end
+								if photoOptions.darkPath and LrFileUtils.exists(photoOptions.darkPath) then LrFileUtils.delete(photoOptions.darkPath) end
+								if photoOptions.brightPath and LrFileUtils.exists(photoOptions.brightPath) then LrFileUtils.delete(photoOptions.brightPath) end
+							end)
+
+							if not ok then
+								log:error("AI edit generation threw for " .. fileName .. ": " .. tostring(apiOk))
+								resultObj.errorMsg = fileName .. ": exception thrown: " .. tostring(apiOk)
+								resultObj.continueProcessing = false
+							else
+								resultObj.response = apiResponse
+								if apiResponse and apiResponse.warning then
+									resultObj.warning = fileName .. ": " .. tostring(apiResponse.warning)
+								end
+
+								if not apiOk or not apiResponse or type(apiResponse) ~= "table" or apiResponse.status ~= "success" then
+									local errMsg = "Unknown error"
+									if not apiOk then errMsg = tostring(apiResponse)
+									elseif type(apiResponse) == "string" then errMsg = apiResponse
+									elseif apiResponse and apiResponse.error then errMsg = apiResponse.error end
+									resultObj.errorMsg = fileName .. ": " .. errMsg
+									resultObj.continueProcessing = false
+								end
+							end
+						end
+					end
+
+					results[index] = resultObj
+				end
+				producerDone = true
+			end)
+		end)
+
 		local reuseContext = false
 		local sharedContext = ""
 
 		for index, photo in ipairs(photos) do
-			if progressScope:isCanceled() then
-				break
-			end
+			if progressScope:isCanceled() then break end
 
+			consumerIndex = index
 			local fileName = photo:getFormattedMetadata("fileName") or "Photo"
-			progressScope:setCaption(
-				"Processing " .. fileName .. " (" .. tostring(index) .. " of " .. tostring(#photos) .. ")"
-			)
+			progressScope:setCaption("Processing " .. fileName .. " (" .. tostring(index) .. " of " .. tostring(#photos) .. ")")
 			progressScope:setPortionComplete(index - 1, #photos)
-			local continueProcessing = true
 
-			local userContext = photo:getPropertyForPlugin(_PLUGIN, "photoContext") or ""
-			log:trace(
-				"AI Edit photo loop start: index="
-					.. tostring(index)
-					.. " photo="
-					.. tostring(fileName)
-					.. " initialContextLen="
-					.. tostring(type(userContext) == "string" and #userContext or 0)
-			)
-			if options.showPhotoContextDialog then
+			if not contextReady[index] then
+				local userContext = photo:getPropertyForPlugin(_PLUGIN, "photoContext") or ""
 				if not reuseContext then
 					local result
 					result, sharedContext, reuseContext = showPhotoInstructionDialog(ctx, photo)
@@ -741,105 +813,40 @@ LrTasks.startAsyncTask(function()
 				LrApplication.activeCatalog():withPrivateWriteAccessDo(function()
 					photo:setPropertyForPlugin(_PLUGIN, "photoContext", userContext)
 				end, Defaults.catalogWriteAccessOptions)
+
+				userContexts[index] = userContext
+				contextReady[index] = true
+
+				-- If reuseContext was just set, unlock the rest of the queue
+				if reuseContext then
+					for j = index + 1, #photos do
+						userContexts[j] = sharedContext or ""
+						contextReady[j] = true
+					end
+				end
 			end
 
-			local photoId, photoIdErr = SearchIndexAPI.getPhotoIdForPhoto(photo)
-			if not photoId then
-				log:error("Failed to resolve photo ID for " .. fileName .. ": " .. tostring(photoIdErr))
-				table.insert(errorMessages, fileName .. ": " .. tostring(photoIdErr))
+			-- Wait for producer to finish this photo
+			while results[index] == nil and not producerDone and not progressScope:isCanceled() do
+				LrTasks.sleep(0.1)
+			end
+
+			if progressScope:isCanceled() then break end
+
+			local res = results[index]
+			if not res then break end
+
+			if res.warning then
+				table.insert(backendWarnings, res.warning)
+			end
+
+			if not res.continueProcessing then
+				if res.errorMsg then
+					table.insert(errorMessages, res.errorMsg)
+				end
 				errorCount = errorCount + 1
-				continueProcessing = false
 			else
-				log:trace("Resolved photo ID for " .. fileName .. ": " .. tostring(photoId))
-			end
-
-			local response = nil
-			if continueProcessing then
-				local photoOptions = enrichPhotoOptions(photo, options, userContext)
-				local base_path, dark_path, bright_path = SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
-				if not base_path then
-					log:error("Failed to export photo for AI edit generation: " .. fileName)
-					table.insert(errorMessages, fileName .. ": export failed")
-					errorCount = errorCount + 1
-					continueProcessing = false
-				else
-					photoOptions.darkPath = dark_path
-					photoOptions.brightPath = bright_path
-				end
-
-				if continueProcessing then
-					log:trace("AI Edit calling API for " .. fileName .. " exportedPath=" .. tostring(base_path))
-					local ok, apiOk, apiResponse = LrTasks.pcall(function()
-						if options.use_training_style then
-							-- Route to the new Style Engine (LLM-free matching)
-							-- Fallback to LLM is handled server-side if use_llm_fallback is true
-							photoOptions.use_llm_fallback = true
-							return SearchIndexAPI.styleEdit(photoId, base_path, photoOptions)
-						else
-							-- Regular LLM edit (prompt-driven)
-							return SearchIndexAPI.generateEditRecipePhoto(photoId, base_path, photoOptions)
-						end
-					end)
-					LrTasks.pcall(function()
-						if base_path and LrFileUtils.exists(base_path) then
-							LrFileUtils.delete(base_path)
-						end
-						if photoOptions.darkPath and LrFileUtils.exists(photoOptions.darkPath) then
-							LrFileUtils.delete(photoOptions.darkPath)
-						end
-						if photoOptions.brightPath and LrFileUtils.exists(photoOptions.brightPath) then
-							LrFileUtils.delete(photoOptions.brightPath)
-						end
-					end)
-					if not ok then
-						log:error("AI edit generation threw for " .. fileName .. ": " .. tostring(apiOk))
-						table.insert(errorMessages, fileName .. ": exception thrown: " .. tostring(apiOk))
-						errorCount = errorCount + 1
-						continueProcessing = false
-					else
-						response = apiResponse
-						if response and response.warning then
-							table.insert(backendWarnings, fileName .. ": " .. tostring(response.warning))
-						end
-					end
-					if
-						continueProcessing
-						and (not apiOk or not response or type(response) ~= "table" or response.status ~= "success")
-					then
-						local errMsg = "Unknown error"
-						if not apiOk then
-							errMsg = tostring(apiResponse)
-						elseif type(response) == "string" then
-							errMsg = response
-						elseif response and response.error then
-							errMsg = response.error
-						end
-						log:error(
-							"AI edit generation failed for "
-								.. fileName
-								.. ": apiOk="
-								.. tostring(apiOk)
-								.. " responseType="
-								.. tostring(type(response))
-								.. " response="
-								.. tostring(response)
-						)
-						table.insert(errorMessages, fileName .. ": " .. errMsg)
-						errorCount = errorCount + 1
-						continueProcessing = false
-					else
-						log:trace(
-							"AI edit generation succeeded for "
-								.. fileName
-								.. " responseStatus="
-								.. tostring(response and response.status)
-						)
-					end
-				end
-			end
-
-			if continueProcessing and response then
-				log:trace("Persisting generated recipe for " .. fileName)
+				local response = res.response
 				local okPersist, persistErr = LrTasks.pcall(function()
 					DevelopEditManager.persistEditRecipe(photo, response, nil, "generated")
 				end)
@@ -847,57 +854,35 @@ LrTasks.startAsyncTask(function()
 					log:error("Persist generated recipe threw for " .. fileName .. ": " .. tostring(persistErr))
 					table.insert(errorMessages, fileName .. ": could not persist recipe: " .. tostring(persistErr))
 					errorCount = errorCount + 1
-					continueProcessing = false
-				end
+				else
+					local applyOptions = { applyGlobal = true, applyMasks = options.applyMasks }
 
-				local applyOptions = {
-					applyGlobal = true,
-					applyMasks = options.applyMasks,
-				}
+					if options.reviewBeforeApply then
+						local result, validated = DevelopEditManager.showValidationDialog(ctx, photo, response, options)
+						if result == "cancel" then
+							skippedCount = skippedCount + 1
+							res.continueProcessing = false
+						elseif validated then
+							applyOptions = validated
+						end
+					end
 
-				if options.reviewBeforeApply then
-					log:trace("Showing review dialog for " .. fileName)
-					local result, validated = DevelopEditManager.showValidationDialog(ctx, photo, response, options)
-					log:trace("Review dialog result for " .. fileName .. ": " .. tostring(result))
-					if result == "cancel" then
+					if res.continueProcessing and not applyOptions.applyGlobal and not applyOptions.applyMasks then
 						skippedCount = skippedCount + 1
-						continueProcessing = false
-					elseif validated then
-						applyOptions = validated
+						res.continueProcessing = false
 					end
-				end
 
-				if continueProcessing and not applyOptions.applyGlobal and not applyOptions.applyMasks then
-					skippedCount = skippedCount + 1
-					continueProcessing = false
-				end
-
-				if continueProcessing then
-					log:trace(
-						"Applying recipe for "
-							.. fileName
-							.. " applyGlobal="
-							.. tostring(applyOptions.applyGlobal)
-							.. " applyMasks="
-							.. tostring(applyOptions.applyMasks)
-					)
-					local applied, warnings = DevelopEditManager.applyRecipe(photo, response, applyOptions)
-					log:trace(
-						"Apply result for "
-							.. fileName
-							.. ": applied="
-							.. tostring(applied)
-							.. " warningsCount="
-							.. tostring(type(warnings) == "table" and #warnings or 0)
-					)
-					if applied then
-						successCount = successCount + 1
-					else
-						errorCount = errorCount + 1
-						table.insert(errorMessages, fileName .. ": failed to apply recipe")
-					end
-					if warnings and #warnings > 0 then
-						log:warn("AI edit warnings for " .. fileName .. ": " .. table.concat(warnings, " | "))
+					if res.continueProcessing then
+						local applied, warnings = DevelopEditManager.applyRecipe(photo, response, applyOptions)
+						if applied then
+							successCount = successCount + 1
+						else
+							errorCount = errorCount + 1
+							table.insert(errorMessages, fileName .. ": failed to apply recipe")
+						end
+						if warnings and #warnings > 0 then
+							log:warn("AI edit warnings for " .. fileName .. ": " .. table.concat(warnings, " | "))
+						end
 					end
 				end
 			end

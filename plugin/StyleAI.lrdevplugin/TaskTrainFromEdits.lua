@@ -21,6 +21,7 @@ local function showTrainDialog(ctx)
 	props.label = prefs.trainingLabel or ""
 	props.summary = prefs.trainingSummary or ""
 	props.scope = prefs.trainingScope or "selected"
+	props.forceRetrain = false
 
 	local contents = f:column({
 		bind_to_object = props,
@@ -96,6 +97,12 @@ local function showTrainDialog(ctx)
 				font = "italic",
 			}),
 		}),
+		f:row({
+			f:checkbox({
+				title = LOC("$$$/StyleAI/Training/ForceRetrain=Re-train already trained photos (overwrite existing data)"),
+				value = bind("forceRetrain"),
+			}),
+		}),
 	})
 
 	local result = LrDialogs.presentModalDialog({
@@ -118,6 +125,7 @@ local function showTrainDialog(ctx)
 		summary = props.summary,
 		scope = props.scope,
 		userKeywords = props.userKeywords,
+		forceRetrain = props.forceRetrain,
 	}
 end
 
@@ -225,6 +233,15 @@ LrTasks.startAsyncTask(function()
 					end
 				end
 
+				-- Get JPEG preview for the backend to compute exposure metrics.
+				local jpegData, jpegErr = SearchIndexAPI.getJpegThumbnailForPhoto(photo, 1024, 1024)
+				local imageBytes = nil
+				if jpegData then
+					imageBytes = LrStringUtils.encodeBase64(jpegData)
+				else
+					log:warn("Could not get thumbnail for " .. fileName .. ": " .. tostring(jpegErr))
+				end
+
 				local example = {
 					photo_id = photoId,
 					develop_settings = developSettings or {},
@@ -238,6 +255,7 @@ LrTasks.startAsyncTask(function()
 					iso = exifOptions.iso,
 					aperture = exifOptions.aperture,
 					shutter_speed = exifOptions.shutter_speed,
+					image_bytes = imageBytes,
 				}
 				if options.userKeywords and options.userKeywords ~= "" then
 					example.user_keywords = options.userKeywords
@@ -259,33 +277,40 @@ LrTasks.startAsyncTask(function()
 		local backendWarnings = {}
 
 		if #examples > 0 then
-			progressScope:setCaption(
-				LOC("$$$/StyleAI/Training/SendingBatch=Sending ^1 examples to StyleAI server...", tostring(#examples))
-			)
+			local chunkSize = 50
+			for i = 1, #examples, chunkSize do
+				local chunk = {}
+				local endIndex = math.min(i + chunkSize - 1, #examples)
+				for j = i, endIndex do
+					table.insert(chunk, examples[j])
+				end
+				
+				progressScope:setCaption(
+					LOC("$$$/StyleAI/Training/SendingBatch=Sending batch ^1 to ^2 of ^3 to StyleAI server...", tostring(i), tostring(endIndex), tostring(#examples))
+				)
 
-			local ok, resp = SearchIndexAPI.addTrainingBatch(examples)
+				local ok, resp = SearchIndexAPI.addTrainingBatch(chunk, options.forceRetrain)
 
-			if ok and resp and resp.results then
-				for _, result in ipairs(resp.results) do
-					if result.status == "ok" then
-						successCount = successCount + 1
-						if result.warning then
-							table.insert(backendWarnings, tostring(result.photo_id) .. ": " .. tostring(result.warning))
+				if ok and resp and resp.results then
+					for _, result in ipairs(resp.results) do
+						if result.status == "ok" then
+							successCount = successCount + 1
+							if result.warning then
+								table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+							end
+						else
+							errorCount = errorCount + 1
+							table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
 						end
-					else
+					end
+				else
+					for _, ex in ipairs(chunk) do
 						errorCount = errorCount + 1
-						table.insert(errorMessages, tostring(result.photo_id) .. ": " .. tostring(result.error))
+						table.insert(errorMessages, ex.photo_id .. ": " .. tostring(resp or "API request failed"))
 					end
 				end
-				log:info("Batch training saved " .. tostring(successCount) .. "/" .. tostring(#examples) .. " examples")
-			else
-				-- Entire batch failed (network or server error).
-				local errMsg = tostring(resp) or "Unknown batch error"
-				log:error("Batch training failed: " .. errMsg)
-				errorCount = errorCount + #examples
-				for _, ex in ipairs(examples) do
-					table.insert(errorMessages, tostring(ex.photo_id) .. ": " .. errMsg)
-				end
+				
+				log:info("Batch training chunk saved. successCount=" .. tostring(successCount))
 			end
 		end
 

@@ -43,7 +43,7 @@ _model_lock = threading.RLock()
 _unloader_thread = None
 
 
-def _get_open_clip_tokenizer():
+def _get_open_clip_tokenizer(local_files_only=False):
     """Resolve tokenizer via open_clip's built-in config.
 
     Uses CLIP_MODEL_NAME (the architecture name) rather than IMAGE_MODEL_ID
@@ -52,6 +52,8 @@ def _get_open_clip_tokenizer():
     "timm/..." with no schema prefix silently falls back to SimpleTokenizer
     inside open_clip without raising, which would yield incorrect embeddings.
     """
+    if local_files_only:
+        return open_clip.get_tokenizer(CLIP_MODEL_NAME, local_files_only=True)
     return open_clip.get_tokenizer(CLIP_MODEL_NAME)
 
 
@@ -137,7 +139,7 @@ def load_model():
                                 CLIP_MODEL_NAME,
                                 pretrained=weights_file,
                             )
-                            tok = _get_open_clip_tokenizer()
+                            tok = _get_open_clip_tokenizer(local_files_only=True)
                         except Exception:
                             # Backward compatibility for older vendored open_clip forks.
                             local_model_uri = f"local-dir:{cached_model_dir}"
@@ -145,9 +147,9 @@ def load_model():
                                 local_model_uri, pretrained=None
                             )
                             try:
-                                tok = open_clip.get_tokenizer(local_model_uri)
+                                tok = open_clip.get_tokenizer(local_model_uri, local_files_only=True)
                             except Exception:
-                                tok = _get_open_clip_tokenizer()
+                                tok = _get_open_clip_tokenizer(local_files_only=True)
 
                         _set_last_used()
                         logger.info("Loaded OpenCLIP model (lazy)")
@@ -293,15 +295,16 @@ def _idle_unloader_loop():
                     unload_model()
 
                 # 2. Server idle shutdown (free the whole process)
-                idle_seconds = time.time() - _last_request_time
-                if idle_seconds >= IDLE_SHUTDOWN_SECONDS:
-                    logger.info(
-                        "Server idle for %.0fs (threshold %ss) — shutting down",
-                        idle_seconds,
-                        IDLE_SHUTDOWN_SECONDS,
-                    )
-                    request_shutdown()
-                    break  # exit loop; process will die shortly
+                if IDLE_SHUTDOWN_SECONDS > 0:
+                    idle_seconds = time.time() - _last_request_time
+                    if idle_seconds >= IDLE_SHUTDOWN_SECONDS:
+                        logger.info(
+                            "Server idle for %.0fs (threshold %ss) — shutting down",
+                            idle_seconds,
+                            IDLE_SHUTDOWN_SECONDS,
+                        )
+                        request_shutdown()
+                        break  # exit loop; process will die shortly
             except Exception:
                 logger.exception("Error in idle monitor background thread")
     finally:

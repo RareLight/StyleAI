@@ -202,7 +202,7 @@ function Util.getPhotoExif(photo)
 	-- Camera Make & Model
 	-- Prefer formatted metadata for camera info as it is often more reliably populated
 	-- for modern proprietary RAW formats (CR3, etc.) in the SDK.
-	local make = safeGetFormattedMetadata(photo, "cameraMaker") or safeGetRawMetadata(photo, "cameraMaker")
+	local make = safeGetFormattedMetadata(photo, "cameraMake") or safeGetRawMetadata(photo, "cameraMake")
 	if type(make) == "string" and make ~= "" then
 		exif.camera_make = make
 	end

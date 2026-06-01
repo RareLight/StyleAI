@@ -67,7 +67,7 @@ _SCENE_PROBES: dict[str, str] = {
     "style_neon": "a cyberpunk or neon-lit photo",
 }
 
-_SCENE_THRESHOLD = 0.22  # cosine similarity threshold for a tag to be "present"
+_SCENE_THRESHOLD = 0.05  # cosine similarity threshold for a tag to be "present"
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -468,7 +468,7 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
         )
         img_vec = F.normalize(img_vec, p=2, dim=1)
 
-        tags: list[str] = []
+        tags_with_scores: list[tuple[float, str]] = []
         tokenize_fn = (
             getattr(clip_model, "tokenize", None) or server_lifecycle.get_tokenizer()
         )
@@ -496,11 +496,12 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
                         is_match = sim >= _SCENE_THRESHOLD
 
                     if is_match:
-                        tags.append(tag_name)
+                        tags_with_scores.append((sim, tag_name))
                 except Exception:
                     pass
 
-        return tags
+        tags_with_scores.sort(key=lambda x: x[0], reverse=True)
+        return [t[1] for t in tags_with_scores]
 
     except Exception as exc:
         logger.debug("compute_scene_tags failed (non-critical): %s", exc)
@@ -634,6 +635,7 @@ def add_training_example(
     aperture: float | None = None,
     shutter_speed: str | None = None,
     skip_discovery: bool = False,
+    force_retrain: bool = True,
 ) -> None:
     """Store or overwrite a training example.
 
@@ -665,6 +667,15 @@ def add_training_example(
     if not photo_id:
         raise ValueError("photo_id is required")
 
+    try:
+        existing = _training_collection.get(ids=[photo_id], include=[])
+    except _ChromaInternalError:
+        existing = None
+
+    if existing and existing.get("ids"):
+        if not force_retrain:
+            raise ValueError(f"Skipped {photo_id}: Already trained")
+
     metadata: dict[str, Any] = {
         "photo_id": photo_id,
         "develop_settings": json.dumps(develop_settings, ensure_ascii=False),
@@ -674,8 +685,6 @@ def add_training_example(
         "captured_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "has_embedding": embedding is not None,
     }
-    if label:
-        metadata["label"] = label
     if filename:
         metadata["filename"] = filename
     if summary:
@@ -720,13 +729,23 @@ def add_training_example(
     scene_tags = compute_scene_tags(embedding)
     metadata["scene_tags"] = json.dumps(scene_tags, ensure_ascii=False)
 
+    # Auto-assign label from top scene tag if missing or Uncategorized
+    if not label or label == "Uncategorized" or label.strip() == "":
+        if scene_tags:
+            top_tag = scene_tags[0]
+            # Convert "scene_landscape" -> "Landscape", "style_vintage" -> "Vintage"
+            auto_label = top_tag.replace("scene_", "").replace("style_", "").replace("_", " ").title()
+            metadata["label"] = auto_label
+            label = auto_label
+        else:
+            metadata["label"] = "Uncategorized"
+            label = "Uncategorized"
+    elif label:
+        metadata["label"] = label
+
     emb = embedding if embedding is not None else _dummy_embedding()
 
     # Upsert: update if already present, add otherwise.
-    try:
-        existing = _training_collection.get(ids=[photo_id], include=[])
-    except _ChromaInternalError:
-        existing = None
     if existing and existing.get("ids"):
         _training_collection.update(
             ids=[photo_id], embeddings=[emb], metadatas=[metadata]

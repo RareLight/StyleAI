@@ -623,7 +623,6 @@ def process_image_task(
         # (culling, phash, CLIP, face detection) all reuse it instead of decoding
         # the same bytes 4–5 times per photo.
         exif_location_by_uuid: dict[str, dict | None] = {}
-        pil_images: list[Image.Image | None] = []
         for image_bytes, uuid, _ in image_triplets:
             try:
                 exif_location_by_uuid[uuid] = exif_service.extract_location_tags(
@@ -632,13 +631,14 @@ def process_image_task(
             except Exception as exc:
                 logger.debug("Could not extract EXIF location for %s: %s", uuid, exc)
                 exif_location_by_uuid[uuid] = None
-            pil_images.append(_decode_image(image_bytes))
 
         import concurrent.futures
 
         analyze_future = None
         vertex_future = None
         per_image_futures = []
+        import threading
+        face_lock = threading.Lock()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             # 1. analyze_batch
@@ -651,7 +651,7 @@ def process_image_task(
                 images_needing_embeddings,
                 images_needing_metadata,
                 exif_location_by_uuid or None,
-                pil_images,
+                None,  # pass None so analyze_batch decodes only the ones it needs
             )
 
             # 2. Vertex AI
@@ -685,15 +685,16 @@ def process_image_task(
 
             # 3. Faces & Culling (Per-image)
             for i, (img_bytes, uid, fname) in enumerate(image_triplets):
-                p_img = pil_images[i]
 
-                def _process_single(u=uid, b=img_bytes, p=p_img):
+                def _process_single(u=uid, b=img_bytes):
                     res = {
                         "culling": None,
                         "phash": "",
                         "faces": None,
                         "faces_error": None,
                     }
+
+                    p = _decode_image(b)
 
                     if p is not None:
                         res["culling"] = _compute_culling_metrics(p)
@@ -707,7 +708,8 @@ def process_image_task(
                             pass
                         else:
                             try:
-                                res["faces"] = face_service.detect_faces(b, pil_image=p)
+                                with face_lock:
+                                    res["faces"] = face_service.detect_faces(b, pil_image=p)
                             except Exception as e:
                                 res["faces_error"] = e
                     return res
