@@ -196,6 +196,11 @@ local function showAiEditDialog(ctx)
 	props.submitFolderName = prefs.aiEditSubmitFolderName or false
 	props.showPhotoContextDialog = prefs.aiEditShowPhotoContextDialog ~= false
 	props.useTrainingStyle = prefs.aiEditUseTrainingStyle ~= false
+	
+	props.enableQuickEdit = prefs.aiEditEnableQuickEdit == true
+	props.quickEditStyleStrength = prefs.aiEditQuickEditStyleStrength or Defaults.defaultEditStyleStrength or 0.5
+	props.showLlmOptions = not props.enableQuickEdit
+	
 	props.promptTitles = {}
 	props.prompts = safePromptTable(prefs.editPrompts or { Default = Defaults.defaultEditSystemInstruction })
 	log:trace("showAiEditDialog: prompt source type=" .. tostring(type(props.prompts)))
@@ -248,6 +253,9 @@ local function showAiEditDialog(ctx)
 			properties.customEditIntentText = newValue
 		end
 	end)
+	props:addObserver("enableQuickEdit", function(properties, key, newValue)
+		properties.showLlmOptions = not newValue
+	end)
 
 	local modelItems = buildModelItems()
 	log:trace("showAiEditDialog: modelItems count=" .. tostring(#modelItems))
@@ -266,6 +274,49 @@ local function showAiEditDialog(ctx)
 	local contents = f:column({
 		bind_to_object = props,
 		spacing = f:control_spacing(),
+		f:group_box({
+			title = LOC("$$$/StyleAI/TaskAiEditPhotos/QuickEdit=Trained Style Quick Edit"),
+			fill_horizontal = 1,
+			f:row({
+				f:checkbox({
+					value = bind("enableQuickEdit"),
+				}),
+				f:static_text({
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/EnableQuickEdit=Enable fast-path LLM bypass for trained style"),
+				}),
+			}),
+			f:row({
+				f:static_text({
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/TrainedStyleStrength=Trained Style Strength:"),
+					width = share("labelWidth"),
+				}),
+				f:column({
+					f:row({
+						f:slider({
+							value = bind("quickEditStyleStrength"),
+							min = 0.0,
+							max = 1.0,
+							integral = false,
+							width = 300,
+							enabled = bind("enableQuickEdit"),
+						}),
+						f:static_text({
+							title = bind("quickEditStyleStrength"),
+							width = 40,
+							enabled = bind("enableQuickEdit"),
+						}),
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/common/Reset=Reset"),
+						width = 60,
+						enabled = bind("enableQuickEdit"),
+						action = function()
+							props.quickEditStyleStrength = Defaults.defaultEditStyleStrength or 0.5
+						end,
+					}),
+				}),
+			}),
+		}),
 		f:group_box({
 			title = LOC("$$$/StyleAI/common/Scope=Scope"),
 			fill_horizontal = 1,
@@ -288,6 +339,8 @@ local function showAiEditDialog(ctx)
 		f:group_box({
 			title = LOC("$$$/StyleAI/common/AiSettings=AI Settings"),
 			fill_horizontal = 1,
+			visible = bind("showLlmOptions"),
+			fill_horizontal = 1,
 			f:row({
 				f:static_text({
 					title = LOC("$$$/StyleAI/common/AiModel=AI model:"),
@@ -304,16 +357,27 @@ local function showAiEditDialog(ctx)
 					title = LOC("$$$/StyleAI/common/Temperature=Temperature:"),
 					width = share("labelWidth"),
 				}),
-				f:slider({
-					value = bind("temperature"),
-					min = 0.0,
-					max = 0.5,
-					integral = false,
-					width = 300,
-				}),
-				f:static_text({
-					title = bind("temperature"),
-					width = 40,
+				f:column({
+					f:row({
+						f:slider({
+							value = bind("temperature"),
+							min = 0.0,
+							max = 0.5,
+							integral = false,
+							width = 300,
+						}),
+						f:static_text({
+							title = bind("temperature"),
+							width = 40,
+						}),
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/common/Reset=Reset"),
+						width = 60,
+						action = function()
+							props.temperature = Defaults.defaultTemperature or 0.1
+						end,
+					}),
 				}),
 			}),
 			f:row({
@@ -378,6 +442,8 @@ local function showAiEditDialog(ctx)
 		f:group_box({
 			title = LOC("$$$/StyleAI/TaskAiEditPhotos/EditInstructions=Edit Instructions"),
 			fill_horizontal = 1,
+			visible = bind("showLlmOptions"),
+			fill_horizontal = 1,
 			f:row({
 				f:static_text({
 					title = LOC("$$$/StyleAI/TaskAiEditPhotos/OverallLook=Overall look:"),
@@ -405,16 +471,27 @@ local function showAiEditDialog(ctx)
 					title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleStrength=Style strength:"),
 					width = share("labelWidth"),
 				}),
-				f:slider({
-					value = bind("styleStrength"),
-					min = 0.0,
-					max = 1.0,
-					integral = false,
-					width = 300,
-				}),
-				f:static_text({
-					title = bind("styleStrength"),
-					width = 40,
+				f:column({
+					f:row({
+						f:slider({
+							value = bind("styleStrength"),
+							min = 0.0,
+							max = 1.0,
+							integral = false,
+							width = 300,
+						}),
+						f:static_text({
+							title = bind("styleStrength"),
+							width = 40,
+						}),
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/common/Reset=Reset"),
+						width = 60,
+						action = function()
+							props.styleStrength = Defaults.defaultEditStyleStrength or 0.5
+						end,
+					}),
 				}),
 			}),
 			f:row({
@@ -448,6 +525,8 @@ local function showAiEditDialog(ctx)
 		}),
 		f:group_box({
 			title = LOC("$$$/StyleAI/common/Context=Context"),
+			fill_horizontal = 1,
+			visible = bind("showLlmOptions"),
 			fill_horizontal = 1,
 			f:row({
 				f:column({
@@ -525,6 +604,8 @@ local function showAiEditDialog(ctx)
 	prefs.aiEditSubmitFolderName = props.submitFolderName
 	prefs.aiEditShowPhotoContextDialog = props.showPhotoContextDialog
 	prefs.aiEditUseTrainingStyle = props.useTrainingStyle
+	prefs.aiEditEnableQuickEdit = props.enableQuickEdit
+	prefs.aiEditQuickEditStyleStrength = props.quickEditStyleStrength
 	prefs.editPrompts = props.prompts
 	prefs.editPrompt = props.prompt
 
@@ -553,6 +634,8 @@ local function showAiEditDialog(ctx)
 		submit_folder_names = props.submitFolderName,
 		showPhotoContextDialog = props.showPhotoContextDialog,
 		use_training_style = props.useTrainingStyle ~= false,
+		enableQuickEdit = props.enableQuickEdit,
+		quickEditStyleStrength = props.quickEditStyleStrength,
 	}
 
 	if providerFromKey == "chatgpt" then
@@ -736,6 +819,17 @@ LrTasks.startAsyncTask(function()
 						resultObj.continueProcessing = false
 					else
 						local photoOptions = enrichPhotoOptions(photo, options, userContext)
+						local okSettings, currentSettings = LrTasks.pcall(function()
+							local settings = nil
+							catalog:withReadAccessDo("getDevelopSettings", function()
+								settings = photo:getDevelopSettings()
+							end)
+							return settings
+						end)
+						if okSettings and currentSettings then
+							photoOptions.current_settings = currentSettings
+
+						end
 						local base_path, dark_path, bright_path = SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
 						if not base_path then
 							log:error("Failed to export photo for AI edit generation: " .. fileName)
@@ -746,8 +840,8 @@ LrTasks.startAsyncTask(function()
 							photoOptions.brightPath = bright_path
 
 							local ok, apiOk, apiResponse = LrTasks.pcall(function()
-								if options.use_training_style then
-									photoOptions.use_llm_fallback = true
+								if photoOptions.enableQuickEdit then
+									photoOptions.style_strength = photoOptions.quickEditStyleStrength
 									return SearchIndexAPI.styleEdit(photoId, base_path, photoOptions)
 								else
 									return SearchIndexAPI.generateEditRecipePhoto(photoId, base_path, photoOptions)

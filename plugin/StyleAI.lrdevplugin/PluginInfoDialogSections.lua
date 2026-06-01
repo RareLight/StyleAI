@@ -834,22 +834,33 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						width = share("advancedLabelWidth"),
 						alignment = "right",
 					}),
-					f:slider({
-						value = bind("semanticClusteringThresholdInt"),
-						min = 80,
-						max = 100,
-						integral = true,
-						immediate = true,
-						width = 200,
-					}),
-					f:static_text({
-						title = bind({
-							key = "semanticClusteringThresholdInt",
-							transform = function(v)
-								return string.format("%.2f", (v or 94) / 100)
+					f:column({
+						f:row({
+							f:slider({
+								value = bind("semanticClusteringThresholdInt"),
+								min = 80,
+								max = 100,
+								integral = true,
+								immediate = true,
+								width = 200,
+							}),
+							f:static_text({
+								title = bind({
+									key = "semanticClusteringThresholdInt",
+									transform = function(v)
+										return string.format("%.2f", (v or 94) / 100)
+									end,
+								}),
+								width_in_chars = 5,
+							}),
+						}),
+						f:push_button({
+							title = LOC("$$$/StyleAI/common/Reset=Reset"),
+							width = 60,
+							action = function()
+								propertyTable.semanticClusteringThresholdInt = 94
 							end,
 						}),
-						width_in_chars = 5,
 					}),
 					f:spacer({ fill_horizontal = 1 }),
 				}),
@@ -937,17 +948,28 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						alignment = "right",
 						width = share("labelWidth"),
 					}),
-					f:slider({
-						value = bind("exportQuality"),
-						min = 1,
-						max = 100,
-						integral = true,
-						immediate = true,
-						fill_horizontal = 1,
-					}),
-					f:static_text({
-						title = bind("exportQuality"),
-						width_in_chars = 5,
+					f:column({
+						f:row({
+							f:slider({
+								value = bind("exportQuality"),
+								min = 1,
+								max = 100,
+								integral = true,
+								immediate = true,
+								width = 200,
+							}),
+							f:static_text({
+								title = bind("exportQuality"),
+								width_in_chars = 5,
+							}),
+						}),
+						f:push_button({
+							title = LOC("$$$/StyleAI/common/Reset=Reset"),
+							width = 60,
+							action = function()
+								propertyTable.exportQuality = Defaults.defaultExportQuality or 50
+							end,
+						}),
 					}),
 				}),
 				f:row({

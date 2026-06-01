@@ -554,7 +554,7 @@ class AnalysisService:
 
                 existing = chroma_service.get_image(uuid)
                 embedding = None
-                if existing and existing.get("ids") and existing.get("embeddings"):
+                if existing and existing.get("ids") and existing.get("embeddings") is not None and len(existing.get("embeddings")) > 0:
                     raw_emb = existing["embeddings"][0]
                     if raw_emb is not None:
                         import numpy as np
