@@ -4,6 +4,7 @@ import os
 import shutil
 from pathlib import Path
 from huggingface_hub import snapshot_download
+import open_clip
 
 def prepare_model_bundle(model_id: str, output_dir: str):
     """
@@ -11,18 +12,15 @@ def prepare_model_bundle(model_id: str, output_dir: str):
     This script creates a bundled model directory with all necessary files
     including the config and weights.
     """
-    hf_model_id = None
-    config_file = Path("open_clip/model_configs") / f"{model_id}.json"
-    
-    if not config_file.exists():
-        raise FileNotFoundError(f"Model config file not found for {model_id} at {config_file}")
+    model_cfg = open_clip.get_model_config(model_id)
+    if not model_cfg:
+        raise ValueError(f"Model config not found for {model_id}")
 
-    with open(config_file, "r") as f:
-        model_cfg = json.load(f)
-        if 'text_cfg' in model_cfg and 'hf_tokenizer_name' in model_cfg['text_cfg']:
-            hf_model_id = model_cfg['text_cfg']['hf_tokenizer_name']
-        elif model_cfg.get('hf_hub_id'):
-            hf_model_id = model_cfg.get('hf_hub_id')
+    hf_model_id = None
+    if 'text_cfg' in model_cfg and 'hf_tokenizer_name' in model_cfg['text_cfg']:
+        hf_model_id = model_cfg['text_cfg']['hf_tokenizer_name']
+    elif model_cfg.get('hf_hub_id'):
+        hf_model_id = model_cfg.get('hf_hub_id')
 
     if not hf_model_id:
         raise ValueError(f"Hugging Face Hub ID not found in model config for {model_id}")

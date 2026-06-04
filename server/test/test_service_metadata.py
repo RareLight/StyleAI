@@ -207,3 +207,23 @@ def test_generate_metadata_single_provider_exception_caught(service):
     )
     assert resp.success is False
     assert "boom" in resp.error
+
+
+def test_analyze_batch_with_list_options(service):
+    from routes.index import _extract_options
+
+    triplets = [(_jpeg_bytes(), "uuid-1", ""), (_jpeg_bytes(), "uuid-2", "")]
+    embeddings, metadata = service.analyze_batch(
+        image_triplets=triplets,
+        options=[
+            _extract_options({"compute_embeddings": False, "compute_metadata": True}),
+            _extract_options({"compute_embeddings": False, "compute_metadata": True}),
+        ],
+        image_model=None,
+        image_processor=None,
+        uuids_needing_embeddings=[],
+        uuids_needing_metadata=["uuid-1", "uuid-2"],
+    )
+    assert len(metadata) == 2
+    assert metadata[0] is not None
+    assert metadata[1] is not None

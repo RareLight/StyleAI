@@ -27,12 +27,9 @@ ChromaDB is our core vector database. It stores the semantic visual embeddings o
   - `uuid`: Legacy UUID field for older records.
   - Exposure metrics, keywords, EXIF data, and semantic tags.
 
-#### B. `image_embeddings_vertex`
-- **Purpose:** Stores Vertex AI Multimodal Embeddings (1408 dimensions) for highly specific text-to-image semantic search.
-
-#### C. `face_embeddings`
-- **Purpose:** Stores InsightFace templates (512 dimensions) for clustering and facial recognition.
-- **`metadatas`:** Contains `photo_id` to link the face back to its source image, and `person_id` (e.g. `person_1`) representing the merged identity cluster.
+#### B. `face_embeddings`
+- **Purpose:** Stores InsightFace templates (512 dimensions) for face details.
+- **`metadatas`:** Contains `photo_id` to link the face back to its source image.
 
 ### Python Integration Example
 

@@ -8,7 +8,6 @@ and pruning orphaned records.
 
 import config
 from . import chroma as chroma_service
-from . import persons as persons_service
 from config import logger
 
 import os
@@ -31,8 +30,6 @@ def get_database_stats(catalog_id=None) -> dict:
     """
     image_stats = chroma_service.get_image_metadata_stats(catalog_id=catalog_id)
     face_count = chroma_service.get_face_count()
-    persons = persons_service.list_persons()
-    person_count = len(persons)
 
     return {
         "photos": {
@@ -43,7 +40,6 @@ def get_database_stats(catalog_id=None) -> dict:
             "with_keywords": image_stats["with_keywords"],
         },
         "faces": {"total": face_count},
-        "persons": {"total": person_count},
     }
 
 

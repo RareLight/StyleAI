@@ -288,22 +288,5 @@ return {
 	schemaVersion = 31,
 	updateFromEarlierSchemaVersion = function(catalog, previousSchemaVersion, progressScope)
 		catalog:assertHasPrivateWriteAccess("AIMetadataProvider.updateFromEarlierSchemaVersion")
-		if previousSchemaVersion ~= nil and previousSchemaVersion < 23 then
-			-- Migration from LrGeniusTagAI
-			if
-				LrDialogs.confirm(
-					LOC(
-						"$$$/StyleAI/MetadataProvider/MigrationDetected=Migration from LrGeniusTagAI detected."
-					),
-					LOC(
-						"$$$/StyleAI/MetadataProvider/MigrationMessage=It is recommended to run 'Import Metadata from Catalog' from the StyleAI menu to import AI-generated keywords into the new database of StyleAI."
-					),
-					LOC("$$$/StyleAI/MetadataProvider/MigrationRunNow=Run now"),
-					LOC("$$$/StyleAI/MetadataProvider/MigrationSkip=Skip (Can be run later manually)")
-				) == "ok"
-			then
-				require("TaskImportMetadata")
-			end
-		end
 	end,
 }

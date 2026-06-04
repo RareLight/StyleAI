@@ -428,7 +428,7 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
     existing_records = {}
     chunk_size = 2000
     for i in range(0, len(uuids), chunk_size):
-        chunk = uuids[i:i + chunk_size]
+        chunk = uuids[i : i + chunk_size]
         try:
             # ChromaDB handles bulk gets much faster and without massive exception overhead on empty databases
             raw = chroma_service.collection.get(ids=chunk, include=["metadatas"])
@@ -460,12 +460,12 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
         needs_metadata = compute_metadata and (
             regenerate_metadata or not has_any_metadata
         )
-        
+
         # Use the cached faces_checked flag from metadata directly to avoid N+1 queries to face_collection
         needs_faces = compute_faces and (
             regenerate_metadata or not existing.get("faces_checked", False)
         )
-        
+
         needs_cull_phash = any_processing_task_enabled and (
             regenerate_metadata or not existing.get("cull_phash")
         )
@@ -501,13 +501,14 @@ def process_image_task(
     total_images = len(image_triplets)
 
     try:
-        provider = options.get("provider")
-        model_name = options.get("model")
-        replace_ss = options.get("replace_ss", False)
-        regenerate_metadata = options.get("regenerate_metadata", True)
-        compute_embeddings = options.get("compute_embeddings", True)
-        compute_metadata = options.get("compute_metadata", False)
-        compute_faces = options.get("compute_faces", False)
+        global_opts = options[0] if isinstance(options, list) else options
+        provider = global_opts.get("provider")
+        model_name = global_opts.get("model")
+        replace_ss = global_opts.get("replace_ss", False)
+        regenerate_metadata = global_opts.get("regenerate_metadata", True)
+        compute_embeddings = global_opts.get("compute_embeddings", True)
+        compute_metadata = global_opts.get("compute_metadata", False)
+        compute_faces = global_opts.get("compute_faces", False)
 
         logger.info(f"Starting batch processing of {total_images} images...")
         logger.info(
@@ -516,7 +517,7 @@ def process_image_task(
         )
 
         # Check existing records if regenerate_metadata is False
-        catalog_id = options.get("catalog_id")
+        catalog_id = global_opts.get("catalog_id")
         existing_records = {}
         if not regenerate_metadata:
             logger.info(
@@ -539,7 +540,7 @@ def process_image_task(
         images_needing_faces = set()
         images_needing_cull_phash = set()
 
-        for _, uuid, _ in image_triplets:
+        for idx, (_, uuid, _) in enumerate(image_triplets):
             existing = existing_records.get(uuid, {})
 
             # Check if embedding is needed
@@ -627,11 +628,11 @@ def process_image_task(
 
         import concurrent.futures
 
-
         # Pre-process pure CPU tasks (decode, culling, phash) in background
         per_image_futures = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             for i, (img_bytes, uid, fname) in enumerate(image_triplets):
+
                 def _process_cpu_tasks(u=uid, b=img_bytes):
                     res = {
                         "culling": None,
@@ -681,9 +682,8 @@ def process_image_task(
                 "faces_error": None,
             }
             if compute_faces and img_bytes:
-                if (
-                    not regenerate_metadata
-                    and chroma_service.faces_checked_for_photo(uid)
+                if not regenerate_metadata and chroma_service.faces_checked_for_photo(
+                    uid
                 ):
                     pass
                 else:
@@ -762,7 +762,8 @@ def process_image_task(
                 # `date_time_unix` is a seconds-since-epoch float, `date_time` is
                 # an ISO/W3C string kept for backwards compatibility.
                 capture_time = None
-                catalog_time_unix = options.get("date_time_unix")
+                opt = options[i] if isinstance(options, list) else options
+                catalog_time_unix = opt.get("date_time_unix")
                 if catalog_time_unix is not None:
                     try:
                         capture_time = float(catalog_time_unix)
@@ -772,10 +773,10 @@ def process_image_task(
                             uuid,
                             catalog_time_unix,
                         )
-                elif options.get("date_time"):
+                elif opt.get("date_time"):
                     from datetime import datetime, timezone
 
-                    dt_str = options["date_time"]
+                    dt_str = opt["date_time"]
                     try:
                         # Normalize common W3C/ISO forms (e.g. trailing 'Z').
                         normalized = str(dt_str).strip()

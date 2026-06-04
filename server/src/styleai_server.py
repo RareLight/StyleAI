@@ -24,7 +24,6 @@ from routes.style_catalog import style_catalog_bp
 from routes.clip import clip_bp
 from services import chroma as service_chroma
 from services import db as service_db
-from services import persons as service_persons
 
 app = Flask(__name__)
 logger.info("Flask app created")
@@ -52,74 +51,6 @@ def _bool_env(name: str, default: bool = False) -> bool:
     if not val:
         return default
     return val in ("1", "true", "yes", "on")
-
-
-def _start_faces_cluster_scheduler() -> None:
-    """
-    Periodically run face clustering in a background thread while the backend is running.
-
-    Controlled via environment variables:
-      STYLEAI_FACES_CLUSTER_ENABLED    (bool; default: false)
-      STYLEAI_FACES_CLUSTER_INTERVAL   (seconds; default: 3600)
-      STYLEAI_FACES_CLUSTER_DISTANCE   (float cosine distance; default: 0.5)
-      STYLEAI_FACES_CLUSTER_MIN_FACES  (int; optional; if unset -> None)
-      STYLEAI_FACES_CLUSTER_LINKAGE    ("complete" | "average"; default: "complete")
-    """
-    if not _bool_env("STYLEAI_FACES_CLUSTER_ENABLED", default=False):
-        logger.info(
-            "Faces cluster scheduler disabled (STYLEAI_FACES_CLUSTER_ENABLED not set)."
-        )
-        return
-
-    try:
-        interval = int(os.environ.get("STYLEAI_FACES_CLUSTER_INTERVAL", "3600"))
-    except ValueError:
-        interval = 3600
-
-    try:
-        distance = float(os.environ.get("STYLEAI_FACES_CLUSTER_DISTANCE", "0.5"))
-    except ValueError:
-        distance = 0.5
-
-    min_faces_raw = os.environ.get("STYLEAI_FACES_CLUSTER_MIN_FACES", "").strip()
-    min_faces = None
-    if min_faces_raw:
-        try:
-            min_faces = int(min_faces_raw)
-        except ValueError:
-            min_faces = None
-
-    linkage = (
-        (os.environ.get("STYLEAI_FACES_CLUSTER_LINKAGE", "complete") or "complete")
-        .strip()
-        .lower()
-    )
-    if linkage not in ("complete", "average"):
-        linkage = "complete"
-
-    def _loop() -> None:
-        logger.info(
-            "Starting faces cluster scheduler: interval=%ss, distance=%.3f, min_faces=%s, linkage=%s",
-            interval,
-            distance,
-            str(min_faces) if min_faces is not None else "None",
-            linkage,
-        )
-        while True:
-            try:
-                summary = service_persons.run_clustering(
-                    distance_threshold=distance,
-                    min_faces_per_person=min_faces,
-                    linkage=linkage,
-                )
-                logger.info("Periodic faces clustering summary: %s", summary)
-            except Exception as e:
-                logger.error("Periodic faces clustering failed: %s", e, exc_info=True)
-            time.sleep(max(60, interval))
-
-    t = threading.Thread(target=_loop, name="faces-cluster-scheduler", daemon=True)
-    t.start()
-
 
 def _start_housekeeping_scheduler() -> None:
     """
