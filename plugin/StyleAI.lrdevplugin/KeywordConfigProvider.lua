@@ -95,6 +95,7 @@ function KeywordConfigProvider.showKeywordCategoryDialog()
 					width = 340,
 					height_in_lines = 30,
 					wraps = false,
+					allow_new_lines = true,
 				}),
 			}),
 

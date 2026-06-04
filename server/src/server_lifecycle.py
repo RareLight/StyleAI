@@ -63,6 +63,8 @@ def _set_last_used():
 
 
 def _needs_unload():
+    if model is None and processor is None and tokenizer is None:
+        return False
     if _last_used is None:
         return False
     delta = datetime.datetime.utcnow() - _last_used
@@ -147,7 +149,9 @@ def load_model():
                                 local_model_uri, pretrained=None
                             )
                             try:
-                                tok = open_clip.get_tokenizer(local_model_uri, local_files_only=True)
+                                tok = open_clip.get_tokenizer(
+                                    local_model_uri, local_files_only=True
+                                )
                             except Exception:
                                 tok = _get_open_clip_tokenizer(local_files_only=True)
 
@@ -227,6 +231,7 @@ def unload_model():
             model = None
             processor = None
             tokenizer = None
+            _last_used = None
 
             # Best-effort free memory for CUDA
             try:
@@ -278,13 +283,31 @@ def note_request():
 
 
 def _idle_unloader_loop():
-    """Disabled: Backend stays alive and models stay in memory indefinitely."""
-    pass
+    """Background thread which periodically checks whether the model should be unloaded."""
+    global _unloader_thread
+    logger.info(
+        "Starting model idle monitor (unload after %ss)",
+        IDLE_UNLOAD_SECONDS,
+    )
+    try:
+        while True:
+            time.sleep(60)
+            try:
+                if _needs_unload():
+                    unload_model()
+            except Exception:
+                logger.exception("Error in idle monitor background thread")
+    finally:
+        logger.info("Idle monitor thread exiting")
 
 
 def _ensure_unloader_thread():
-    """Disabled: No background unloader thread needed."""
-    pass
+    global _unloader_thread
+    if _unloader_thread is None or not _unloader_thread.is_alive():
+        _unloader_thread = threading.Thread(
+            target=_idle_unloader_loop, daemon=True, name="server_lifecycle_unloader"
+        )
+        _unloader_thread.start()
 
 
 def get_model():

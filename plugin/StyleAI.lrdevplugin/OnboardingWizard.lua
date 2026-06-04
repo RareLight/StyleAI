@@ -176,7 +176,7 @@ function OnboardingWizard.show(manualTrigger)
 								f:push_button({
 									title = LOC("$$$/StyleAI/Onboarding/LocalTitle=Local AI (Ollama / LM Studio)"),
 									action = function()
-										LrHttp.openUrlInBrowser("https://styleai.com/help/ollama-setup/")
+										LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-Ollama-Setup")
 									end,
 								}),
 							}),

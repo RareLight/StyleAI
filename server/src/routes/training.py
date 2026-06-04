@@ -247,7 +247,7 @@ def add_training_batch():
         label = item.get("label")
         if not label:
             label = "Uncategorized"
-        
+
         summary = item.get("summary")
         filename = item.get("filename")
 
@@ -265,16 +265,19 @@ def add_training_batch():
         image_bytes_data = None
         if image_bytes_b64:
             import base64
+
             try:
                 image_bytes_data = base64.b64decode(image_bytes_b64)
             except Exception as e:
-                logger.warning(f"Failed to decode base64 image bytes for {photo_id}: {e}")
+                logger.warning(
+                    f"Failed to decode base64 image bytes for {photo_id}: {e}"
+                )
 
         try:
             embedding = None
             if image_bytes_data:
                 embedding = _compute_clip_embedding(image_bytes_data)
-            
+
             if embedding is None:
                 try:
                     from services import chroma
@@ -314,7 +317,9 @@ def add_training_batch():
             results.append({"status": "ok", "photo_id": photo_id})
         except ValueError as exc:
             if "Skipped" in str(exc):
-                results.append({"status": "ok", "photo_id": photo_id, "warning": str(exc)})
+                results.append(
+                    {"status": "ok", "photo_id": photo_id, "warning": str(exc)}
+                )
             else:
                 logger.error("Batch add failed for photo_id=%s: %s", photo_id, exc)
                 results.append(

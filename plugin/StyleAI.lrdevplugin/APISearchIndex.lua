@@ -53,7 +53,6 @@ local ENDPOINTS = {
     FACES_PERSON_PHOTOS = "/faces/persons", -- suffix /<id>/photos
     FACES_DETECT = "/faces/detect",
     FACES_QUERY = "/faces/query",
-    MIGRATE_PHOTO_IDS = "/db/migrate-photo-ids",
     DB_BACKUP = "/db/backup",
     DB_PRUNE = "/db/prune",
     SYNC_CLEANUP = "/sync/cleanup",
@@ -83,17 +82,19 @@ local EXPORT_SETTINGS = {
     LR_export_destinationType = 'specificFolder',
     LR_export_useSubfolder = false,
     LR_format = 'JPEG',
-    LR_jpeg_quality = tonumber(prefs.exportQuality) or 60,
-    LR_minimizeEmbeddedMetadata = false,
-    LR_outputSharpeningOn = false,
+    LR_jpeg_quality = 85,
     LR_size_doConstrain = true,
-    LR_size_maxHeight = tonumber(prefs.exportSize) or 1024,
+    LR_size_maxHeight = 1024,
     LR_size_resizeType = 'longEdge',
     LR_size_units = 'pixels',
+    LR_size_resolution = 72,
+    LR_size_resolutionUnits = 'inch',
+    LR_outputSharpeningOn = false,
+    LR_minimizeEmbeddedMetadata = true,
+    LR_embeddedMetadataOption = "none",
+    LR_removeLocationMetadata = true,
     LR_collisionHandling = 'rename',
     LR_includeVideoFiles = false,
-    LR_removeLocationMetadata = true,
-    LR_embeddedMetadataOption = "all",
 }
 
 
@@ -821,8 +822,6 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
         date_time = options.date_time,
         ollama_base_url = options.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
         lmstudio_base_url = options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
-        vertex_project_id = options.vertex_project_id,
-        vertex_location = options.vertex_location,
         regenerate_metadata = tostring(options.regenerate_metadata ~= false),
         semantic_clustering_threshold = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
     }
@@ -1074,12 +1073,6 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
         table.insert(mimeChunks,
             { name = "lmstudio_base_url", value = options.lmstudio_base_url or prefs.lmstudioBaseUrl })
     end
-    if options.vertex_project_id and options.vertex_project_id ~= "" then
-        table.insert(mimeChunks, { name = "vertex_project_id", value = options.vertex_project_id })
-    end
-    if options.vertex_location and options.vertex_location ~= "" then
-        table.insert(mimeChunks, { name = "vertex_location", value = options.vertex_location })
-    end
 
     -- Regeneration control: if false, server will only fill missing fields
     table.insert(mimeChunks, { name = "regenerate_metadata", value = tostring(options.regenerate_metadata ~= false) })
@@ -1155,7 +1148,6 @@ function SearchIndexAPI.searchIndex(searchTerm, qualitySort, photosToSearch, sea
     if searchOptions then
         search_sources = {
             semantic_siglip = searchOptions.semanticSiglip ~= false,
-            semantic_vertex = searchOptions.semanticVertex ~= false,
             metadata = searchOptions.metadata ~= false,
             metadata_fields = searchOptions.metadataFields or { "flattened_keywords", "alt_text", "caption", "title" },
         }
@@ -1260,7 +1252,6 @@ function SearchIndexAPI.formatStats(stats)
         "Photos with title: " .. tostring(photos.with_title or 0),
         "Photos with caption: " .. tostring(photos.with_caption or 0),
         "Photos with keywords: " .. tostring(photos.with_keywords or 0),
-        "Photos with Vertex AI: " .. tostring(photos.with_vertexai or 0),
         "Faces total: " .. tostring(faces.total or 0),
         "Persons total: " .. tostring(persons.total or 0),
     }, "\n")
@@ -1774,7 +1765,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
                     local success, indexResponse
                     local usePreviewThumbnails = previewRequestState.enabled and not previewRequestState.disabledForRun
-                    local thumbnailSize = tonumber(prefs and prefs.exportSize) or 1024
+                    local thumbnailSize = 1024
                     local leafName = LrPathUtils.leafName(filename or "photo.jpg")
 
                     if usePreviewThumbnails then
@@ -1855,6 +1846,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
                         stats.success, numPhotos, stats.failed)
                 )
+                collectgarbage()
             else
                 log:error("Photo is nil in analyze worker, probably it got deleted in the meantime.")
             end
@@ -2763,7 +2755,6 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
         if taskOptions.enableEmbeddings then table.insert(tasks, "embeddings") end
         if taskOptions.enableMetadata then table.insert(tasks, "metadata") end
         if taskOptions.enableFaces then table.insert(tasks, "faces") end
-        if taskOptions.enableVertexAI then table.insert(tasks, "vertexai") end
 
         local body = {
             photo_ids = photoIds,
@@ -3005,183 +2996,7 @@ function SearchIndexAPI.downloadRawLog(logType, targetPath)
     return false
 end
 
----
--- Migrates existing server-side photo UUID entries to the new photo_id values.
--- Builds mappings from current catalog photos: old_id=Lightroom UUID, new_id=global photo_id.
--- @return boolean success, string message
-function SearchIndexAPI.migratePhotoIdsFromCatalog()
-    local migrationStartedAt = LrDate.currentTime()
-    log:info("migratePhotoIdsFromCatalog: started")
 
-    if not SearchIndexAPI.pingServer() then
-        log:error("migratePhotoIdsFromCatalog: backend server not reachable")
-        return false, "Backend server is not reachable."
-    end
-
-    local indexedIds = SearchIndexAPI.getAllIndexedPhotoIds()
-    if type(indexedIds) ~= "table" then
-        log:error("migratePhotoIdsFromCatalog: could not retrieve indexed IDs")
-        return false, "Could not retrieve indexed IDs from backend."
-    end
-    log:info("migratePhotoIdsFromCatalog: indexed IDs fetched: " .. tostring(#indexedIds))
-
-    local indexedIdSet = {}
-    for _, id in ipairs(indexedIds) do
-        indexedIdSet[id] = true
-    end
-
-    local catalog = LrApplication.activeCatalog()
-    local photos = catalog:getAllPhotos() or {}
-    local totalPhotos = #photos
-    if totalPhotos == 0 then
-        log:info("migratePhotoIdsFromCatalog: no photos in catalog")
-        return true, "No photos found in catalog."
-    end
-    log:info("migratePhotoIdsFromCatalog: catalog photos to inspect: " .. tostring(totalPhotos))
-
-    local progressScope = LrProgressScope({
-        title = "Migrating photo IDs...",
-        functionContext = nil,
-    })
-
-    local mappings = {}
-    local skipped = 0
-    local skippedNotIndexed = 0
-    local skippedAlreadyMigrated = 0
-
-    for i, photo in ipairs(photos) do
-        if progressScope:isCanceled() then
-            progressScope:done()
-            return false, "Migration canceled."
-        end
-
-        local legacyUuid = photo:getRawMetadata("uuid")
-        if not legacyUuid or legacyUuid == "" or not indexedIdSet[legacyUuid] then
-            skipped = skipped + 1
-            skippedNotIndexed = skippedNotIndexed + 1
-        else
-            local photoId, photoIdErr = getPhotoIdForPhoto(photo)
-            if photoId and photoId ~= "" and legacyUuid ~= photoId then
-                if indexedIdSet[photoId] then
-                    skipped = skipped + 1
-                    skippedAlreadyMigrated = skippedAlreadyMigrated + 1
-                else
-                    table.insert(mappings, {
-                        old_id = legacyUuid,
-                        new_id = photoId,
-                    })
-                end
-            else
-                skipped = skipped + 1
-                if photoIdErr then
-                    log:warn("Could not compute photo_id during migration prep: " .. tostring(photoIdErr))
-                end
-            end
-        end
-
-        progressScope:setPortionComplete(i, totalPhotos)
-        progressScope:setCaption("Preparing migration mappings " .. tostring(i) .. "/" .. tostring(totalPhotos))
-        if i % 250 == 0 then
-            log:trace(
-                "migratePhotoIdsFromCatalog: prep progress " .. tostring(i) .. "/" .. tostring(totalPhotos) ..
-                " mappings=" .. tostring(#mappings) ..
-                " skippedNotIndexed=" .. tostring(skippedNotIndexed) ..
-                " skippedAlreadyMigrated=" .. tostring(skippedAlreadyMigrated)
-            )
-        end
-    end
-
-    if #mappings == 0 then
-        progressScope:done()
-        log:info(
-            "migratePhotoIdsFromCatalog: no mappings prepared. skippedNotIndexed=" .. tostring(skippedNotIndexed) ..
-            " skippedAlreadyMigrated=" .. tostring(skippedAlreadyMigrated) ..
-            " skippedTotal=" .. tostring(skipped)
-        )
-        return true, "No migration needed. All photos are already using photo_id."
-    end
-    log:info("migratePhotoIdsFromCatalog: mappings prepared: " .. tostring(#mappings))
-
-    local batchSize = 250
-    local migratedTotal = 0
-    local missingOldTotal = 0
-    local conflictTotal = 0
-    local errorTotal = 0
-
-    for startIdx = 1, #mappings, batchSize do
-        if progressScope:isCanceled() then
-            progressScope:done()
-            return false, "Migration canceled."
-        end
-
-        local stopIdx = math.min(startIdx + batchSize - 1, #mappings)
-        local batch = {}
-        for i = startIdx, stopIdx do
-            table.insert(batch, mappings[i])
-        end
-
-        local response, err = _request(
-            "POST",
-            getBaseUrl() .. ENDPOINTS.MIGRATE_PHOTO_IDS,
-            {
-                mappings = batch,
-                overwrite = false,
-                dry_run = false,
-                update_faces = true,
-                update_vertex = true,
-            },
-            300
-        )
-
-        if err then
-            progressScope:done()
-            log:error("migratePhotoIdsFromCatalog: batch failed at " ..
-                tostring(startIdx) .. "-" .. tostring(stopIdx) .. " err=" .. tostring(err))
-            return false, "Migration request failed: " .. tostring(err)
-        end
-
-        local summary = (response and response.summary) or {}
-        migratedTotal = migratedTotal + (summary.migrated or 0)
-        missingOldTotal = missingOldTotal + (summary.missing_old or 0)
-        conflictTotal = conflictTotal + (summary.conflicts or 0)
-        errorTotal = errorTotal + (summary.errors or 0)
-
-        log:trace(
-            "migratePhotoIdsFromCatalog: batch " .. tostring(startIdx) .. "-" .. tostring(stopIdx) ..
-            " migrated=" .. tostring(summary.migrated or 0) ..
-            " missing_old=" .. tostring(summary.missing_old or 0) ..
-            " conflicts=" .. tostring(summary.conflicts or 0) ..
-            " errors=" .. tostring(summary.errors or 0)
-        )
-
-        progressScope:setPortionComplete(stopIdx, #mappings)
-        progressScope:setCaption("Migrating photo IDs " .. tostring(stopIdx) .. "/" .. tostring(#mappings))
-    end
-
-    progressScope:done()
-    local migrationElapsedMs = math.floor((LrDate.currentTime() - migrationStartedAt) * 1000)
-
-    local msg = "Migration finished.\n" ..
-        "Indexed IDs in backend: " .. tostring(#indexedIds) .. "\n" ..
-        "Mappings prepared: " .. tostring(#mappings) .. "\n" ..
-        "Migrated: " .. tostring(migratedTotal) .. "\n" ..
-        "Missing old IDs: " .. tostring(missingOldTotal) .. "\n" ..
-        "Conflicts: " .. tostring(conflictTotal) .. "\n" ..
-        "Errors: " .. tostring(errorTotal) .. "\n" ..
-        "Skipped (not indexed in backend): " .. tostring(skippedNotIndexed) .. "\n" ..
-        "Skipped (already migrated): " .. tostring(skippedAlreadyMigrated) .. "\n" ..
-        "Skipped in catalog prep: " .. tostring(skipped)
-    log:info(
-        "migratePhotoIdsFromCatalog: finished elapsedMs=" .. tostring(migrationElapsedMs) ..
-        " prepared=" .. tostring(#mappings) ..
-        " migrated=" .. tostring(migratedTotal) ..
-        " missing_old=" .. tostring(missingOldTotal) ..
-        " conflicts=" .. tostring(conflictTotal) ..
-        " errors=" .. tostring(errorTotal) ..
-        " skippedTotal=" .. tostring(skipped)
-    )
-    return errorTotal == 0, msg
-end
 
 ---
 -- Generates hash-based global photo IDs for all photos in the current catalog

@@ -55,13 +55,7 @@ if _G.prefs.chatgptApiKey == nil then
 	_G.prefs.chatgptApiKey = ""
 end
 
-if _G.prefs.vertexProjectId == nil then
-	_G.prefs.vertexProjectId = ""
-end
 
-if _G.prefs.vertexLocation == nil then
-	_G.prefs.vertexLocation = "us-central1"
-end
 
 if _G.prefs.generateLanguage == nil then
 	_G.prefs.generateLanguage = Defaults.defaultGenerateLanguage
@@ -237,9 +231,7 @@ end
 if _G.prefs.searchInSemanticSiglip == nil then
 	_G.prefs.searchInSemanticSiglip = true
 end
-if _G.prefs.searchInSemanticVertex == nil then
-	_G.prefs.searchInSemanticVertex = true
-end
+
 if _G.prefs.searchInMetadata == nil then
 	_G.prefs.searchInMetadata = true
 end

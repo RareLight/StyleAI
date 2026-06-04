@@ -6,7 +6,6 @@ so chroma calls are mocked.
 import os
 import time
 
-import pytest
 
 from services import db as service_db
 
@@ -32,7 +31,6 @@ class TestGetDatabaseStats:
                 "with_title": 5,
                 "with_caption": 4,
                 "with_keywords": 3,
-                "with_vertexai": 2,
             },
         )
         mocker.patch.object(
@@ -60,7 +58,6 @@ class TestGetDatabaseStats:
                 "with_title": 0,
                 "with_caption": 0,
                 "with_keywords": 0,
-                "with_vertexai": 0,
             },
         )
         mocker.patch.object(service_db.chroma_service, "get_face_count", return_value=0)
@@ -127,23 +124,3 @@ class TestPruneOldBackups:
         assert deleted == 1
         # readme.txt survives even though it's "older"
         assert "readme.txt" in os.listdir(str(backups))
-
-
-class TestMigratePhotoIds:
-    def test_rejects_non_list_mappings(self):
-        with pytest.raises(ValueError, match="mappings must be a list"):
-            service_db.migrate_photo_ids({"mappings": "not-a-list"})
-
-    def test_calls_chroma_migrate_with_defaults(self, mocker):
-        spy = mocker.patch.object(
-            service_db.chroma_service,
-            "migrate_photo_ids",
-            return_value={"updated": 0},
-        )
-        service_db.migrate_photo_ids({"mappings": []})
-        spy.assert_called_once()
-        kwargs = spy.call_args.kwargs
-        assert kwargs["update_faces"] is True
-        assert kwargs["update_vertex"] is True
-        assert kwargs["overwrite"] is False
-        assert kwargs["dry_run"] is False

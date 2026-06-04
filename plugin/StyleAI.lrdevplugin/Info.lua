@@ -1,9 +1,9 @@
 Info = {}
 
-Info.MAJOR = 1
-Info.MINOR = 0
-Info.REVISION = 0
-Info.BUILD = 20260524
+Info.MAJOR = 0
+Info.MINOR = 8
+Info.REVISION = 1
+Info.BUILD = 20260604
 Info.VERSION = { major = Info.MAJOR, minor = Info.MINOR, revision = Info.REVISION, build = Info.BUILD }
 
 return {
@@ -14,7 +14,7 @@ return {
 	LrPluginName = "StyleAI",
 	LrInitPlugin = "Init.lua",
 	LrPluginInfoProvider = "PluginInfo.lua",
-	LrPluginInfoURL = "https://github.com/StyleAI",
+	LrPluginInfoURL = "https://github.com/RareLight/StyleAI",
 
 	VERSION = Info.VERSION,
 

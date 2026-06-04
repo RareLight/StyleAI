@@ -12,7 +12,6 @@ from . import persons as persons_service
 from config import logger
 
 import os
-import json
 import shutil
 import tempfile
 import zipfile
@@ -42,7 +41,6 @@ def get_database_stats(catalog_id=None) -> dict:
             "with_title": image_stats["with_title"],
             "with_caption": image_stats["with_caption"],
             "with_keywords": image_stats["with_keywords"],
-            "with_vertexai": image_stats["with_vertexai"],
         },
         "faces": {"total": face_count},
         "persons": {"total": person_count},
@@ -154,45 +152,6 @@ def prune_old_backups(max_keep: int = 10) -> int:
             max_keep,
         )
     return deleted
-
-
-def migrate_photo_ids(data: dict) -> dict:
-    """Migrate existing Chroma IDs from legacy uuid to new photo_id values."""
-    mappings = data.get("mappings")
-
-    if mappings is None and data.get("mapping_file"):
-        file_path = data["mapping_file"]
-        if not os.path.isabs(file_path):
-            file_path = os.path.join(config.DB_PATH, file_path)
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                payload = json.load(f)
-            mappings = payload.get("mappings", payload)
-        except Exception as e:
-            raise ValueError(f"Could not read mapping_file: {e}") from e
-
-    if not isinstance(mappings, list):
-        raise ValueError("mappings must be a list")
-
-    logger.info(
-        "Received photo_id migration request: mappings=%s overwrite=%s dry_run=%s update_faces=%s update_vertex=%s mapping_file=%s",
-        len(mappings),
-        bool(data.get("overwrite", False)),
-        bool(data.get("dry_run", False)),
-        bool(data.get("update_faces", True)),
-        bool(data.get("update_vertex", True)),
-        data.get("mapping_file"),
-    )
-
-    summary = chroma_service.migrate_photo_ids(
-        mappings,
-        update_faces=bool(data.get("update_faces", True)),
-        update_vertex=bool(data.get("update_vertex", True)),
-        overwrite=bool(data.get("overwrite", False)),
-        dry_run=bool(data.get("dry_run", False)),
-    )
-    logger.info("Completed photo_id migration request: %s", summary)
-    return summary
 
 
 def prune_database(valid_photo_ids: list, catalog_id: str = None) -> dict:

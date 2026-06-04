@@ -21,7 +21,7 @@ def database_stats():
     Return database statistics: indexed photos, faces, persons, and metadata/embedding counts.
 
     Returns: {
-        "photos": { "total", "with_embedding", "with_title", "with_caption", "with_keywords", "with_vertexai" },
+        "photos": { "total", "with_embedding", "with_title", "with_caption", "with_keywords" },
         "faces": { "total" },
         "persons": { "total" }
     }
@@ -60,20 +60,6 @@ def backup_database():
         )
     except Exception as e:
         logger.error("Database backup failed: %s", e, exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-
-@db_bp.route("/db/migrate-photo-ids", methods=["POST"])
-def migrate_photo_ids():
-    """Migrate existing Chroma IDs from legacy uuid to new photo_id values."""
-    try:
-        data = request.get_json(silent=True) or {}
-        summary = service_db.migrate_photo_ids(data)
-        return jsonify({"status": "ok", "summary": summary}), 200
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        logger.error("Photo ID migration failed: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

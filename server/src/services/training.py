@@ -734,7 +734,12 @@ def add_training_example(
         if scene_tags:
             top_tag = scene_tags[0]
             # Convert "scene_landscape" -> "Landscape", "style_vintage" -> "Vintage"
-            auto_label = top_tag.replace("scene_", "").replace("style_", "").replace("_", " ").title()
+            auto_label = (
+                top_tag.replace("scene_", "")
+                .replace("style_", "")
+                .replace("_", " ")
+                .title()
+            )
             metadata["label"] = auto_label
             label = auto_label
         else:

@@ -10,17 +10,10 @@ FROM ghcr.io/astral-sh/uv:python3.12-trixie-slim
 
 WORKDIR /app
 
-# Build tools for insightface plus Google Cloud CLI for Vertex ADC login
+# Build tools for compiling dependencies like insightface
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    curl \
-    gnupg \
     build-essential \
-    && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /etc/apt/keyrings/google-cloud.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/google-cloud.gpg] https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apt/sources.list.d/google-cloud-sdk.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends google-cloud-cli \
     && rm -rf /var/lib/apt/lists/*
 
 # Abhängigkeiten
@@ -38,7 +31,6 @@ ENV STYLEAI_PORT=19819
 # Model caches (Hugging Face + InsightFace) – keep persistent via mounted volume
 ENV HF_HOME=/models/huggingface
 ENV INSIGHTFACE_ROOT=/models/insightface
-ENV CLOUDSDK_CONFIG=/root/.config/gcloud
 
 # Persistente Backend-Daten (Chroma/JSON/SQLite) per Volume mounten.
 # Diese Dateien werden auch vom /db/backup-Endpunkt gesichert.

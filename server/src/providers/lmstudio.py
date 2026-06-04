@@ -75,17 +75,26 @@ class LMStudioProvider(LLMProviderBase):
             logger.warning(f"LM Studio availability check failed for {self.host}: {e}")
             return False
 
-    def _save_debug_cache(self, uuid_str: str, image_data, system_prompt: str, user_prompt: str, raw_response: Any = None):
+    def _save_debug_cache(
+        self,
+        uuid_str: str,
+        image_data,
+        system_prompt: str,
+        user_prompt: str,
+        raw_response: Any = None,
+    ):
         try:
             uuid_str = uuid_str or "unknown_uuid"
             if system_prompt and user_prompt:
-                prompt_path = os.path.join(DEBUG_CACHE_DIR, f"{uuid_str}_edit_prompt.txt")
+                prompt_path = os.path.join(
+                    DEBUG_CACHE_DIR, f"{uuid_str}_edit_prompt.txt"
+                )
                 with open(prompt_path, "w") as f_txt:
                     f_txt.write("==== SYSTEM PROMPT ====\n")
                     f_txt.write(system_prompt + "\n\n")
                     f_txt.write("==== USER PROMPT ====\n")
                     f_txt.write(user_prompt + "\n")
-            
+
             if image_data is not None:
                 if isinstance(image_data, list):
                     for i, img_bytes in enumerate(image_data):
@@ -98,19 +107,27 @@ class LMStudioProvider(LLMProviderBase):
                         else:
                             suffix = f"_edit_image_{i}.jpg"
                         if isinstance(img_bytes, bytes):
-                            img_path = os.path.join(DEBUG_CACHE_DIR, f"{uuid_str}{suffix}")
+                            img_path = os.path.join(
+                                DEBUG_CACHE_DIR, f"{uuid_str}{suffix}"
+                            )
                             with open(img_path, "wb") as f_img:
                                 f_img.write(img_bytes)
                 elif isinstance(image_data, bytes):
-                    img_path = os.path.join(DEBUG_CACHE_DIR, f"{uuid_str}_edit_image.jpg")
+                    img_path = os.path.join(
+                        DEBUG_CACHE_DIR, f"{uuid_str}_edit_image.jpg"
+                    )
                     with open(img_path, "wb") as f_img:
                         f_img.write(image_data)
-            
+
             if raw_response is not None:
-                raw_path = os.path.join(DEBUG_CACHE_DIR, f"{uuid_str}_edit_raw_response.txt")
+                raw_path = os.path.join(
+                    DEBUG_CACHE_DIR, f"{uuid_str}_edit_raw_response.txt"
+                )
                 with open(raw_path, "w") as f_raw:
                     f_raw.write(
-                        raw_response if isinstance(raw_response, str) else json.dumps(raw_response, indent=2)
+                        raw_response
+                        if isinstance(raw_response, str)
+                        else json.dumps(raw_response, indent=2)
                     )
         except Exception as cache_err:
             logger.warning(f"Failed to write debug cache: {cache_err}")
@@ -155,7 +172,9 @@ class LMStudioProvider(LLMProviderBase):
                 chat = lms.Chat(system_prompt)
                 chat.add_user_message(user_prompt, images=image_handles)
 
-                self._save_debug_cache(request.uuid, request.image_data, system_prompt, user_prompt)
+                self._save_debug_cache(
+                    request.uuid, request.image_data, system_prompt, user_prompt
+                )
 
                 response = model.respond(
                     chat,
@@ -291,7 +310,7 @@ class LMStudioProvider(LLMProviderBase):
 
                 chat = lms.Chat(system_prompt)
                 chat.add_user_message(user_prompt, images=image_handles)
-                
+
                 response = model.respond(
                     chat,
                     response_format=response_schema,
@@ -301,7 +320,13 @@ class LMStudioProvider(LLMProviderBase):
             content = response.parsed
 
             # DEBUG CACHE: Save payload, prompt, and raw response
-            self._save_debug_cache(request.uuid, request.image_data, system_prompt, user_prompt, raw_response=content)
+            self._save_debug_cache(
+                request.uuid,
+                request.image_data,
+                system_prompt,
+                user_prompt,
+                raw_response=content,
+            )
 
             if isinstance(content, str):
                 try:

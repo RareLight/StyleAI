@@ -5,8 +5,6 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.logging = prefs.logging
 	propertyTable.geminiApiKey = prefs.geminiApiKey
 	propertyTable.chatgptApiKey = prefs.chatgptApiKey
-	propertyTable.vertexProjectId = prefs.vertexProjectId
-	propertyTable.vertexLocation = prefs.vertexLocation or "us-central1"
 
 	propertyTable.exportSize = prefs.exportSize
 	propertyTable.exportQuality = prefs.exportQuality
@@ -369,30 +367,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						width = share("apiKeyButtonWidth"),
 					}),
 				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfo/VertexProjectId=Vertex AI Project ID"),
-						alignment = "right",
-						width = share("apiKeyLabelWidth"),
-					}),
-					f:edit_field({
-						value = bind("vertexProjectId"),
-						fill_horizontal = 1,
-					}),
-				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfo/VertexLocation=Vertex AI Location"),
-						alignment = "right",
-						width = share("apiKeyLabelWidth"),
-					}),
-					f:edit_field({
-						value = bind("vertexLocation"),
-						width_in_chars = 20,
-					}),
-				}),
+
 			}),
 			f:group_box({
 				width = groupBoxWidth,
@@ -480,43 +455,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 								else
 									LrDialogs.message(
 										LOC("$$$/StyleAI/PluginInfo/PhotoIdGenFailed=Photo-ID Generation failed"),
-										msg or LOC("$$$/StyleAI/common/UnknownError=Unknown error"),
-										"critical"
-									)
-								end
-							end)
-						end,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfo/MigratePhotoIds=Migrate existing DB IDs to photo_id"),
-						width = share("longBackendButtonWidth"),
-						action = function(button)
-							LrTasks.startAsyncTask(function()
-								local status, ok, msg
-								if type(LrTasks) == "table" and type(LrTasks.pcall) == "function" then
-									status, ok, msg = LrTasks.pcall(function()
-										return SearchIndexAPI.migratePhotoIdsFromCatalog()
-									end)
-								else
-									ok, msg = SearchIndexAPI.migratePhotoIdsFromCatalog()
-									status = true
-								end
-
-								if not status then
-									log:error("Photo-ID migration crashed.")
-									LrDialogs.message(
-										LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
-										tostring(ok),
-										"critical"
-									)
-								elseif ok then
-									LrDialogs.message(
-										LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateTitle=Photo-ID Migration"),
-										msg or LOC("$$$/StyleAI/common/MigrationCompleted=Migration completed.")
-									)
-								else
-									LrDialogs.message(
-										LOC("$$$/StyleAI/PluginInfo/PhotoIdMigrateFailed=Photo-ID Migration failed"),
 										msg or LOC("$$$/StyleAI/common/UnknownError=Unknown error"),
 										"critical"
 									)
@@ -924,57 +862,9 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			}),
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("$$$/StyleAI/PluginInfoDialogSections/exportSettings=Export settings"),
+				title = LOC("$$$/StyleAI/PluginInfo/PreviewSettings=Preview Settings"),
 				f:row({
 					fill_horizontal = 1,
-					f:static_text({
-						title = LOC(
-							"$$$/StyleAI/PluginInfoDialogSections/exportSize=Export size in pixel (long edge)"
-						),
-						alignment = "right",
-						width = share("labelWidth"),
-					}),
-					f:popup_menu({
-						value = bind("exportSize"),
-						items = Defaults.exportSizes,
-					}),
-				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC(
-							"$$$/StyleAI/PluginInfoDialogSections/exportQuality=Export JPEG quality in percent"
-						),
-						alignment = "right",
-						width = share("labelWidth"),
-					}),
-					f:column({
-						f:row({
-							f:slider({
-								value = bind("exportQuality"),
-								min = 1,
-								max = 100,
-								integral = true,
-								immediate = true,
-								width = 200,
-							}),
-							f:static_text({
-								title = bind("exportQuality"),
-								width_in_chars = 5,
-							}),
-						}),
-						f:push_button({
-							title = LOC("$$$/StyleAI/common/Reset=Reset"),
-							width = 60,
-							action = function()
-								propertyTable.exportQuality = Defaults.defaultExportQuality or 50
-							end,
-						}),
-					}),
-				}),
-				f:row({
-					fill_horizontal = 1,
-					f:spacer({ width = share("labelWidth") }),
 					f:checkbox({
 						value = bind("usePreviewThumbnails"),
 						title = LOC(
@@ -1164,10 +1054,7 @@ end
 function PluginInfoDialogSections.endDialog(propertyTable)
 	prefs.geminiApiKey = propertyTable.geminiApiKey
 	prefs.chatgptApiKey = propertyTable.chatgptApiKey
-	prefs.vertexProjectId = (propertyTable.vertexProjectId and propertyTable.vertexProjectId:gsub("^%s*(.-)%s*$", "%1"))
-		or ""
-	prefs.vertexLocation = (propertyTable.vertexLocation and propertyTable.vertexLocation:gsub("^%s*(.-)%s*$", "%1"))
-		or "us-central1"
+
 	prefs.exportSize = propertyTable.exportSize
 	prefs.exportQuality = propertyTable.exportQuality
 	prefs.usePreviewThumbnails = (propertyTable.usePreviewThumbnails ~= false)

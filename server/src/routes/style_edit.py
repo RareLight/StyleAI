@@ -30,7 +30,12 @@ def _get_clip_embedding(photo_id: str):
     """Re-use the CLIP embedding already stored in ChromaDB for this photo."""
     try:
         existing = chroma_service.get_image(photo_id)
-        if existing and existing.get("ids") and existing.get("embeddings") is not None and len(existing.get("embeddings")) > 0:
+        if (
+            existing
+            and existing.get("ids")
+            and existing.get("embeddings") is not None
+            and len(existing.get("embeddings")) > 0
+        ):
             import numpy as np
 
             raw_emb = existing["embeddings"][0]

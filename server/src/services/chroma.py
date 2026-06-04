@@ -11,6 +11,7 @@ from config import logger, CULLING_CONFIG, get_culling_config
 
 def retry_on_lock(max_retries=3, initial_delay=0.5):
     """Decorator to retry ChromaDB write operations if the underlying SQLite database is locked."""
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -19,13 +20,20 @@ def retry_on_lock(max_retries=3, initial_delay=0.5):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    if attempt == max_retries or "database is locked" not in str(e).lower():
+                    if (
+                        attempt == max_retries
+                        or "database is locked" not in str(e).lower()
+                    ):
                         raise
-                    logger.warning(f"ChromaDB locked, retrying {func.__name__} in {delay}s (attempt {attempt + 1}/{max_retries})...")
+                    logger.warning(
+                        f"ChromaDB locked, retrying {func.__name__} in {delay}s (attempt {attempt + 1}/{max_retries})..."
+                    )
                     time.sleep(delay)
                     delay *= 2  # Exponential backoff
             return func(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
@@ -33,7 +41,6 @@ def retry_on_lock(max_retries=3, initial_delay=0.5):
 chroma_client = None
 collection = None
 face_collection = None
-vertex_collection = None
 
 
 class DatabaseNotReadyError(Exception):
@@ -44,8 +51,6 @@ class DatabaseNotReadyError(Exception):
 
 # InsightFace embeddings are 512-dimensional
 FACE_EMBEDDING_DIM = 512
-# Vertex AI Multimodal Embeddings (image) default dimension
-VERTEX_EMBEDDING_DIM = 1408
 
 # Max limit for get() when counting; Chroma may apply a default limit otherwise
 STATS_GET_LIMIT = 2_000_000
@@ -158,7 +163,7 @@ def _first_result_item(values, default=None):
 
 def _ensure_initialized():
     """Initialize ChromaDB client and collections on first use (lazy loading)."""
-    global chroma_client, collection, face_collection, vertex_collection
+    global chroma_client, collection, face_collection
     if chroma_client is not None:
         return
 
@@ -181,20 +186,14 @@ def _ensure_initialized():
     face_collection = chroma_client.get_or_create_collection(name="face_embeddings")
     logger.info("Initialized ChromaDB face_embeddings collection.")
 
-    vertex_collection = chroma_client.get_or_create_collection(
-        name="image_embeddings_vertex"
-    )
-    logger.info("Initialized ChromaDB image_embeddings_vertex collection.")
-
 
 def reset_chroma_client():
     """Reset the global ChromaDB client and collections so they can be re-initialized with a new DB_PATH."""
-    global chroma_client, collection, face_collection, vertex_collection
+    global chroma_client, collection, face_collection
     logger.info("Resetting ChromaDB client for re-initialization.")
     chroma_client = None
     collection = None
     face_collection = None
-    vertex_collection = None
 
 
 # Serializes concurrent ensure_db_path calls so two requests racing after a
@@ -239,14 +238,13 @@ def ensure_db_path(db_path: str) -> bool:
 
 def unload_collections():
     """Unload the ChromaDB collections and client to free memory."""
-    global chroma_client, collection, face_collection, vertex_collection
+    global chroma_client, collection, face_collection
     if chroma_client is None:
         return
     logger.info("Unloading ChromaDB collections...")
     chroma_client = None
     collection = None
     face_collection = None
-    vertex_collection = None
     import gc
 
     gc.collect()
@@ -348,10 +346,6 @@ def delete_image(photo_id, *, legacy_uuid=None):
     if not photo_id:
         return
     collection.delete(ids=[photo_id])
-    try:
-        delete_vertex_image(photo_id)
-    except Exception:
-        pass
 
 
 # Keys that hold AI-generated metadata; cleared by clear_image_metadata so the photo stays indexed.
@@ -378,7 +372,7 @@ AI_METADATA_KEYS = frozenset(
 def clear_image_metadata(photo_id, *, legacy_uuid=None):
     """
     Clear only AI-generated metadata for an image. Keeps the document and embedding
-    in both main and Vertex collections so the photo remains searchable; use when
+    in the main collection so the photo remains searchable; use when
     the user discards a suggestion and may regenerate later.
     Returns True if the main collection had the photo (and metadata was cleared), False otherwise.
     """
@@ -407,161 +401,7 @@ def clear_image_metadata(photo_id, *, legacy_uuid=None):
         collection.update(ids=[photo_id], metadatas=[meta], embeddings=[embedding])
     else:
         collection.update(ids=[photo_id], metadatas=[meta])
-    # Vertex collection: same if present
-    try:
-        vdata = vertex_collection.get(
-            ids=[photo_id], include=["metadatas", "embeddings"]
-        )
-        if vdata and vdata.get("ids"):
-            vmeta = dict(vdata["metadatas"][0]) if vdata.get("metadatas") else {}
-            vemb = _first_result_item(vdata.get("embeddings"))
-            for key in AI_METADATA_KEYS:
-                vmeta.pop(key, None)
-            vmeta = _ensure_photo_metadata(photo_id, vmeta, legacy_uuid=legacy_uuid)
-            if vemb is not None:
-                vertex_collection.update(
-                    ids=[photo_id], metadatas=[vmeta], embeddings=[vemb]
-                )
-            else:
-                vertex_collection.update(ids=[photo_id], metadatas=[vmeta])
-    except Exception as e:
-        logger.debug("clear_image_metadata vertex %s: %s", photo_id, e)
     return True
-
-
-# --- Vertex AI image embeddings collection API ---
-
-
-@retry_on_lock(max_retries=3, initial_delay=0.5)
-def add_vertex_image(photo_id, embedding, metadata=None, *, legacy_uuid=None):
-    """Add or overwrite Vertex AI embedding for an image."""
-    _ensure_initialized()
-    if vertex_collection is None:
-        raise DatabaseNotReadyError(
-            "Cannot add vertex image: database not initialized (DB_PATH missing)."
-        )
-    photo_id = _normalize_photo_id(photo_id, legacy_uuid)
-    if not photo_id:
-        raise ValueError("photo_id is required")
-    if metadata is None:
-        metadata = {}
-    metadata = _ensure_photo_metadata(photo_id, metadata, legacy_uuid=legacy_uuid)
-    existing = vertex_collection.get(ids=[photo_id], include=[])
-    if existing and existing.get("ids"):
-        vertex_collection.update(
-            ids=[photo_id], embeddings=[embedding], metadatas=[metadata]
-        )
-    else:
-        vertex_collection.add(
-            ids=[photo_id], embeddings=[embedding], metadatas=[metadata]
-        )
-
-
-@retry_on_lock(max_retries=3, initial_delay=0.5)
-def update_vertex_image(photo_id, embedding=None, metadata=None, *, legacy_uuid=None):
-    """Update Vertex AI embedding and/or metadata for an existing document."""
-    _ensure_initialized()
-    if vertex_collection is None:
-        raise DatabaseNotReadyError(
-            "Cannot update vertex image: database not initialized (DB_PATH missing)."
-        )
-    photo_id = _normalize_photo_id(photo_id, legacy_uuid)
-    if not photo_id:
-        raise ValueError("photo_id is required")
-    if metadata is not None:
-        metadata = _ensure_photo_metadata(photo_id, metadata, legacy_uuid=legacy_uuid)
-    if embedding is not None and metadata is not None:
-        vertex_collection.update(
-            ids=[photo_id], embeddings=[embedding], metadatas=[metadata]
-        )
-    elif embedding is not None:
-        vertex_collection.update(ids=[photo_id], embeddings=[embedding])
-    elif metadata is not None:
-        vertex_collection.update(ids=[photo_id], metadatas=[metadata])
-
-
-def get_vertex_image(photo_id, *, legacy_uuid=None):
-    """Get Vertex AI embedding record for an image. Returns Chroma get() result or empty."""
-    _ensure_initialized()
-    if vertex_collection is None:
-        return {"ids": [], "metadatas": [], "embeddings": []}
-    photo_id = _normalize_photo_id(photo_id, legacy_uuid)
-    if not photo_id:
-        return {"ids": [], "metadatas": [], "embeddings": []}
-    return vertex_collection.get(ids=[photo_id], include=["metadatas", "embeddings"])
-
-
-def delete_vertex_image(photo_id, *, legacy_uuid=None):
-    """Remove Vertex AI embedding for an image."""
-    _ensure_initialized()
-    if vertex_collection is None:
-        return
-    photo_id = _normalize_photo_id(photo_id, legacy_uuid)
-    if not photo_id:
-        return
-    try:
-        vertex_collection.delete(ids=[photo_id])
-    except Exception as e:
-        logger.debug("delete_vertex_image %s: %s", photo_id, e)
-
-
-def has_vertex_embedding(photo_id, *, legacy_uuid=None):
-    """Return True if this image has a Vertex AI embedding in the vertex collection."""
-    _ensure_initialized()
-    if vertex_collection is None:
-        return False
-    photo_id = _normalize_photo_id(photo_id, legacy_uuid)
-    if not photo_id:
-        return False
-    try:
-        r = vertex_collection.get(ids=[photo_id], include=[])
-        return len(r.get("ids", [])) > 0
-    except Exception:
-        return False
-
-
-def query_vertex_images(query_embedding, n_results, where_clause=None, catalog_id=None):
-    """Query the Vertex AI image embeddings collection by embedding. Returns ids, distances, metadatas.
-    If catalog_id is set, results are filtered to photo_ids that belong to that catalog (main collection).
-    """
-    _ensure_initialized()
-    if vertex_collection is None:
-        return {"ids": [[]], "distances": [[]], "metadatas": [[]]}
-    try:
-        n_fetch = (int(n_results) * 2 + 100) if catalog_id else n_results
-        result = vertex_collection.query(
-            where=where_clause,
-            query_embeddings=[query_embedding],
-            n_results=min(n_fetch, STATS_GET_LIMIT),
-            include=["metadatas", "distances"],
-        )
-        if (
-            not catalog_id
-            or not result
-            or not result.get("ids")
-            or not result["ids"][0]
-        ):
-            return result
-        allowed = set(get_all_image_ids(catalog_id=catalog_id))
-        ids0 = result["ids"][0]
-        dist0 = result["distances"][0] if result.get("distances") else []
-        meta0 = result["metadatas"][0] if result.get("metadatas") else []
-        keep = [i for i, pid in enumerate(ids0) if pid in allowed][:n_results]
-        result["ids"] = [[ids0[j] for j in keep]]
-        result["distances"] = [[dist0[j] for j in keep]] if dist0 else [[]]
-        result["metadatas"] = [[meta0[j] for j in keep]] if meta0 else [[]]
-        return result
-    except Exception as e:
-        logger.error(f"Error querying Vertex images: {e}", exc_info=True)
-        return {"ids": [[]], "distances": [[]], "metadatas": [[]]}
-
-
-def get_all_vertex_image_ids():
-    """Return all image UUIDs that have a Vertex AI embedding (for search fallback)."""
-    _ensure_initialized()
-    if vertex_collection is None:
-        return []
-    return vertex_collection.get(include=[], limit=STATS_GET_LIMIT)["ids"]
 
 
 def query_images(query_embedding, n_results, where_clause=None, catalog_id=None):
@@ -623,7 +463,7 @@ def get_face_count():
 def get_image_metadata_stats(catalog_id=None):
     """
     Return counts of images by metadata presence (no embeddings loaded).
-    Returns dict: total, with_embedding, with_title, with_caption, with_keywords, with_vertexai.
+    Returns dict: total, with_embedding, with_title, with_caption, with_keywords.
     If catalog_id is set, only count photos whose catalog_ids contain that catalog.
     """
     _ensure_initialized()
@@ -634,19 +474,15 @@ def get_image_metadata_stats(catalog_id=None):
             "with_title": 0,
             "with_caption": 0,
             "with_keywords": 0,
-            "with_vertexai": 0,
         }
     result = collection.get(include=["metadatas"], limit=STATS_GET_LIMIT)
-    ids = result.get("ids", [])
     metadatas = result.get("metadatas", []) or []
     catalog_id_str = str(catalog_id).strip() if catalog_id else None
-    vertex_ids = set(get_all_vertex_image_ids())
     total = 0
     with_embedding = 0
     with_title = 0
     with_caption = 0
     with_keywords = 0
-    with_vertexai = 0
     for idx, m in enumerate(metadatas):
         if catalog_id_str is not None:
             ids_set = _parse_catalog_ids(m)
@@ -661,15 +497,12 @@ def get_image_metadata_stats(catalog_id=None):
             with_caption += 1
         if (m.get("keywords") or m.get("flattened_keywords") or "").strip():
             with_keywords += 1
-        if idx < len(ids) and ids[idx] in vertex_ids:
-            with_vertexai += 1
     return {
         "total": total,
         "with_embedding": with_embedding,
         "with_title": with_title,
         "with_caption": with_caption,
         "with_keywords": with_keywords,
-        "with_vertexai": with_vertexai,
     }
 
 
@@ -1959,151 +1792,6 @@ def delete_faces_by_photo_uuid(photo_uuid):
         logger.info(f"Deleted face embeddings for photo_uuid={photo_uuid}.")
     except Exception as e:
         logger.warning(f"Delete faces for photo_uuid={photo_uuid}: {e}")
-
-
-def migrate_photo_ids(
-    id_mappings,
-    *,
-    update_faces=True,
-    update_vertex=True,
-    overwrite=False,
-    dry_run=False,
-):
-    """Migrate existing DB entries from old IDs (uuid) to new photo_id values.
-
-    Args:
-        id_mappings: list of {"old_id": "...", "new_id": "..."} dicts.
-    """
-    _ensure_initialized()
-    if collection is None:
-        return {
-            "requested": len(id_mappings or []),
-            "migrated": 0,
-            "skipped": 0,
-            "missing_old": 0,
-            "conflicts": 0,
-            "errors": 0,
-        }
-    total_requested = len(id_mappings or [])
-    summary = {
-        "requested": total_requested,
-        "migrated": 0,
-        "skipped": 0,
-        "missing_old": 0,
-        "conflicts": 0,
-        "errors": 0,
-    }
-    logger.info(
-        "Starting photo_id migration: requested=%s overwrite=%s dry_run=%s update_faces=%s update_vertex=%s",
-        total_requested,
-        overwrite,
-        dry_run,
-        update_faces,
-        update_vertex,
-    )
-    if not id_mappings:
-        logger.info("Photo_id migration finished immediately: no mappings provided")
-        return summary
-
-    progress_interval = 100
-
-    for idx, item in enumerate(id_mappings, start=1):
-        old_id = _normalize_photo_id(item.get("old_id") or item.get("old_uuid"))
-        new_id = _normalize_photo_id(item.get("new_id") or item.get("new_photo_id"))
-        if not old_id or not new_id:
-            summary["skipped"] += 1
-        elif old_id == new_id:
-            summary["skipped"] += 1
-        else:
-            try:
-                old_rec = get_image(old_id)
-                if not old_rec or not old_rec.get("ids"):
-                    summary["missing_old"] += 1
-                else:
-                    new_rec = get_image(new_id)
-                    if new_rec and new_rec.get("ids") and not overwrite:
-                        summary["conflicts"] += 1
-                    elif dry_run:
-                        summary["migrated"] += 1
-                    else:
-                        old_metadata = (
-                            _first_result_item(old_rec.get("metadatas"), {}) or {}
-                        )
-                        old_embedding = _first_result_item(old_rec.get("embeddings"))
-                        merged_metadata = dict(old_metadata)
-                        merged_metadata[LEGACY_UUID_FIELD] = old_id
-                        merged_metadata[PHOTO_ID_FIELD] = new_id
-
-                        if new_rec and new_rec.get("ids"):
-                            update_image(
-                                new_id, merged_metadata, embedding=old_embedding
-                            )
-                        else:
-                            add_image(
-                                new_id,
-                                old_embedding,
-                                merged_metadata,
-                                legacy_uuid=old_id,
-                            )
-                        delete_image(old_id)
-
-                        if update_vertex:
-                            old_v = get_vertex_image(old_id)
-                            if old_v and old_v.get("ids"):
-                                old_v_emb = _first_result_item(old_v.get("embeddings"))
-                                old_v_meta = (
-                                    _first_result_item(old_v.get("metadatas"), {}) or {}
-                                )
-                                old_v_meta = _ensure_photo_metadata(new_id, old_v_meta)
-                                old_v_meta[LEGACY_UUID_FIELD] = old_id
-                                if old_v_emb is not None:
-                                    add_vertex_image(
-                                        new_id,
-                                        old_v_emb,
-                                        old_v_meta,
-                                        legacy_uuid=old_id,
-                                    )
-                                    delete_vertex_image(old_id)
-
-                        if update_faces:
-                            face_data = face_collection.get(
-                                where={"photo_uuid": old_id}, include=["metadatas"]
-                            )
-                            face_ids = face_data.get("ids", []) or []
-                            metas = face_data.get("metadatas", []) or []
-                            if face_ids and metas:
-                                new_metas = []
-                                for m in metas:
-                                    nm = dict(m or {})
-                                    nm["photo_uuid"] = new_id
-                                    nm["photo_id"] = new_id
-                                    new_metas.append(nm)
-                                update_face_metadatas(face_ids, new_metas)
-
-                        summary["migrated"] += 1
-            except Exception as e:
-                logger.error(
-                    "Failed to migrate photo ID %s -> %s: %s",
-                    old_id,
-                    new_id,
-                    e,
-                    exc_info=True,
-                )
-                summary["errors"] += 1
-
-        if idx == 1 or idx % progress_interval == 0 or idx == total_requested:
-            logger.info(
-                "Photo_id migration progress: %s/%s processed, migrated=%s skipped=%s missing_old=%s conflicts=%s errors=%s",
-                idx,
-                total_requested,
-                summary["migrated"],
-                summary["skipped"],
-                summary["missing_old"],
-                summary["conflicts"],
-                summary["errors"],
-            )
-    logger.info("Photo_id migration finished: %s", summary)
-    return summary
 
 
 def query_faces(query_embedding, n_results, where_clause=None):
