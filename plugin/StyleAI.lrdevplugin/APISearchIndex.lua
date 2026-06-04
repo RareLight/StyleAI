@@ -1219,6 +1219,14 @@ function SearchIndexAPI.getStats()
     return _request('GET', url)
 end
 
+function SearchIndexAPI.isServerEmpty()
+    local stats = SearchIndexAPI.getStats()
+    if stats and stats.photos and stats.photos.total == 0 then
+        return true
+    end
+    return false
+end
+
 function SearchIndexAPI.getBackendVersion()
     return _request('GET', getBaseUrl() .. ENDPOINTS.VERSION)
 end
@@ -1663,15 +1671,26 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     local photoToProcessStack = {}
     
-    if options.regenerate_metadata == false then
+    local isServerEmpty = SearchIndexAPI.isServerEmpty()
+
+    if options.regenerate_metadata == false and not isServerEmpty then
         progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/PreflightCheck=Verifying existing index..."))
         local allIds = {}
         local idToPhotoMap = {}
-        for _, photo in ipairs(selectedPhotos) do
+        local totalSelected = #selectedPhotos
+        local updateInterval = math.max(1, math.floor(totalSelected / 50))
+        for i, photo in ipairs(selectedPhotos) do
+            if progressScope and progressScope:isCanceled() then
+                return "canceled", 0, 0, {}
+            end
             local photoId = getPhotoIdForPhoto(photo)
             if photoId then
                 table.insert(allIds, photoId)
                 idToPhotoMap[photoId] = photo
+            end
+            if i % updateInterval == 0 then
+                progressScope:setPortionComplete(i, totalSelected)
+                LrTasks.yield()
             end
         end
         
@@ -2737,8 +2756,19 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
         end
     end
 
+    local isServerEmpty = SearchIndexAPI.isServerEmpty()
+
     -- New behavior: use backend to check which photos need processing based on selected tasks
     if taskOptions and type(taskOptions) == "table" then
+        if isServerEmpty then
+            if lookupProgressScope then
+                lookupProgressScope:setCaption(LOC "$$$/StyleAI/AnalyzeAndIndex/LookupPhase1Bypass=Bypassing lookup for empty server...")
+                lookupProgressScope:setPortionComplete(totalCatalog, totalCatalog)
+            end
+            -- Since the server is empty, all photos are missing. Return all catalog photos instantly.
+            return true, allPhotos
+        end
+
         if lookupProgressScope then
             lookupProgressScope:setCaption(LOC "$$$/StyleAI/AnalyzeAndIndex/LookupPhase1=Preparing catalog photos for lookup...")
             lookupProgressScope:setPortionComplete(0, totalCatalog)
@@ -2758,6 +2788,7 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
             end
             if i % updateInterval == 0 or i == totalCatalog then
                 updateLookupProgress(i, totalCatalog)
+                LrTasks.yield()
             end
         end
         if #photoIds == 0 then
@@ -2767,7 +2798,6 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
         if lookupProgressScope then
             lookupProgressScope:setCaption(LOC "$$$/StyleAI/AnalyzeAndIndex/LookupPhase2=Checking server for unprocessed photos...")
         end
-
 
         local tasks = {}
         if taskOptions.enableEmbeddings then table.insert(tasks, "embeddings") end
@@ -2798,18 +2828,18 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
             lookupProgressScope:setPortionComplete(0, totalCatalog)
         end
 
-
         local photosToProcess = {}
         for i, photo in ipairs(allPhotos) do
             if lookupProgressScope and lookupProgressScope:isCanceled() then
                 return false, {}
             end
             local photoId = getPhotoIdForPhoto(photo)
-            if photoIdSet[photoId] then
+            if photoId and photoIdSet[photoId] then
                 table.insert(photosToProcess, photo)
             end
             if i % updateInterval == 0 or i == totalCatalog then
                 updateLookupProgress(i, totalCatalog)
+                LrTasks.yield()
             end
         end
         return true, photosToProcess
@@ -2824,10 +2854,15 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
     end
 
     local photosToProcess = {}
-    for _, photo in ipairs(allPhotos) do
+    local totalLegacy = #allPhotos
+    local updateLegacy = math.max(1, math.floor(totalLegacy / 50))
+    for i, photo in ipairs(allPhotos) do
         local photoId = getPhotoIdForPhoto(photo)
         if photoId and not Util.table_contains(indexedPhotoIds, photoId) then
             table.insert(photosToProcess, photo)
+        end
+        if i % updateLegacy == 0 then
+            LrTasks.yield()
         end
     end
     return true, photosToProcess

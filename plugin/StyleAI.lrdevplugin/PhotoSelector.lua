@@ -100,18 +100,64 @@ function PhotoSelector.getPhotosInScope(scope, taskOptions, lookupProgressScope)
 		local SearchIndexAPI = require("APISearchIndex")
 		local indexedIds, err = SearchIndexAPI.getAllIndexedPhotoIds()
 		if type(indexedIds) == "table" then
-			local indexedSet = {}
-			for _, id in ipairs(indexedIds) do indexedSet[id] = true end
-			local allPhotos = catalog:getAllPhotos()
-			for _, photo in ipairs(allPhotos) do
-				local Util = require("Util")
-				local pId = Util.getGlobalPhotoIdForPhoto(photo)
-				if pId and indexedSet[pId] then table.insert(photosToProcess, photo) end
+			if #indexedIds == 0 then
+				-- Skip if there are no indexed photos
+				photosToProcess = {}
+			else
+				local indexedSet = {}
+				for _, id in ipairs(indexedIds) do indexedSet[id] = true end
+				local allPhotos = catalog:getAllPhotos()
+				local totalPhotos = #allPhotos
+				local updateInterval = math.max(1, math.floor(totalPhotos / 50))
+				for i, photo in ipairs(allPhotos) do
+					local Util = require("Util")
+					local pId = Util.getGlobalPhotoIdForPhoto(photo)
+					if pId and indexedSet[pId] then
+						table.insert(photosToProcess, photo)
+					end
+					if i % updateInterval == 0 then
+						LrTasks.yield()
+					end
+				end
 			end
 		end
 	end
 
-	return photosToProcess, status
+	local finalPhotosToProcess = {}
+	local unavailableCount = 0
+	if photosToProcess and #photosToProcess > 0 then
+		if #photosToProcess <= 1000 or scope == "selected" or scope == "view" then
+			local totalPhotos = #photosToProcess
+			local updateInterval = math.max(1, math.floor(totalPhotos / 50))
+			for i, photo in ipairs(photosToProcess) do
+				local isAvailable = true
+				if photo.checkPhotoAvailability then
+					isAvailable = photo:checkPhotoAvailability()
+				end
+				if isAvailable then
+					table.insert(finalPhotosToProcess, photo)
+				else
+					unavailableCount = unavailableCount + 1
+				end
+				if i % updateInterval == 0 then
+					LrTasks.yield()
+				end
+			end
+		else
+			finalPhotosToProcess = photosToProcess
+		end
+	end
+
+	if unavailableCount > 0 then
+		local LrDialogs = import("LrDialogs")
+		LrDialogs.message(
+			LOC("$$$/StyleAI/PhotoSelector/UnavailablePhotosTitle=Offline Photos Skipped"),
+			LOC("$$$/StyleAI/PhotoSelector/UnavailablePhotosMessage=^1 photo(s) are offline or missing and will be skipped. Please ensure your storage drives are connected.", unavailableCount),
+			"warning"
+		)
+	end
+
+	return finalPhotosToProcess, status
 end
 
 return PhotoSelector
