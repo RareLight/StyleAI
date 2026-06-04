@@ -223,7 +223,7 @@ class AnalysisService:
                 if uid not in uuids_needing_embeddings:
                     # Attempt to fetch existing embedding from ChromaDB
                     res = chroma_service.get_image(uid)
-                    if res and res.get("embeddings") and len(res["embeddings"]) > 0:
+                    if res and res.get("embeddings") is not None and len(res["embeddings"]) > 0:
                         return res["embeddings"][0]
                 return None
 

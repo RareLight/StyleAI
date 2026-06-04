@@ -910,7 +910,6 @@ LrTasks.startAsyncTask(function()
 					end
 
 					results[index] = resultObj
-					collectgarbage()
 				end
 				producerDone = true
 			end)
@@ -1013,7 +1012,6 @@ LrTasks.startAsyncTask(function()
 						end
 					end
 				end
-				collectgarbage()
 			end
 		end
 

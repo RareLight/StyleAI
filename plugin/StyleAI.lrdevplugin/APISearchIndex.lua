@@ -636,24 +636,31 @@ function SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
         originalExposure = devSettings.Exposure2012
     end
 
-    -- 2. Dark (-2 EV)
-    dark_path = copyFromCache(darkCache, "_dark_cached.jpg")
-    if not dark_path then
-        catalog:withWriteAccessDo("Apply -2 EV Bracket", function()
-            photo:applyDevelopSettings({Exposure2012 = originalExposure - 2.0})
-        end)
-        dark_path = SearchIndexAPI.exportPhotoForIndexing(photo)
-        saveToCache(dark_path, darkCache)
-    end
-
-    -- 3. Bright (+2 EV)
-    bright_path = copyFromCache(brightCache, "_bright_cached.jpg")
-    if not bright_path then
-        catalog:withWriteAccessDo("Apply +2 EV Bracket", function()
-            photo:applyDevelopSettings({Exposure2012 = originalExposure + 2.0})
-        end)
-        bright_path = SearchIndexAPI.exportPhotoForIndexing(photo)
-        saveToCache(bright_path, brightCache)
+    -- Wrap export steps in pcall to ensure we ALWAYS reach the restore block, even if canceled
+    local okExport, exportErr = LrTasks.pcall(function()
+        -- 2. Dark (-2 EV)
+        dark_path = copyFromCache(darkCache, "_dark_cached.jpg")
+        if not dark_path then
+            catalog:withWriteAccessDo("Apply -2 EV Bracket", function()
+                photo:applyDevelopSettings({Exposure2012 = originalExposure - 2.0})
+            end)
+            dark_path = SearchIndexAPI.exportPhotoForIndexing(photo)
+            saveToCache(dark_path, darkCache)
+        end
+    
+        -- 3. Bright (+2 EV)
+        bright_path = copyFromCache(brightCache, "_bright_cached.jpg")
+        if not bright_path then
+            catalog:withWriteAccessDo("Apply +2 EV Bracket", function()
+                photo:applyDevelopSettings({Exposure2012 = originalExposure + 2.0})
+            end)
+            bright_path = SearchIndexAPI.exportPhotoForIndexing(photo)
+            saveToCache(bright_path, brightCache)
+        end
+    end)
+    
+    if not okExport then
+        log:warn("Bracket export interrupted or failed: " .. tostring(exportErr))
     end
 
     -- Restore original exposure, ensuring we wrap in pcall to avoid any silent failures
@@ -663,7 +670,19 @@ function SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
         end)
     end)
     if not okRestore then
-        log:error("Failed to restore original exposure: " .. tostring(restoreErr))
+        log:error("Failed to restore original exposure (attempting detached): " .. tostring(restoreErr))
+        -- If the task was canceled, the synchronous restore above will fail because it's attached to the canceled scope.
+        -- We spawn a detached task to guarantee the exposure is restored.
+        LrTasks.startAsyncTask(function()
+            local okDetached, detachedErr = LrTasks.pcall(function()
+                catalog:withWriteAccessDo("Restore Original Exposure (Detached)", function()
+                    photo:applyDevelopSettings({Exposure2012 = originalExposure})
+                end)
+            end)
+            if not okDetached then
+                log:error("Detached restore also failed: " .. tostring(detachedErr))
+            end
+        end)
     end
 
     return base_path, dark_path, bright_path
@@ -1846,7 +1865,6 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
                         stats.success, numPhotos, stats.failed)
                 )
-                collectgarbage()
             else
                 log:error("Photo is nil in analyze worker, probably it got deleted in the meantime.")
             end
