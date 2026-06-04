@@ -189,17 +189,23 @@ class AnalysisService:
 
         if len(uuids_needing_embeddings) > 0:
             logger.debug(
-                f"Generating embeddings for {len(uuids_needing_embeddings)} images..."
+                f"Generating batched embeddings for {len(uuids_needing_embeddings)} images..."
             )
-            embeddings = []
+            embeddings = [None] * len(uuids)
+            images_to_embed = []
+            valid_indices = []
+
             for i, uuid in enumerate(uuids):
                 if uuid in uuids_needing_embeddings:
-                    emb = self._generate_image_embeddings(
-                        [images[i]], image_model, image_processor
-                    )
-                    embeddings.append(emb[0] if emb else None)
-                else:
-                    embeddings.append(None)
+                    images_to_embed.append(images[i])
+                    valid_indices.append(i)
+
+            if images_to_embed:
+                batch_embeddings = self._generate_image_embeddings(
+                    images_to_embed, image_model, image_processor
+                )
+                for j, idx in enumerate(valid_indices):
+                    embeddings[idx] = batch_embeddings[j]
         else:
             embeddings = None
 
@@ -301,35 +307,43 @@ class AnalysisService:
         self, images: list[Image.Image], image_model, image_processor
     ) -> list[list[float] | None]:
         """
-        Generates embeddings for all images in the batch.
-        Errors are handled per image.
+        Generates embeddings for all images in the batch concurrently on GPU.
+        Errors are handled per batch.
         """
         if not image_model:
             logger.error("Vision model not initialized.")
             return [None] * len(images)
 
-        embeddings = []
+        embeddings = [None] * len(images)
+        valid_indices = []
+        valid_images = []
 
         for i, image in enumerate(images):
-            if image is None:
-                embeddings.append(None)
-                continue
-            try:
-                # The image_processor is now the open_clip transform.
-                # It returns a tensor for a single image, so we add a batch dimension.
-                image_tensor = image_processor(image).unsqueeze(0).to(TORCH_DEVICE)
+            if image is not None:
+                valid_indices.append(i)
+                valid_images.append(image)
 
-                with torch.no_grad():
-                    image_features = image_model.encode_image(image_tensor)
-                    normalized_embeddings = F.normalize(image_features, p=2, dim=1)
-                    embeddings.append(normalized_embeddings.cpu().numpy()[0])
+        if not valid_images:
+            return embeddings
 
-            except Exception as e:
-                logger.error(
-                    f"Failed to generate image embedding for image at index {i}: {e}",
-                    exc_info=True,
-                )
-                embeddings.append(None)
+        try:
+            # Batch process all valid images
+            tensors = [image_processor(img) for img in valid_images]
+            batch_tensor = torch.stack(tensors).to(TORCH_DEVICE)
+
+            with torch.no_grad():
+                image_features = image_model.encode_image(batch_tensor)
+                normalized_embeddings = F.normalize(image_features, p=2, dim=1)
+                
+                numpy_embeddings = normalized_embeddings.cpu().numpy()
+                for j, idx in enumerate(valid_indices):
+                    embeddings[idx] = numpy_embeddings[j].tolist()
+
+        except Exception as e:
+            logger.error(
+                f"Failed to generate batched image embeddings: {e}",
+                exc_info=True,
+            )
 
         return embeddings
 
