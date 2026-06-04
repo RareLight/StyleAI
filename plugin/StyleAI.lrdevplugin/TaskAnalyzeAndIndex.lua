@@ -24,7 +24,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     -- Tasks to perform
     props.enableEmbeddings = (prefs.enableEmbeddings ~= false) and props.clipReady -- default true
     props.enableMetadata = prefs.enableMetadata ~= false                           -- default true
-    props.enableFaces = prefs.enableFaces or false
+    props.enableFaces = false
     props.regenerateMetadata = false
 
     -- Metadata generation options
@@ -289,12 +289,6 @@ local function showAnalyzeAndIndexDialog(ctx)
                                     end
                                 end
                             },
-                        },
-                    },
-                    f:row {
-                        f:checkbox {
-                            value = bind 'enableFaces',
-                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableFaces=Create face embeddings (Find similar people)",
                         },
                     },
                 },
