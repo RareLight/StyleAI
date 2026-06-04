@@ -28,6 +28,7 @@ local ENDPOINTS = {
     EDIT = "/edit",
     INDEX_BY_REFERENCE = "/index_by_reference",
     INDEX_BASE64 = "/index_base64",
+    INDEX_BASE64_BATCH = "/index_base64_batch",
     EDIT_BASE64 = "/edit_base64",
     STATS = "/db/stats",
     MODELS = "/models",
@@ -858,6 +859,102 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
 end
 
 ---
+-- Analyzes and indexes a batch of photos using base64-encoded JPEGs.
+-- Uses the /index_base64_batch endpoint.
+-- @param batch table Array of tables containing { photo_id, image, filename, options }
+-- @param globalOptions table Options passed globally for all photos in the batch (e.g. tasks, provider, etc.)
+-- @return boolean success, table|string response or error.
+--
+function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
+    if not batch or type(batch) ~= "table" or #batch == 0 then
+        log:error("analyzeAndIndexPhotosBatch: no batch data")
+        return false, "No batch data provided"
+    end
+
+    globalOptions = globalOptions or {}
+    local url = getBaseUrl() .. ENDPOINTS.INDEX_BASE64_BATCH
+
+    -- Construct global options table to send in JSON body
+    local bodyOptions = {
+        tasks = globalOptions.tasks or {},
+        provider = globalOptions.provider,
+        model = globalOptions.model,
+        api_key = globalOptions.api_key,
+        catalog_id = getCatalogId(),
+        language = globalOptions.language or (prefs and prefs.generateLanguage) or "English",
+        temperature = tostring(globalOptions.temperature or (prefs and prefs.temperature) or 0.2),
+        replace_ss = tostring(globalOptions.replace_ss or false),
+        generate_keywords = tostring(globalOptions.generate_keywords or false),
+        generate_caption = tostring(globalOptions.generate_caption or false),
+        generate_title = tostring(globalOptions.generate_title or false),
+        generate_alt_text = tostring(globalOptions.generate_alt_text or false),
+        submit_gps = tostring(globalOptions.submit_gps or false),
+        submit_keywords = tostring(globalOptions.submit_keywords or false),
+        submit_folder_names = tostring(globalOptions.submit_folder_names or false),
+        user_context = globalOptions.user_context,
+        prompt = globalOptions.prompt,
+        keyword_categories = globalOptions.keyword_categories and JSON:encode(globalOptions.keyword_categories) or "[]",
+        bilingual_keywords = tostring(globalOptions.bilingual_keywords or false),
+        keyword_secondary_language = globalOptions.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English",
+        ollama_base_url = globalOptions.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
+        lmstudio_base_url = globalOptions.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
+        regenerate_metadata = tostring(globalOptions.regenerate_metadata ~= false),
+        semantic_clustering_threshold = tostring(globalOptions.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
+    }
+
+    local bodyImages = {}
+    for _, item in ipairs(batch) do
+        local itemOptions = item.options or {}
+        local encodedItemOptions = {
+            submit_gps = tostring(itemOptions.submit_gps or false),
+            submit_keywords = tostring(itemOptions.submit_keywords or false),
+            submit_folder_names = tostring(itemOptions.submit_folder_names or false),
+            gps_coordinates = itemOptions.gps_coordinates and JSON:encode(itemOptions.gps_coordinates) or nil,
+            existing_keywords = itemOptions.existing_keywords and JSON:encode(itemOptions.existing_keywords) or nil,
+            folder_names = itemOptions.folder_names,
+            user_context = itemOptions.user_context,
+            date_time = itemOptions.date_time,
+            date_time_unix = itemOptions.date_time_unix,
+        }
+
+        table.insert(bodyImages, {
+            image = item.image,
+            photo_id = item.photo_id,
+            filename = item.filename or "photo.jpg",
+            options = encodedItemOptions
+        })
+    end
+
+    local body = {
+        images = bodyImages,
+        options = bodyOptions
+    }
+
+    log:trace("Analyzing and indexing batch of " .. tostring(#batch) .. " photos via base64 batch API")
+
+    local response, err = _request('POST', url, body, 1200)
+
+    if not response then
+        log:error("Failed to analyze/index batch: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+
+    if response.status == "processed" then
+        local success_count = response.success_count or 0
+        if success_count > 0 then
+            log:trace("Successfully processed batch: success=" .. tostring(success_count) .. ", failure=" .. tostring(response.failure_count or 0))
+            return true, response
+        else
+            log:error("Batch processing failed completely")
+            return false, response.error or "Processing failed"
+        end
+    end
+
+    log:error("Unexpected batch response status: " .. tostring(response.status))
+    return false, "Unexpected response status"
+end
+
+---
 -- Unified function to analyze and index photos with metadata and embeddings.
 -- Replaces the old separate analyze and index workflows.
 -- @param photoId string The ID of the photo.
@@ -1597,148 +1694,268 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local errorMessages = {}
     local warningsList = {}
 
+    local readFileBinary = function(filepath)
+        local f, err = io.open(filepath, "rb")
+        if not f then
+            return nil, err
+        end
+        local data = f:read("*all")
+        f:close()
+        return data
+    end
+
+    local preparedQueue = {}
+    local preparationDone = false
+    local senderWorkerActive = false
+
     local analyzeWorker = function()
+        local batchSize = tonumber(prefs and prefs.indexingBatchSize) or 32
+        local maxQueueCapacity = batchSize * 3
         while #photoToProcessStack > 0 do
             if progressScope:isCanceled() then break end
             if not keepRunning then break end
 
-            local photo = table.remove(photoToProcessStack, 1)
-            if photo ~= nil then
-                local filename = photo:getFormattedMetadata("fileName")
-                local hashStart = LrDate.currentTime()
-                local photoId, photoIdErr = getPhotoIdForPhoto(photo)
-                if photoId then
-                    log:trace("Using photo_id for " ..
-                        filename ..
-                        " (hashing_ms=" .. tostring(math.floor((LrDate.currentTime() - hashStart) * 1000)) .. ")")
+            if #preparedQueue >= maxQueueCapacity then
+                if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+            else
+                local photo = table.remove(photoToProcessStack, 1)
+                if photo then
+                    local filename = photo:getFormattedMetadata("fileName")
+                    local hashStart = LrDate.currentTime()
+                    local photoId, photoIdErr = getPhotoIdForPhoto(photo)
+                    if photoId then
+                        log:trace("Using photo_id for " ..
+                            filename ..
+                            " (hashing_ms=" .. tostring(math.floor((LrDate.currentTime() - hashStart) * 1000)) .. ")")
 
-                    -- Prepare analysis options with photo-specific context
-                    local photoOptions = {}
-                    for k, v in pairs(options) do
-                        photoOptions[k] = v
-                    end
-                    if options.submit_gps then
-                        local gps = photo:getRawMetadata('gps')
-                        if gps then photoOptions.gps_coordinates = gps end
-                    end
-                    if options.submit_keywords then
-                        local keywords = photo:getFormattedMetadata("keywordTagsForExport")
-                        if keywords then
-                            -- Lightroom may return a comma-separated string; send as array so server
-                            -- does not treat it as iterable of characters (issue #45).
-                            if type(keywords) == "string" then
-                                photoOptions.existing_keywords = Util.string_split(keywords, ",")
-                            else
-                                photoOptions.existing_keywords = keywords
+                        -- Prepare analysis options with photo-specific context
+                        local photoOptions = {}
+                        if options.submit_gps then
+                            local gps = photo:getRawMetadata('gps')
+                            if gps then
+                                photoOptions.gps_coordinates = gps
+                                photoOptions.submit_gps = true
                             end
                         end
-                    end
-                    if options.submit_folder_names then
-                        local originalFilePath = photo:getRawMetadata("path")
-                        if originalFilePath then
-                            photoOptions.folder_names = Util.getStringsFromRelativePath(originalFilePath)
-                        end
-                    end
-                    -- Always submit catalog capture time.
-                    local datetime = photo:getRawMetadata("dateTime")
-                    if datetime ~= nil and type(datetime) == "number" then
-                        -- Keep backwards-compatible ISO string for older backends
-                        photoOptions.date_time = LrDate.timeToW3CDate(datetime)
-                        -- Also send Unix timestamp (seconds since 1970-01-01 UTC)
-                        photoOptions.date_time_unix = LrDate.timeToPosixDate(datetime)
-                    end
-                    photoOptions.user_context = photo:getPropertyForPlugin(_PLUGIN, 'photoContext') or ""
-                    photoOptions.photo_id = photoId
-
-                    local success, indexResponse
-                    local usePreviewThumbnails = previewRequestState.enabled and not previewRequestState.disabledForRun
-                    local thumbnailSize = 1024
-                    local leafName = LrPathUtils.leafName(filename or "photo.jpg")
-
-                    if usePreviewThumbnails then
-                        local jpegData, thumbErr = SearchIndexAPI.getJpegThumbnailForPhoto(photo, thumbnailSize,
-                            thumbnailSize, previewRequestState)
-                        if jpegData and #jpegData > 0 then
-                            previewRequestState.consecutiveTimeouts = 0
-                            log:trace("Using Lightroom preview for " .. filename)
-                            success, indexResponse = SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData,
-                                leafName, photoOptions)
-                        else
-                            log:trace("Preview unavailable for " ..
-                                filename .. ", falling back to export: " .. tostring(thumbErr))
-                            if thumbErr and string.find(thumbErr, "timed out", 1, true) then
-                                previewRequestState.consecutiveTimeouts = previewRequestState.consecutiveTimeouts + 1
-                                if previewRequestState.consecutiveTimeouts >= previewRequestState.disableAfterConsecutiveTimeouts then
-                                    previewRequestState.disabledForRun = true
-                                    log:warn("Disabling Lightroom preview thumbnails for the rest of this batch after " ..
-                                        tostring(previewRequestState.consecutiveTimeouts) .. " consecutive timeouts.")
+                        if options.submit_keywords then
+                            local keywords = photo:getFormattedMetadata("keywordTagsForExport")
+                            if keywords then
+                                if type(keywords) == "string" then
+                                    photoOptions.existing_keywords = Util.string_split(keywords, ",")
                                 else
-                                    log:trace("Cooling down preview requests after timeout (" ..
-                                        tostring(previewRequestState.consecutiveTimeouts) .. "/" ..
-                                        tostring(previewRequestState.disableAfterConsecutiveTimeouts) .. ")")
+                                    photoOptions.existing_keywords = keywords
                                 end
-
-                                if previewRequestState.cooldownSeconds > 0 then
-                                    LrTasks.sleep(previewRequestState.cooldownSeconds)
-                                end
-                            else
-                                previewRequestState.consecutiveTimeouts = 0
+                                photoOptions.submit_keywords = true
                             end
                         end
-                    end
-
-                    if not success then
-                        local exportedPhotoPath = SearchIndexAPI.exportPhotoForIndexing(photo)
-                        if exportedPhotoPath then
-                            log:trace("Using exported JPEG for " .. filename)
-                            success, indexResponse = SearchIndexAPI.analyzeAndIndexPhoto(photoId, exportedPhotoPath,
-                                photoOptions)
-                            LrFileUtils.delete(exportedPhotoPath)
+                        if options.submit_folder_names then
+                            local originalFilePath = photo:getRawMetadata("path")
+                            if originalFilePath then
+                                photoOptions.folder_names = Util.getStringsFromRelativePath(originalFilePath)
+                                photoOptions.submit_folder_names = true
+                            end
                         end
+                        -- Always submit catalog capture time.
+                        local datetime = photo:getRawMetadata("dateTime")
+                        if datetime ~= nil and type(datetime) == "number" then
+                            photoOptions.date_time = LrDate.timeToW3CDate(datetime)
+                            photoOptions.date_time_unix = LrDate.timeToPosixDate(datetime)
+                        end
+                        photoOptions.user_context = photo:getPropertyForPlugin(_PLUGIN, 'photoContext') or ""
+
+                        local jpegData
+                        local usePreviewThumbnails = previewRequestState.enabled and not previewRequestState.disabledForRun
+                        local thumbnailSize = 1024
+                        local leafName = LrPathUtils.leafName(filename or "photo.jpg")
+
+                        if usePreviewThumbnails then
+                            local thumbErr
+                            jpegData, thumbErr = SearchIndexAPI.getJpegThumbnailForPhoto(photo, thumbnailSize,
+                                thumbnailSize, previewRequestState)
+                            if jpegData and #jpegData > 0 then
+                                previewRequestState.consecutiveTimeouts = 0
+                                log:trace("Using Lightroom preview for " .. filename)
+                            else
+                                log:trace("Preview unavailable for " ..
+                                    filename .. ", falling back to export: " .. tostring(thumbErr))
+                                if thumbErr and string.find(thumbErr, "timed out", 1, true) then
+                                    previewRequestState.consecutiveTimeouts = previewRequestState.consecutiveTimeouts + 1
+                                    if previewRequestState.consecutiveTimeouts >= previewRequestState.disableAfterConsecutiveTimeouts then
+                                        previewRequestState.disabledForRun = true
+                                        log:warn("Disabling Lightroom preview thumbnails for the rest of this batch after " ..
+                                            tostring(previewRequestState.consecutiveTimeouts) .. " consecutive timeouts.")
+                                    else
+                                        log:trace("Cooling down preview requests after timeout (" ..
+                                            tostring(previewRequestState.consecutiveTimeouts) .. "/" ..
+                                            tostring(previewRequestState.disableAfterConsecutiveTimeouts) .. ")")
+                                    end
+
+                                    if previewRequestState.cooldownSeconds > 0 then
+                                        LrTasks.sleep(previewRequestState.cooldownSeconds)
+                                    end
+                                else
+                                    previewRequestState.consecutiveTimeouts = 0
+                                end
+                            end
+                        end
+
+                        if not jpegData or #jpegData == 0 then
+                            local exportedPhotoPath = SearchIndexAPI.exportPhotoForIndexing(photo)
+                            if exportedPhotoPath then
+                                log:trace("Using exported JPEG for " .. filename)
+                                local fileData, readErr = readFileBinary(exportedPhotoPath)
+                                if fileData then
+                                    jpegData = fileData
+                                else
+                                    log:error("Failed to read exported JPEG file: " .. tostring(readErr))
+                                end
+                                LrFileUtils.delete(exportedPhotoPath)
+                            end
+                        end
+
+                        if jpegData and #jpegData > 0 then
+                            local base64Image = LrStringUtils.encodeBase64(jpegData)
+                            table.insert(preparedQueue, {
+                                type = "item",
+                                photo_id = photoId,
+                                image = base64Image,
+                                filename = leafName,
+                                options = photoOptions,
+                                photo = photo
+                            })
+                        else
+                            table.insert(preparedQueue, {
+                                type = "error",
+                                filename = filename,
+                                errorMsg = "Could not obtain image data (preview or export failed)",
+                                photo = photo
+                            })
+                        end
+                    else
+                        table.insert(preparedQueue, {
+                            type = "error",
+                            filename = filename,
+                            errorMsg = "Could not compute photo ID: " .. tostring(photoIdErr),
+                            photo = photo
+                        })
                     end
+                else
+                    log:error("Photo is nil in analyze worker, probably it got deleted in the meantime.")
+                end
+            end
+        end
+        activeWorkers = activeWorkers - 1
+        log:trace("Analyze worker thread finished. activeWorkers=" .. tostring(activeWorkers))
+        if activeWorkers == 0 then
+            preparationDone = true
+        end
+    end
+
+    local senderWorker = function()
+        senderWorkerActive = true
+        local batchSize = tonumber(prefs and prefs.indexingBatchSize) or 32
+        
+        while keepRunning and not progressScope:isCanceled() do
+            if #preparedQueue == 0 then
+                if preparationDone then
+                    break
+                else
+                    if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+                end
+            else
+                local batchItemsToSend = {}
+                local localFailures = {}
+                local subBatchPhotos = {}
+
+                while #batchItemsToSend + #localFailures < batchSize and #preparedQueue > 0 do
+                    local item = table.remove(preparedQueue, 1)
+                    if item.type == "item" then
+                        table.insert(batchItemsToSend, item)
+                        table.insert(subBatchPhotos, item.photo)
+                    elseif item.type == "error" then
+                        table.insert(localFailures, item)
+                        table.insert(subBatchPhotos, item.photo)
+                    end
+                end
+
+                if #localFailures > 0 then
+                    for _, failItem in ipairs(localFailures) do
+                        stats.failed = stats.failed + 1
+                        stats.processed = stats.processed + 1
+                        table.insert(errorMessages, failItem.errorMsg)
+                        log:error("Failed to prepare photo: " .. failItem.filename .. " Error: " .. failItem.errorMsg)
+                    end
+                end
+
+                if #batchItemsToSend > 0 then
+                    local success, indexResponse = SearchIndexAPI.analyzeAndIndexPhotosBatch(batchItemsToSend, options)
 
                     if success then
-                        stats.success = stats.success + 1
+                        local failedFilenames = {}
+                        if indexResponse and indexResponse.error_messages then
+                            for _, msg in ipairs(indexResponse.error_messages) do
+                                local colonIdx = string.find(msg, ":")
+                                if colonIdx then
+                                    local fname = string.sub(msg, 1, colonIdx - 1)
+                                    fname = string.gsub(fname, "^%s*(.-)%s*$", "%1") -- trim spaces
+                                    failedFilenames[fname] = msg
+                                end
+                            end
+                        end
+
                         if indexResponse and indexResponse.warnings and #indexResponse.warnings > 0 then
                             for _, w in ipairs(indexResponse.warnings) do
                                 table.insert(warningsList, w)
                             end
                         end
-                        if options.onPhotoAnalyzed then
-                            local okCb, cbErr = LrTasks.pcall(function()
-                                options.onPhotoAnalyzed(photo, photoId, progressScope)
-                            end)
-                            if not okCb then
-                                log:error("onPhotoAnalyzed callback failed for " .. filename .. ": " .. tostring(cbErr))
+
+                        for _, item in ipairs(batchItemsToSend) do
+                            local filename = item.photo:getFormattedMetadata("fileName")
+                            local leafName = LrPathUtils.leafName(filename or "photo.jpg")
+                            local batchErr = failedFilenames[leafName] or failedFilenames[filename]
+
+                            stats.processed = stats.processed + 1
+                            table.insert(processedPhotos, item.photo)
+
+                            if not batchErr then
+                                stats.success = stats.success + 1
+                                if options.onPhotoAnalyzed then
+                                    local okCb, cbErr = LrTasks.pcall(function()
+                                        options.onPhotoAnalyzed(item.photo, item.photo_id, progressScope)
+                                    end)
+                                    if not okCb then
+                                        log:error("onPhotoAnalyzed callback failed for " .. filename .. ": " .. tostring(cbErr))
+                                    end
+                                end
+                            else
+                                stats.failed = stats.failed + 1
+                                table.insert(errorMessages, batchErr)
+                                log:error("Failed to analyze/index photo (batch): " .. filename .. " Error: " .. batchErr)
                             end
                         end
                     else
-                        stats.failed = stats.failed + 1
-                        table.insert(errorMessages, tostring(indexResponse or "Unknown"))
-                        log:error("Failed to analyze/index photo: " ..
-                            filename .. " Error: " .. (indexResponse or "Unknown"))
+                        -- Entire batch request failed
+                        for _, item in ipairs(batchItemsToSend) do
+                            local filename = item.photo:getFormattedMetadata("fileName")
+                            stats.processed = stats.processed + 1
+                            stats.failed = stats.failed + 1
+                            table.insert(processedPhotos, item.photo)
+                            local errText = tostring(indexResponse or "Batch request failed")
+                            table.insert(errorMessages, errText)
+                            log:error("Failed to analyze/index photo (batch request failed): " .. filename .. " Error: " .. errText)
+                        end
                     end
-                else
-                    stats.failed = stats.failed + 1
-                    table.insert(errorMessages, "Could not compute photo ID: " .. tostring(photoIdErr))
-                    log:error("Failed to compute photo ID for " .. filename .. ": " .. tostring(photoIdErr))
                 end
 
-
-
-                stats.processed = stats.processed + 1
-                table.insert(processedPhotos, photo)
                 progressScope:setPortionComplete(stats.processed, numPhotos)
                 progressScope:setCaption(
                     LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
                         stats.success, numPhotos, stats.failed)
                 )
-            else
-                log:error("Photo is nil in analyze worker, probably it got deleted in the meantime.")
             end
         end
-        log:trace("Analyze worker thread finished.")
-        activeWorkers = activeWorkers - 1
+        senderWorkerActive = false
+        log:trace("Sender worker thread finished.")
     end
 
     -- Start worker threads
@@ -1748,8 +1965,11 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         activeWorkers = activeWorkers + 1
     end
 
+    LrTasks.startAsyncTask(senderWorker)
+    log:trace("Started sender worker")
+
     -- Monitor workers and server availability
-    while activeWorkers > 0 do
+    while activeWorkers > 0 or senderWorkerActive do
         if progressScope:isCanceled() then break end
         if MAC_ENV then
             LrTasks.yield()
@@ -1760,7 +1980,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     -- Wait for workers to stop in case of server failure
     if not keepRunning then
-        while activeWorkers > 0 do
+        while activeWorkers > 0 or senderWorkerActive do
             if MAC_ENV then
                 LrTasks.yield()
             else

@@ -35,6 +35,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
 	propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
 	propertyTable.indexingParallelTasks = tostring(prefs.indexingParallelTasks or "2")
+	propertyTable.indexingBatchSize = tostring(prefs.indexingBatchSize or "32")
 	propertyTable.semanticClusteringThresholdInt = math.floor((tonumber(prefs.semanticClusteringThreshold) or 0.94) * 100)
 
 	-- Training/Style Profile stats (loaded asynchronously).
@@ -768,6 +769,36 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
+						title = LOC("$$$/StyleAI/PluginInfo/BatchSize=Parallel Indexing\nBatch Size"),
+						width = share("advancedLabelWidth"),
+						alignment = "right",
+					}),
+					f:popup_menu({
+						value = bind("indexingBatchSize"),
+						items = {
+							{ title = "4", value = "4" },
+							{ title = "8", value = "8" },
+							{ title = "16", value = "16" },
+							{ title = "32 (Recommended)", value = "32" },
+							{ title = "64", value = "64" },
+						},
+						width = 200,
+					}),
+					f:spacer({ fill_horizontal = 1 }),
+				}),
+				f:row({
+					fill_horizontal = 1,
+					f:spacer({ width = share("advancedLabelWidth") }),
+					f:static_text({
+						title = LOC("$$$/StyleAI/PluginInfo/BatchSizeHint=Number of photos processed per request. Higher values saturate the GPU better but require more VRAM."),
+						size = "small",
+						fill_horizontal = 1,
+						wrap = true,
+					}),
+				}),
+				f:row({
+					fill_horizontal = 1,
+					f:static_text({
 						title = LOC("$$$/StyleAI/PluginInfo/SemanticClustering=Clustering\nThreshold:"),
 						width = share("advancedLabelWidth"),
 						alignment = "right",
@@ -1054,6 +1085,7 @@ end
 function PluginInfoDialogSections.endDialog(propertyTable)
 	prefs.geminiApiKey = propertyTable.geminiApiKey
 	prefs.chatgptApiKey = propertyTable.chatgptApiKey
+	prefs.indexingBatchSize = tonumber(propertyTable.indexingBatchSize) or 32
 
 	prefs.exportSize = propertyTable.exportSize
 	prefs.exportQuality = propertyTable.exportQuality
