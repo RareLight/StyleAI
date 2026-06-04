@@ -63,7 +63,7 @@ function PromptConfigProvider.addPrompt(props)
 					width = 480,
 					height_in_lines = 30,
 					wraps = true,
-					allow_new_lines = true,
+					allow_newlines = true,
 				}),
 			}),
 		}),
@@ -165,7 +165,7 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 				width_in_chars = 50,
 				height_in_lines = 10,
 				-- enabled = false,
-				allow_new_lines = true,
+				allow_newlines = true,
 			}),
 		}),
 	})

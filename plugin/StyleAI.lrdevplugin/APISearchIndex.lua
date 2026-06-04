@@ -3226,6 +3226,15 @@ function SearchIndexAPI.checkServerHealth()
     return true
 end
 
+function SearchIndexAPI.getHealth()
+    local url = getBaseUrl() .. ENDPOINTS.HEALTH
+    local res, err = _request('GET', url)
+    if err then
+        return nil, err
+    end
+    return res
+end
+
 function SearchIndexAPI.diagnoseStartupFailure()
     local results = {
         binaryMissing = false,

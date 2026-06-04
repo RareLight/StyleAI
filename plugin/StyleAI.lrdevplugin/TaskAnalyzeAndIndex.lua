@@ -106,6 +106,55 @@ local function showAnalyzeAndIndexDialog(ctx)
     -- Validation
     props.enableValidation = prefs.enableValidation or false
 
+    -- LLM status properties
+    local function updateLlmStatusText(properties)
+        local key = properties.modelKey
+        if not key or key == "" then
+            properties.llmStatusText = LOC("$$$/StyleAI/AnalyzeAndIndex/LlmStatusNone=LLM: No model selected")
+            properties.llmStatusColor = LrColor(0.8, 0, 0)
+            return
+        end
+
+        local sep = string.find(key, "::", 1, true)
+        local provider = key
+        if sep then
+            provider = string.sub(key, 1, sep - 1)
+        end
+
+        if provider == "qwen" then
+            properties.llmStatusText = "QWEN: Ready"
+            properties.llmStatusColor = LrColor(0, 0.8, 0)
+            return
+        end
+
+        local health = properties.healthData or {}
+        local providers = health.llm_providers or {}
+        local status = providers[provider]
+
+        if status == "available" or status == "registered" then
+            properties.llmStatusText = string.upper(provider) .. ": Ready"
+            properties.llmStatusColor = LrColor(0, 0.8, 0)
+        elseif status == "failed" then
+            local errMsg = health.llm_errors and health.llm_errors[provider] or "unknown error"
+            properties.llmStatusText = string.upper(provider) .. ": Failed (" .. tostring(errMsg) .. ")"
+            properties.llmStatusColor = LrColor(0.8, 0, 0)
+        elseif status == "not_configured" then
+            properties.llmStatusText = string.upper(provider) .. ": Not Configured"
+            properties.llmStatusColor = LrColor(0.8, 0.5, 0)
+        else
+            properties.llmStatusText = string.upper(provider) .. ": Unknown"
+            properties.llmStatusColor = LrColor(0.5, 0.5, 0.5)
+        end
+    end
+
+    local healthData = SearchIndexAPI.getHealth()
+    props.healthData = healthData or {}
+
+    props:addObserver('modelKey', function(properties, key, newValue)
+        updateLlmStatusText(properties)
+    end)
+    updateLlmStatusText(props)
+
 
 
     props.promptTitleMenu = f:popup_menu {
@@ -260,6 +309,10 @@ local function showAnalyzeAndIndexDialog(ctx)
                             value = bind 'enableMetadata',
                             title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableMetadata=Generate AI metadata (Keywords, Title, Caption)",
                         },
+                        f:static_text {
+                            title = bind 'llmStatusText',
+                            text_color = bind 'llmStatusColor',
+                        },
                     },
                 },
             }, -- end General tab
@@ -355,7 +408,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                                 width = 430,
                                 height_in_lines = 20,
                                 wraps = true,
-                                allow_new_lines = true,
+                                allow_newlines = true,
                             },
                         },
                     },
@@ -777,8 +830,6 @@ LrTasks.startAsyncTask(function()
 			end
 			log:trace("Added Gemini API key to options")
 			options.api_key = prefs.geminiApiKey
-		end
-
 		end
 
 		if prefs.useKeywordHierarchy then

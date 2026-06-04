@@ -122,7 +122,7 @@ local function showPhotoInstructionDialog(ctx, photo)
 				value = bind("photoContextData"),
 				width_in_chars = 50,
 				height_in_lines = 10,
-				allow_new_lines = true,
+				allow_newlines = true,
 			}),
 		}),
 		f:row({
@@ -427,7 +427,7 @@ local function showAiEditDialog(ctx)
 					value = bind("selectedPrompt"),
 					width_in_chars = 50,
 					height_in_lines = 4,
-					allow_new_lines = true,
+					allow_newlines = true,
 				}),
 			}),
 			f:row({
