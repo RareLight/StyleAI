@@ -33,9 +33,9 @@ This section contains the canonical rules, conventions, architecture details, an
 
 - **Lightroom Plugin (Lua)**: Frontend UI using the Adobe Lightroom SDK. Handles task orchestration, metadata management, and applying develop settings.
 - **Backend Server (Python/Flask)**: Local background server executing AI model inference, vector database storage, SQLite metadata management, and LLM integrations.
-- **ChromaDB**: Vector store for image embeddings (SigLIP2, Vertex AI) and face embeddings (InsightFace).
+- **ChromaDB**: Vector store for image embeddings (SigLIP2) and face embeddings (InsightFace).
 - **SQLite**: Structured database for metadata, face templates, and style training profiles.
-- **Supported LLMs**: Google Gemini, Vertex AI, OpenAI/ChatGPT, Ollama, LM-Studio.
+- **Supported LLMs**: Google Gemini, OpenAI/ChatGPT, Ollama, LM-Studio.
 
 ## 2. Directory Structure
 

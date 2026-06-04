@@ -159,7 +159,6 @@ Defaults.credits = {
 	{ name = "Scikit-learn", author = "scikit-learn developers", url = "https://scikit-learn.org/" },
 	{ name = "Psutil", author = "Giampaolo Rodola", url = "https://github.com/giampaolo/psutil" },
 	{ name = "Requests", author = "Kenneth Reitz & Contributors", url = "https://requests.readthedocs.io/" },
-	{ name = "Vertex AI SDK (Google Cloud)", author = "Google", url = "https://cloud.google.com/vertex-ai" },
 	{ name = "Torchvision", author = "PyTorch Team", url = "https://pytorch.org/vision/" },
 	{ name = "Tokenizers", author = "Hugging Face", url = "https://github.com/huggingface/tokenizers" },
 }

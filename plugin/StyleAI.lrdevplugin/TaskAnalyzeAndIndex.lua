@@ -25,9 +25,8 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.enableEmbeddings = (prefs.enableEmbeddings ~= false) and props.clipReady -- default true
     props.enableMetadata = prefs.enableMetadata ~= false                           -- default true
     props.enableFaces = prefs.enableFaces or false
-    props.enableVertexAI = prefs.enableVertexAI or false
     props.enableImportBeforeIndex = prefs.enableImportBeforeIndex or false
-    props.regenerateMetadata = prefs.regenerateMetadata or false
+    props.regenerateMetadata = false
 
     -- Metadata generation options
     props.temperature = prefs.temperature or 0.1
@@ -211,9 +210,9 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                 },
 
-                -- Core Tasks
+                -- Embedding Model / SigLIP2 Tasks
                 f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/Tasks=Primary Tasks",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks=Embedding Model / SigLIP2 Tasks",
                     fill_horizontal = 1,
                     f:row {
                         f:checkbox {
@@ -222,16 +221,26 @@ local function showAnalyzeAndIndexDialog(ctx)
                             enabled = props.clipReady,
                         },
                         f:static_text {
-                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/ClipNotReady=(SigLIP2 model is missing. Please download it in the Plugin Manager)",
-                            text_color = LrColor(1, 0, 0),
-                            visible = not props.clipReady,
-                            size = "small",
-                        },
-                    },
-                    f:row {
-                        f:checkbox {
-                            value = bind 'enableMetadata',
-                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableMetadata=Generate AI metadata (Keywords, Title, Caption)",
+                            title = bind {
+                                key = "clipReady",
+                                transform = function(v)
+                                    if v then
+                                        return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPReady=SigLIP2: Ready (Model cached)")
+                                    else
+                                        return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPNotReady=SigLIP2: Not Ready (Model missing)")
+                                    end
+                                end,
+                            },
+                            text_color = bind {
+                                key = "clipReady",
+                                transform = function(v)
+                                    if v then
+                                        return LrColor(0, 0.8, 0)
+                                    else
+                                        return LrColor(0.8, 0, 0)
+                                    end
+                                end
+                            },
                         },
                     },
                     f:row {
@@ -240,10 +249,16 @@ local function showAnalyzeAndIndexDialog(ctx)
                             title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableFaces=Create face embeddings (Find similar people)",
                         },
                     },
+                },
+
+                -- LLM Tasks
+                f:group_box {
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/LlmTasks=LLM Tasks",
+                    fill_horizontal = 1,
                     f:row {
                         f:checkbox {
-                            value = bind 'enableVertexAI',
-                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableVertexAI=Create Vertex AI embeddings (Cloud-based search)",
+                            value = bind 'enableMetadata',
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableMetadata=Generate AI metadata (Keywords, Title, Caption)",
                         },
                     },
                 },
@@ -340,6 +355,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                                 width = 430,
                                 height_in_lines = 20,
                                 wraps = true,
+                                allow_new_lines = true,
                             },
                         },
                     },
@@ -424,6 +440,49 @@ local function showAnalyzeAndIndexDialog(ctx)
                 },
             }, -- end Context & Save tab
         },     -- end tab_view
+
+        f:row {
+            f:push_button {
+                title = LOC("$$$/StyleAI/common/ResetAllDefaults=Reset to Defaults"),
+                action = function()
+                    local confirm = LrDialogs.confirm(
+                        LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmTitle=Reset Settings"),
+                        LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmMessage=Are you sure you want to reset all options in this dialog to their default values?")
+                    )
+                    if confirm == "ok" then
+                        props.scope = "selected"
+                        props.enableEmbeddings = props.clipReady
+                        props.enableMetadata = true
+                        props.enableFaces = false
+                        props.enableImportBeforeIndex = false
+                        props.regenerateMetadata = false
+                        props.temperature = 0.1
+                        props.prompt = "Default"
+                        props.selectedPrompt = Defaults.defaultSystemInstruction
+                        props.generateKeywords = true
+                        props.generateCaption = true
+                        props.generateTitle = true
+                        props.generateAltText = false
+                        props.useKeywordHierarchy = false
+                        props.useCatalogKeywordStructure = false
+                        props.useTopLevelKeyword = false
+                        props.topLevelKeyword = "StyleAI"
+                        props.bilingualKeywords = false
+                        props.keywordSecondaryLanguage = Defaults.defaultKeywordSecondaryLanguage
+                        props.modelKey = (modelItems and modelItems[1]) and modelItems[1].value or "qwen::"
+                        props.language = "English"
+                        props.replaceSS = false
+                        props.submitGPS = false
+                        props.submitKeywords = false
+                        props.submitFolderName = false
+                        props.showPhotoContextDialog = false
+                        props.saveDataToCatalog = true
+                        props.appendMetadata = false
+                        props.enableValidation = false
+                    end
+                end,
+            },
+        },
     }
 
     local result = LrDialogs.presentModalDialog {
@@ -440,7 +499,6 @@ local function showAnalyzeAndIndexDialog(ctx)
         prefs.enableEmbeddings = props.enableEmbeddings
         prefs.enableMetadata = props.enableMetadata
         prefs.enableFaces = props.enableFaces
-        prefs.enableVertexAI = props.enableVertexAI
         prefs.enableImportBeforeIndex = props.enableImportBeforeIndex
         prefs.regenerateMetadata = props.regenerateMetadata
         prefs.appendMetadata = props.appendMetadata
@@ -623,7 +681,6 @@ LrTasks.startAsyncTask(function()
 			not props.enableEmbeddings
 			and not props.enableMetadata
 			and not props.enableFaces
-			and not props.enableVertexAI
 		then
 			LrDialogs.showError(
 				LOC("$$$/StyleAI/AnalyzeAndIndex/NoTasksSelected=Please select at least one task to perform.")
@@ -647,7 +704,7 @@ LrTasks.startAsyncTask(function()
 			end
 		end
 
-		-- Build tasks array (task name compute_vertexai → "vertexai" in API)
+		-- Build tasks array
 		local tasks = {}
 		if props.enableEmbeddings then
 			table.insert(tasks, "embeddings")
@@ -657,9 +714,6 @@ LrTasks.startAsyncTask(function()
 		end
 		if props.enableFaces then
 			table.insert(tasks, "faces")
-		end
-		if props.enableVertexAI then
-			table.insert(tasks, "vertexai")
 		end
 
 		-- Parse provider and model from unified modelKey (format: provider::model)
@@ -694,18 +748,12 @@ LrTasks.startAsyncTask(function()
 			submit_user_context = props.showPhotoContextDialog,
 			enableMetadata = props.enableMetadata,
 			enableFaces = props.enableFaces,
-			enableVertexAI = props.enableVertexAI,
 			replace_ss = props.replaceSS,
 			regenerate_metadata = props.regenerateMetadata,
 			prompt = props.selectedPrompt,
 			bilingual_keywords = props.bilingualKeywords,
 			keyword_secondary_language = props.keywordSecondaryLanguage,
 		}
-		if props.enableVertexAI and prefs and not Util.nilOrEmpty(prefs.vertexProjectId) then
-			options.vertex_project_id = prefs.vertexProjectId:gsub("^%s*(.-)%s*$", "%1")
-			options.vertex_location = (prefs.vertexLocation and prefs.vertexLocation:gsub("^%s*(.-)%s*$", "%1"))
-				or "us-central1"
-		end
 		-- Add API key for cloud providers if configured
 		if providerFromKey == "chatgpt" and prefs then
 			log:trace("Added ChatGPT API key to options")
@@ -731,16 +779,6 @@ LrTasks.startAsyncTask(function()
 			options.api_key = prefs.geminiApiKey
 		end
 
-		if props.enableVertexAI and prefs then
-			local projectId = (prefs.vertexProjectId and prefs.vertexProjectId:gsub("^%s*(.-)%s*$", "%1")) or ""
-			if projectId == "" then
-				LrDialogs.showError(
-					LOC(
-						"$$$/StyleAI/AnalyzeAndIndex/MissingVertexConfig=Vertex AI Project ID is not configured. Please set it in the plugin preferences."
-					)
-				)
-				return
-			end
 		end
 
 		if prefs.useKeywordHierarchy then
@@ -764,7 +802,6 @@ LrTasks.startAsyncTask(function()
 					enableEmbeddings = props.enableEmbeddings,
 					enableMetadata = props.enableMetadata,
 					enableFaces = props.enableFaces,
-					enableVertexAI = props.enableVertexAI,
 					regenerateMetadata = props.regenerateMetadata,
 				}
 			or nil

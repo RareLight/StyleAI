@@ -128,16 +128,17 @@ def _extract_options(data) -> dict[str, Any]:
     options["replace_ss"] = _bool_from_data(data, "replace_ss", False)
     options["ollama_base_url"] = data.get("ollama_base_url") or None
     options["lmstudio_base_url"] = data.get("lmstudio_base_url") or None
-    
+
     raw_current_settings = _parse_json_field(data.get("current_settings"))
-    options["current_settings"] = raw_current_settings if isinstance(raw_current_settings, dict) else None
+    options["current_settings"] = (
+        raw_current_settings if isinstance(raw_current_settings, dict) else None
+    )
 
     # Regenerate metadata
     reg_val = data.get("regenerate_metadata")
     if reg_val is None:
         reg_val = data.get("regenerateMetadata", "true")
     options["regenerate_metadata"] = str(reg_val).lower() == "true"
-
 
     options["prompt"] = data.get("prompt")
     options["edit_intent"] = data.get("edit_intent")
@@ -205,15 +206,6 @@ def _extract_options(data) -> dict[str, Any]:
     options["compute_embeddings"] = "embeddings" in tasks
     options["compute_metadata"] = "metadata" in tasks
     options["compute_faces"] = "faces" in tasks
-    options["compute_vertexai"] = "vertexai" in tasks
-
-    # Vertex AI config
-    options["vertex_project_id"] = data.get("vertex_project_id") or data.get(
-        "vertexProjectId"
-    )
-    options["vertex_location"] = data.get("vertex_location") or data.get(
-        "vertexLocation"
-    )
 
     # Cross-catalog soft-state
     options["catalog_id"] = data.get("catalog_id") or None

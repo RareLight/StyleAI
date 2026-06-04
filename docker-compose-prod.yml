@@ -16,11 +16,9 @@ services:
     volumes:
       - ./data:/data
       - ./models:/models
-      - ./gcloud:/root/.config/gcloud
     environment:
       - STYLEAI_HOST=0.0.0.0
       - STYLEAI_PORT=19819
-      - CLOUDSDK_CONFIG=/root/.config/gcloud
 
       - STYLEAI_FACES_CLUSTER_ENABLED=true
       - STYLEAI_FACES_CLUSTER_INTERVAL=3600

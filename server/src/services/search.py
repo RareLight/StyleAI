@@ -1,5 +1,4 @@
 from . import chroma as chroma_service
-from . import vertexai as vertexai_service
 from config import logger, TORCH_DEVICE
 import server_lifecycle as server_lifecycle
 import torch
@@ -134,15 +133,6 @@ def _smart_filter_by_relevance(transformed_results, strictness, *, label=""):
     return kept
 
 
-def _merge_semantic_results(siglip_results, vertex_results):
-    """Merge SigLIP and Vertex results without mixing distance scales.
-    Vertex (higher quality) first, sorted by Vertex distance; then SigLIP
-    results not in Vertex, sorted by SigLIP distance. No cross-model distance comparison."""
-    vertex_ids = {r["photo_id"] for r in vertex_results}
-    siglip_only = [r for r in siglip_results if r["photo_id"] not in vertex_ids]
-    return list(vertex_results) + siglip_only
-
-
 def _transform_and_sort_results(results, quality_sort):
     """Transforms ChromaDB results and sorts them based on quality or distance."""
     if not results or not results["ids"][0]:
@@ -173,23 +163,6 @@ def _transform_and_sort_results(results, quality_sort):
     return transformed_results
 
 
-def _transform_vertex_results(vertex_results):
-    """Transform Vertex Chroma query result to list of {photo_id, distance} sorted by distance."""
-    if (
-        not vertex_results
-        or not vertex_results.get("ids")
-        or not vertex_results["ids"][0]
-    ):
-        return []
-    ids, distances = vertex_results["ids"][0], vertex_results["distances"][0]
-    out = [
-        {"photo_id": uid, "uuid": uid, "distance": float(round(d, 4))}
-        for uid, d in zip(ids, distances)
-    ]
-    out.sort(key=lambda x: x["distance"])
-    return out
-
-
 DEFAULT_METADATA_FIELDS = ["flattened_keywords", "alt_text", "caption", "title"]
 
 
@@ -197,7 +170,6 @@ def _default_search_sources():
     """Return default search sources: all enabled, all metadata fields."""
     return {
         "semantic_siglip": True,
-        "semantic_vertex": True,
         "metadata": True,
         "metadata_fields": list(DEFAULT_METADATA_FIELDS),
     }
@@ -210,7 +182,6 @@ def _normalize_search_sources(search_sources):
     allowed = set(DEFAULT_METADATA_FIELDS)
     out = {
         "semantic_siglip": bool(search_sources.get("semantic_siglip", True)),
-        "semantic_vertex": bool(search_sources.get("semantic_vertex", True)),
         "metadata": bool(search_sources.get("metadata", True)),
     }
     raw_fields = search_sources.get("metadata_fields")
@@ -229,8 +200,6 @@ def search_images(
     photo_ids_to_search,
     search_sources=None,
     *,
-    vertex_project_id=None,
-    vertex_location=None,
     catalog_id=None,
     relevance_strictness=None,
     max_results=None,
@@ -287,66 +256,6 @@ def search_images(
         else:
             warning = "SigLIP model not loaded. Semantic search results will be missing. Download the model in the plugin manager."
             logger.info(warning)
-
-    # 1b. Vertex AI semantic search (use vertex_project_id/vertex_location from request so plugin prefs are used)
-    vertex_semantic_results = []
-    if (
-        sources["semantic_vertex"]
-        and vertexai_service.is_available(vertex_project_id, vertex_location)
-        and term.strip()
-    ):
-        vertex_where = (
-            {"photo_id": {"$in": list(photo_ids_to_search)}}
-            if photo_ids_to_search
-            else None
-        )
-        try:
-            vertex_ids = chroma_service.get_all_vertex_image_ids()
-            if photo_ids_to_search:
-                scope_vertex = set(vertex_ids) & set(photo_ids_to_search)
-            else:
-                scope_vertex = set(vertex_ids)
-            if scope_vertex:
-                query_emb = vertexai_service.get_text_embedding(
-                    term, vertex_project_id, vertex_location
-                )
-                if query_emb:
-                    vertex_results = chroma_service.query_vertex_images(
-                        query_embedding=query_emb,
-                        n_results=n_results,
-                        where_clause=vertex_where,
-                        catalog_id=catalog_id,
-                    )
-                    if photo_ids_to_search and (
-                        not vertex_results
-                        or not vertex_results.get("ids")
-                        or not vertex_results["ids"][0]
-                    ):
-                        vertex_results = chroma_service.query_vertex_images(
-                            query_embedding=query_emb,
-                            n_results=n_results,
-                            where_clause={"uuid": {"$in": list(photo_ids_to_search)}},
-                            catalog_id=catalog_id,
-                        )
-                    vertex_semantic_results = _transform_vertex_results(vertex_results)
-                    vertex_semantic_results = _smart_filter_by_relevance(
-                        vertex_semantic_results, strictness, label="vertex"
-                    )
-                    logger.info(
-                        f"Vertex AI semantic search returned {len(vertex_semantic_results)} results."
-                    )
-        except Exception as e:
-            msg = f"Vertex AI search failed: {str(e)}"
-            logger.warning(msg, exc_info=True)
-            if not warning:
-                warning = msg
-            else:
-                warning += f" | {msg}"
-    if vertex_semantic_results:
-        sorted_semantic_results = _merge_semantic_results(
-            sorted_semantic_results, vertex_semantic_results
-        )
-        semantic_photo_ids = {res["photo_id"] for res in sorted_semantic_results}
 
     # 2. Metadata Search (in-memory)
     metadata_only_results = []

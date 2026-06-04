@@ -201,7 +201,7 @@ class AnalysisService:
                 else:
                     embeddings.append(None)
         else:
-            embeddings = [None] * len(uuids)
+            embeddings = None
 
         if len(uuids_needing_metadata) > 0:
             logger.info(
@@ -290,7 +290,7 @@ class AnalysisService:
                 else:
                     metadata_results.append(None)
         else:
-            metadata_results = [None] * len(uuids)
+            metadata_results = None
 
         # Datetime/capture_time extraction is handled entirely by the client
         # (Lightroom plugin) via explicit fields in the request and stored in
@@ -426,6 +426,7 @@ class AnalysisService:
             logger.debug(f"No additional context for {uuid}")
 
         import time
+
         response = None
         for attempt in range(2):
             try:
@@ -435,27 +436,33 @@ class AnalysisService:
                         response.warning = warning_msg
                     return response
                 logger.warning(
-                    f"[Attempt {attempt+1}/2] Failed to generate metadata for {uuid}: {response.error}"
+                    f"[Attempt {attempt + 1}/2] Failed to generate metadata for {uuid}: {response.error}"
                 )
             except Exception as e:
                 logger.warning(
-                    f"[Attempt {attempt+1}/2] Unexpected error during metadata generation for {uuid}: {e}",
+                    f"[Attempt {attempt + 1}/2] Unexpected error during metadata generation for {uuid}: {e}",
                     exc_info=(attempt == 1),
                 )
                 if attempt == 1:
-                    return MetadataGenerationResponse(uuid=uuid, success=False, error=str(e))
-            
+                    return MetadataGenerationResponse(
+                        uuid=uuid, success=False, error=str(e)
+                    )
+
             if attempt < 1:
                 time.sleep(2)
-        
+
         # If we exhausted attempts and have a response object with an error
         if response:
             if "warning_msg" in locals():
                 response.warning = warning_msg
-            logger.error(f"[FAIL] Failed to generate metadata for {uuid}: {response.error}")
+            logger.error(
+                f"[FAIL] Failed to generate metadata for {uuid}: {response.error}"
+            )
             return response
-        
-        return MetadataGenerationResponse(uuid=uuid, success=False, error="Unknown error")
+
+        return MetadataGenerationResponse(
+            uuid=uuid, success=False, error="Unknown error"
+        )
 
     def generate_edit_recipe_single(
         self, uuid: str, image_data: bytes, options: dict
@@ -554,7 +561,12 @@ class AnalysisService:
 
                 existing = chroma_service.get_image(uuid)
                 embedding = None
-                if existing and existing.get("ids") and existing.get("embeddings") is not None and len(existing.get("embeddings")) > 0:
+                if (
+                    existing
+                    and existing.get("ids")
+                    and existing.get("embeddings") is not None
+                    and len(existing.get("embeddings")) > 0
+                ):
                     raw_emb = existing["embeddings"][0]
                     if raw_emb is not None:
                         import numpy as np
@@ -582,6 +594,7 @@ class AnalysisService:
 
         request.training_examples = training_examples or []
         import time
+
         response = None
         for attempt in range(2):
             try:
@@ -608,16 +621,18 @@ class AnalysisService:
                     break
                 else:
                     logger.warning(
-                        f"[Attempt {attempt+1}/2] Failed to generate edit recipe for {uuid}: {response.error if response else 'Unknown'}"
+                        f"[Attempt {attempt + 1}/2] Failed to generate edit recipe for {uuid}: {response.error if response else 'Unknown'}"
                     )
             except Exception as e:
                 logger.warning(
-                    f"[Attempt {attempt+1}/2] Unexpected error during edit recipe generation for {uuid}: {e}",
+                    f"[Attempt {attempt + 1}/2] Unexpected error during edit recipe generation for {uuid}: {e}",
                     exc_info=(attempt == 1),
                 )
                 if attempt == 1:
-                    return EditGenerationResponse(uuid=uuid, success=False, error=str(e))
-            
+                    return EditGenerationResponse(
+                        uuid=uuid, success=False, error=str(e)
+                    )
+
             if attempt < 1:
                 time.sleep(2)
 
@@ -637,7 +652,9 @@ class AnalysisService:
             response.warning = " | ".join(warnings)
 
         if not response:
-            return EditGenerationResponse(uuid=uuid, success=False, error="Unknown error")
+            return EditGenerationResponse(
+                uuid=uuid, success=False, error="Unknown error"
+            )
         return response
 
     def get_available_models(

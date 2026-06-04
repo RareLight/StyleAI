@@ -122,6 +122,7 @@ local function showPhotoInstructionDialog(ctx, photo)
 				value = bind("photoContextData"),
 				width_in_chars = 50,
 				height_in_lines = 10,
+				allow_new_lines = true,
 			}),
 		}),
 		f:row({
@@ -426,6 +427,7 @@ local function showAiEditDialog(ctx)
 					value = bind("selectedPrompt"),
 					width_in_chars = 50,
 					height_in_lines = 4,
+					allow_new_lines = true,
 				}),
 			}),
 			f:row({
@@ -563,6 +565,37 @@ local function showAiEditDialog(ctx)
 						}),
 					}),
 				}),
+			}),
+		}),
+		f:row({
+			f:push_button({
+				title = LOC("$$$/StyleAI/common/ResetAllDefaults=Reset to Defaults"),
+				action = function()
+					local confirm = LrDialogs.confirm(
+						LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmTitle=Reset Settings"),
+						LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmMessage=Are you sure you want to reset all options in this dialog to their default values?")
+					)
+					if confirm == "ok" then
+						props.enableQuickEdit = false
+						props.quickEditStyleStrength = 0.5
+						props.scope = "selected"
+						props.modelKey = (modelItems and modelItems[1]) and modelItems[1].value or "none"
+						props.temperature = 0.1
+						props.prompt = "Default"
+						props.selectedPrompt = Defaults.defaultEditSystemInstruction
+						props.language = "English"
+						props.editIntentPreset = "natural_pro"
+						props.customEditIntentText = Defaults.defaultEditIntent
+						props.editIntent = "Natural professional Lightroom edit with balanced contrast, realistic color, and clean detail."
+						props.styleStrength = 0.5
+						props.reviewBeforeApply = true
+						props.applyMasks = true
+						props.showPhotoContextDialog = true
+						props.submitKeywords = true
+						props.submitFolderName = false
+						props.useTrainingStyle = true
+					end
+				end,
 			}),
 		}),
 	})
@@ -877,6 +910,7 @@ LrTasks.startAsyncTask(function()
 					end
 
 					results[index] = resultObj
+					collectgarbage()
 				end
 				producerDone = true
 			end)
@@ -979,6 +1013,7 @@ LrTasks.startAsyncTask(function()
 						end
 					end
 				end
+				collectgarbage()
 			end
 		end
 

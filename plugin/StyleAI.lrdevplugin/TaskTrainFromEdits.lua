@@ -103,6 +103,24 @@ local function showTrainDialog(ctx)
 				value = bind("forceRetrain"),
 			}),
 		}),
+		f:row({
+			f:push_button({
+				title = LOC("$$$/StyleAI/common/ResetAllDefaults=Reset to Defaults"),
+				action = function()
+					local confirm = LrDialogs.confirm(
+						LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmTitle=Reset Settings"),
+						LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmMessage=Are you sure you want to reset all options in this dialog to their default values?")
+					)
+					if confirm == "ok" then
+						props.scope = "selected"
+						props.label = ""
+						props.summary = ""
+						props.userKeywords = ""
+						props.forceRetrain = false
+					end
+				end,
+			}),
+		}),
 	})
 
 	local result = LrDialogs.presentModalDialog({
@@ -183,9 +201,49 @@ LrTasks.startAsyncTask(function()
 		})
 		progressScope:setPortionComplete(0, #photos)
 
-		-- Collect all examples first (no network calls yet).
-		local examples = {}
-		local collectErrors = {}
+		-- Collect and send examples in chunks (reduces RAM usage by holding fewer base64 strings).
+		local successCount = 0
+		local errorCount = 0
+		local errorMessages = {}
+		local backendWarnings = {}
+
+		local chunk = {}
+		local chunkSize = 10
+
+		local function sendChunk()
+			if #chunk == 0 then return end
+			
+			progressScope:setCaption(
+				LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server...")
+			)
+
+			local ok, resp = SearchIndexAPI.addTrainingBatch(chunk, options.forceRetrain)
+
+			if ok and resp and resp.results then
+				for _, result in ipairs(resp.results) do
+					if result.status == "ok" then
+						successCount = successCount + 1
+						if result.warning then
+							table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+						end
+					else
+						errorCount = errorCount + 1
+						table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
+					end
+				end
+			else
+				for _, ex in ipairs(chunk) do
+					errorCount = errorCount + 1
+					table.insert(errorMessages, ex.photo_id .. ": " .. tostring(resp or "API request failed"))
+				end
+			end
+			
+			log:info("Batch training chunk saved. successCount=" .. tostring(successCount))
+			
+			-- Clear chunk and garbage collect
+			chunk = {}
+			collectgarbage()
+		end
 
 		for index, photo in ipairs(photos) do
 			if progressScope:isCanceled() then
@@ -219,7 +277,8 @@ LrTasks.startAsyncTask(function()
 			local photoId, photoIdErr = SearchIndexAPI.getPhotoIdForPhoto(photo)
 			if not photoId then
 				log:error("Failed to resolve photo ID for " .. fileName .. ": " .. tostring(photoIdErr))
-				table.insert(collectErrors, fileName .. ": " .. tostring(photoIdErr))
+				errorCount = errorCount + 1
+				table.insert(errorMessages, fileName .. ": " .. tostring(photoIdErr))
 			else
 				-- Collect EXIF metadata for richer style matching using standardized utility.
 				local exifOptions = Util.getPhotoExif(photo)
@@ -261,57 +320,20 @@ LrTasks.startAsyncTask(function()
 					example.user_keywords = options.userKeywords
 				end
 
-				table.insert(examples, example)
+				table.insert(chunk, example)
+
+				-- Send chunk if full
+				if #chunk >= chunkSize then
+					sendChunk()
+				end
 			end
 
 			progressScope:setPortionComplete(index, #photos)
 		end
 
-		-- Send all examples in a single batch request.
-		local successCount = 0
-		local errorCount = #collectErrors
-		local errorMessages = {}
-		for _, msg in ipairs(collectErrors) do
-			table.insert(errorMessages, msg)
-		end
-		local backendWarnings = {}
-
-		if #examples > 0 then
-			local chunkSize = 50
-			for i = 1, #examples, chunkSize do
-				local chunk = {}
-				local endIndex = math.min(i + chunkSize - 1, #examples)
-				for j = i, endIndex do
-					table.insert(chunk, examples[j])
-				end
-				
-				progressScope:setCaption(
-					LOC("$$$/StyleAI/Training/SendingBatch=Sending batch ^1 to ^2 of ^3 to StyleAI server...", tostring(i), tostring(endIndex), tostring(#examples))
-				)
-
-				local ok, resp = SearchIndexAPI.addTrainingBatch(chunk, options.forceRetrain)
-
-				if ok and resp and resp.results then
-					for _, result in ipairs(resp.results) do
-						if result.status == "ok" then
-							successCount = successCount + 1
-							if result.warning then
-								table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
-							end
-						else
-							errorCount = errorCount + 1
-							table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
-						end
-					end
-				else
-					for _, ex in ipairs(chunk) do
-						errorCount = errorCount + 1
-						table.insert(errorMessages, ex.photo_id .. ": " .. tostring(resp or "API request failed"))
-					end
-				end
-				
-				log:info("Batch training chunk saved. successCount=" .. tostring(successCount))
-			end
+		-- Send any remaining training examples in final chunk
+		if not progressScope:isCanceled() and #chunk > 0 then
+			sendChunk()
 		end
 
 		progressScope:done()

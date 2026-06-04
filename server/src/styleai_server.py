@@ -4,7 +4,6 @@ import threading
 import time
 from flask import Flask, jsonify, request
 from waitress import serve
-import json
 
 # Import modularized components
 import config
@@ -233,24 +232,6 @@ if __name__ == "__main__":
         f"Database Path: {config.DB_PATH or 'Idle (waiting for plugin initialize)'}"
     )
     logger.info("=" * 60)
-
-    # Optional one-shot ID migration for deployed databases.
-    # Set STYLEAI_MIGRATION_FILE to a JSON list/object with mappings.
-    migration_file = os.environ.get("STYLEAI_MIGRATION_FILE", "").strip()
-    if migration_file and config.DB_PATH:
-        migration_path = (
-            migration_file
-            if os.path.isabs(migration_file)
-            else os.path.join(config.DB_PATH, migration_file)
-        )
-        try:
-            with open(migration_path, "r", encoding="utf-8") as f:
-                payload = json.load(f)
-            mappings = payload.get("mappings", payload)
-            summary = service_chroma.migrate_photo_ids(mappings or [])
-            logger.info("Startup photo_id migration summary: %s", summary)
-        except Exception as e:
-            logger.error("Startup photo_id migration failed: %s", e, exc_info=True)
 
     # Mark server as ready for startup scripts
     server_lifecycle.write_ok_file()

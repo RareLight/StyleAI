@@ -244,7 +244,8 @@ def adaptive_compensation(
         for ex, score in winners
     )
     avg_train_contrast = sum(
-        float(ex.get("exp_contrast", 0.5)) * (score / total_weight) for ex, score in winners
+        float(ex.get("exp_contrast", 0.5)) * (score / total_weight)
+        for ex, score in winners
     )
 
     query_lum = float(query_exposure.get("exp_luminance_mean", 0.5))
@@ -377,7 +378,7 @@ def _finalize_recipe(
 ) -> dict[str, Any]:
     """Apply style strength scaling and auto white balance overrides."""
     if style_strength is not None and style_strength < 1.0:
-        # Use Lightroom absolute defaults as the baseline for interpolation 
+        # Use Lightroom absolute defaults as the baseline for interpolation
         # so the slider is stateless and works predictably even if the photo is already edited.
         lr_defaults = {
             "exposure": 0.0,
@@ -397,13 +398,17 @@ def _finalize_recipe(
             "vignette": 0.0,
             "grain": 0.0,
         }
-        
+
         global_settings = recipe.get("global", {})
         for key, target_val in list(global_settings.items()):
-            if isinstance(target_val, (int, float)) and not isinstance(target_val, bool):
+            if isinstance(target_val, (int, float)) and not isinstance(
+                target_val, bool
+            ):
                 try:
                     baseline = lr_defaults.get(key, 0.0)
-                    interpolated = baseline + (float(target_val) - baseline) * style_strength
+                    interpolated = (
+                        baseline + (float(target_val) - baseline) * style_strength
+                    )
                     global_settings[key] = round(interpolated, 2)
                 except (ValueError, TypeError):
                     pass
@@ -412,10 +417,10 @@ def _finalize_recipe(
     if warmth_proxy < 0.2 or warmth_proxy > 0.8:
         recipe["white_balance"] = "Auto"
         logger.info(
-            "Style engine detected extreme color cast (warmth_proxy=%.3f), engaging Auto white balance", 
-            warmth_proxy
+            "Style engine detected extreme color cast (warmth_proxy=%.3f), engaging Auto white balance",
+            warmth_proxy,
         )
-        
+
     return recipe
 
 
@@ -515,7 +520,9 @@ def generate_style_edit(
                     f"(confidence {best_confidence:.0%})"
                 )
                 recipe = _canonical_to_edit_recipe(recipe_settings, summary=summary)
-                recipe = _finalize_recipe(recipe, query_exposure, current_settings, style_strength)
+                recipe = _finalize_recipe(
+                    recipe, query_exposure, current_settings, style_strength
+                )
                 logger.info(
                     "Style engine catalog match: photo_id=%s style=%s confidence=%.3f",
                     photo_id,
@@ -551,7 +558,9 @@ def generate_style_edit(
                         f"{style2.get('style_name', '?')} (confidence {best_confidence:.0%})"
                     )
                     recipe = _canonical_to_edit_recipe(blended, summary=summary)
-                    recipe = _finalize_recipe(recipe, query_exposure, current_settings, style_strength)
+                    recipe = _finalize_recipe(
+                        recipe, query_exposure, current_settings, style_strength
+                    )
                     logger.info(
                         "Style engine catalog blend: photo_id=%s styles=%s+%s confidence=%.3f",
                         photo_id,
@@ -655,7 +664,7 @@ def generate_style_edit(
 
     recipe = _canonical_to_edit_recipe(blended_recipe, summary=summary)
     recipe = _finalize_recipe(recipe, query_exposure, current_settings, style_strength)
-    
+
     # -----------------------------------------------------------------------
     # Step 9: Attach appropriate warning for low confidence
     # -----------------------------------------------------------------------

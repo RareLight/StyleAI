@@ -79,8 +79,6 @@ def search_route():
 
         photo_ids_to_search = None
         search_sources = None
-        vertex_project_id = None
-        vertex_location = None
         catalog_id = None
         relevance_strictness = None
         max_results = None
@@ -88,10 +86,6 @@ def search_route():
             body = request.get_json()
             photo_ids_to_search = body.get("photo_ids") or body.get("uuids")
             search_sources = body.get("search_sources")
-            vertex_project_id = body.get("vertex_project_id") or body.get(
-                "vertexProjectId"
-            )
-            vertex_location = body.get("vertex_location") or body.get("vertexLocation")
             catalog_id = body.get("catalog_id")
             relevance_strictness = body.get("relevance_strictness")
             max_results = body.get("max_results")
@@ -107,8 +101,6 @@ def search_route():
             quality_sort,
             photo_ids_to_search,
             search_sources,
-            vertex_project_id=vertex_project_id,
-            vertex_location=vertex_location,
             catalog_id=catalog_id,
             relevance_strictness=relevance_strictness,
             max_results=max_results,

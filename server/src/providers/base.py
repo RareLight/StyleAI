@@ -475,7 +475,7 @@ class LLMProviderBase(ABC):
             "* Return only numeric Lightroom-friendly adjustments\n"
             "* IMPORTANT: The `exposure` slider is strictly on a scale from -5.0 to +5.0. Do NOT output values outside this range. Other basic tone sliders (contrast, highlights, shadows, whites, blacks) are on a scale of -100 to +100.\n"
             "* Build edits in this order: white balance and exposure foundation -> tonal shaping -> color refinement -> detail/effects\n"
-            "* White Balance: NEVER predict typical `temperature`/`tint` values from scenes, because white balance differs in every image. Trust the camera's automatic white balance. If the image context/tags imply a particularly strong color cast, engage Lightroom's automatic white balance by setting global `white_balance` to `\"Auto\"`. Otherwise, omit white balance settings entirely or use `\"As Shot\"`.\n"
+            '* White Balance: NEVER predict typical `temperature`/`tint` values from scenes, because white balance differs in every image. Trust the camera\'s automatic white balance. If the image context/tags imply a particularly strong color cast, engage Lightroom\'s automatic white balance by setting global `white_balance` to `"Auto"`. Otherwise, omit white balance settings entirely or use `"As Shot"`.\n'
             "* Use global controls first; add masks only when global edits cannot solve the problem cleanly\n"
             "* Use masks only for subject, sky, or background\n"
             "* Keep saturation and clarity moderate; avoid brittle or crunchy output\n"
