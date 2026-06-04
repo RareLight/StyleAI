@@ -91,11 +91,11 @@ function KeywordConfigProvider.showKeywordCategoryDialog()
 				vertical_scroller = true,
 				f:edit_field({
 					value = bind("categoriesText"),
-					immediate = true,
 					width = 340,
 					height_in_lines = 30,
-					wraps = false,
+					wraps = true,
 					allow_newlines = true,
+					allows_newlines = true,
 				}),
 			}),
 

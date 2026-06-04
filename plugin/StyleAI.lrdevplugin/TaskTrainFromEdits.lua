@@ -240,9 +240,8 @@ LrTasks.startAsyncTask(function()
 			
 			log:info("Batch training chunk saved. successCount=" .. tostring(successCount))
 			
-			-- Clear chunk and garbage collect
+			-- Clear chunk
 			chunk = {}
-			collectgarbage()
 		end
 
 		for index, photo in ipairs(photos) do
