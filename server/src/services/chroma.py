@@ -281,11 +281,11 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None, catalog_id=Non
             # Add metadata-only record with a dummy zero embedding
             # The collection expects 1152-dimensional embeddings (from vision model)
             dummy_embedding = np.zeros(1152, dtype=np.float32).tolist()
-            collection.add(
+            collection.upsert(
                 embeddings=[dummy_embedding], metadatas=[metadata], ids=[photo_id]
             )
         else:
-            collection.add(embeddings=[embedding], metadatas=[metadata], ids=[photo_id])
+            collection.upsert(embeddings=[embedding], metadatas=[metadata], ids=[photo_id])
     except Exception as e:
         # Surface a helpful log message and re-raise so callers can decide what to do.
         logger.error(
@@ -1622,7 +1622,7 @@ def add_face(
     }
     if extra_metadata:
         metadata.update(extra_metadata)
-    face_collection.add(ids=[face_id], embeddings=[embedding], metadatas=[metadata])
+    face_collection.upsert(ids=[face_id], embeddings=[embedding], metadatas=[metadata])
 
 
 def add_faces_batch(
@@ -1656,7 +1656,7 @@ def add_faces_batch(
         if extra_meta:
             metadata.update(extra_meta)
         metadatas.append(metadata)
-    face_collection.add(ids=face_ids, embeddings=embeddings, metadatas=metadatas)
+    face_collection.upsert(ids=face_ids, embeddings=embeddings, metadatas=metadatas)
 
 
 def get_all_faces(include_embeddings=True):

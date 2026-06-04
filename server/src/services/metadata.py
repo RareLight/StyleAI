@@ -327,17 +327,24 @@ class AnalysisService:
             return embeddings
 
         try:
-            # Batch process all valid images
+            # Batch process all valid images using chunking to prevent OOM
+            # but keep chunk size large enough to avoid starving the GPU and causing performance regressions.
+            # Max chunk size of 32 is a good balance for M-series unified memory (e.g. 32GB).
             tensors = [image_processor(img) for img in valid_images]
             batch_tensor = torch.stack(tensors).to(TORCH_DEVICE)
 
+            chunk_size = 32
+            all_embeddings = []
+
             with torch.no_grad():
-                image_features = image_model.encode_image(batch_tensor)
-                normalized_embeddings = F.normalize(image_features, p=2, dim=1)
-                
-                numpy_embeddings = normalized_embeddings.cpu().numpy()
+                for i in range(0, batch_tensor.size(0), chunk_size):
+                    chunk = batch_tensor[i : i + chunk_size]
+                    image_features = image_model.encode_image(chunk)
+                    normalized = F.normalize(image_features, p=2, dim=1)
+                    all_embeddings.extend(normalized.cpu().numpy().tolist())
+
                 for j, idx in enumerate(valid_indices):
-                    embeddings[idx] = numpy_embeddings[j].tolist()
+                    embeddings[idx] = all_embeddings[j]
 
         except Exception as e:
             logger.error(

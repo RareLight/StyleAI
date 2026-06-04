@@ -8,11 +8,12 @@ import re
 import io
 import base64
 import argparse
+import webbrowser
 from datetime import datetime
 from PIL import Image
 
 # Insert server/src to sys.path so we can import services.training
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "server", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server", "src"))
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate AI Training Examples HTML Report")
@@ -1177,6 +1178,13 @@ def main():
     path_mapping = query_lightroom_file_paths(lrcat_path)
     sampled, total_count, all_examples = query_chroma_training_examples(db_path, args.sample_size)
     generate_html_report(sampled, total_count, all_examples, path_mapping, args.output)
+    
+    report_url = f"file://{os.path.abspath(args.output)}"
+    print(f"Opening report in browser: {report_url}")
+    try:
+        webbrowser.open(report_url)
+    except Exception as e:
+        print(f"Failed to open browser: {e}")
     
 if __name__ == "__main__":
     main()

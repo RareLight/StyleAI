@@ -424,14 +424,25 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
     if not uuids:
         return []
 
-    # Load existing records for all UUIDs (catalog-scoped when catalog_id provided)
+    # Load existing records for all UUIDs (catalog-scoped when catalog_id provided) in bulk
     existing_records = {}
-    for uuid in uuids:
-        existing_record = chroma_service.get_image(uuid, catalog_id=catalog_id)
-        if existing_record and existing_record["ids"]:
-            existing_records[uuid] = (
-                existing_record["metadatas"][0] if existing_record["metadatas"] else {}
-            )
+    chunk_size = 2000
+    for i in range(0, len(uuids), chunk_size):
+        chunk = uuids[i:i + chunk_size]
+        try:
+            # ChromaDB handles bulk gets much faster and without massive exception overhead on empty databases
+            raw = chroma_service.collection.get(ids=chunk, include=["metadatas"])
+            if raw and raw.get("ids"):
+                for idx, pid in enumerate(raw["ids"]):
+                    metas = raw.get("metadatas") or [{}] * len(raw["ids"])
+                    meta = metas[idx] if idx < len(metas) else {}
+                    if catalog_id:
+                        ids_set = chroma_service._parse_catalog_ids(meta)
+                        if str(catalog_id) not in ids_set:
+                            continue
+                    existing_records[pid] = meta
+        except Exception:
+            pass
 
     needing_processing = []
     for uuid in uuids:
@@ -449,9 +460,12 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
         needs_metadata = compute_metadata and (
             regenerate_metadata or not has_any_metadata
         )
+        
+        # Use the cached faces_checked flag from metadata directly to avoid N+1 queries to face_collection
         needs_faces = compute_faces and (
-            regenerate_metadata or not chroma_service.faces_checked_for_photo(uuid)
+            regenerate_metadata or not existing.get("faces_checked", False)
         )
+        
         needs_cull_phash = any_processing_task_enabled and (
             regenerate_metadata or not existing.get("cull_phash")
         )
@@ -613,7 +627,6 @@ def process_image_task(
 
         import concurrent.futures
 
-        import concurrent.futures
 
         # Pre-process pure CPU tasks (decode, culling, phash) in background
         per_image_futures = []

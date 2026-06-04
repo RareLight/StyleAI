@@ -396,6 +396,24 @@ function Util.getGlobalPhotoIdForPhoto(photo, options)
 		return nil, "Photo is nil"
 	end
 
+	local cachedId = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoId")
+	local cachedAlgorithm = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoIdAlgorithm")
+
+	if not options.forceRecompute and not Util.nilOrEmpty(cachedId) then
+		if cachedAlgorithm == STABLE_ID_ALGO then
+			-- Fast-path cache hit for metadata-based stable ID, no disk access needed
+			return cachedId, nil
+		end
+	end
+
+	-- Only check availability and check disk if there's a cache miss or we need file attributes for legacy verification
+	if photo.checkPhotoAvailability then
+		local isAvailable = photo:checkPhotoAvailability()
+		if not isAvailable then
+			return nil, "Photo is offline or missing"
+		end
+	end
+
 	local originalFilePath = photo:getRawMetadata("path")
 	local attributes, attrErr = getFileAttributes(originalFilePath)
 	if not attributes then
@@ -408,22 +426,16 @@ function Util.getGlobalPhotoIdForPhoto(photo, options)
 		return nil, attrErr
 	end
 
-	local cachedId = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoId")
-	local cachedAlgorithm = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoIdAlgorithm")
 	local cachedSize = tonumber(photo:getPropertyForPlugin(_PLUGIN, "globalPhotoIdFileSize") or "")
 	local cachedMtime = tonumber(photo:getPropertyForPlugin(_PLUGIN, "globalPhotoIdFileModificationDate") or "")
 
 	if not options.forceRecompute and not Util.nilOrEmpty(cachedId) then
-		if cachedAlgorithm == STABLE_ID_ALGO then
-			-- log:trace("getGlobalPhotoIdForPhoto: cache hit for " .. tostring(originalFilePath))
-			return cachedId, nil
-		end
 		if
 			cachedAlgorithm == LEGACY_HASH_ALGO
 			and cachedSize == tonumber(attributes.fileSize)
 			and math.floor(cachedMtime or 0) == math.floor(tonumber(attributes.fileModificationDate) or 0)
 		then
-			-- log:trace("getGlobalPhotoIdForPhoto: cache hit for legacy hash " .. tostring(originalFilePath))
+			-- Cache hit for legacy hash
 			return cachedId, nil
 		end
 	end
