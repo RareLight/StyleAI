@@ -29,10 +29,6 @@ local ENDPOINTS = {
     INDEX_BY_REFERENCE = "/index_by_reference",
     INDEX_BASE64 = "/index_base64",
     EDIT_BASE64 = "/edit_base64",
-    GROUP_SIMILAR = "/group_similar",
-    CULL = "/cull",
-    FIND_SIMILAR = "/find_similar",
-    SEARCH = "/search",
     STATS = "/db/stats",
     MODELS = "/models",
     GET_IDS = "/get/ids",
@@ -43,16 +39,10 @@ local ENDPOINTS = {
     VERSION_CHECK = "/version/check",
     SHUTDOWN = "/shutdown",
     UNLOAD = "/unload",
-    IMPORT_METADATA = "/import/metadata",
     START_CLIP_DOWNLOAD = "/clip/download/start",
     STATUS_CLIP_DOWNLOAD = "/clip/download/status",
     CLIP_STATUS = "/clip/status",
     CHECK_UNPROCESSED = "/index/check-unprocessed",
-    FACES_CLUSTER = "/faces/cluster",
-    FACES_PERSONS = "/faces/persons",
-    FACES_PERSON_PHOTOS = "/faces/persons", -- suffix /<id>/photos
-    FACES_DETECT = "/faces/detect",
-    FACES_QUERY = "/faces/query",
     DB_BACKUP = "/db/backup",
     DB_PRUNE = "/db/prune",
     SYNC_CLEANUP = "/sync/cleanup",
@@ -1150,65 +1140,6 @@ local function buildUrlWithParams(baseUrl, params)
     end
 end
 
-function SearchIndexAPI.searchIndex(searchTerm, qualitySort, photosToSearch, searchOptions)
-    local params = {
-        term = searchTerm,
-        quality_sort = qualitySort,
-    }
-    local cid = getCatalogId()
-    if cid then
-        params.catalog_id = cid
-    end
-
-    local url = getBaseUrl() .. ENDPOINTS.SEARCH
-
-    -- Build search_sources for API (snake_case). If searchOptions is nil, backend uses defaults.
-    local search_sources = nil
-    if searchOptions then
-        search_sources = {
-            semantic_siglip = searchOptions.semanticSiglip ~= false,
-            metadata = searchOptions.metadata ~= false,
-            metadata_fields = searchOptions.metadataFields or { "flattened_keywords", "alt_text", "caption", "title" },
-        }
-    end
-
-    if photosToSearch and #photosToSearch > 0 then
-        -- Perform a scoped search via POST
-        local photoIds = {}
-        for _, photo in ipairs(photosToSearch) do
-            local photoId, idErr = getPhotoIdForPhoto(photo)
-            if photoId then
-                table.insert(photoIds, photoId)
-            else
-                log:error("Skipping photo in scoped search due to missing photo ID: " .. tostring(idErr))
-            end
-        end
-
-        local body = {
-            term = searchTerm,
-            photo_ids = photoIds,
-            catalog_id = getCatalogId(),
-        }
-        if search_sources then
-            body.search_sources = search_sources
-        end
-        local postUrl = buildUrlWithParams(url, params)
-
-        log:trace("Searching index via POST (scoped): " .. postUrl)
-        return _request('POST', postUrl, body)
-    else
-        -- Global search: use POST when search_sources are provided so we can send JSON body
-        if search_sources then
-            local body = { term = searchTerm, search_sources = search_sources, catalog_id = getCatalogId() }
-            local postUrl = buildUrlWithParams(url, params)
-            log:trace("Searching index via POST (global with search_sources): " .. postUrl)
-            return _request('POST', postUrl, body)
-        end
-        local getUrl = buildUrlWithParams(url, params)
-        log:trace("Searching index via GET (global): " .. getUrl)
-        return _request('GET', getUrl)
-    end
-end
 
 function SearchIndexAPI.getStats()
     local cid = getCatalogId()
@@ -1271,7 +1202,6 @@ function SearchIndexAPI.formatStats(stats)
 
     local photos = stats.photos or {}
     local faces = stats.faces or {}
-    local persons = stats.persons or {}
 
     return table.concat({
         "Photos total: " .. tostring(photos.total or 0),
@@ -1280,7 +1210,6 @@ function SearchIndexAPI.formatStats(stats)
         "Photos with caption: " .. tostring(photos.with_caption or 0),
         "Photos with keywords: " .. tostring(photos.with_keywords or 0),
         "Faces total: " .. tostring(faces.total or 0),
-        "Persons total: " .. tostring(persons.total or 0),
     }, "\n")
 end
 
@@ -1349,86 +1278,6 @@ function SearchIndexAPI.getPhotoData(photoId)
     end
 end
 
-function SearchIndexAPI.groupSimilarPhotos(photoIds, options)
-    options = options or {}
-    if type(photoIds) ~= "table" or #photoIds == 0 then
-        return nil, "photo_ids required"
-    end
-
-    local body = {
-        photo_ids = photoIds,
-        phash_threshold = options.phash_threshold or "auto",
-        clip_threshold = options.clip_threshold or "auto",
-        time_delta_seconds = options.time_delta_seconds or 2,
-        culling_preset = options.culling_preset or "default",
-    }
-
-    local result, err = _request("POST", getBaseUrl() .. ENDPOINTS.GROUP_SIMILAR, body, 300)
-    if err then
-        log:error("groupSimilarPhotos failed: " .. tostring(err))
-        return nil, err
-    end
-    return result
-end
-
-function SearchIndexAPI.cullPhotos(photoIds, options)
-    options = options or {}
-    if type(photoIds) ~= "table" or #photoIds == 0 then
-        return nil, "photo_ids required"
-    end
-
-    local body = {
-        photo_ids = photoIds,
-        phash_threshold = options.phash_threshold or "auto",
-        clip_threshold = options.clip_threshold or "auto",
-        time_delta_seconds = options.time_delta_seconds or 2,
-        culling_preset = options.culling_preset or "default",
-    }
-
-    local result, err = _request("POST", getBaseUrl() .. ENDPOINTS.CULL, body, 300)
-    if err then
-        log:error("cullPhotos failed: " .. tostring(err))
-        return nil, err
-    end
-    return result
-end
-
----
--- Find photos similar to the given photo by perceptual hash (and optionally CLIP).
--- @param photoId string Reference photo ID (must be indexed with phash).
--- @param options table Optional: scope_photo_ids (table), max_results (number), phash_max_hamming (number), use_clip (boolean), catalog_id (string).
--- @return table|nil { results = { { photo_id, phash_distance, clip_distance }, ... } }, or nil, err
---
-function SearchIndexAPI.findSimilarImages(photoId, options)
-    if not photoId or type(photoId) ~= "string" or photoId:match("^%s*$") then
-        return nil, "photo_id required"
-    end
-    options = options or {}
-    local body = {
-        photo_id = photoId,
-        max_results = options.max_results or 100,
-        phash_max_hamming = options.phash_max_hamming or 10,
-        use_clip = options.use_clip ~= false,
-        similarity_mode = options.similarity_mode or "phash",
-    }
-    if options.scope_photo_ids and type(options.scope_photo_ids) == "table" and #options.scope_photo_ids > 0 then
-        body.scope_photo_ids = options.scope_photo_ids
-    end
-    local cid = getCatalogId()
-    if cid then
-        body.catalog_id = cid
-    end
-    log:info("findSimilarImages: photo_id=%s max_results=%s phash_max_hamming=%s scope=%s", photoId, body.max_results,
-        body.phash_max_hamming, body.scope_photo_ids and (#body.scope_photo_ids .. " ids") or "all")
-    local result, err = _request("POST", getBaseUrl() .. ENDPOINTS.FIND_SIMILAR, body, 120)
-    if err then
-        log:error("findSimilarImages failed: " .. tostring(err))
-        return nil, err
-    end
-    local count = (result and result.results and #result.results) or 0
-    log:info("findSimilarImages: got %s similar photo(s)", count)
-    return result
-end
 
 function SearchIndexAPI.removePhotoId(photoId)
     local url = getBaseUrl() .. ENDPOINTS.REMOVE
@@ -1967,118 +1816,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     return status, stats.processed, stats.failed, processedPhotos, combinedError, combinedWarnings
 end
 
----
--- Imports metadata from the Lightroom catalog into the backend index.
--- @param photosToProcess table Array of LrPhoto.
--- @param progressScope LrProgressScope Progress scope for UI updates.
--- @param closeProgressScope boolean|nil When false, does not call :done() on the scope (caller must close).
--- @param updateProgress boolean|nil When false, does not write to the scope's caption or portion-complete.
---                Use when sharing a scope with an outer loop that already tracks progress (e.g. the
---                per-photo onPhotoAnalyzed callback in analyzeAndIndexSelectedPhotos). Cancellation
---                is still honoured. Default: true (preserves legacy behaviour).
---
-function SearchIndexAPI.importMetadataFromCatalog(photosToProcess, progressScope, closeProgressScope, updateProgress)
-	local numPhotos = #photosToProcess
-	if numPhotos == 0 then
-		return "success", 0, 0
-	end
 
-	if not SearchIndexAPI.pingServer() then
-		return "allfailed", numPhotos, numPhotos
-	end
-
-	local shouldCloseScope = (closeProgressScope ~= false)
-	local shouldUpdateProgress = (updateProgress ~= false)
-
-	if shouldUpdateProgress then
-		progressScope:setCaption(LOC("$$$/StyleAI/ImportMetadata/ProgressTitle=Importing metadata for photos..."))
-		progressScope:setPortionComplete(0, numPhotos)
-	end
-
-	local stats = { processed = 0, success = 0, failed = 0 }
-	local batchSize = 50 -- Send metadata in batches
-	local metadataBatch = {}
-
-	for i, photo in ipairs(photosToProcess) do
-		if photo ~= nil then
-			if progressScope:isCanceled() then
-				break
-			end
-
-			local photoId = getPhotoIdForPhoto(photo)
-			local metadata = {
-				photo_id = photoId,
-				caption = photo:getFormattedMetadata("caption"),
-				title = photo:getFormattedMetadata("title"),
-				keywords = MetadataManager.getPhotoKeywordHierarchy(photo),
-				alt_text = photo:getFormattedMetadata("altTextAccessibility"),
-			}
-			if type(metadata.photo_id) ~= "string" or metadata.photo_id == "" then
-				stats.failed = stats.failed + 1
-				stats.processed = stats.processed + 1
-				log:error(
-					"Skipping metadata import for photo due to missing photo_id: "
-						.. (photo:getFormattedMetadata("fileName") or "unknown")
-				)
-				if shouldUpdateProgress then
-					progressScope:setPortionComplete(stats.processed, numPhotos)
-				end
-			else
-				table.insert(metadataBatch, metadata)
-			end
-
-			if #metadataBatch > 0 and (#metadataBatch >= batchSize or i == numPhotos) then
-				local importBody = { metadata_items = metadataBatch }
-				local importCid = getCatalogId()
-				if importCid then
-					importBody.catalog_id = importCid
-				end
-				local response = _request("POST", getBaseUrl() .. ENDPOINTS.IMPORT_METADATA, importBody)
-				if response ~= nil and response.status == "processed" then
-					stats.success = stats.success + #metadataBatch
-				else
-					stats.failed = stats.failed + #metadataBatch
-					log:error("Failed to import metadata batch: " .. (response and response.error or "Unknown error"))
-				end
-				metadataBatch = {} -- Clear the batch
-			end
-
-			stats.processed = stats.processed + 1
-			if shouldUpdateProgress then
-				progressScope:setPortionComplete(stats.processed, numPhotos)
-				progressScope:setCaption(
-					LOC(
-						"$$$/StyleAI/ImportMetadata/Processing=Importing metadata... ^1/^2 (^3 failed)",
-						stats.processed,
-						numPhotos,
-						stats.failed
-					)
-				)
-			end
-		else
-			log:error("Photo is nil in importMetadataFromCatalog, probably it got deleted in the meantime.")
-		end
-	end
-
-	if shouldCloseScope then
-		progressScope:done()
-	end
-
-	if progressScope:isCanceled() then
-		return "canceled", stats.processed, stats.failed
-	end
-
-	local status
-	if stats.failed == 0 then
-		status = "success"
-	elseif stats.failed >= stats.processed and stats.processed > 0 then
-		status = "allfailed"
-	else
-		status = "somefailed"
-	end
-
-	return status, stats.processed, stats.failed
-end
 
 function SearchIndexAPI.pingServer()
     local url = getBaseUrl() .. "/ping"
@@ -2866,119 +2604,6 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
         end
     end
     return true, photosToProcess
-end
-
----
--- Run face clustering to group similar faces into persons.
--- @param distanceThreshold number Optional cosine distance; default 0.5. Use 0.45 if over-merge; 0.55-0.65 if same person split.
--- @return table|nil { status, person_count, face_count, updated } or nil, err
-function SearchIndexAPI.clusterFaces(distanceThreshold)
-    local url = getBaseUrl() .. ENDPOINTS.FACES_CLUSTER
-    local body = {}
-    if distanceThreshold and type(distanceThreshold) == "number" then
-        body.distance_threshold = distanceThreshold
-    end
-    local result, err = _request('POST', url, body)
-    if err then
-        log:error("clusterFaces failed: " .. err)
-        return nil, err
-    end
-    return result
-end
-
----
--- Get list of all persons (face clusters) with name, face_count, photo_count (no thumbnails).
--- @return table|nil { status, persons = { { person_id, name, face_count, photo_count }, ... } } or nil, err
-function SearchIndexAPI.getPersons()
-    local url = getBaseUrl() .. ENDPOINTS.FACES_PERSONS
-    local result, err = _request('GET', url)
-    if err then
-        log:error("getPersons failed: " .. err)
-        return nil, err
-    end
-    return result
-end
-
----
--- Get base64 JPEG thumbnail for one person (lazy load). GET /faces/persons/<id>/thumbnail
--- @return table|nil { status, person_id, thumbnail } or nil, err
-function SearchIndexAPI.getPersonThumbnail(personId)
-    if not personId or personId == "" then
-        return nil, "person_id required"
-    end
-    local url = getBaseUrl() .. ENDPOINTS.FACES_PERSON_PHOTOS .. "/" .. personId .. "/thumbnail"
-    local result, err = _request('GET', url)
-    if err then
-        log:error("getPersonThumbnail failed: " .. err)
-        return nil, err
-    end
-    return result
-end
-
----
--- Set display name for a person.
--- @param personId string e.g. "person_0"
--- @param name string Display name (empty to clear)
--- @return boolean success, err
-function SearchIndexAPI.setPersonName(personId, name)
-    if not personId or personId == "" then return false, "person_id required" end
-    local url = getBaseUrl() .. ENDPOINTS.FACES_PERSON_PHOTOS .. "/" .. personId
-    local _, err = _request('PUT', url, { name = name or "" })
-    if err then
-        log:error("setPersonName failed: " .. err)
-        return false, err
-    end
-    return true
-end
-
----
--- Get photo UUIDs that contain this person.
--- @param personId string e.g. "person_0"
--- @return table|nil { status, person_id, photo_uuids } or nil, err
-function SearchIndexAPI.getPhotosForPerson(personId)
-    if not personId or personId == "" then return nil, "person_id required" end
-    local url = getBaseUrl() .. ENDPOINTS.FACES_PERSON_PHOTOS .. "/" .. personId .. "/photos"
-    local result, err = _request('GET', url, {})
-    if err then
-        log:error("getPhotosForPerson failed: " .. err)
-        return nil, err
-    end
-    return result
-end
-
----
--- Detect all faces in an image (base64). Returns list of { thumbnail, index } for selection.
--- @param imageBase64 string Base64-encoded image
--- @return table|nil { status, faces = [ { thumbnail, index }, ... ] } or nil, err
-function SearchIndexAPI.detectFacesInImage(imageBase64)
-    if not imageBase64 or imageBase64 == "" then return nil, "image (base64) required" end
-    local url = getBaseUrl() .. ENDPOINTS.FACES_DETECT
-    local result, err = _request('POST', url, { image = imageBase64 })
-    if err then
-        log:error("detectFacesInImage failed: " .. err)
-        return nil, err
-    end
-    return result
-end
-
----
--- Find indexed faces similar to the selected face in the image.
--- @param imageBase64 string Base64-encoded image
--- @param faceIndex number 0-based index of the face to use (default 0)
--- @param nResults number Max results (default 500 for full cluster)
--- @return table|nil { status, results = [ { face_id, photo_uuid, thumbnail, person_id, distance }, ... ] } or nil, err
-function SearchIndexAPI.queryFacesByImage(imageBase64, faceIndex, nResults)
-    if not imageBase64 or imageBase64 == "" then return nil, "image (base64) required" end
-    local url = getBaseUrl() .. ENDPOINTS.FACES_QUERY
-    local body = { image = imageBase64 }
-    if faceIndex ~= nil and type(faceIndex) == "number" then body.face_index = faceIndex end
-    if nResults ~= nil and type(nResults) == "number" then body.n_results = nResults end
-    local result, err = _request('POST', url, body)
-    if err then
-        log:error("queryFacesByImage failed: " .. err)
-        return nil, err
-    end
-    return result
 end
 
 function SearchIndexAPI.saveThumbnail(uuid, faceIndex, base64Data)

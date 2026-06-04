@@ -25,7 +25,6 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.enableEmbeddings = (prefs.enableEmbeddings ~= false) and props.clipReady -- default true
     props.enableMetadata = prefs.enableMetadata ~= false                           -- default true
     props.enableFaces = prefs.enableFaces or false
-    props.enableImportBeforeIndex = prefs.enableImportBeforeIndex or false
     props.regenerateMetadata = false
 
     -- Metadata generation options
@@ -466,11 +465,6 @@ local function showAnalyzeAndIndexDialog(ctx)
                             title = LOC "$$$/StyleAI/PluginInfoDialogSections/validation=Review/Edit each photo before saving",
                         },
                     },
-                    f:separator { fill_horizontal = 1 },
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/PreSyncLabel=Pre-sync:", width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'enableImportBeforeIndex', title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableImportBeforeIndex=Import metadata from catalog before indexing" },
-                    },
                 },
 
                 -- Section 3: How to handle existing data
@@ -505,9 +499,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                     if confirm == "ok" then
                         props.scope = "selected"
                         props.enableEmbeddings = props.clipReady
-                        props.enableMetadata = true
                         props.enableFaces = false
-                        props.enableImportBeforeIndex = false
                         props.regenerateMetadata = false
                         props.temperature = 0.1
                         props.prompt = "Default"
@@ -550,9 +542,7 @@ local function showAnalyzeAndIndexDialog(ctx)
         -- Save preferences
         prefs.indexScope = props.scope
         prefs.enableEmbeddings = props.enableEmbeddings
-        prefs.enableMetadata = props.enableMetadata
         prefs.enableFaces = props.enableFaces
-        prefs.enableImportBeforeIndex = props.enableImportBeforeIndex
         prefs.regenerateMetadata = props.regenerateMetadata
         prefs.appendMetadata = props.appendMetadata
         prefs.generateKeywords = props.generateKeywords
@@ -913,10 +903,6 @@ LrTasks.startAsyncTask(function()
 			end
 		end
 
-		if props.enableImportBeforeIndex then
-			log:trace("Importing existing metadata from catalog before indexing...")
-			SearchIndexAPI.importMetadataFromCatalog(photosToProcess, progressScope, false)
-		end
 
 		log:trace("Starting AnalyzeAndIndexTask with " .. #photosToProcess .. " photos")
 
@@ -958,84 +944,7 @@ LrTasks.startAsyncTask(function()
 		-- No LLM validation here — CLIP threshold alone keeps latency reasonable.
 		local keywordMapping = {}
 		local mergedPairs = {} -- {from="Automobile", to="Car"} for dialog display
-		if
-			false
-			and props.keywordAliases
-			and props.generateKeywords
-			and status ~= "allfailed"
-			and #processedPhotos > 0
-		then
-			progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/DeClutterProgress=Deduplicating keywords..."))
-			LrTasks.yield()
 
-			local allNewNames = {}
-			local newNameSet = {}
-			for _, photo in ipairs(processedPhotos) do
-				local photoId = SearchIndexAPI.getPhotoIdForPhoto(photo)
-				if photoId then
-					local resp = SearchIndexAPI.getPhotoData(photoId)
-					if resp and resp.metadata and resp.metadata.keywords then
-						local kwVal, _, orderedIds = Util.extractAllKeywords(resp.metadata.keywords)
-						for _, id in ipairs(orderedIds) do
-							local name = kwVal[id]
-							if name and not newNameSet[name:lower()] then
-								newNameSet[name:lower()] = true
-								table.insert(allNewNames, name)
-							end
-						end
-					end
-				end
-			end
-
-			if #allNewNames >= 2 then
-				local catalogNames = MetadataManager.collectCatalogKeywordNames(LrApplication.activeCatalog(), nil)
-				local existingSet = {}
-				for _, name in ipairs(catalogNames) do
-					existingSet[name:lower()] = name
-				end
-
-				local allNames = {}
-				for _, name in ipairs(catalogNames) do
-					table.insert(allNames, name)
-				end
-				for _, name in ipairs(allNewNames) do
-					if not existingSet[name:lower()] then
-						table.insert(allNames, name)
-					end
-				end
-
-				if #allNames >= 2 then
-					local threshold = prefs.deduplicateThreshold or 0.88
-					local clusterResp, clusterErr = SearchIndexAPI.clusterKeywords(allNames, threshold, {})
-					if clusterResp and clusterResp.results then
-						for _, cluster in ipairs(clusterResp.results) do
-							if #cluster >= 2 then
-								local canonical = cluster[1]
-								for _, name in ipairs(cluster) do
-									if existingSet[name:lower()] then
-										canonical = existingSet[name:lower()]
-										break
-									end
-								end
-								for _, name in ipairs(cluster) do
-									if name:lower() ~= canonical:lower() then
-										keywordMapping[name:lower()] = canonical
-										table.insert(mergedPairs, { from = name, to = canonical })
-									end
-								end
-							end
-						end
-						local mappingCount = 0
-						for _ in pairs(keywordMapping) do
-							mappingCount = mappingCount + 1
-						end
-						log:trace("De-clutter: " .. mappingCount .. " keyword merges")
-					elseif clusterErr then
-						log:warn("De-clutter: cluster failed: " .. tostring(clusterErr))
-					end
-				end
-			end
-		end
 
 		if status ~= "allfailed" and props.enableMetadata and props.saveDataToCatalog and not usedInlineApply then
 			log:trace("Saving metadata for processed photos...")

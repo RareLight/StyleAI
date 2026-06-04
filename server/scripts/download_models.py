@@ -42,7 +42,6 @@ def main():
 
     # 2. Download InsightFace model (buffalo_l)
     try:
-        import insightface
         from insightface.app import FaceAnalysis
         logger.info("Downloading InsightFace buffalo_l models...")
         # FaceAnalysis implicitly downloads buffalo_l to ~/.insightface/models/ if not present

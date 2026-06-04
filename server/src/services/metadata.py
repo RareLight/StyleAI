@@ -140,7 +140,7 @@ class AnalysisService:
     def analyze_batch(
         self,
         image_triplets: list[tuple[bytes, str, str]],
-        options: dict,
+        options: dict | list,
         image_model,
         image_processor,
         uuids_needing_embeddings=None,
@@ -169,15 +169,15 @@ class AnalysisService:
                 Image.open(io.BytesIO(data)).convert("RGB") for data in image_data
             ]
 
+        opt = options[0] if isinstance(options, list) else options
+
         # If no specific UUIDs lists provided, generate for all (backward compatibility)
         if uuids_needing_embeddings is None:
             uuids_needing_embeddings = (
-                uuids if options.get("compute_embeddings", True) else []
+                uuids if opt.get("compute_embeddings", True) else []
             )
         if uuids_needing_metadata is None:
-            uuids_needing_metadata = (
-                uuids if options.get("compute_metadata", False) else []
-            )
+            uuids_needing_metadata = uuids if opt.get("compute_metadata", False) else []
 
         # Coerce to sets so the `uuid in ...` checks in the loops below are O(1)
         # regardless of what the caller passed.
@@ -221,7 +221,7 @@ class AnalysisService:
 
             cluster_mapping = {}  # maps uuid -> representative_uuid
             clusters = []  # list of dicts: {'rep_uid': uid, 'rep_emb': np.array, 'members': [uid]}
-            similarity_threshold = options.get("semantic_clustering_threshold", 0.94)
+            similarity_threshold = opt.get("semantic_clustering_threshold", 0.94)
 
             def get_embedding(idx, uid):
                 if embeddings and embeddings[idx] is not None:
@@ -229,7 +229,11 @@ class AnalysisService:
                 if uid not in uuids_needing_embeddings:
                     # Attempt to fetch existing embedding from ChromaDB
                     res = chroma_service.get_image(uid)
-                    if res and res.get("embeddings") is not None and len(res["embeddings"]) > 0:
+                    if (
+                        res
+                        and res.get("embeddings") is not None
+                        and len(res["embeddings"]) > 0
+                    ):
                         return res["embeddings"][0]
                 return None
 
@@ -269,16 +273,19 @@ class AnalysisService:
             )
 
             # Filter triplets to only the representatives
-            filtered_triplets = [
-                (image_data[i], uuids[i], "")
-                for i, uuid in enumerate(uuids)
-                if uuid in rep_uids
-            ]
+            filtered_triplets = []
+            filtered_options = []
+            for i, uuid in enumerate(uuids):
+                if uuid in rep_uids:
+                    filtered_triplets.append((image_data[i], uuid, ""))
+                    filtered_options.append(
+                        options[i] if isinstance(options, list) else options
+                    )
 
             partial_results = self._generate_metadata_batch(
                 [t[1] for t in filtered_triplets],
                 [t[0] for t in filtered_triplets],
-                options,
+                filtered_options,
                 exif_location_map=exif_location_map,
             )
 
@@ -358,7 +365,7 @@ class AnalysisService:
         self,
         uuids: list[str],
         image_data: list[bytes],
-        options: dict,
+        options: dict | list,
         exif_location_map: dict | None = None,
     ) -> list[MetadataGenerationResponse | None]:
         """
@@ -366,12 +373,13 @@ class AnalysisService:
         """
         results = []
         for i, uuid in enumerate(uuids):
-            # Inject per-image EXIF location data without mutating the shared options dict
+            opt = options[i] if isinstance(options, list) else options
+            # Inject per-image EXIF location data without mutating the options dict
             if exif_location_map and uuid in exif_location_map:
-                per_image_options = dict(options)
+                per_image_options = dict(opt)
                 per_image_options["location_data"] = exif_location_map[uuid]
             else:
-                per_image_options = options
+                per_image_options = opt
             response = self.generate_metadata_single(
                 uuid, image_data[i], per_image_options
             )

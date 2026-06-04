@@ -1,4 +1,3 @@
-import re
 
 filepath = "/Users/anna/Documents/Coding/StyleAI/server/src/services/training.py"
 with open(filepath, "r") as f:

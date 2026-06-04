@@ -146,6 +146,85 @@ def index_images_batch_base64():
     ), 200
 
 
+@index_bp.route("/index_base64_batch", methods=["POST"])
+def index_images_batch_base64_v2():
+    """
+    Receives a list of base64 encoded images, decodes them, and processes/indexes them.
+    JSON: {
+        "images": [
+            { "image": "<base64>", "photo_id": "<id>", "filename": "<name>", "options": {...} },
+            ...
+        ],
+        "options": { ... }  # Global options
+    }
+    """
+    logger.info("Index base64 batch request received")
+    data = request.get_json(silent=True) or {}
+
+    images_data = data.get("images", [])
+    global_options = data.get("options", {})
+
+    if not images_data:
+        return jsonify({"error": "No images provided in batch"}), 400
+
+    image_triplets = []
+    per_image_options = []
+
+    for item in images_data:
+        image_base64 = item.get("image")
+        photo_id = item.get("photo_id") or item.get("uuid")
+        filename = item.get("filename")
+
+        if not image_base64 or not photo_id or not filename:
+            logger.warning("Skipping entry in base64 batch due to missing fields.")
+            continue
+
+        try:
+            image_bytes = base64.b64decode(image_base64.encode("ascii"))
+            image_triplets.append((image_bytes, photo_id, filename))
+
+            # Merge photo-specific options with global options
+            merged_options = dict(global_options)
+            merged_options.update(item.get("options", {}))
+            photo_options = _extract_options(merged_options)
+            photo_options["photo_id"] = photo_id
+            if global_options.get("catalog_id"):
+                photo_options["catalog_id"] = global_options["catalog_id"]
+
+            per_image_options.append(photo_options)
+        except Exception as e:
+            logger.error(f"Error decoding image in batch: {e}")
+
+    if not image_triplets:
+        return jsonify({"error": "No valid images decoded in batch"}), 400
+
+    success_count, failure_count, error_messages, warnings = process_image_task(
+        image_triplets, options=per_image_options
+    )
+
+    logger.info(
+        f"Batch base64 processing complete. Success: {success_count}, Failures: {failure_count}."
+    )
+
+    if success_count == 0:
+        logger.warning("No images were successfully processed in the batch.")
+        err_msg = "No images were successfully processed"
+        if error_messages:
+            unique_errs = list(dict.fromkeys(error_messages))
+            err_msg += ": " + " | ".join(unique_errs[:5])
+        return jsonify({"error": err_msg}), 500
+
+    return jsonify(
+        {
+            "status": "processed",
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "error_messages": error_messages,
+            "warnings": warnings or [],
+        }
+    ), 200
+
+
 @index_bp.route("/index_by_reference", methods=["POST"])
 def index_images_batch_by_reference():
     """

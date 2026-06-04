@@ -285,7 +285,9 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None, catalog_id=Non
                 embeddings=[dummy_embedding], metadatas=[metadata], ids=[photo_id]
             )
         else:
-            collection.upsert(embeddings=[embedding], metadatas=[metadata], ids=[photo_id])
+            collection.upsert(
+                embeddings=[embedding], metadatas=[metadata], ids=[photo_id]
+            )
     except Exception as e:
         # Surface a helpful log message and re-raise so callers can decide what to do.
         logger.error(

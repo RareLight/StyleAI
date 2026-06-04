@@ -8,12 +8,7 @@ Welcome to the project wiki.
 - [Plugin Guide](Plugin-Guide)
 - [Server Guide](Server-Guide)
 - [Help: Analyze and Index](Help-Analyze-and-Index)
-- [Help: Advanced Search](Help-Advanced-Search)
-- [Help: Cull Photos](Help-Cull-Photos)
-- [Help: Keyword Deduplication and De-Clutter](Help-Keyword-Dedup-and-Declutter)
 - [Help: Choosing AI Model](Help-Choosing-AI-Model)
-- [Feature Priority Decision](Feature-Priority-Decision)
-- [Image Culling Implementation Plan](Image-Culling-Implementation-Plan)
 - [Help: Ollama Setup](Help-Ollama-Setup)
 - [Help: LM Studio Setup](Help-LM-Studio-Setup)
 - [Project README](Project-README)
@@ -36,11 +31,10 @@ The new DB backup workflow is documented in:
 
 ## What is StyleAI?
 
-StyleAI is an AI extension for Lightroom Classic with:
+StyleAI is an AI extension for Lightroom Classic featuring:
 
-- metadata generation
-- semantic search
-- face/person workflows
-- image culling workflows (grouping, ranking, and Lightroom collections for culling results)
+- Personalized edit style learning (Style Catalog)
+- Automated develop edits slider prediction (AI Develop Edits)
+- AI metadata generation (titles, captions, keywords)
 
 For project overview and release info, see the main repository README.
