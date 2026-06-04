@@ -613,16 +613,36 @@ def process_image_task(
 
         import concurrent.futures
 
-        analyze_future = None
+        import concurrent.futures
+
+        # Pre-process pure CPU tasks (decode, culling, phash) in background
         per_image_futures = []
-        import threading
-
-        face_lock = threading.Lock()
-
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            # 1. analyze_batch
-            analyze_future = executor.submit(
-                analysis_service.analyze_batch,
+            for i, (img_bytes, uid, fname) in enumerate(image_triplets):
+                def _process_cpu_tasks(u=uid, b=img_bytes):
+                    res = {
+                        "culling": None,
+                        "phash": "",
+                        "pil_image": None,
+                    }
+                    p = _decode_image(b)
+                    res["pil_image"] = p
+                    if p is not None:
+                        res["culling"] = _compute_culling_metrics(p)
+                        res["phash"] = _compute_perceptual_hash(p)
+                    return res
+
+                per_image_futures.append(executor.submit(_process_cpu_tasks))
+
+            # Wait for CPU prep to finish
+            cpu_results = [f.result() for f in per_image_futures]
+
+        pil_images = [res["pil_image"] for res in cpu_results]
+
+        # Main Thread GPU tasks (SigLIP2 / InsightFace)
+        # 1. SigLIP2 via analyze_batch
+        try:
+            embeddings, metadata_results = analysis_service.analyze_batch(
                 image_triplets,
                 options,
                 siglip_model,
@@ -630,53 +650,37 @@ def process_image_task(
                 images_needing_embeddings,
                 images_needing_metadata,
                 exif_location_by_uuid or None,
-                None,  # pass None so analyze_batch decodes only the ones it needs
+                pil_images,  # Reuse the decoded images!
             )
+        except Exception as e:
+            logger.error(f"Error in analyze_batch: {str(e)}", exc_info=True)
+            error_messages.append(str(e))
+            return 0, total_images, error_messages, warnings
 
-            # 3. Faces & Culling (Per-image)
-            for i, (img_bytes, uid, fname) in enumerate(image_triplets):
-
-                def _process_single(u=uid, b=img_bytes):
-                    res = {
-                        "culling": None,
-                        "phash": "",
-                        "faces": None,
-                        "faces_error": None,
-                    }
-
-                    p = _decode_image(b)
-
-                    if p is not None:
-                        res["culling"] = _compute_culling_metrics(p)
-                        res["phash"] = _compute_perceptual_hash(p)
-
-                    if compute_faces and b:
-                        if (
-                            not regenerate_metadata
-                            and chroma_service.faces_checked_for_photo(u)
-                        ):
-                            pass
-                        else:
-                            try:
-                                with face_lock:
-                                    res["faces"] = face_service.detect_faces(
-                                        b, pil_image=p
-                                    )
-                            except Exception as e:
-                                res["faces_error"] = e
-                    return res
-
-                per_image_futures.append(executor.submit(_process_single))
-
-            # Wait for all to finish
-            try:
-                embeddings, metadata_results = analyze_future.result()
-            except Exception as e:
-                logger.error(f"Error in analyze_batch: {str(e)}", exc_info=True)
-                error_messages.append(str(e))
-                return 0, total_images, error_messages, warnings
-
-            per_image_results = [f.result() for f in per_image_futures]
+        # 2. InsightFace
+        per_image_results = []
+        for i, (img_bytes, uid, fname) in enumerate(image_triplets):
+            cpu_res = cpu_results[i]
+            res = {
+                "culling": cpu_res["culling"],
+                "phash": cpu_res["phash"],
+                "faces": None,
+                "faces_error": None,
+            }
+            if compute_faces and img_bytes:
+                if (
+                    not regenerate_metadata
+                    and chroma_service.faces_checked_for_photo(uid)
+                ):
+                    pass
+                else:
+                    try:
+                        res["faces"] = face_service.detect_faces(
+                            img_bytes, pil_image=cpu_res["pil_image"]
+                        )
+                    except Exception as e:
+                        res["faces_error"] = e
+            per_image_results.append(res)
 
         for i, (image_bytes, uuid, filename) in enumerate(image_triplets):
             try:
