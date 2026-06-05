@@ -29,6 +29,7 @@ local ENDPOINTS = {
     INDEX_BY_REFERENCE = "/index_by_reference",
     INDEX_BASE64 = "/index_base64",
     INDEX_BASE64_BATCH = "/index_base64_batch",
+    METADATA_GENERATE = "/metadata/generate",
     EDIT_BASE64 = "/edit_base64",
     STATS = "/db/stats",
     MODELS = "/models",
@@ -859,6 +860,73 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
 end
 
 ---
+-- Calls the /metadata/generate endpoint for a single photo.
+-- Designed for Stage 2 of the decoupled pipeline. 
+-- Sends either the base64 image (if skipped stage 1) or relies on server cache.
+function SearchIndexAPI.generateMetadataSingle(photoId, base64Image, filename, options)
+    if not photoId then return false, "No photoId provided" end
+
+    options = options or {}
+    local url = getBaseUrl() .. ENDPOINTS.METADATA_GENERATE
+
+    local body = {
+        image = base64Image, -- Can be nil if cached on server
+        photo_id = photoId,
+        filename = filename or "photo.jpg",
+        catalog_id = getCatalogId(),
+        tasks = options.tasks or {},
+        provider = options.provider,
+        model = options.model,
+        api_key = options.api_key,
+        language = options.language or (prefs and prefs.generateLanguage) or "English",
+        temperature = tostring(options.temperature or (prefs and prefs.temperature) or 0.2),
+        replace_ss = tostring(options.replace_ss or false),
+        generate_keywords = tostring(options.generate_keywords or false),
+        generate_caption = tostring(options.generate_caption or false),
+        generate_title = tostring(options.generate_title or false),
+        generate_alt_text = tostring(options.generate_alt_text or false),
+        submit_gps = tostring(options.submit_gps or false),
+        submit_keywords = tostring(options.submit_keywords or false),
+        submit_folder_names = tostring(options.submit_folder_names or false),
+        user_context = options.user_context,
+        gps_coordinates = options.gps_coordinates and JSON:encode(options.gps_coordinates) or nil,
+        existing_keywords = options.existing_keywords and JSON:encode(options.existing_keywords) or nil,
+        folder_names = options.folder_names,
+        prompt = options.prompt,
+        keyword_categories = options.keyword_categories and JSON:encode(options.keyword_categories) or "[]",
+        bilingual_keywords = tostring(options.bilingual_keywords or false),
+        keyword_secondary_language = options.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English",
+        date_time = options.date_time,
+        date_time_unix = options.date_time_unix,
+        ollama_base_url = options.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
+        lmstudio_base_url = options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
+        regenerate_metadata = tostring(options.regenerate_metadata ~= false),
+        semantic_clustering_threshold = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
+    }
+
+    log:trace("Generating metadata for single photo: " .. tostring(filename) .. " id " .. photoId)
+
+    local response, err = _request('POST', url, body, 720)
+
+    if not response then
+        log:error("Failed to generate metadata single: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+    if response.status == "processed" then
+        local success_count = response.success_count or 0
+        if success_count > 0 then
+            log:trace("Successfully generated metadata for: " .. tostring(filename))
+            return true, response
+        else
+            log:error("Metadata generation failed for: " .. tostring(filename))
+            return false, response.error or "Processing failed"
+        end
+    end
+    log:error("Unexpected response status for metadata generate: " .. tostring(response.status))
+    return false, "Unexpected response status"
+end
+
+---
 -- Analyzes and indexes a batch of photos using base64-encoded JPEGs.
 -- Uses the /index_base64_batch endpoint.
 -- @param batch table Array of tables containing { photo_id, image, filename, options }
@@ -899,6 +967,7 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
         ollama_base_url = globalOptions.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
         lmstudio_base_url = globalOptions.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
         regenerate_metadata = tostring(globalOptions.regenerate_metadata ~= false),
+        cache_images = globalOptions.cache_images == true,
         semantic_clustering_threshold = tostring(globalOptions.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
     }
 
@@ -1676,8 +1745,17 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         end
     end
 
+    local modelDisplay = ""
+    if enableEmbeddings and enableMetadata then
+        modelDisplay = "SigLIP2 & " .. tostring(options.model or "LLM")
+    elseif enableEmbeddings then
+        modelDisplay = "SigLIP2"
+    else
+        modelDisplay = tostring(options.model or "AI")
+    end
+
     progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhotos=Processing ^1 photos with ^2...",
-        #photoToProcessStack, options.model or "AI"))
+        #photoToProcessStack, modelDisplay))
     progressScope:setPortionComplete(stats.processed, numPhotos)
     local processedPhotos = {}
     local activeWorkers = 0
@@ -1693,6 +1771,20 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     local errorMessages = {}
     local warningsList = {}
+    
+    local enableEmbeddings = false
+    local enableMetadata = false
+    if options.tasks then
+        for _, t in ipairs(options.tasks) do
+            if t == "embeddings" then enableEmbeddings = true end
+            if t == "metadata" then enableMetadata = true end
+        end
+    end
+    if options.enableMetadata then enableMetadata = true end
+    if options.enableEmbeddings then enableEmbeddings = true end
+    
+    local llmQueue = {}
+    local activeLlmWorkers = 0
 
     local readFileBinary = function(filepath)
         local f, err = io.open(filepath, "rb")
@@ -1888,74 +1980,146 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 end
 
                 if #batchItemsToSend > 0 then
-                    local success, indexResponse = SearchIndexAPI.analyzeAndIndexPhotosBatch(batchItemsToSend, options)
+                    local sendToLlmQueue = {}
 
-                    if success then
-                        local failedFilenames = {}
-                        if indexResponse and indexResponse.error_messages then
-                            for _, msg in ipairs(indexResponse.error_messages) do
-                                local colonIdx = string.find(msg, ":")
-                                if colonIdx then
-                                    local fname = string.sub(msg, 1, colonIdx - 1)
-                                    fname = string.gsub(fname, "^%s*(.-)%s*$", "%1") -- trim spaces
-                                    failedFilenames[fname] = msg
-                                end
-                            end
-                        end
+                    if enableEmbeddings then
+                        options.cache_images = enableMetadata
+                        local success, indexResponse = SearchIndexAPI.analyzeAndIndexPhotosBatch(batchItemsToSend, options)
 
-                        if indexResponse and indexResponse.warnings and #indexResponse.warnings > 0 then
-                            for _, w in ipairs(indexResponse.warnings) do
-                                table.insert(warningsList, w)
-                            end
-                        end
-
-                        for _, item in ipairs(batchItemsToSend) do
-                            local filename = item.photo:getFormattedMetadata("fileName")
-                            local leafName = LrPathUtils.leafName(filename or "photo.jpg")
-                            local batchErr = failedFilenames[leafName] or failedFilenames[filename]
-
-                            stats.processed = stats.processed + 1
-                            table.insert(processedPhotos, item.photo)
-
-                            if not batchErr then
-                                stats.success = stats.success + 1
-                                if options.onPhotoAnalyzed then
-                                    local okCb, cbErr = LrTasks.pcall(function()
-                                        options.onPhotoAnalyzed(item.photo, item.photo_id, progressScope)
-                                    end)
-                                    if not okCb then
-                                        log:error("onPhotoAnalyzed callback failed for " .. filename .. ": " .. tostring(cbErr))
+                        if success then
+                            local failedFilenames = {}
+                            if indexResponse and indexResponse.error_messages then
+                                for _, msg in ipairs(indexResponse.error_messages) do
+                                    local colonIdx = string.find(msg, ":")
+                                    if colonIdx then
+                                        local fname = string.sub(msg, 1, colonIdx - 1)
+                                        fname = string.gsub(fname, "^%s*(.-)%s*$", "%1") -- trim spaces
+                                        failedFilenames[fname] = msg
                                     end
                                 end
-                            else
+                            end
+
+                            if indexResponse and indexResponse.warnings and #indexResponse.warnings > 0 then
+                                for _, w in ipairs(indexResponse.warnings) do
+                                    table.insert(warningsList, w)
+                                end
+                            end
+
+                            for _, item in ipairs(batchItemsToSend) do
+                                local filename = item.photo:getFormattedMetadata("fileName")
+                                local leafName = LrPathUtils.leafName(filename or "photo.jpg")
+                                local batchErr = failedFilenames[leafName] or failedFilenames[filename]
+
+                                if not batchErr then
+                                    if enableMetadata then
+                                        item.image = nil -- Cleared because it is cached on server
+                                        table.insert(sendToLlmQueue, item)
+                                    else
+                                        stats.processed = stats.processed + 1
+                                        stats.success = stats.success + 1
+                                        table.insert(processedPhotos, item.photo)
+                                        if options.onPhotoAnalyzed then
+                                            local okCb, cbErr = LrTasks.pcall(function()
+                                                options.onPhotoAnalyzed(item.photo, item.photo_id, progressScope)
+                                            end)
+                                            if not okCb then
+                                                log:error("onPhotoAnalyzed callback failed for " .. filename .. ": " .. tostring(cbErr))
+                                            end
+                                        end
+                                    end
+                                else
+                                    stats.failed = stats.failed + 1
+                                    stats.processed = stats.processed + 1
+                                    table.insert(errorMessages, batchErr)
+                                    table.insert(processedPhotos, item.photo)
+                                    log:error("Failed to analyze/index photo (batch): " .. filename .. " Error: " .. batchErr)
+                                end
+                            end
+                        else
+                            -- Entire batch request failed
+                            for _, item in ipairs(batchItemsToSend) do
+                                local filename = item.photo:getFormattedMetadata("fileName")
+                                stats.processed = stats.processed + 1
                                 stats.failed = stats.failed + 1
-                                table.insert(errorMessages, batchErr)
-                                log:error("Failed to analyze/index photo (batch): " .. filename .. " Error: " .. batchErr)
+                                table.insert(processedPhotos, item.photo)
+                                local errText = tostring(indexResponse or "Batch request failed")
+                                table.insert(errorMessages, errText)
+                                log:error("Failed to analyze/index photo (batch request failed): " .. filename .. " Error: " .. errText)
                             end
                         end
                     else
-                        -- Entire batch request failed
+                        -- Skip Stage 1, go straight to Stage 2
                         for _, item in ipairs(batchItemsToSend) do
-                            local filename = item.photo:getFormattedMetadata("fileName")
-                            stats.processed = stats.processed + 1
-                            stats.failed = stats.failed + 1
-                            table.insert(processedPhotos, item.photo)
-                            local errText = tostring(indexResponse or "Batch request failed")
-                            table.insert(errorMessages, errText)
-                            log:error("Failed to analyze/index photo (batch request failed): " .. filename .. " Error: " .. errText)
+                            table.insert(sendToLlmQueue, item)
                         end
+                    end
+
+                    for _, item in ipairs(sendToLlmQueue) do
+                        table.insert(llmQueue, item)
                     end
                 end
 
-                progressScope:setPortionComplete(stats.processed, numPhotos)
-                progressScope:setCaption(
-                    LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
-                        stats.success, numPhotos, stats.failed)
-                )
+                if not enableMetadata then
+                    progressScope:setPortionComplete(stats.processed, numPhotos)
+                    progressScope:setCaption(
+                        LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
+                            stats.success, numPhotos, stats.failed)
+                    )
+                end
             end
         end
         activeSenderWorkers = activeSenderWorkers - 1
         log:trace("Sender worker thread finished.")
+    end
+
+    local llmWorker = function()
+        activeLlmWorkers = activeLlmWorkers + 1
+        while keepRunning and not progressScope:isCanceled() do
+            if #llmQueue == 0 then
+                if activeSenderWorkers == 0 and preparationDone then
+                    break
+                else
+                    if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+                end
+            else
+                local item = table.remove(llmQueue, 1)
+                if item then
+                    local success, llmResponse = SearchIndexAPI.generateMetadataSingle(item.photo_id, item.image, item.filename, options)
+                    stats.processed = stats.processed + 1
+                    table.insert(processedPhotos, item.photo)
+                    
+                    if success then
+                        stats.success = stats.success + 1
+                        if options.onPhotoAnalyzed then
+                            local okCb, cbErr = LrTasks.pcall(function()
+                                options.onPhotoAnalyzed(item.photo, item.photo_id, progressScope)
+                            end)
+                            if not okCb then
+                                log:error("onPhotoAnalyzed callback failed for " .. item.filename .. ": " .. tostring(cbErr))
+                            end
+                        end
+                    else
+                        stats.failed = stats.failed + 1
+                        local errText = "Metadata generation failed"
+                        if type(llmResponse) == "string" then
+                            errText = llmResponse
+                        elseif type(llmResponse) == "table" and llmResponse.error then
+                            errText = tostring(llmResponse.error)
+                        end
+                        table.insert(errorMessages, item.filename .. ": " .. errText)
+                        log:error("LLM Generation failed for " .. item.filename .. ": " .. errText)
+                    end
+
+                    progressScope:setPortionComplete(stats.processed, numPhotos)
+                    progressScope:setCaption(
+                        LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
+                            stats.success, numPhotos, stats.failed)
+                    )
+                end
+            end
+        end
+        activeLlmWorkers = activeLlmWorkers - 1
+        log:trace("LLM worker thread finished.")
     end
 
     -- Start worker threads
@@ -1970,8 +2134,15 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         log:trace("Started sender worker #" .. tostring(i))
     end
 
+    if enableMetadata then
+        for i = 1, maxWorkers do
+            LrTasks.startAsyncTask(llmWorker)
+            log:trace("Started LLM worker #" .. tostring(i))
+        end
+    end
+
     -- Monitor workers and server availability
-    while activeWorkers > 0 or activeSenderWorkers > 0 do
+    while activeWorkers > 0 or activeSenderWorkers > 0 or activeLlmWorkers > 0 do
         if progressScope:isCanceled() then break end
         if MAC_ENV then
             LrTasks.yield()
@@ -1979,6 +2150,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
             LrTasks.sleep(0.1)
         end
     end
+
 
     -- Wait for workers to stop in case of server failure
     if not keepRunning then
