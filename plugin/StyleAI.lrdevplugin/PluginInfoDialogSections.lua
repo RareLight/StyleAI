@@ -34,7 +34,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.backendServerUrl = prefs.backendServerUrl or Defaults.defaultBackendServerUrl
 	propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
 	propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
-	propertyTable.indexingParallelTasks = tostring(prefs.indexingParallelTasks or "2")
+	propertyTable.indexingParallelTasks = tostring(prefs.indexingParallelTasks or "3")
 	propertyTable.indexingBatchSize = tostring(prefs.indexingBatchSize or "32")
 	propertyTable.semanticClusteringThresholdInt = math.floor((tonumber(prefs.semanticClusteringThreshold) or 0.94) * 100)
 
@@ -748,9 +748,11 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						value = bind("indexingParallelTasks"),
 						items = {
 							{ title = "1", value = "1" },
-							{ title = "2 (Default)", value = "2" },
-							{ title = "3", value = "3" },
+							{ title = "2", value = "2" },
+							{ title = "3 (Default)", value = "3" },
 							{ title = "4", value = "4" },
+							{ title = "5", value = "5" },
+							{ title = "6", value = "6" },
 						},
 						width = 200,
 					}),
@@ -760,7 +762,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					fill_horizontal = 1,
 					f:spacer({ width = share("advancedLabelWidth") }),
 					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfo/ParallelTasksHint=Higher values process photos faster but use more memory. 2 is recommended for Apple Silicon."),
+						title = LOC("$$$/StyleAI/PluginInfo/ParallelTasksHint=Higher values process photos faster but use more memory. 3 is recommended for Apple Silicon."),
 						size = "small",
 						fill_horizontal = 1,
 						wrap = true,
@@ -1085,6 +1087,7 @@ end
 function PluginInfoDialogSections.endDialog(propertyTable)
 	prefs.geminiApiKey = propertyTable.geminiApiKey
 	prefs.chatgptApiKey = propertyTable.chatgptApiKey
+	prefs.indexingParallelTasks = tonumber(propertyTable.indexingParallelTasks) or 3
 	prefs.indexingBatchSize = tonumber(propertyTable.indexingBatchSize) or 32
 
 	prefs.exportSize = propertyTable.exportSize

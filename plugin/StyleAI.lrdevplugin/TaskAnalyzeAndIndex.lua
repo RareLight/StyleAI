@@ -536,8 +536,8 @@ local function showAnalyzeAndIndexDialog(ctx)
         -- Save preferences
         prefs.indexScope = props.scope
         prefs.enableEmbeddings = props.enableEmbeddings
+        prefs.enableMetadata = props.enableMetadata
         prefs.enableFaces = props.enableFaces
-        prefs.regenerateMetadata = props.regenerateMetadata
         prefs.appendMetadata = props.appendMetadata
         prefs.generateKeywords = props.generateKeywords
         prefs.generateCaption = props.generateCaption

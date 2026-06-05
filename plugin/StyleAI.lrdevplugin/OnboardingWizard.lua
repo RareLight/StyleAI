@@ -12,6 +12,14 @@ function OnboardingWizard.show(manualTrigger)
 			propertyTable.geminiApiKey = prefs.geminiApiKey or ""
 			propertyTable.chatgptApiKey = prefs.chatgptApiKey or ""
 
+			if propertyTable.backendRunning == true and prefs.indexingParallelTasks == nil then
+				local vInfo = SearchIndexAPI.getBackendVersion()
+				if vInfo and vInfo.recommended_parallel_tasks then
+					prefs.indexingParallelTasks = tonumber(vInfo.recommended_parallel_tasks)
+					log:info("Dynamically profiled indexingParallelTasks to " .. tostring(vInfo.recommended_parallel_tasks))
+				end
+			end
+
 			local f = LrView.osFactory()
 			local bind = LrView.bind
 			local share = LrView.share
@@ -25,6 +33,13 @@ function OnboardingWizard.show(manualTrigger)
 				LrTasks.startAsyncTask(function()
 					SearchIndexAPI.startServer({ readyTimeoutSeconds = 30 })
 					updateBackendStatus()
+					if propertyTable.backendRunning == true and prefs.indexingParallelTasks == nil then
+						local vInfo = SearchIndexAPI.getBackendVersion()
+						if vInfo and vInfo.recommended_parallel_tasks then
+							prefs.indexingParallelTasks = tonumber(vInfo.recommended_parallel_tasks)
+							log:info("Dynamically profiled indexingParallelTasks to " .. tostring(vInfo.recommended_parallel_tasks))
+						end
+					end
 				end)
 			end
 

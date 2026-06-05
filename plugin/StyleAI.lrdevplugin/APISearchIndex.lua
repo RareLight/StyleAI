@@ -1612,7 +1612,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     options = options or {}
     local shouldCloseScope = (closeProgressScope ~= false)
 
-    local maxWorkers = tonumber(prefs.indexingParallelTasks) or 2
+    local maxWorkers = tonumber(prefs.indexingParallelTasks) or 3
     local stats = { processed = 0, success = 0, failed = 0 }
 
     local photoToProcessStack = {}
@@ -1706,7 +1706,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     local preparedQueue = {}
     local preparationDone = false
-    local senderWorkerActive = false
+    local activeSenderWorkers = 0
 
     local analyzeWorker = function()
         local batchSize = tonumber(prefs and prefs.indexingBatchSize) or 32
@@ -1852,7 +1852,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end
 
     local senderWorker = function()
-        senderWorkerActive = true
+        activeSenderWorkers = activeSenderWorkers + 1
         local batchSize = tonumber(prefs and prefs.indexingBatchSize) or 32
         
         while keepRunning and not progressScope:isCanceled() do
@@ -1954,7 +1954,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 )
             end
         end
-        senderWorkerActive = false
+        activeSenderWorkers = activeSenderWorkers - 1
         log:trace("Sender worker thread finished.")
     end
 
@@ -1965,11 +1965,13 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         activeWorkers = activeWorkers + 1
     end
 
-    LrTasks.startAsyncTask(senderWorker)
-    log:trace("Started sender worker")
+    for i = 1, 2 do
+        LrTasks.startAsyncTask(senderWorker)
+        log:trace("Started sender worker #" .. tostring(i))
+    end
 
     -- Monitor workers and server availability
-    while activeWorkers > 0 or senderWorkerActive do
+    while activeWorkers > 0 or activeSenderWorkers > 0 do
         if progressScope:isCanceled() then break end
         if MAC_ENV then
             LrTasks.yield()
@@ -1980,7 +1982,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     -- Wait for workers to stop in case of server failure
     if not keepRunning then
-        while activeWorkers > 0 or senderWorkerActive do
+        while activeWorkers > 0 or activeSenderWorkers > 0 do
             if MAC_ENV then
                 LrTasks.yield()
             else

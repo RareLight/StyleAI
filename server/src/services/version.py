@@ -3,11 +3,26 @@ import re
 from version_info import BACKEND_BUILD, BACKEND_RELEASE_TAG, BACKEND_VERSION
 
 
+import os
+
 def get_backend_version_info() -> dict:
+    cpu_count = os.cpu_count() or 4
+    if cpu_count >= 16:
+        recommended = 6
+    elif cpu_count >= 12:
+        recommended = 5
+    elif cpu_count >= 10:
+        recommended = 4
+    elif cpu_count >= 8:
+        recommended = 3
+    else:
+        recommended = 2
+
     return {
         "backend_version": BACKEND_VERSION,
         "backend_release_tag": BACKEND_RELEASE_TAG,
         "backend_build": BACKEND_BUILD,
+        "recommended_parallel_tasks": recommended,
     }
 
 

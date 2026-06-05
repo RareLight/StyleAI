@@ -246,7 +246,7 @@
 "$$$/StyleAI/PluginInfo/LmStudioUrlDesc" = "For local LM Studio leave default. Use host:port to connect to LM Studio on another machine (e.g. 192.168.1.50:1234)."
 "$$$/StyleAI/PluginInfo/Logging" = "Logging"
 "$$$/StyleAI/PluginInfo/ParallelTasks" = "Parallel Indexing\nTasks"
-"$$$/StyleAI/PluginInfo/ParallelTasksHint" = "Higher values process photos faster but use more memory. 2 is recommended for Apple Silicon."
+"$$$/StyleAI/PluginInfo/ParallelTasksHint" = "Higher values process photos faster but use more memory. 3 is recommended for Apple Silicon."
 "$$$/StyleAI/PluginInfo/PhotoIdGenFailed" = "Photo-ID Generation failed"
 "$$$/StyleAI/PluginInfo/PhotoIdGenTitle" = "Photo-ID Generation"
 "$$$/StyleAI/PluginInfo/PluginBuild" = "Plugin build: "
