@@ -630,7 +630,8 @@ def process_image_task(
 
         # Pre-process pure CPU tasks (decode, culling, phash) in background
         per_image_futures = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        import os
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, (os.cpu_count() or 4) + 4)) as executor:
             for i, (img_bytes, uid, fname) in enumerate(image_triplets):
 
                 def _process_cpu_tasks(u=uid, b=img_bytes):

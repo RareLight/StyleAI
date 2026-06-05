@@ -186,7 +186,7 @@ if __name__ == "__main__":
             app.run(debug=True, host=host, port=port)
         else:
             logger.info(f"Starting production server on http://{host}:{port}")
-            serve(app, host=host, port=port, threads=4)
+            serve(app, host=host, port=port, threads=8)
     finally:
         logger.info("Shutting down server...")
         server_lifecycle.remove_pid_file()

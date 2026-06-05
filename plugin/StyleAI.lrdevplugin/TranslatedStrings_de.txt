@@ -246,7 +246,7 @@
 "$$$/StyleAI/PluginInfo/LmStudioUrlDesc" = "Standard für lokales LM Studio. Host:Port für Remote."
 "$$$/StyleAI/PluginInfo/Logging" = "Protokollierung"
 "$$$/StyleAI/PluginInfo/ParallelTasks" = "Parallel Indexing\nTasks"
-"$$$/StyleAI/PluginInfo/ParallelTasksHint" = "Higher values process photos faster but use more memory. 2 is recommended for Apple Silicon."
+"$$$/StyleAI/PluginInfo/ParallelTasksHint" = "Higher values process photos faster but use more memory. 3 is recommended for Apple Silicon."
 "$$$/StyleAI/PluginInfo/PhotoIdGenFailed" = "ID-Generierung fehlgeschlagen"
 "$$$/StyleAI/PluginInfo/PhotoIdGenTitle" = "Foto-ID Generierung"
 "$$$/StyleAI/PluginInfo/PluginBuild" = "Plugin-Build: "
