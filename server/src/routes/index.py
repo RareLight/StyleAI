@@ -11,6 +11,7 @@ import base64
 import json
 
 from utils.request_parsing import _extract_options, _extract_photo_ids
+from services import image_cache
 
 index_bp = Blueprint("index", __name__)
 
@@ -163,6 +164,7 @@ def index_images_batch_base64_v2():
 
     images_data = data.get("images", [])
     global_options = data.get("options", {})
+    cache_images = global_options.get("cache_images", False)
 
     if not images_data:
         return jsonify({"error": "No images provided in batch"}), 400
@@ -182,6 +184,9 @@ def index_images_batch_base64_v2():
         try:
             image_bytes = base64.b64decode(image_base64.encode("ascii"))
             image_triplets.append((image_bytes, photo_id, filename))
+
+            if cache_images:
+                image_cache.store_image(photo_id, image_bytes)
 
             # Merge photo-specific options with global options
             merged_options = dict(global_options)
@@ -209,6 +214,66 @@ def index_images_batch_base64_v2():
     if success_count == 0:
         logger.warning("No images were successfully processed in the batch.")
         err_msg = "No images were successfully processed"
+        if error_messages:
+            unique_errs = list(dict.fromkeys(error_messages))
+            err_msg += ": " + " | ".join(unique_errs[:5])
+        return jsonify({"error": err_msg}), 500
+
+    return jsonify(
+        {
+            "status": "processed",
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "error_messages": error_messages,
+            "warnings": warnings or [],
+        }
+    ), 200
+
+
+@index_bp.route("/metadata/generate", methods=["POST"])
+def generate_metadata_single():
+    """
+    Receives a request to generate metadata for a single image.
+    If 'image' (base64) is provided, it uses it.
+    Otherwise, it checks the in-memory cache using the photo_id.
+    """
+    logger.info("Metadata generate single request received")
+    data = request.get_json(silent=True) or {}
+    
+    photo_id = data.get("photo_id") or data.get("uuid")
+    filename = data.get("filename", "unknown")
+    
+    if not photo_id:
+        return jsonify({"error": "Missing photo_id"}), 400
+        
+    options = _extract_options(data)
+    # Force overrides for this specialized metadata route
+    options["compute_embeddings"] = False
+    options["compute_metadata"] = True
+    options["compute_faces"] = False
+
+    image_base64 = data.get("image")
+    image_bytes = None
+    if image_base64:
+        try:
+            import base64
+            image_bytes = base64.b64decode(image_base64.encode("ascii"))
+        except Exception as e:
+            return jsonify({"error": f"Failed to decode base64 image: {e}"}), 400
+    else:
+        from services import image_cache
+        image_bytes = image_cache.pop_image(photo_id)
+        
+    if not image_bytes:
+        return jsonify({"error": "No image data provided and image not found in cache"}), 400
+
+    # Let process_image_task handle the robust database commit and metadata merging logic
+    success_count, failure_count, error_messages, warnings = process_image_task(
+        [(image_bytes, photo_id, filename)], options=options
+    )
+    
+    if success_count == 0:
+        err_msg = "Metadata generation failed"
         if error_messages:
             unique_errs = list(dict.fromkeys(error_messages))
             err_msg += ": " + " | ".join(unique_errs[:5])

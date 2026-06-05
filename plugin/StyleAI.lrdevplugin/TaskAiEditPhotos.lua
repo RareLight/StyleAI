@@ -824,24 +824,30 @@ LrTasks.startAsyncTask(function()
 		end
 
 		local consumerIndex = 1
+		local nextIndexToProcess = 1
+		local activeProducers = 0
+		local maxWorkers = tonumber(prefs.indexingParallelTasks) or 3
 
-		LrTasks.startAsyncTask(function()
-			LrFunctionContext.callWithContext("ProducerTask", function(producerCtx)
-				for index, photo in ipairs(photos) do
-					if progressScope:isCanceled() then break end
+		local function producerWorker()
+			activeProducers = activeProducers + 1
+			while not progressScope:isCanceled() do
+				local index = nextIndexToProcess
+				if index > #photos then break end
 
-					-- Throttle to avoid unbounded memory/disk usage (max 3 ahead of consumer)
-					while (index > consumerIndex + 2) and not progressScope:isCanceled() do
-						LrTasks.sleep(0.1)
-					end
+				-- Throttle to avoid unbounded memory/disk usage (max workers ahead of consumer)
+				if index > consumerIndex + (maxWorkers * 2) then
+					if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+				else
+					nextIndexToProcess = nextIndexToProcess + 1
 
 					-- Wait for consumer to provide context (if dialogs are pending)
 					while not contextReady[index] and not progressScope:isCanceled() do
-						LrTasks.sleep(0.1)
+						if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
 					end
 					if progressScope:isCanceled() then break end
 
 					local userContext = userContexts[index]
+					local photo = photos[index]
 					local fileName = photo:getFormattedMetadata("fileName") or "Photo"
 					local resultObj = { fileName = fileName, continueProcessing = true }
 
@@ -911,9 +917,20 @@ LrTasks.startAsyncTask(function()
 
 					results[index] = resultObj
 				end
+			end
+			activeProducers = activeProducers - 1
+			if activeProducers <= 0 then
 				producerDone = true
+			end
+		end
+
+		for i = 1, maxWorkers do
+			LrTasks.startAsyncTask(function()
+				LrFunctionContext.callWithContext("ProducerTask_" .. tostring(i), function(producerCtx)
+					producerWorker()
+				end)
 			end)
-		end)
+		end
 
 		local reuseContext = false
 		local sharedContext = ""
