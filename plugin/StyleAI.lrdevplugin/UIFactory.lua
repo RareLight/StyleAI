@@ -9,14 +9,35 @@ UIFactory = {}
 -- @param f LrViewFactory
 -- @param props table Property table containing title and elements
 function UIFactory.SettingsGroup(f, props)
-    return f:group_box {
+    local children = {}
+    for i, v in ipairs(props) do
+        children[i] = v
+        props[i] = nil
+    end
+    
+    local gb_props = {
         title = props.title or "",
         fill_horizontal = props.fill_horizontal or 1,
-        font = "<system/bold>",
         margin_top = 5,
         margin_bottom = 5,
-        unpack(props)
     }
+    
+    -- Forward all other named properties (like visible) to group_box
+    for k, v in pairs(props) do
+        if gb_props[k] == nil then
+            gb_props[k] = v
+        end
+    end
+    
+    -- Lightroom group_box requires exactly one child to avoid overlapping
+    gb_props[1] = f:column {
+        spacing = f:control_spacing(),
+        fill_horizontal = 1,
+        margin_top = 10,
+        unpack(children)
+    }
+    
+    return f:group_box(gb_props)
 end
 
 --- Creates a standardized Progress Dialog overlay (placeholder structure)

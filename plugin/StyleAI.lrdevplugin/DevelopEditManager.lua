@@ -1432,7 +1432,7 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 			f:row({
 				visible = bind("hasConfidence"),
 				f:static_text({
-					title = "Match:",
+					title = LOC("$$$/StyleAI/DevelopEditManager/Match=Match:"),
 				}),
 				f:static_text({
 					title = bind("confidenceLabel"),

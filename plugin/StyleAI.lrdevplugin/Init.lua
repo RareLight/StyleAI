@@ -44,7 +44,7 @@ require("PhotoSelector")
 require("OnboardingWizard")
 
 -- Initialize Settings
-local SettingsManager = require("components.SettingsManager")
+local SettingsManager = require("SettingsManager")
 SettingsManager.initializeDefaults()
 
 function _G.JSON.assert(v, message)

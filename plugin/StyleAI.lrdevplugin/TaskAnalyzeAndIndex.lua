@@ -94,7 +94,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     table.sort(modelItems, function(a, b) return a.title < b.title end)
     if (not modelItems or #modelItems == 0) then
         -- Fallback option if nothing matched filters
-        table.insert(modelItems, { title = 'qwen: (default)', value = 'qwen::' })
+        table.insert(modelItems, { title = LOC("$$$/StyleAI/TaskAnalyzeAndIndex/QwenDefault=qwen: (default)"), value = 'qwen::' })
     end
     if not props.modelKey or props.modelKey == '' then
         props.modelKey = modelItems[1].value
@@ -155,7 +155,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     end
 
     local Defaults = require("Defaults")
-    local UIFactory = require("components.UIFactory")
+    local UIFactory = require("UIFactory")
     local SearchIndexAPI = require("APISearchIndex")
     local healthData = SearchIndexAPI.getHealth()
     props.healthData = healthData or {}
@@ -208,7 +208,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                 },
             },
-        },
+        }),
 
         f:tab_view {
             fill_horizontal = 1,
@@ -285,7 +285,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         f:combo_box { value = bind 'language', items = Defaults.generateLanguages },
                         f:checkbox { value = bind 'replaceSS', title = LOC "$$$/StyleAI/PluginInfoDialogSections/replaceSS=Replace ß with ss" },
                     },
-                },
+                }),
             },
 
             --------------------------------------------------------
@@ -294,10 +294,6 @@ local function showAnalyzeAndIndexDialog(ctx)
             f:tab_view_item {
                 title = LOC "$$$/StyleAI/UI/TabKeywords=Keywords & Metadata",
                 identifier = 'metadata',
-                visible = bind {
-                    key = "indexingMode",
-                    transform = function(v) return v == "meta" or v == "both" end,
-                },
 
                 f:group_box {
                     title = LOC "$$$/StyleAI/AnalyzeAndIndex/MetadataOptions=Generated Fields",
@@ -348,10 +344,6 @@ local function showAnalyzeAndIndexDialog(ctx)
             f:tab_view_item {
                 title = LOC "$$$/StyleAI/UI/TabContext=Prompt & Context",
                 identifier = 'context',
-                visible = bind {
-                    key = "indexingMode",
-                    transform = function(v) return v == "meta" or v == "both" end,
-                },
 
                 f:group_box {
                     title = LOC "$$$/StyleAI/UI/PromptTitle=Prompt Template",
