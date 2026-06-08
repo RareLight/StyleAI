@@ -1,4 +1,4 @@
-local SettingsManager = require("components/SettingsManager")
+local SettingsManager = require("SettingsManager")
 local TaskDiagnostics = require("TaskDiagnostics")
 
 PluginInfoDialogSections = {}

@@ -8,7 +8,7 @@ local LrFunctionContext = import("LrFunctionContext")
 require("JSON")
 require("Util")
 require("APISearchIndex")
-local Pipeline = require("components/Pipeline")
+local Pipeline = require("Pipeline")
 
 ---
 -- Helper function to evaluate test conditions safely.

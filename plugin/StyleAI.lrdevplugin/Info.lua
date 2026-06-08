@@ -61,7 +61,7 @@ return {
 
 	LrHelpMenuItems = {
 		{
-			title = "Developer: Run Automated Tests...",
+			title = LOC("$$$/StyleAI/Developer/RunAutomatedTests=Developer: Run Automated Tests..."),
 			file = "TaskAutomatedTests.lua",
 		},
 	},

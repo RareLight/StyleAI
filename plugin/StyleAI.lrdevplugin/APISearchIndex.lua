@@ -2232,7 +2232,7 @@ function SearchIndexAPI.downloadDatabaseBackup()
     local url = getBaseUrl() .. ENDPOINTS.DB_BACKUP
     log:info("downloadDatabaseBackup: start, url=" .. tostring(url))
     local outputPath = LrDialogs.runSavePanel({
-        title = "Save database backup",
+        title = LOC("$$$/StyleAI/common/SaveDatabaseBackup=Save database backup"),
         prompt = "Save Backup",
         canCreateDirectories = true,
         requiredFileType = "zip",
@@ -3102,7 +3102,7 @@ function SearchIndexAPI.generateGlobalPhotoIdsForCatalog()
     log:info("generateGlobalPhotoIdsForCatalog: catalog photos to inspect: " .. tostring(totalPhotos))
 
     local progressScope = LrProgressScope({
-        title = "Generating hash-based photo IDs in catalog...",
+        title = LOC("$$$/StyleAI/APISearchIndex/GeneratingIds=Generating hash-based photo IDs in catalog..."),
         functionContext = nil,
     })
 
@@ -3834,3 +3834,5 @@ function SearchIndexAPI.importStyles(data)
     end
     return false, response.error or "Unexpected response"
 end
+
+return SearchIndexAPI

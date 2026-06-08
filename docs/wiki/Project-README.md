@@ -30,10 +30,8 @@ Whether you prefer running local models to ensure maximum privacy or want to lev
 - **📸 Image Culling:** Group similar photos into bursts or near-duplicate stacks, automatically pick the strongest frames, and create Lightroom collections for picks, alternates, reject candidates, and optional duplicates.
 - **☁️ Local & Cloud Models:** Full support for local AI models via **Ollama** and **LM Studio**, as well as integration with cloud providers like **ChatGPT/OpenAI**, **Google Gemini**, and **Vertex AI**.
 - **🎨 Customizable Prompts & Temperature Control:** System prompts for the AI can be added, edited, and deleted directly within the Lightroom Plug-In Manager. Use the temperature slider to control whether the AI should be highly creative or strictly consistent.
-- **🏷️ Interactive Style Catalog:** Review AI-discovered photographic styles, monitor training strength, and **Rename** styles to meaningful names directly inside Lightroom.
 - **📝 Photo Context (Contextual Info):** Provide manual hints to the AI before analysis (e.g., names of people or specific background details) that aren't immediately obvious from the image itself. This can be done via a popup dialog or directly in Lightroom's metadata panel.
 - **🗄️ Custom Python Backend & Database:** The plugin utilizes a high-performance local server (`styleai-server`). Existing metadata from your Lightroom catalog can easily be imported prior to the first AI analysis.
-- **🩺 One-Click Diagnostics:** Encountering issues? A single click in the Plugin Manager aggregates Lightroom health and backend server logs into a beautiful HTML diagnostic report that opens in your browser.
 
 ---
 
@@ -48,7 +46,6 @@ Whether you prefer running local models to ensure maximum privacy or want to lev
      - **macOS:** Right-click the `.pkg` -> *Open* -> *Open anyway*.
    - Optional troubleshooting: if you want to start it manually, run `styleai-server/styleai-server.cmd` on Windows or `styleai-server/styleai-server` on macOS.
 4. Select photos in the library and choose one of the AI actions from **Library -> Plug-in Extras**:
-   - **Onboarding Wizard** will automatically launch to guide you through setting up your first AI models, testing the server connection, and migrating your Lightroom database!
    - **Analyze & Index Photos...** for tags/descriptions/search index
    - **AI Edit Photos...** to generate and apply Lightroom develop edits
    - **Advanced Search...** for semantic free-text search
