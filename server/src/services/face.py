@@ -32,8 +32,8 @@ def _get_face_app():
         _face_app = FaceAnalysis(
             name="buffalo_l", root=root, providers=["CPUExecutionProvider"]
         )
-        _face_app.prepare(ctx_id=0, det_size=(640, 640))
-        logger.info("InsightFace FaceAnalysis (buffalo_l) loaded.")
+        _face_app.prepare(ctx_id=0, det_size=(640, 640), det_thresh=0.25)
+        logger.info("InsightFace FaceAnalysis (buffalo_l) loaded with det_thresh=0.25.")
         return _face_app
     except Exception as e:
         logger.error(f"Failed to load InsightFace: {e}", exc_info=True)
@@ -155,7 +155,9 @@ def _compute_occlusion_proxy(
 
 
 def detect_faces(
-    image_bytes: bytes, pil_image: "Image.Image | None" = None
+    image_bytes: bytes, 
+    pil_image: "Image.Image | None" = None,
+    min_det_score: float = 0.5
 ) -> list[dict[str, Any]]:
     """
     Detect faces in an image and return embedding, thumbnail, and quality metadata.
@@ -164,6 +166,7 @@ def detect_faces(
         image_bytes: Raw image bytes (JPEG/PNG etc.)
         pil_image: Optional already-decoded RGB PIL.Image. When provided, the
             JPEG is not re-decoded here.
+        min_det_score: Minimum confidence threshold to accept a detected face.
 
     Returns:
         List of dicts with keys:
@@ -183,6 +186,10 @@ def detect_faces(
     )
     img = np.array(source)
     faces = app.get(img)
+    
+    # Filter by confidence threshold
+    faces = [f for f in faces if getattr(f, "det_score", 0.0) >= min_det_score]
+    
     image_height, image_width = img.shape[:2]
     image_area = float(max(1, image_width * image_height))
 

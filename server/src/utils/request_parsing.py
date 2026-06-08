@@ -129,6 +129,14 @@ def _extract_options(data) -> dict[str, Any]:
     options["ollama_base_url"] = data.get("ollama_base_url") or None
     options["lmstudio_base_url"] = data.get("lmstudio_base_url") or None
 
+    # Privacy options
+    options["blurFacesForCloud"] = _bool_from_data(data, "blurFacesForCloud", False)
+    if options["blurFacesForCloud"]:
+        options["faceBlurSensitivity"] = data.get("faceBlurSensitivity", "balanced")
+    else:
+        # Ignore sub-options if blur faces is turned off
+        options["faceBlurSensitivity"] = "balanced"
+
     raw_current_settings = _parse_json_field(data.get("current_settings"))
     options["current_settings"] = (
         raw_current_settings if isinstance(raw_current_settings, dict) else None

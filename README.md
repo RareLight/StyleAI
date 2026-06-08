@@ -16,7 +16,13 @@ StyleAI bridges the gap between modern Large Language Models (LLMs) and Adobe Li
 
 Whether you want to cull a massive photo shoot, find a specific photo using natural language, or have AI automatically suggest develop edits that match your style, StyleAI integrates directly into your existing workflow. 
 
-It's designed with your privacy in mind, allowing you to run powerful AI models entirely locally on your own machine, or connect to your preferred cloud providers.
+**Your Privacy, First:** In an era where AI often means uploading your personal or client photos to the cloud, StyleAI flips the script. By leveraging highly optimized models (like SigLIP2, Ollama, and LM Studio), StyleAI runs powerful AI analysis **entirely locally on your own machine**. Your photos, your metadata, and your intellectual property never have to leave your hard drive unless you explicitly choose to connect a cloud provider. 
+
+> [!IMPORTANT]
+> **Privacy First, But Not Guaranteed Online**
+> StyleAI is designed as a privacy-first tool that makes every effort to protect you and your clients. We strongly recommend using **local LLMs** (like Ollama or LM Studio) whenever possible. If you choose to use online cloud APIs (like ChatGPT or Google Gemini), please note that privacy can never be fully guaranteed. 
+> 
+> For a full breakdown of how we protect your data (including EXIF stripping, downsizing, and auto-blurring faces), please read our full **[Privacy and Security Explainer](https://github.com/RareLight/StyleAI/wiki/Privacy-and-Security)**.
 
 ---
 
@@ -26,7 +32,8 @@ It's designed with your privacy in mind, allowing you to run powerful AI models 
 - **AI-Guided Develop Edits:** StyleAI can review a photo and propose a tailored Lightroom develop recipe—including complex masks. You retain full control over the style strength and can provide custom manual instructions.
 - **Semantic Free-Text Search:** Find photos using natural language. Just type exactly what you remember—"Red sports car parked in front of a snowy garage" or "Bride laughing in the rain"—and StyleAI will build a Lightroom Collection with the most relevant matches.
 - **Smart Image Culling:** StyleAI groups similar bursts of photos, helps you pick out the sharpest frames, and effortlessly creates organized collections for your picks, alternates, and rejects.
-- **Local & Cloud Models:** Work the way you want. Run models locally and securely using Ollama or LM Studio, or connect to the cloud with ChatGPT, Google Gemini, and Vertex AI. 
+- **100% Local Inference (Privacy First):** Protect your clients and your art. Run all embeddings, face recognition, and auto-tagging locally using Ollama or LM Studio. Your data stays on your machine.
+- **Cloud Models Available:** If you need maximum reasoning capabilities, you can optionally connect to the cloud with ChatGPT, Google Gemini, and Vertex AI using your own API keys.
 - **Creative Control:** Customize the AI's core system prompts right from the Lightroom Plug-In Manager. Adjust the temperature slider to control whether the AI provides literal descriptions or more creative ideas.
 
 ---
@@ -69,6 +76,7 @@ The StyleAI core, plugin, and backend are released under the **GNU Affero Genera
 
 If you're a developer or a photographer with ideas, check out our [CONTRIBUTING.md](CONTRIBUTING.md) to see how you can help shape the future of StyleAI.
 
-**Developed by:**
+**Original Upstream Development by:**
 - **Bastian Machek (LrGenius / Fokuspunk)** – *Creator & Lead Developer*
+- **Refactor and expanded image editing capabilities by Anna Grunseth (Rare Light Photography) and Google Gemini/Antigravity**
 - **The Open Source Community** – *Special thanks to all contributors, testers, and the developers of the underlying AI frameworks (InsightFace, OpenCLIP, PyTorch, ChromaDB).*

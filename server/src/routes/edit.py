@@ -6,6 +6,8 @@ from config import logger
 from services.metadata import get_analysis_service
 from utils.edit_persistence import _persist_edit_recipe, _success_payload
 from utils.request_parsing import _extract_options, _extract_photo_ids
+from utils.image_processing import apply_face_blur
+from services import face as face_service
 
 
 edit_bp = Blueprint("edit", __name__)
@@ -36,9 +38,26 @@ def generate_edit_recipe():
     if not file or not photo_id:
         return jsonify({"error": "Missing file or photo_id"}), 400
 
+    image_bytes = file.read()
+    if options.get("blurFacesForCloud"):
+        try:
+            sensitivity = options.get("faceBlurSensitivity", "balanced").lower()
+            min_det_score = 0.5
+            if sensitivity == "high":
+                min_det_score = 0.3
+            elif sensitivity == "low":
+                min_det_score = 0.7
+            faces = face_service.detect_faces(image_bytes, min_det_score=min_det_score)
+            if faces:
+                bboxes = [f["bbox"] for f in faces]
+                image_bytes = apply_face_blur(image_bytes, bboxes)
+            options["blur_faces"] = True
+        except Exception as e:
+            logger.error(f"Failed to blur faces in edit route: {e}")
+
     analysis_service = get_analysis_service()
     response = analysis_service.generate_edit_recipe_single(
-        photo_id, file.read(), options
+        photo_id, image_bytes, options
     )
     if not response.success or not response.recipe:
         return jsonify(
@@ -67,10 +86,28 @@ def generate_edit_recipe_base64():
             {"error": "Missing required fields: image, photo_id, filename"}
         ), 400
 
+    image_bytes = base64.b64decode(image_b64.encode("ascii"))
     options = _extract_options(data)
+    
+    if options.get("blurFacesForCloud"):
+        try:
+            sensitivity = options.get("faceBlurSensitivity", "balanced").lower()
+            min_det_score = 0.5
+            if sensitivity == "high":
+                min_det_score = 0.3
+            elif sensitivity == "low":
+                min_det_score = 0.7
+            faces = face_service.detect_faces(image_bytes, min_det_score=min_det_score)
+            if faces:
+                bboxes = [f["bbox"] for f in faces]
+                image_bytes = apply_face_blur(image_bytes, bboxes)
+            options["blur_faces"] = True
+        except Exception as e:
+            logger.error(f"Failed to blur faces in edit_base64 route: {e}")
+
     analysis_service = get_analysis_service()
     response = analysis_service.generate_edit_recipe_single(
-        photo_id, base64.b64decode(image_b64.encode("ascii")), options
+        photo_id, image_bytes, options
     )
     if not response.success or not response.recipe:
         return jsonify(

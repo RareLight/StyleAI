@@ -230,6 +230,55 @@ def index_images_batch_base64_v2():
     ), 200
 
 
+@index_bp.route("/preview_blur_base64", methods=["POST"])
+def preview_blur_base64():
+    """
+    Receives a list of base64 encoded images, detects faces, blurs them, and returns the blurred images as base64.
+    JSON: { "images": [ { "image": "<base64>", "photo_id": "<id>", "filename": "<name>" }, ... ] }
+    """
+    logger.info("Preview blur base64 request received")
+    data = request.get_json(silent=True) or {}
+    images_data = data.get("images", [])
+
+    if not images_data:
+        return jsonify({"error": "No images provided"}), 400
+
+    results = []
+    from services import face as face_service
+    from utils.image_processing import apply_face_blur
+
+    global_options = data.get("options", {})
+    sensitivity = global_options.get("faceBlurSensitivity", "balanced").lower()
+    min_det_score = 0.5
+    if sensitivity == "high":
+        min_det_score = 0.3
+    elif sensitivity == "low":
+        min_det_score = 0.7
+
+    for item in images_data:
+        image_base64 = item.get("image")
+        photo_id = item.get("photo_id") or item.get("uuid")
+        
+        if not image_base64 or not photo_id:
+            continue
+            
+        try:
+            image_bytes = base64.b64decode(image_base64.encode("ascii"))
+            faces = face_service.detect_faces(image_bytes, min_det_score=min_det_score)
+            if faces:
+                bboxes = [f["bbox"] for f in faces]
+                blurred_bytes = apply_face_blur(image_bytes, bboxes)
+                blurred_b64 = base64.b64encode(blurred_bytes).decode("ascii")
+                results.append({"photo_id": photo_id, "image": blurred_b64, "faces_blurred": True})
+            else:
+                results.append({"photo_id": photo_id, "image": image_base64, "faces_blurred": False})
+        except Exception as e:
+            logger.error(f"Error previewing blur for photo {photo_id}: {e}", exc_info=True)
+            results.append({"photo_id": photo_id, "image": image_base64, "faces_blurred": False})
+            
+    return jsonify({"status": "success", "images": results}), 200
+
+
 @index_bp.route("/metadata/generate", methods=["POST"])
 def generate_metadata_single():
     """

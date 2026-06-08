@@ -29,6 +29,7 @@ local ENDPOINTS = {
     INDEX_BY_REFERENCE = "/index_by_reference",
     INDEX_BASE64 = "/index_base64",
     INDEX_BASE64_BATCH = "/index_base64_batch",
+    PREVIEW_BLUR_BASE64 = "/preview_blur_base64",
     METADATA_GENERATE = "/metadata/generate",
     EDIT_BASE64 = "/edit_base64",
     STATS = "/db/stats",
@@ -882,6 +883,7 @@ function SearchIndexAPI.generateMetadataSingle(photoId, base64Image, filename, o
         temperature = tostring(options.temperature or (prefs and prefs.temperature) or 0.2),
         replace_ss = tostring(options.replace_ss or false),
         generate_keywords = tostring(options.generate_keywords or false),
+        blurFacesForCloud = tostring(options.blurFacesForCloud or false),
         generate_caption = tostring(options.generate_caption or false),
         generate_title = tostring(options.generate_title or false),
         generate_alt_text = tostring(options.generate_alt_text or false),
@@ -927,6 +929,56 @@ function SearchIndexAPI.generateMetadataSingle(photoId, base64Image, filename, o
 end
 
 ---
+-- Fetches blurred previews for a batch of photos using base64-encoded JPEGs.
+-- Uses the /preview_blur_base64 endpoint.
+-- @param batch table Array of tables containing { photo_id, image, filename }
+-- @return boolean success, table|string response or error.
+---
+function SearchIndexAPI.previewBlurredFacesBatch(batch, sensitivity)
+    if not batch or type(batch) ~= "table" or #batch == 0 then
+        log:error("previewBlurredFacesBatch: no batch data")
+        return false, "No batch data provided"
+    end
+
+    local url = getBaseUrl() .. ENDPOINTS.PREVIEW_BLUR_BASE64
+
+    local bodyImages = {}
+    for _, item in ipairs(batch) do
+        table.insert(bodyImages, {
+            image = item.image,
+            photo_id = item.photo_id,
+            filename = item.filename
+        })
+    end
+
+    local bodyParams = {
+        images = bodyImages,
+        options = {
+            faceBlurSensitivity = sensitivity or "balanced"
+        }
+    }
+
+    log:trace("previewBlurredFacesBatch: Requesting previews for " .. tostring(#batch) .. " images")
+
+    local response, err = _request('POST', url, bodyParams, 120)
+
+    if not response then
+        log:error("previewBlurredFacesBatch failed: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+
+    if response.status == "success" then
+        return true, response
+    end
+
+    if response.error then
+        return false, response.error
+    end
+
+    return false, "Unknown response status: " .. tostring(response.status)
+end
+
+---
 -- Analyzes and indexes a batch of photos using base64-encoded JPEGs.
 -- Uses the /index_base64_batch endpoint.
 -- @param batch table Array of tables containing { photo_id, image, filename, options }
@@ -953,6 +1005,7 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
         temperature = tostring(globalOptions.temperature or (prefs and prefs.temperature) or 0.2),
         replace_ss = tostring(globalOptions.replace_ss or false),
         generate_keywords = tostring(globalOptions.generate_keywords or false),
+        blurFacesForCloud = tostring(globalOptions.blurFacesForCloud or false),
         generate_caption = tostring(globalOptions.generate_caption or false),
         generate_title = tostring(globalOptions.generate_title or false),
         generate_alt_text = tostring(globalOptions.generate_alt_text or false),
@@ -1084,6 +1137,7 @@ function SearchIndexAPI.generateEditRecipePhoto(photoId, filepath, options)
     table.insert(mimeChunks, { name = "submit_gps", value = tostring(options.submit_gps or false) })
     table.insert(mimeChunks, { name = "submit_keywords", value = tostring(options.submit_keywords or false) })
     table.insert(mimeChunks, { name = "submit_folder_names", value = tostring(options.submit_folder_names or false) })
+    table.insert(mimeChunks, { name = "blurFacesForCloud", value = tostring(options.blurFacesForCloud or false) })
     table.insert(mimeChunks, { name = "include_masks", value = tostring(options.include_masks ~= false) })
     if options.user_context then
         table.insert(mimeChunks, { name = "user_context", value = options.user_context })
