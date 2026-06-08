@@ -10,6 +10,8 @@ import config
 from config import logger, args
 from services.version import get_backend_version_info
 
+import json
+
 # Lazy import server_lifecycle to speed up startup
 import server_lifecycle
 
@@ -134,8 +136,10 @@ def _auto_bind_db_path():
     if not db_path:
         return
 
+    from core.migrations import run_migrations
     try:
-        service_chroma.ensure_db_path(db_path)
+        if service_chroma.ensure_db_path(db_path):
+            run_migrations(db_path)
     except Exception as e:
         # Don't 500 here — let the route's own error handling report the
         # underlying failure with more context. We only log so we can see
@@ -143,10 +147,52 @@ def _auto_bind_db_path():
         logger.error("Auto-bind to db_path %s failed: %s", db_path, e, exc_info=True)
 
 
-@app.errorhandler(500)
-def handle_internal_server_error(e):
-    logger.error(f"Internal Server Error: {e}")
-    return jsonify({"error": "Internal Server Error"}), 500
+@app.after_request
+def enforce_consistent_api_envelope(response):
+    """
+    Ensure all JSON responses conform to the uniform API envelope:
+    { "results": {...}, "error": null, "warning": null }
+    """
+    if response.is_json:
+        try:
+            data = response.get_json()
+            if isinstance(data, dict):
+                # Check if it already conforms strictly to the envelope
+                # We check if these three keys are the ONLY keys in the dictionary
+                if set(data.keys()) == {"results", "error", "warning"}:
+                    return response
+                
+                # It does not conform. We need to wrap it.
+                error_val = data.pop("error", None)
+                if not error_val and data.get("status") == "error":
+                    error_val = data.pop("message", "Unknown error")
+                
+                warning_val = data.pop("warning", None)
+                
+                # If it's an error, results should be None. Otherwise, results is the data dict itself.
+                results_val = None if error_val else data
+
+                new_data = {
+                    "results": results_val,
+                    "error": str(error_val) if error_val else None,
+                    "warning": str(warning_val) if warning_val else None
+                }
+                response.set_data(json.dumps(new_data))
+        except Exception as e:
+            logger.error(f"Error enforcing API envelope: {e}", exc_info=True)
+    return response
+
+
+from werkzeug.exceptions import HTTPException
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # Pass through HTTP errors
+    if isinstance(e, HTTPException):
+        return e
+
+    logger.error(f"Unhandled Exception: {e}", exc_info=True)
+    return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
@@ -176,7 +222,13 @@ if __name__ == "__main__":
     # Start idle monitor (model unload + server auto-shutdown)
     server_lifecycle._ensure_unloader_thread()
 
-    host = os.environ.get("STYLEAI_HOST", "127.0.0.1")
+    # Priority 8 Security: Strictly bind to localhost to prevent local network exposure.
+    # We only allow override via STYLEAI_HOST when running in debug mode.
+    if args.debug:
+        host = os.environ.get("STYLEAI_HOST", "127.0.0.1")
+    else:
+        host = "127.0.0.1"
+
     port = int(os.environ.get("STYLEAI_PORT", "19819"))
     try:
         if args.debug:

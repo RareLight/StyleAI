@@ -33,7 +33,8 @@ def test_index_base64_batch_returns_envelope(client, mocker):
         },
     )
     assert response.status_code == 200
-    payload = response.get_json()
+    _json = response.get_json()
+    payload = _json.get("results") if _json.get("results") is not None else _json
     assert payload["status"] == "processed"
     assert payload["success_count"] == 2
     assert payload["failure_count"] == 0

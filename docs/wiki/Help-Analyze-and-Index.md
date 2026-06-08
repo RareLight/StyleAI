@@ -1,55 +1,43 @@
-# Help: Analyze and Index
+# Guide to AI Indexing and Auto-Tagging
 
-> Migrated from `github.com/RareLight/StyleAI/wiki` and curated for repo docs.  
-> Screenshot references were intentionally removed.
+The Analyze and Index feature is the core engine of StyleAI. It scans your photos, generates rich visual descriptions, and embeds them into a specialized database to enable semantic search and AI-assisted develop edits.
 
-## Start the task
+## Accessing the Tool
 
-In Lightroom Classic:
+Open Lightroom Classic. Select the photos you wish to process in the Library module, then navigate to the top menu bar. Go to **Library > Plug-in Extras > AI Index & Auto-Tag Photos...**
 
-- `Library -> Plug-in Extras -> Analyze & Index photos`
+## Workflow Modes
 
-## Scope options
+When the dialog opens, the first option you will see is the Workflow Mode. This determines what kind of data the plugin will generate and limits the configuration options to only what you need.
 
-- `New or unprocessed photos`
-- `All photos in catalog`
-- `Current view` (folder/collection currently open)
-- `Selected photos only`
+*   **AI Search Embedding Only**: This mode runs the fast SigLIP2 vision model to create a mathematical representation of your image. This enables powerful semantic search capabilities (finding photos by describing them naturally) without the slower, text-generation step of a Large Language Model.
+*   **AI Auto-Tagging/Metadata Only**: This mode skips the semantic search embedding and exclusively uses your configured AI language model to write keywords, titles, captions, and alternative text directly into your photo metadata.
+*   **Complete Package (Both)**: This runs both models sequentially. It provides the full capabilities of StyleAI, enabling both semantic search and rich text metadata generation.
 
-## Processing options
+You can also specify the scope of the operation, such as processing only your selected photos or scanning the entire catalog for new, unprocessed images.
 
-- `Regenerate all data (overwrite existing)`
-  - If disabled, only missing data is generated.
-- `Import metadata from catalog before indexing`
-  - Imports existing Lightroom metadata into backend DB before AI generation.
-- `Generate AI metadata`
-  - Generates `keywords`, `title`, `caption`, `alt_text` (based on your toggles).
-- `Create search embeddings`
-  - Required for semantic search.
+## General Settings
 
-## Metadata behavior and structure
+In the General tab, you verify your models and control the AI text generation. 
 
-- `Use top-level keyword`
-  - Places generated keywords under one top-level keyword.
-- `Use keyword structure from Lightroom catalog`
-  - Uses existing keyword hierarchy from catalog as category source.
-  - Use carefully for large/complex hierarchies.
-- `Use hierarchical keywords`
-  - Enables category-based keyword output.
+For the search embeddings, the plugin will indicate whether the SigLIP2 model is cached and ready.
 
-## Extra context options
+For the auto-tagging, you will select your preferred AI language model from the dropdown. This list is populated by the providers you configured in the Plugin Manager. You can also adjust the temperature setting. A lower temperature produces more factual, rigid descriptions, while a higher temperature allows the AI to be more creative and subjective.
 
-- `Show Photo Context Dialog`
-- `Folder names`
-- `Capture Date/Time`
-- `Existing Keywords`
-- `GPS coordinates`
+## Keywords & Metadata
 
-These fields are passed as additional context for metadata generation.
+The Keywords tab allows you to toggle exactly which Lightroom metadata fields the AI should overwrite or append. 
 
-## Related tasks
+If you enable keyword generation, you can also control the structural hierarchy. Enabling keyword hierarchy organizes the tags logically (for example, grouping "oak" and "pine" under a "trees" parent category). You can even instruct the AI to respect your existing Lightroom keyword structure to avoid duplicating tags with slight variations.
 
-- `Retrieve metadata from backend`
-  - Re-apply generated metadata if it was not saved directly to catalog.
-- `Import metadata from catalog`
-  - Sync Lightroom metadata into backend DB.
+## Prompt & Context
+
+The Prompt tab is where you instruct the AI on exactly how to describe your images. You can select a pre-saved prompt template from the dropdown or write custom instructions directly in the text field.
+
+The context options determine what existing data is fed to the AI alongside the image. Sending GPS coordinates, folder names, or existing keywords can significantly improve the accuracy of the generated descriptions by giving the model a real-world anchor for its analysis. 
+
+If you enable the photo context dialog, StyleAI will pause before processing each image to ask you for specific, manual context.
+
+## Advanced Maintenance
+
+The Advanced tab controls how the generated data interacts with your Lightroom catalog. You can choose whether to overwrite existing metadata, append to it, or skip photos that already have AI data. You can also enforce a manual review step, where the plugin presents the AI's suggestions and asks for your approval before writing anything to the Lightroom database.

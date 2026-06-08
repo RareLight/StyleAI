@@ -30,40 +30,7 @@ from services import training as training_service
 # Schema
 # ---------------------------------------------------------------------------
 
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS styles (
-    style_id            TEXT PRIMARY KEY,
-    style_name          TEXT NOT NULL,
-    camera_make         TEXT,
-    camera_model        TEXT,
-    camera_profile      TEXT,
-    genre               TEXT NOT NULL,
-    subgenre            TEXT,
-    description         TEXT,
-    example_count       INTEGER DEFAULT 0,
-    mean_exposure_dna   TEXT,           -- JSON
-    scene_distribution  TEXT,           -- JSON
-    develop_variance    TEXT,           -- JSON
-    confidence_threshold REAL DEFAULT 0.45,
-    created_at          TEXT,
-    updated_at          TEXT
-);
-
-CREATE TABLE IF NOT EXISTS style_examples (
-    style_id            TEXT NOT NULL,
-    photo_id            TEXT NOT NULL,
-    PRIMARY KEY (style_id, photo_id),
-    FOREIGN KEY (style_id) REFERENCES styles(style_id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS style_migration_log (
-    migration_id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    migrated_at         TEXT,
-    source_examples     INTEGER,
-    styles_created      INTEGER,
-    status              TEXT
-);
-"""
+# Schema is now managed by server/src/migrations/versions/001_initial_schema.py
 
 # ---------------------------------------------------------------------------
 # Lazy init
@@ -92,17 +59,19 @@ def _ensure_initialized() -> sqlite3.Connection:
 
     logger.info("Initialising style catalog SQLite at %s", db_file)
     os.makedirs(os.path.dirname(db_file), exist_ok=True)
+    
+    from core.migrations import run_migrations
+    try:
+        run_migrations(os.path.dirname(db_file))
+    except Exception as e:
+        logger.error(f"Failed to run migrations for style catalog: {e}")
+        # Continue to connect anyway, maybe it's just the version check failing
+        
     conn = sqlite3.connect(db_file, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA busy_timeout=5000;")
-    conn.executescript(SCHEMA_SQL)
     conn.row_factory = sqlite3.Row
-    # Migrate: ensure camera_profile column exists
-    cols = [r[1] for r in conn.execute("PRAGMA table_info(styles)")]
-    if "camera_profile" not in cols:
-        conn.execute("ALTER TABLE styles ADD COLUMN camera_profile TEXT")
-        conn.commit()
     _connection = conn
     _db_path = db_file
     return conn
@@ -146,20 +115,25 @@ def upsert_style(style: dict[str, Any]) -> None:
 
     style_id = style["style_id"]
     with conn:
+        # Priority 8 / Rename Style: Retrieve existing user_style_name if present
+        existing_row = conn.execute("SELECT user_style_name FROM styles WHERE style_id = ?", (style_id,)).fetchone()
+        existing_user_name = existing_row["user_style_name"] if existing_row else None
+
         conn.execute("DELETE FROM styles WHERE style_id = ?", (style_id,))
         conn.execute("DELETE FROM style_examples WHERE style_id = ?", (style_id,))
 
         conn.execute(
             """
             INSERT INTO styles (
-                style_id, style_name, camera_make, camera_model, camera_profile, genre, subgenre,
+                style_id, style_name, user_style_name, camera_make, camera_model, camera_profile, genre, subgenre,
                 description, example_count, mean_exposure_dna, scene_distribution,
                 develop_variance, confidence_threshold, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 style_id,
                 style.get("style_name", ""),
+                style.get("user_style_name", existing_user_name),
                 style.get("camera_make"),
                 style.get("camera_model"),
                 style.get("camera_profile"),
@@ -207,20 +181,32 @@ def get_style(style_id: str) -> dict[str, Any] | None:
     ).fetchone()
     if not row:
         return None
-    style = _row_to_dict(row)
+    d = _row_to_dict(row)
+    # Apply display name override if custom name is present
+    if d.get("user_style_name"):
+        d["style_name"] = d["user_style_name"]
+    
     # Attach example photo_ids
     rows = conn.execute(
         "SELECT photo_id FROM style_examples WHERE style_id = ?", (style_id,)
     ).fetchall()
-    style["example_photo_ids"] = [r["photo_id"] for r in rows]
-    return style
+    d["example_photo_ids"] = [r["photo_id"] for r in rows]
+    return d
 
 
 def list_styles() -> list[dict[str, Any]]:
     """Return all styles, ordered by name."""
     conn = _ensure_initialized()
     rows = conn.execute("SELECT * FROM styles ORDER BY style_name").fetchall()
-    return [_row_to_dict(r) for r in rows]
+        
+    results = []
+    for r in rows:
+        d = _row_to_dict(r)
+        if d.get("user_style_name"):
+            d["style_name"] = d["user_style_name"]
+        results.append(d)
+        
+    return results
 
 
 def get_style_examples(style_id: str) -> list[dict[str, Any]]:
@@ -641,6 +627,17 @@ def import_styles_json(data: dict[str, Any], merge: bool = True) -> dict[str, An
 # ---------------------------------------------------------------------------
 # Integration hooks for training service
 # ---------------------------------------------------------------------------
+
+
+def rename_style(style_id: str, new_name: str) -> bool:
+    """Rename a style by setting its user_style_name."""
+    conn = _ensure_initialized()
+    with conn:
+        cursor = conn.execute(
+            "UPDATE styles SET user_style_name = ?, updated_at = ? WHERE style_id = ?",
+            (new_name, _now(), style_id)
+        )
+        return cursor.rowcount > 0
 
 
 def update_style_for_example(

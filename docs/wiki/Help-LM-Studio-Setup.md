@@ -1,39 +1,35 @@
-# Help: LM Studio Setup
+# Setting Up LM Studio with StyleAI
 
-> Migrated from `github.com/RareLight/StyleAI/wiki/lmstudio-setup` and curated for repo docs.  
-> Screenshot references were intentionally removed.
+LM Studio is a desktop application that lets you discover, download, and run local LLMs. It features a built-in local inference server that is compatible with the OpenAI API format, making it very easy to integrate with StyleAI for private, offline image analysis.
 
-## 1. Install LM Studio
+## Installation
 
-- Download from: [https://lmstudio.ai/download](https://lmstudio.ai/download)
+Download the LM Studio installer for your operating system from lmstudio.ai. Run the installer and launch the application.
 
-## 2. Configure LM Studio for StyleAI
+If you are on an Apple Silicon Mac, LM Studio often provides MLX-optimized builds of models. These run significantly faster for vision workloads than standard GGUF builds, so you should prioritize them when searching for models.
 
-- Enable server mode in LM Studio
-- Ensure server status is running
-- Enable on-demand model loading if preferred
+## Downloading a Vision Model
 
-## 3. Download vision model(s)
+StyleAI requires models that understand images (vision-capable models). Use the search bar in LM Studio to find and download a suitable model. 
 
-Recommended starting points:
+For a fast baseline that works well on most hardware, search for `qwen3-vl-4b`. For better description quality at a moderate performance cost, `qwen3-vl-8b` or `gemma3-4b` are solid general-purpose defaults.
 
-- `qwen/qwen3-vl-4b` — fast baseline.
-- `qwen/qwen3-vl-8b` — better description quality at moderate cost.
-- `google/gemma3-4b` — solid general-purpose default.
-- `google/gemma3-12b` — higher quality if your hardware can host it.
+When downloading, pay attention to the memory requirements listed in LM Studio. Prefer the largest model that fits comfortably within your system's VRAM or unified memory. Choosing a model that exceeds your memory capacity will cause the system to swap to disk, resulting in extremely slow processing times during indexing batches.
 
-## 4. Performance guidance
+## Starting the Local Server
 
-- Prefer the largest model that still fits comfortably in VRAM/unified memory.
-- On Apple Silicon, prefer the **MLX** variant of the same model — it runs
-  noticeably faster than the GGUF build for vision workloads.
-- For batch indexing on a laptop, a 4B model usually beats waiting on a
-  thrashing 12B model.
+Once your model is downloaded, navigate to the Local Server tab in LM Studio (usually represented by a double-arrow icon on the left sidebar).
 
-See [Help: Choosing AI Model](Help-Choosing-AI-Model) for a side-by-side
-comparison with cloud providers.
+Select the vision model you just downloaded from the dropdown menu at the top. Allow the model a moment to load into memory.
 
-## 5. Configure plugin/backend
+Check the server settings on the right panel. Ensure the server is configured to run on the default port (1234). Click the Start Server button. You should see log output indicating that the server is listening for requests.
 
-- Point backend/plugin to the LM Studio server endpoint
-- Verify model availability from plugin model list
+If you plan to switch between models frequently, you can enable the just-in-time model loading option in LM Studio's settings, which allows StyleAI to request a specific model to load automatically.
+
+## Configuring StyleAI
+
+Leave LM Studio running in the background and open Lightroom Classic. Navigate to the StyleAI Plugin Manager.
+
+Under the AI Provider Configuration section, locate the LM Studio Base URL field. If LM Studio is running on the same computer, the default value (`http://localhost:1234/v1`) is correct. If you are hosting LM Studio on another computer, replace localhost with the appropriate IP address.
+
+Close the Plugin Manager to save your settings. When you use the StyleAI tools, the plugin will now route vision analysis requests through LM Studio.

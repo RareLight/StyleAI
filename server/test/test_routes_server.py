@@ -22,7 +22,8 @@ def test_ping_returns_pong(client):
 def test_version_returns_backend_version(client):
     response = client.get("/version")
     assert response.status_code == 200
-    payload = response.get_json()
+    _json = response.get_json()
+    payload = _json.get("results") if _json.get("results") is not None else _json
     assert "backend_version" in payload
 
 
@@ -40,7 +41,8 @@ def test_health_reports_clip_error_when_set(client, mocker):
 
     response = client.get("/health")
     assert response.status_code == 200
-    data = response.get_json()
+    _json = response.get_json()
+    data = _json.get("results") if _json.get("results") is not None else _json
     assert data["clip_model"] == "failed"
     assert data["clip_error"] == "boom: weights missing"
 
@@ -58,6 +60,7 @@ def test_health_reports_no_error_when_healthy(client, mocker):
 
     response = client.get("/health")
     assert response.status_code == 200
-    data = response.get_json()
+    _json = response.get_json()
+    data = _json.get("results") if _json.get("results") is not None else _json
     assert data["clip_model"] == "loaded"
     assert data["clip_error"] is None

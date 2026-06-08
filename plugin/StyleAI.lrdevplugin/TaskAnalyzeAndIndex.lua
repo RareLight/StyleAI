@@ -17,6 +17,8 @@ local function showAnalyzeAndIndexDialog(ctx)
 
     -- Scope settings
     props.scope = prefs.indexScope or "selected"
+    props.indexingMode = prefs.indexingMode or "both"
+
 
     -- Check if CLIP model is ready on server
     props.clipReady = SearchIndexAPI.isClipReady()
@@ -69,8 +71,14 @@ local function showAnalyzeAndIndexDialog(ctx)
 
     -- Fetch all models with API keys if configured
     -- Server will check all providers and filter to multimodal only
-    local openaiKey = (prefs and not Util.nilOrEmpty(prefs.chatgptApiKey)) and prefs.chatgptApiKey or nil
-    local geminiKey = (prefs and not Util.nilOrEmpty(prefs.geminiApiKey)) and prefs.geminiApiKey or nil
+    local openaiKey = nil
+    local geminiKey = nil
+    if prefs then
+        openaiKey = import("LrPasswords").retrieve("StyleAI", "chatgptApiKey")
+        geminiKey = import("LrPasswords").retrieve("StyleAI", "geminiApiKey")
+    end
+    openaiKey = Util.nilOrEmpty(openaiKey) and nil or openaiKey
+    geminiKey = Util.nilOrEmpty(geminiKey) and nil or geminiKey
 
     local modelsResp = SearchIndexAPI.getModels(openaiKey, geminiKey)
     if modelsResp and modelsResp.models then
@@ -146,6 +154,9 @@ local function showAnalyzeAndIndexDialog(ctx)
         end
     end
 
+    local Defaults = require("Defaults")
+    local UIFactory = require("components.UIFactory")
+    local SearchIndexAPI = require("APISearchIndex")
     local healthData = SearchIndexAPI.getHealth()
     props.healthData = healthData or {}
 
@@ -164,161 +175,132 @@ local function showAnalyzeAndIndexDialog(ctx)
     local contents = f:column {
         bind_to_object = props,
         spacing = f:control_spacing(),
-        width = 650, -- Fixed width for predictability
+        width = 650,
+
+        UIFactory.SettingsGroup(f, {
+            title = LOC "$$$/StyleAI/AnalyzeAndIndex/ModeLabel=Workflow Mode",
+            fill_horizontal = 1,
+            f:row {
+                f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/IndexingMode=Indexing Mode:", width = share 'labelWidth' },
+                f:popup_menu {
+                    value = bind 'indexingMode',
+                    tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/IndexingModeTooltip=Selects which AI features to run. Embedding enables semantic search; Metadata generates text tags.",
+                    items = {
+                        { title = LOC "$$$/StyleAI/UI/ModeEmbedOnly=AI Search Embedding Only", value = "embed" },
+                        { title = LOC "$$$/StyleAI/UI/ModeMetaOnly=AI Auto-Tagging/Metadata Only", value = "meta" },
+                        { title = LOC "$$$/StyleAI/UI/ModeBoth=Complete Package (Both)", value = "both" },
+                    },
+                    width = 300,
+                },
+            },
+            f:row {
+                f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/Scope=Scope:", width = share 'labelWidth' },
+                f:popup_menu {
+                    value = bind 'scope',
+                    tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeTooltip=Choose which photos to process in this run.",
+                    width = 300,
+                    items = {
+                        { title = LOC "$$$/StyleAI/common/ScopeSelected=Selected photos only",              value = 'selected' },
+                        { title = LOC "$$$/StyleAI/common/ScopeView=Current view",                          value = 'view' },
+                        { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeAll=All photos in catalog",         value = 'all' },
+                        { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", value = 'missing' },
+                        { title = LOC "Photos already indexed in database", value = 'indexed' },
+                    },
+                },
+            },
+        },
 
         f:tab_view {
             fill_horizontal = 1,
 
             --------------------------------------------------------
-            -- GENERAL TAB
+            -- 1. GENERAL SETTINGS
             --------------------------------------------------------
             f:tab_view_item {
-                title = LOC "$$$/StyleAI/UI/TabGeneral=General",
+                title = LOC "$$$/StyleAI/UI/TabGeneral=General Settings",
                 identifier = 'general',
 
-                -- Scope Selection
-                f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/Scope=Scope",
+                UIFactory.SettingsGroup(f, {
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks=Search Indexing (SigLIP2)",
                     fill_horizontal = 1,
-                    f:row {
-                        f:static_text {
-                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/Scope=Scope:",
-                            width = share 'labelWidth',
-                        },
-                        f:popup_menu {
-                            value = bind 'scope',
-                            width = 300,
-                            items = {
-                                { title = LOC "$$$/StyleAI/common/ScopeSelected=Selected photos only",              value = 'selected' },
-                                { title = LOC "$$$/StyleAI/common/ScopeView=Current view",                          value = 'view' },
-                                { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeAll=All photos in catalog",         value = 'all' },
-                                { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", value = 'missing' },
-                                { title = LOC "Photos already indexed in database", value = 'indexed' },
-                            },
-                        },
+                    visible = bind {
+                        key = "indexingMode",
+                        transform = function(v) return v == "embed" or v == "both" end,
                     },
-                },
-
-                -- AI Model Settings
-                f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/AISettings=AI Model",
-                    fill_horizontal = 1,
-                    f:row {
-                        f:static_text {
-                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/aiModel=AI Model:",
-                            width = share 'labelWidth',
-                        },
-                        f:popup_menu {
-                            value = bind 'modelKey',
-                            items = modelItems,
-                            width = 300,
-                        },
-                    },
-                    f:row {
-                        f:static_text {
-                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/Temperature=Temperature:",
-                            width = share 'labelWidth',
-                        },
-                        f:column {
-                            f:row {
-                                f:slider {
-                                    value = bind 'temperature',
-                                    min = 0.0,
-                                    max = 0.5,
-                                    integral = false,
-                                    width = 300,
-                                },
-                                f:static_text {
-                                    title = bind 'temperature',
-                                    width = 40,
-                                },
-                            },
-                            f:push_button {
-                                title = LOC "$$$/StyleAI/common/Reset=Reset",
-                                width = 60,
-                                action = function()
-                                    props.temperature = Defaults.defaultTemperature or 0.1
-                                end,
-                            },
-                        },
-                    },
-                    f:row {
-                        f:static_text {
-                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/generateLanguage=Language:",
-                            width = share 'labelWidth',
-                        },
-                        f:combo_box {
-                            value = bind 'language',
-                            items = Defaults.generateLanguages,
-                        },
-                        f:checkbox {
-                            value = bind 'replaceSS',
-                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/replaceSS=Replace ß with ss",
-                        },
-                    },
-                },
-
-                -- Embedding Model / SigLIP2 Tasks
-                f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks=Embedding Model / SigLIP2 Tasks",
-                    fill_horizontal = 1,
                     f:row {
                         f:checkbox {
                             value = bind 'enableEmbeddings',
                             title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddings=Create search embeddings",
+                            tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddingsTooltip=Analyzes image content visually to enable natural language semantic search.",
                             enabled = props.clipReady,
                         },
                         f:static_text {
                             title = bind {
                                 key = "clipReady",
                                 transform = function(v)
-                                    if v then
-                                        return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPReady=SigLIP2: Ready (Model cached)")
-                                    else
-                                        return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPNotReady=SigLIP2: Not Ready (Model missing)")
-                                    end
+                                    if v then return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPReady=SigLIP2: Ready (Model cached)")
+                                    else return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPNotReady=SigLIP2: Not Ready (Model missing)") end
                                 end,
                             },
                             text_color = bind {
                                 key = "clipReady",
                                 transform = function(v)
-                                    if v then
-                                        return LrColor(0, 0.8, 0)
-                                    else
-                                        return LrColor(0.8, 0, 0)
-                                    end
+                                    if v then return LrColor(0, 0.8, 0)
+                                    else return LrColor(0.8, 0, 0) end
                                 end
                             },
                         },
                     },
-                },
+                }),
 
-                -- LLM Tasks
-                f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/LlmTasks=LLM Tasks",
+                UIFactory.SettingsGroup(f, {
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/LlmTasks=AI Auto-Tagging",
                     fill_horizontal = 1,
+                    visible = bind {
+                        key = "indexingMode",
+                        transform = function(v) return v == "meta" or v == "both" end,
+                    },
                     f:row {
                         f:checkbox {
                             value = bind 'enableMetadata',
                             title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableMetadata=Generate AI metadata (Keywords, Title, Caption)",
+                            tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableMetadataTooltip=Uses a Vision LLM to automatically describe and tag your photos.",
                         },
                         f:static_text {
                             title = bind 'llmStatusText',
                             text_color = bind 'llmStatusColor',
                         },
                     },
+                    f:row {
+                        f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/aiModel=AI Model:", width = share 'labelWidth' },
+                        f:popup_menu { value = bind 'modelKey', items = modelItems, width = 300 },
+                    },
+                    f:row {
+                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/Temperature=Temperature:", width = share 'labelWidth' },
+                        f:slider { value = bind 'temperature', min = 0.0, max = 0.5, width = 200, tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/TemperatureTooltip=Lower values produce safer, more literal descriptions. Higher values are more creative." },
+                        f:static_text { title = bind 'temperature', width = 40 },
+                    },
+                    f:row {
+                        f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/generateLanguage=Language:", width = share 'labelWidth' },
+                        f:combo_box { value = bind 'language', items = Defaults.generateLanguages },
+                        f:checkbox { value = bind 'replaceSS', title = LOC "$$$/StyleAI/PluginInfoDialogSections/replaceSS=Replace ß with ss" },
+                    },
                 },
-            }, -- end General tab
+            },
 
             --------------------------------------------------------
-            -- METADATA TAB
+            -- 2. KEYWORDS & METADATA
             --------------------------------------------------------
             f:tab_view_item {
-                title = LOC "$$$/StyleAI/UI/TabMetadata=Metadata Options",
+                title = LOC "$$$/StyleAI/UI/TabKeywords=Keywords & Metadata",
                 identifier = 'metadata',
+                visible = bind {
+                    key = "indexingMode",
+                    transform = function(v) return v == "meta" or v == "both" end,
+                },
 
                 f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/MetadataOptions=Metadata Tasks",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/MetadataOptions=Generated Fields",
                     fill_horizontal = 1,
                     f:row {
                         f:checkbox { value = bind 'generateKeywords', title = LOC "$$$/StyleAI/PluginInfoDialogSections/keywords=Keywords" },
@@ -336,10 +318,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                     fill_horizontal = 1,
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/useKeywordHierarchy=Keyword Hierarchy:", width = share 'labelWidth' },
-                        f:checkbox {
-                            value = bind 'useKeywordHierarchy',
-                            title = LOC "$$$/StyleAI/UI/EnableHierarchy=Enable",
-                        },
+                        f:checkbox { value = bind 'useKeywordHierarchy', title = LOC "$$$/StyleAI/UI/EnableHierarchy=Enable" },
                         f:push_button {
                             enabled = bind 'useKeywordHierarchy',
                             title = LOC "$$$/StyleAI/PluginInfoDialogSections/editKeywordHierarchy=Edit categories",
@@ -348,120 +327,78 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                     f:row {
                         f:spacer { width = share 'labelWidth' },
-                        f:checkbox {
-                            value = bind 'useCatalogKeywordStructure',
-                            title = LOC "$$$/StyleAI/UI/UseCatalogKeywordStructure=Use existing catalog structure"
-                        }
+                        f:checkbox { value = bind 'useCatalogKeywordStructure', title = LOC "$$$/StyleAI/UI/UseCatalogKeywordStructure=Use existing catalog structure" }
                     },
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/useTopLevelKeyword=Top-level Keyword:", width = share 'labelWidth' },
                         f:checkbox { value = bind 'useTopLevelKeyword' },
-                        f:edit_field {
-                            value = bind 'topLevelKeyword',
-                            width_in_chars = 20,
-                            enabled = bind 'useTopLevelKeyword',
-                        },
+                        f:edit_field { value = bind 'topLevelKeyword', width_in_chars = 20, enabled = bind 'useTopLevelKeyword' },
                     },
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/UI/BilingualKeywords=Bilingual Synonyms:", width = share 'labelWidth' },
                         f:checkbox { value = bind 'bilingualKeywords', enabled = bind 'generateKeywords' },
-                        f:combo_box {
-                            value = bind 'keywordSecondaryLanguage',
-                            items = Defaults.generateLanguages,
-                            enabled = bind 'bilingualKeywords',
-                            width = 160,
-                        },
+                        f:combo_box { value = bind 'keywordSecondaryLanguage', items = Defaults.generateLanguages, enabled = bind 'bilingualKeywords', width = 160 },
                     }
+                },
+            },
+
+            --------------------------------------------------------
+            -- 3. PROMPT & CONTEXT
+            --------------------------------------------------------
+            f:tab_view_item {
+                title = LOC "$$$/StyleAI/UI/TabContext=Prompt & Context",
+                identifier = 'context',
+                visible = bind {
+                    key = "indexingMode",
+                    transform = function(v) return v == "meta" or v == "both" end,
                 },
 
                 f:group_box {
-                    title = LOC "$$$/StyleAI/UI/PromptTitle=Instructions / Prompt",
+                    title = LOC "$$$/StyleAI/UI/PromptTitle=Prompt Template",
                     fill_horizontal = 1,
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/editPrompts=Template:", width = share 'labelWidth' },
                         props.promptTitleMenu,
-                        f:push_button {
-                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/add=Add",
-                            action = function() PromptConfigProvider.addPrompt(props) end,
-                        },
-                        f:push_button {
-                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/delete=Delete",
-                            action = function() PromptConfigProvider.deletePrompt(props) end,
-                        },
+                        f:push_button { title = LOC "$$$/StyleAI/PluginInfoDialogSections/add=Add", action = function() PromptConfigProvider.addPrompt(props) end },
+                        f:push_button { title = LOC "$$$/StyleAI/PluginInfoDialogSections/delete=Delete", action = function() PromptConfigProvider.deletePrompt(props) end },
                     },
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/PromptConfig/PromptField=Custom Prompt:", width = share 'labelWidth' },
                         f:scrolled_view {
-                            height_in_lines = 8,
-                            fill_horizontal = 1,
-                            horizontal_scroller = false,
-                            vertical_scroller = true,
-                            f:edit_field {
-                                value = bind 'selectedPrompt',
-                                width = 430,
-                                height_in_lines = 20,
-                                wraps = true,
-                                allow_newlines = true,
-                            },
+                            height_in_lines = 8, fill_horizontal = 1, horizontal_scroller = false, vertical_scroller = true,
+                            f:edit_field { value = bind 'selectedPrompt', width = 430, height_in_lines = 20, wraps = true, allow_newlines = true },
                         },
                     },
                 },
-            }, -- end Metadata tab
-
-            --------------------------------------------------------
-            -- CONTEXT & SAVE TAB
-            --------------------------------------------------------
-            f:tab_view_item {
-                title = LOC "$$$/StyleAI/UI/TabContext=Context & Save",
-                identifier = 'context',
-
-                -- Section 1: What context to send to the AI
                 f:group_box {
                     title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextOptions=AI Context",
                     fill_horizontal = 1,
-                    f:static_text {
-                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextHint=Extra information sent alongside photos to improve AI accuracy.",
-                        fill_horizontal = 1,
-                    },
-                    f:spacer { height = 4 },
                     f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextAutoLabel=Automatic:", width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'submitGPS', title = LOC "$$$/StyleAI/MetadataProvider/GPS=GPS Coordinates" },
+                        f:checkbox { value = bind 'submitGPS', title = LOC "$$$/StyleAI/MetadataProvider/GPS=GPS Coordinates", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextGPSTooltip=Sends GPS data to the AI to help identify locations and landmarks." },
+                        f:checkbox { value = bind 'submitKeywords', title = LOC "$$$/StyleAI/PluginInfoDialogSections/submitKeywords=Existing Keywords", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextKeywordsTooltip=Sends your existing Lightroom keywords to the AI to guide its focus." },
+                        f:checkbox { value = bind 'submitFolderName', title = LOC "$$$/StyleAI/PluginInfoDialogSections/folderNames=Folder Names", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextFolderTooltip=Sends the parent folder name to the AI to provide context for the event or subject." },
                     },
                     f:row {
-                        f:spacer { width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'submitKeywords', title = LOC "$$$/StyleAI/PluginInfoDialogSections/submitKeywords=Existing Keywords" },
-                    },
-                    f:row {
-                        f:spacer { width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'submitFolderName', title = LOC "$$$/StyleAI/PluginInfoDialogSections/folderNames=Folder Names" },
-                    },
-                    f:separator { fill_horizontal = 1 },
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextManualLabel=Manual:", width = share 'ctxLabelWidth' },
                         f:checkbox { value = bind 'showPhotoContextDialog', title = LOC "$$$/StyleAI/PluginInfoDialogSections/showPhotoContextDialog=Ask for context before each batch" },
                     },
                 },
+            },
 
-                -- Section 2: What to do with the results
+            --------------------------------------------------------
+            -- 4. ADVANCED / MAINTENANCE
+            --------------------------------------------------------
+            f:tab_view_item {
+                title = LOC "$$$/StyleAI/UI/TabAdvanced=Advanced / Maintenance",
+                identifier = 'advanced',
+
                 f:group_box {
                     title = LOC "$$$/StyleAI/AnalyzeAndIndex/CatalogIntegration=Catalog Integration",
                     fill_horizontal = 1,
                     f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/SaveLabel=Save:", width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'saveDataToCatalog', title = LOC "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalog=Write generated data to Lightroom catalog" },
-                    },
-                    f:row {
-                        f:spacer { width = share 'ctxLabelWidth' },
-                        f:checkbox {
-                            enabled = bind 'saveDataToCatalog',
-                            value = bind 'enableValidation',
-                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/validation=Review/Edit each photo before saving",
-                        },
+                        f:checkbox { value = bind 'saveDataToCatalog', title = LOC "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalog=Write generated data to Lightroom catalog", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalogTooltip=If unchecked, metadata is only stored in the backend AI database." },
+                        f:checkbox { enabled = bind 'saveDataToCatalog', value = bind 'enableValidation', title = LOC "$$$/StyleAI/PluginInfoDialogSections/validation=Review/Edit each photo before saving", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ValidationTooltip=Opens a confirmation dialog for each photo before writing to the catalog." },
                     },
                 },
-
-                -- Section 3: How to handle existing data
                 f:group_box {
                     title = LOC "$$$/StyleAI/AnalyzeAndIndex/DataHandling=Data Handling",
                     fill_horizontal = 1,
@@ -476,11 +413,27 @@ local function showAnalyzeAndIndexDialog(ctx)
                     f:separator { fill_horizontal = 1 },
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/WriteMode=Write:", width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'appendMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadata=Append to existing values instead of replacing" },
+                        f:checkbox { value = bind 'appendMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadata=Append to existing values instead of replacing", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadataTooltip=Adds AI keywords and text without erasing your existing metadata." },
                     },
                 },
-            }, -- end Context & Save tab
-        },     -- end tab_view
+                f:group_box {
+                    title = LOC "$$$/StyleAI/PluginInfo/AdvancedSettings=Maintenance",
+                    fill_horizontal = 1,
+                    f:row {
+                        f:push_button {
+                            title = LOC "$$$/StyleAI/PruneDatabase/MenuItem=Prune Database",
+                            action = function()
+                                LrTasks.startAsyncTask(function()
+                                    package.loaded["TaskPruneDatabase"] = nil
+                                    local task = require("TaskPruneDatabase")
+                                    task.run()
+                                end)
+                            end,
+                        },
+                    },
+                },
+            },
+        },
 
         f:row {
             f:push_button {
@@ -491,6 +444,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmMessage=Are you sure you want to reset all options in this dialog to their default values?")
                     )
                     if confirm == "ok" then
+                        props.indexingMode = "both"
                         props.scope = "selected"
                         props.enableEmbeddings = props.clipReady
                         props.enableFaces = false
@@ -523,7 +477,6 @@ local function showAnalyzeAndIndexDialog(ctx)
             },
         },
     }
-
     local result = LrDialogs.presentModalDialog {
         title = LOC "$$$/StyleAI/AnalyzeAndIndex/WindowTitle=Analyze and Index Photos",
         contents = contents,
@@ -534,6 +487,7 @@ local function showAnalyzeAndIndexDialog(ctx)
 
     if result == 'ok' then
         -- Save preferences
+        prefs.indexingMode = props.indexingMode
         prefs.indexScope = props.scope
         prefs.enableEmbeddings = props.enableEmbeddings
         prefs.enableMetadata = props.enableMetadata
@@ -743,10 +697,10 @@ LrTasks.startAsyncTask(function()
 
 		-- Build tasks array
 		local tasks = {}
-		if props.enableEmbeddings then
+		if props.enableEmbeddings and (props.indexingMode == "embed" or props.indexingMode == "both") then
 			table.insert(tasks, "embeddings")
 		end
-		if props.enableMetadata then
+		if props.enableMetadata and (props.indexingMode == "meta" or props.indexingMode == "both") then
 			table.insert(tasks, "metadata")
 		end
 		if props.enableFaces then
@@ -793,8 +747,8 @@ LrTasks.startAsyncTask(function()
 		}
 		-- Add API key for cloud providers if configured
 		if providerFromKey == "chatgpt" and prefs then
-			log:trace("Added ChatGPT API key to options")
-			if prefs.chatgptApiKey == nil or prefs.chatgptApiKey == "" then
+			local key = import("LrPasswords").retrieve("StyleAI", "chatgptApiKey")
+			if Util.nilOrEmpty(key) then
 				LrDialogs.showError(
 					LOC(
 						"$$$/StyleAI/AnalyzeAndIndex/MissingChatGPTAPIKey=ChatGPT API key is not configured. Please set it in the plugin preferences."
@@ -802,9 +756,10 @@ LrTasks.startAsyncTask(function()
 				)
 				return
 			end
-			options.api_key = prefs.chatgptApiKey
+			options.api_key = key
 		elseif providerFromKey == "gemini" and prefs then
-			if prefs.geminiApiKey == nil or prefs.geminiApiKey == "" then
+			local key = import("LrPasswords").retrieve("StyleAI", "geminiApiKey")
+			if Util.nilOrEmpty(key) then
 				LrDialogs.showError(
 					LOC(
 						"$$$/StyleAI/AnalyzeAndIndex/MissingGeminiAPIKey=Gemini API key is not configured. Please set it in the plugin preferences."
@@ -813,7 +768,7 @@ LrTasks.startAsyncTask(function()
 				return
 			end
 			log:trace("Added Gemini API key to options")
-			options.api_key = prefs.geminiApiKey
+			options.api_key = key
 		end
 
 		if prefs.useKeywordHierarchy then

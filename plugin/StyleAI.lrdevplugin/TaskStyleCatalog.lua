@@ -23,6 +23,52 @@ LrTasks.startAsyncTask(function()
 		props.statusMessage = ""
 		props.detailStyle = nil
 
+		props.detailName = ""
+		props.detailGenre = ""
+		props.detailCamera = ""
+		props.detailProfile = ""
+		props.detailCount = ""
+		props.detailStrengthText = ""
+		props.detailStrengthColor = LrColor(0.7, 0.7, 0.7)
+		props.detailDesc = ""
+
+		local function updateDetailView()
+			local idx = props.selectedStyleIndex
+			if not idx or idx < 1 or not props.styles or idx > #props.styles then
+				props.detailName = "Select a style to view details."
+				props.detailGenre = ""
+				props.detailCamera = ""
+				props.detailProfile = ""
+				props.detailCount = ""
+				props.detailStrengthText = ""
+				props.detailDesc = ""
+				return
+			end
+			local s = props.styles[idx]
+			props.detailName = s.style_name or ""
+			props.detailGenre = s.genre or ""
+			props.detailCamera = s.camera_model or ""
+			props.detailProfile = s.camera_profile or ""
+			
+			local count = tonumber(s.example_count) or 0
+			props.detailCount = tostring(count)
+			if count < 3 then
+				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthWeak=🔴 Undertrained")
+				props.detailStrengthColor = LrColor(0.8, 0, 0)
+			elseif count < 10 then
+				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthGood=🟡 Good")
+				props.detailStrengthColor = LrColor(0.8, 0.6, 0)
+			else
+				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthStrong=🟢 Strong")
+				props.detailStrengthColor = LrColor(0, 0.8, 0)
+			end
+			
+			props.detailDesc = s.description or ""
+		end
+
+		props:addObserver("selectedStyleIndex", updateDetailView)
+		props:addObserver("styles", updateDetailView)
+
 		-- Load styles from backend
 		local function loadStyles()
 			props.isLoading = true
@@ -106,6 +152,42 @@ LrTasks.startAsyncTask(function()
 			else
 				props.statusMessage = LOC(
 					"$$$/StyleAI/StyleCatalog/DeleteError=Delete failed: ^1",
+					tostring(err)
+				)
+				props.isLoading = false
+			end
+		end
+
+		-- Rename the selected style
+		local function renameSelectedStyle()
+			local idx = props.selectedStyleIndex
+			if not idx or idx < 1 or idx > #props.styles then
+				return
+			end
+
+			local style = props.styles[idx]
+			local currentName = style.style_name or ""
+			
+			local newName = LrDialogs.runTextInputDialog(
+				LOC("$$$/StyleAI/StyleCatalog/RenameTitle=Rename Style"),
+				LOC("$$$/StyleAI/StyleCatalog/RenamePrompt=Enter a new name for this style:"),
+				currentName
+			)
+
+			if not newName or newName == "" or newName == currentName then
+				return
+			end
+
+			props.isLoading = true
+			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Renaming=Renaming style...")
+
+			local success, err = SearchIndexAPI.renameStyle(style.style_id, newName)
+			if success then
+				props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Renamed=Style renamed.")
+				loadStyles()
+			else
+				props.statusMessage = LOC(
+					"$$$/StyleAI/StyleCatalog/RenameError=Rename failed: ^1",
 					tostring(err)
 				)
 				props.isLoading = false
@@ -221,6 +303,7 @@ LrTasks.startAsyncTask(function()
 					f:push_button({
 						title = LOC("$$$/StyleAI/StyleCatalog/Refresh=Refresh"),
 						action = loadStyles,
+						width = share("toolbarButton"),
 						enabled = bind({
 							key = "isLoading",
 							transform = function(v) return not v end,
@@ -229,6 +312,7 @@ LrTasks.startAsyncTask(function()
 					f:push_button({
 						title = LOC("$$$/StyleAI/StyleCatalog/Discover=Discover"),
 						action = discoverStyles,
+						width = share("toolbarButton"),
 						enabled = bind({
 							key = "isLoading",
 							transform = function(v) return not v end,
@@ -237,6 +321,16 @@ LrTasks.startAsyncTask(function()
 					f:push_button({
 						title = LOC("$$$/StyleAI/StyleCatalog/Export=Export"),
 						action = exportStyles,
+						width = share("toolbarButton"),
+						enabled = bind({
+							key = "isLoading",
+							transform = function(v) return not v end,
+						}),
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/StyleCatalog/Rename=Rename"),
+						action = renameSelectedStyle,
+						width = share("toolbarButton"),
 						enabled = bind({
 							key = "isLoading",
 							transform = function(v) return not v end,
@@ -245,6 +339,7 @@ LrTasks.startAsyncTask(function()
 					f:push_button({
 						title = LOC("$$$/StyleAI/StyleCatalog/Delete=Delete"),
 						action = deleteSelectedStyle,
+						width = share("toolbarButton"),
 						enabled = bind({
 							key = "isLoading",
 							transform = function(v) return not v end,
@@ -253,6 +348,7 @@ LrTasks.startAsyncTask(function()
 					f:push_button({
 						title = LOC("$$$/StyleAI/StyleCatalog/ResetAll=Reset All"),
 						action = resetAllStyles,
+						width = share("toolbarButton"),
 						enabled = bind({
 							key = "isLoading",
 							transform = function(v) return not v end,
@@ -290,48 +386,34 @@ LrTasks.startAsyncTask(function()
 				f:group_box({
 					title = LOC("$$$/StyleAI/StyleCatalog/StyleDetails=Style Details"),
 					fill_horizontal = 1,
-					f:column({
-						spacing = f:control_spacing(),
-						f:row({
-							f:static_text({
-								title = bind({
-									key = "styles",
-									transform = function(styles)
-										local idx = props.selectedStyleIndex
-										if not idx or idx < 1 or idx > #styles then
-											return "Select a style to view details."
-										end
-										local s = styles[idx]
-										local lines = {}
-										if s.style_name then
-											table.insert(lines, "Name: " .. s.style_name)
-										end
-										if s.genre then
-											table.insert(lines, "Genre: " .. s.genre)
-										end
-										if s.camera_model then
-											table.insert(lines, "Camera: " .. s.camera_model)
-										end
-										if s.camera_profile then
-											table.insert(lines, "Profile: " .. s.camera_profile)
-										end
-										if s.example_count then
-											table.insert(lines, "Examples: " .. tostring(s.example_count))
-										end
-										if s.confidence_threshold then
-											table.insert(lines, "Min Confidence: " .. tostring(s.confidence_threshold))
-										end
-										if s.description and s.description ~= "" then
-											table.insert(lines, "")
-											table.insert(lines, s.description)
-										end
-										return table.concat(lines, "\n")
-									end,
-								}),
-								width_in_chars = 80,
-								wrap = true,
-								height_in_lines = 8,
+					f:row({
+						f:column({
+							f:row({
+								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailName=Name:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
+								f:static_text({ title = bind("detailName"), width = 250 }),
 							}),
+							f:row({
+								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailGenre=Genre:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
+								f:static_text({ title = bind("detailGenre"), width = 250 }),
+							}),
+							f:row({
+								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailCamera=Camera:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
+								f:static_text({ title = bind("detailCamera"), width = 250 }),
+							}),
+							f:row({
+								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailProfile=Profile:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
+								f:static_text({ title = bind("detailProfile"), width = 250 }),
+							}),
+							f:row({
+								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailExamples=Examples:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
+								f:static_text({ title = bind("detailCount") }),
+								f:spacer({ width = 10 }),
+								f:static_text({ title = bind("detailStrengthText"), text_color = bind("detailStrengthColor"), font = "<system/bold>" }),
+							}),
+						}),
+						f:column({
+							f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailDescription=Description:"), font = "<system/bold>" }),
+							f:static_text({ title = bind("detailDesc"), width_in_chars = 40, height_in_lines = 6, wrap = true }),
 						}),
 					}),
 				}),

@@ -364,8 +364,10 @@ def write_ok_file():
     if not db_dir:
         return
     ok_file = os.path.join(db_dir, "styleai-server.OK")
-    with open(ok_file, "w") as f:
+    tmp_file = ok_file + ".tmp"
+    with open(tmp_file, "w") as f:
         f.write("OK\n")
+    os.replace(tmp_file, ok_file)  # atomic on POSIX and Windows
 
 
 def remove_ok_file():

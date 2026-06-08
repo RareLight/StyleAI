@@ -9,8 +9,7 @@ function OnboardingWizard.show(manualTrigger)
 			propertyTable.backendRunning = SearchIndexAPI.pingServer() or false
 			propertyTable.clipReady = SearchIndexAPI.isClipReady() or false
 			propertyTable.clipDownloading = false
-			propertyTable.geminiApiKey = prefs.geminiApiKey or ""
-			propertyTable.chatgptApiKey = prefs.chatgptApiKey or ""
+
 
 			if propertyTable.backendRunning == true and prefs.indexingParallelTasks == nil then
 				local vInfo = SearchIndexAPI.getBackendVersion()
@@ -133,71 +132,6 @@ function OnboardingWizard.show(manualTrigger)
 						}),
 					}),
 
-					-- PROVIDERS TAB
-					f:tab_view_item({
-						title = LOC("$$$/StyleAI/Onboarding/ProvidersTitle=AI Providers"),
-						identifier = "providers",
-
-						f:group_box({
-							title = LOC("$$$/StyleAI/Onboarding/ProvidersTitle=AI Providers"),
-							fill_horizontal = 1,
-							f:static_text({
-								title = LOC(
-									"$$$/StyleAI/Onboarding/ProvidersDesc=Choose which AI models you want to use for metadata generation and edits."
-								),
-								width_in_chars = 60,
-								wrap = true,
-							}),
-						}),
-
-						f:group_box({
-							title = LOC("$$$/StyleAI/Onboarding/GeminiTitle=Google Gemini (Recommended)"),
-							fill_horizontal = 1,
-							f:row({
-								f:static_text({
-									title = LOC("$$$/StyleAI/Onboarding/ApiKeyLabel=API Key:"),
-									width = share("label"),
-								}),
-								f:edit_field({ value = bind("geminiApiKey"), width_in_chars = 40 }),
-								f:push_button({
-									title = "?",
-									action = function()
-										LrHttp.openUrlInBrowser("https://aistudio.google.com/app/apikey")
-									end,
-								}),
-							}),
-						}),
-						f:group_box({
-							title = LOC("$$$/StyleAI/Onboarding/ChatGPTTitle=OpenAI ChatGPT"),
-							fill_horizontal = 1,
-							f:row({
-								f:static_text({
-									title = LOC("$$$/StyleAI/Onboarding/ApiKeyLabel=API Key:"),
-									width = share("label"),
-								}),
-								f:edit_field({ value = bind("chatgptApiKey"), width_in_chars = 40 }),
-								f:push_button({
-									title = "?",
-									action = function()
-										LrHttp.openUrlInBrowser("https://platform.openai.com/api-keys")
-									end,
-								}),
-							}),
-						}),
-						f:group_box({
-							title = LOC("$$$/StyleAI/Onboarding/LocalTitle=Local AI (Ollama / LM Studio)"),
-							fill_horizontal = 1,
-							f:row({
-								f:push_button({
-									title = LOC("$$$/StyleAI/Onboarding/LocalTitle=Local AI (Ollama / LM Studio)"),
-									action = function()
-										LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-Ollama-Setup")
-									end,
-								}),
-							}),
-						}),
-					}),
-
 					-- SEMANTIC SEARCH TAB
 					f:tab_view_item({
 						title = LOC("$$$/StyleAI/Onboarding/SemanticTitle=Semantic Search"),
@@ -278,9 +212,6 @@ function OnboardingWizard.show(manualTrigger)
 			if result == "ok" or result == "other" then
 				prefs.onboardingCompleted = true
 				if result == "ok" then
-					-- Save settings
-					prefs.geminiApiKey = propertyTable.geminiApiKey
-					prefs.chatgptApiKey = propertyTable.chatgptApiKey
 					log:info("Onboarding wizard completed with OK.")
 				else
 					log:info("Onboarding wizard skipped.")

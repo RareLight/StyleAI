@@ -837,7 +837,20 @@ function Util.extractAllKeywords(hierarchicalTable)
 	local keywordCounter = 0
 	local seenKeywords = {}
 
-	local function recurse(tbl, currentPath)
+	local MAX_DEPTH = 100
+	local seenTables = {}
+
+	local function recurse(tbl, currentPath, depth)
+		if depth > MAX_DEPTH then
+			log:warn("Util.extractAllKeywords: Maximum depth exceeded, skipping further nesting.")
+			return
+		end
+		if seenTables[tbl] then
+			log:warn("Util.extractAllKeywords: Cycle detected in keyword hierarchy, skipping.")
+			return
+		end
+		seenTables[tbl] = true
+
 		iterateDeterministic(tbl, function(key, value)
 			local keyIsString = type(key) == "string"
 
@@ -887,12 +900,12 @@ function Util.extractAllKeywords(hierarchicalTable)
 						subPath = subPath .. " > " .. key
 					end
 				end
-				recurse(value, subPath)
+				recurse(value, subPath, depth + 1)
 			end
 		end)
 	end
 
-	recurse(hierarchicalTable, "")
+	recurse(hierarchicalTable, "", 1)
 
 	log:trace("Extracted keywords: " .. Util.dumpTable(result))
 

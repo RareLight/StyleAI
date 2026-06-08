@@ -22,7 +22,7 @@ def test_db_stats_returns_raw_stats(client, mocker):
 
     response = client.get("/db/stats")
     assert response.status_code == 200
-    assert response.get_json() == stats
+    assert response.get_json().get("results") == stats
 
 
 def test_db_stats_payload_is_json_serializable(client, mocker):
@@ -32,7 +32,8 @@ def test_db_stats_payload_is_json_serializable(client, mocker):
     )
     response = client.get("/db/stats")
     assert response.status_code == 200
-    payload = response.get_json()
+    _json = response.get_json()
+    payload = _json.get("results") if _json.get("results") is not None else _json
     assert isinstance(payload, dict)
 
 
@@ -43,6 +44,7 @@ def test_db_stats_service_exception_returns_error(client, mocker):
     )
     response = client.get("/db/stats")
     assert response.status_code == 500
-    payload = response.get_json()
+    _json = response.get_json()
+    payload = _json.get("results") if _json.get("results") is not None else _json
     assert "error" in payload
     assert "chroma unavailable" in payload["error"]

@@ -389,6 +389,28 @@ LrTasks.startAsyncTask(function()
 				end
 			end
 
+			local recommendationMsg = ""
+			if successCount > 0 then
+				local ok, styles = SearchIndexAPI.listStyles()
+				if ok and styles and #styles > 0 then
+					-- Sort styles by example count
+					table.sort(styles, function(a, b) return (tonumber(a.example_count) or 0) < (tonumber(b.example_count) or 0) end)
+					local weakest = styles[1]
+					local weakestCount = tonumber(weakest.example_count) or 0
+					local name = weakest.style_name or weakest.genre or "one of your styles"
+					if weakestCount < 5 then
+						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMore=Tip: Your '^1' style only has ^2 examples (🔴 Undertrained). For the best AI edit results, try to provide at least 5-10 examples for this style.", name, tostring(weakestCount))
+					elseif weakestCount < 10 then
+						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendGood=Tip: Your '^1' style has ^2 examples (🟡 Good). Adding a few more examples will make it even stronger.", name, tostring(weakestCount))
+					else
+						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendStrong=Tip: Your styles look 🟢 Strong! The AI has a robust understanding of your editing preferences.")
+					end
+				end
+			end
+
+			combinedReport = combinedReport .. recommendationMsg
+
+
 			ErrorHandler.handleError(
 				LOC("$$$/StyleAI/Training/CompletionTitle=Training Examples Saved"),
 				combinedReport

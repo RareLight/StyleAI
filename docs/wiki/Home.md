@@ -19,6 +19,7 @@ Welcome to the project wiki.
 
 ## Dev
 
+- [Developer Guide & Architecture](Developer-Guide)
 - [Testing the Update Mechanism](Dev-Testing-Update-Mechanism)
 
 ## Important note
