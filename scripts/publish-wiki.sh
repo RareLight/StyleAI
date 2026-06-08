@@ -2,13 +2,16 @@
 set -euo pipefail
 
 if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
-  echo "GITHUB_REPOSITORY is required (example: owner/repo)"
-  exit 1
-fi
-
-if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-  echo "GITHUB_TOKEN is required"
-  exit 1
+  # Try to infer from git remote
+  remote_url=$(git remote get-url origin 2>/dev/null || true)
+  if [[ "$remote_url" =~ github\.com[:/](.+/.+)\.git ]]; then
+    GITHUB_REPOSITORY="${BASH_REMATCH[1]}"
+  elif [[ "$remote_url" =~ github\.com[:/](.+/.+) ]]; then
+    GITHUB_REPOSITORY="${BASH_REMATCH[1]}"
+  else
+    echo "GITHUB_REPOSITORY is required (example: owner/repo) or script must be run inside a cloned github repository"
+    exit 1
+  fi
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,7 +35,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-WIKI_REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  WIKI_REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+else
+  # Fall back to SSH clone if no token is provided, assuming local developer environment
+  WIKI_REPO_URL="git@github.com:${GITHUB_REPOSITORY}.wiki.git"
+fi
 
 echo "Cloning wiki repo..."
 git clone "${WIKI_REPO_URL}" "${TMP_DIR}/wiki"
@@ -47,8 +55,10 @@ if [[ -z "$(git status --porcelain)" ]]; then
   exit 0
 fi
 
-git config user.name "github-actions[bot]"
-git config user.email "github-actions[bot]@users.noreply.github.com"
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  git config user.name "github-actions[bot]"
+  git config user.email "github-actions[bot]@users.noreply.github.com"
+fi
 
 git add .
 git commit -m "docs: sync wiki from docs/wiki"
