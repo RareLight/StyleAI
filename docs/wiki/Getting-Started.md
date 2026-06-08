@@ -31,11 +31,22 @@ When you try to open the `.pkg` installer or the backend binary:
 
 ---
 
-## 2. Configure Plugin
+## 2. Initial Setup & Onboarding
 
-Once installed, open the **Lightroom Plug-in Manager** (`File -> Plug-in Manager`) and locate StyleAI. Here you need to:
-- **Set the Backend Server URL:** This defaults to `http://127.0.0.1:19819` but if you're running the backend on a different machine (e.g. via Docker), update the address here.
-- **Configure Provider/API Keys:** If you plan to use cloud providers like OpenAI or Google Gemini, enter your API keys. For local providers like Ollama or LM Studio, ensure their respective base URLs are correctly configured.
+Once installed, we recommend using the new automated setup flow:
+1. Select any photo in your Lightroom Library grid.
+2. Navigate to `Library -> Plug-in Extras -> Analyze & Index Photos`.
+3. If this is your first time using StyleAI, the **Onboarding Wizard** will automatically launch. 
+
+The Wizard will guide you step-by-step through:
+- Connecting to your Python backend server.
+- Seamlessly migrating any existing Lightroom metadata into the vector database.
+- Selecting and configuring your preferred AI provider.
+
+### Manual Configuration
+If you prefer to configure settings manually, open the **Lightroom Plug-in Manager** (`File -> Plug-in Manager`) and locate StyleAI. Here you will find cleanly organized tabs for:
+- **Models & Prompts:** Configure your preferred local (Ollama/LM Studio) or cloud (Gemini/OpenAI) LLM providers, and enter API keys. *Note: API keys are now securely stored in your OS Keychain rather than plaintext preferences!*
+- **Support & Diagnostics:** If you encounter issues, click **Generate Diagnostic Report** to automatically fetch server health and logs into a beautifully formatted HTML file.
 
 *Having trouble? Refer to the [Troubleshooting](Troubleshooting) guide for connectivity and API issues.*
 

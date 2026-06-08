@@ -29,8 +29,15 @@ end
 
 local function buildModelItems()
 	local items = {}
-	local openaiKey = (prefs and not Util.nilOrEmpty(prefs.chatgptApiKey)) and prefs.chatgptApiKey or nil
-	local geminiKey = (prefs and not Util.nilOrEmpty(prefs.geminiApiKey)) and prefs.geminiApiKey or nil
+	local openaiKey = nil
+	local geminiKey = nil
+	if prefs then
+		openaiKey = import("LrPasswords").retrieve("StyleAI", "chatgptApiKey")
+		geminiKey = import("LrPasswords").retrieve("StyleAI", "geminiApiKey")
+	end
+	openaiKey = Util.nilOrEmpty(openaiKey) and nil or openaiKey
+	geminiKey = Util.nilOrEmpty(geminiKey) and nil or geminiKey
+
 	local modelsResp = SearchIndexAPI.getModels(openaiKey, geminiKey)
 	if modelsResp and modelsResp.models then
 		for provider, modelList in pairs(modelsResp.models) do
@@ -198,9 +205,9 @@ local function showAiEditDialog(ctx)
 	props.showPhotoContextDialog = prefs.aiEditShowPhotoContextDialog ~= false
 	props.useTrainingStyle = prefs.aiEditUseTrainingStyle ~= false
 	
-	props.enableQuickEdit = prefs.aiEditEnableQuickEdit == true
-	props.quickEditStyleStrength = prefs.aiEditQuickEditStyleStrength or Defaults.defaultEditStyleStrength or 0.5
-	props.showLlmOptions = not props.enableQuickEdit
+	props.editingStyle = prefs.aiEditEditingStyle or "trained"
+	props.styleStrength = prefs.aiEditStyleStrength or Defaults.defaultEditStyleStrength or 0.5
+	props.showLlmOptions = (props.editingStyle == "creative")
 	
 	props.promptTitles = {}
 	props.prompts = safePromptTable(prefs.editPrompts or { Default = Defaults.defaultEditSystemInstruction })
@@ -254,8 +261,8 @@ local function showAiEditDialog(ctx)
 			properties.customEditIntentText = newValue
 		end
 	end)
-	props:addObserver("enableQuickEdit", function(properties, key, newValue)
-		properties.showLlmOptions = not newValue
+	props:addObserver("editingStyle", function(properties, key, newValue)
+		properties.showLlmOptions = (newValue == "creative")
 	end)
 
 	local modelItems = buildModelItems()
@@ -276,17 +283,27 @@ local function showAiEditDialog(ctx)
 		bind_to_object = props,
 		spacing = f:control_spacing(),
 		f:group_box({
-			title = LOC("$$$/StyleAI/TaskAiEditPhotos/QuickEdit=Trained Style Quick Edit"),
+			title = LOC("$$$/StyleAI/TaskAiEditPhotos/Workflow=Workflow"),
 			fill_horizontal = 1,
 			f:row({
-				f:checkbox({
-					value = bind("enableQuickEdit"),
-				}),
 				f:static_text({
-					title = LOC("$$$/StyleAI/TaskAiEditPhotos/EnableQuickEdit=Enable fast-path LLM bypass for trained style"),
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/EditingStyle=Editing Style:"),
+					width = share("labelWidth"),
+				}),
+				f:popup_menu({
+					value = bind("editingStyle"),
+					width = 300,
+					items = {
+						{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleTrained=Apply My Trained Style (Recommended)"), value = "trained" },
+						{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleCreative=Creative Prompt-Guided Edit"), value = "creative" },
+					},
 				}),
 			}),
 			f:row({
+				visible = bind({
+					key = "editingStyle",
+					transform = function(v) return v == "trained" end
+				}),
 				f:static_text({
 					title = LOC("$$$/StyleAI/TaskAiEditPhotos/TrainedStyleStrength=Trained Style Strength:"),
 					width = share("labelWidth"),
@@ -294,25 +311,22 @@ local function showAiEditDialog(ctx)
 				f:column({
 					f:row({
 						f:slider({
-							value = bind("quickEditStyleStrength"),
+							value = bind("styleStrength"),
 							min = 0.0,
 							max = 1.0,
 							integral = false,
 							width = 300,
-							enabled = bind("enableQuickEdit"),
 						}),
 						f:static_text({
-							title = bind("quickEditStyleStrength"),
+							title = bind("styleStrength"),
 							width = 40,
-							enabled = bind("enableQuickEdit"),
 						}),
 					}),
 					f:push_button({
 						title = LOC("$$$/StyleAI/common/Reset=Reset"),
 						width = 60,
-						enabled = bind("enableQuickEdit"),
 						action = function()
-							props.quickEditStyleStrength = Defaults.defaultEditStyleStrength or 0.5
+							props.styleStrength = Defaults.defaultEditStyleStrength or 0.5
 						end,
 					}),
 				}),
@@ -468,34 +482,7 @@ local function showAiEditDialog(ctx)
 					enabled = bind("isCustomEditIntent"),
 				}),
 			}),
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleStrength=Style strength:"),
-					width = share("labelWidth"),
-				}),
-				f:column({
-					f:row({
-						f:slider({
-							value = bind("styleStrength"),
-							min = 0.0,
-							max = 1.0,
-							integral = false,
-							width = 300,
-						}),
-						f:static_text({
-							title = bind("styleStrength"),
-							width = 40,
-						}),
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/common/Reset=Reset"),
-						width = 60,
-						action = function()
-							props.styleStrength = Defaults.defaultEditStyleStrength or 0.5
-						end,
-					}),
-				}),
-			}),
+
 			f:row({
 				f:checkbox({
 					value = bind("reviewBeforeApply"),
@@ -576,8 +563,7 @@ local function showAiEditDialog(ctx)
 						LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmMessage=Are you sure you want to reset all options in this dialog to their default values?")
 					)
 					if confirm == "ok" then
-						props.enableQuickEdit = false
-						props.quickEditStyleStrength = 0.5
+						props.editingStyle = "trained" 
 						props.scope = "selected"
 						props.modelKey = (modelItems and modelItems[1]) and modelItems[1].value or "none"
 						props.temperature = 0.1
@@ -637,8 +623,7 @@ local function showAiEditDialog(ctx)
 	prefs.aiEditSubmitFolderName = props.submitFolderName
 	prefs.aiEditShowPhotoContextDialog = props.showPhotoContextDialog
 	prefs.aiEditUseTrainingStyle = props.useTrainingStyle
-	prefs.aiEditEnableQuickEdit = props.enableQuickEdit
-	prefs.aiEditQuickEditStyleStrength = props.quickEditStyleStrength
+	prefs.aiEditEditingStyle = props.editingStyle
 	prefs.editPrompts = props.prompts
 	prefs.editPrompt = props.prompt
 
@@ -667,31 +652,37 @@ local function showAiEditDialog(ctx)
 		submit_folder_names = props.submitFolderName,
 		showPhotoContextDialog = props.showPhotoContextDialog,
 		use_training_style = props.useTrainingStyle ~= false,
-		enableQuickEdit = props.enableQuickEdit,
-		quickEditStyleStrength = props.quickEditStyleStrength,
+		enableQuickEdit = props.editingStyle == "trained",
+		quickEditStyleStrength = props.styleStrength,
 	}
 
 	if providerFromKey == "chatgpt" then
-		if prefs and not Util.nilOrEmpty(prefs.chatgptApiKey) then
-			options.api_key = prefs.chatgptApiKey
-		else
-			LrDialogs.showError(
-				LOC(
-					"$$$/StyleAI/AnalyzeAndIndex/MissingChatGPTAPIKey=ChatGPT API key is not configured. Please set it in the plugin preferences."
+		if prefs then
+			local key = import("LrPasswords").retrieve("StyleAI", "chatgptApiKey")
+			if not Util.nilOrEmpty(key) then
+				options.api_key = key
+			else
+				LrDialogs.showError(
+					LOC(
+						"$$$/StyleAI/AnalyzeAndIndex/MissingChatGPTAPIKey=ChatGPT API key is not configured. Please set it in the plugin preferences."
+					)
 				)
-			)
-			return nil
+				return nil
+			end
 		end
 	elseif providerFromKey == "gemini" then
-		if prefs and not Util.nilOrEmpty(prefs.geminiApiKey) then
-			options.api_key = prefs.geminiApiKey
-		else
-			LrDialogs.showError(
-				LOC(
-					"$$$/StyleAI/AnalyzeAndIndex/MissingGeminiAPIKey=Gemini API key is not configured. Please set it in the plugin preferences."
+		if prefs then
+			local key = import("LrPasswords").retrieve("StyleAI", "geminiApiKey")
+			if not Util.nilOrEmpty(key) then
+				options.api_key = key
+			else
+				LrDialogs.showError(
+					LOC(
+						"$$$/StyleAI/AnalyzeAndIndex/MissingGeminiAPIKey=Gemini API key is not configured. Please set it in the plugin preferences."
+					)
 				)
-			)
-			return nil
+				return nil
+			end
 		end
 	end
 	return options
@@ -739,6 +730,16 @@ LrTasks.startAsyncTask(function()
 		-- Check server connection and health (ensure AI providers are configured)
 		if not Util.waitForServerDialog({ requireProviders = true }) then
 			log:warn("AI Edit task aborted: backend server unavailable")
+			return
+		end
+
+		local stats = SearchIndexAPI.getTrainingStats()
+		if not stats or (stats.count or 0) < 5 then
+			LrDialogs.showError(
+				LOC("$$$/StyleAI/TaskAiEditPhotos/ColdStartTitle=Cold Start"),
+				LOC("$$$/StyleAI/TaskAiEditPhotos/ColdStartMsg=StyleAI needs at least 5 examples to learn your baseline editing style. Please run 'Train AI Style (Save Edits)' first.")
+			)
+			log:warn("AI Edit task aborted: Cold Start (<5 examples)")
 			return
 		end
 

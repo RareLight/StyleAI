@@ -23,7 +23,7 @@ return {
 
 	LrLibraryMenuItems = {
 		{
-			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index Photos..."),
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index & Auto-Tag Photos..."),
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
@@ -31,22 +31,18 @@ return {
 			file = "TaskAiEditPhotos.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Training/MenuItem=Save as AI Training Examples..."),
+			title = LOC("$$$/StyleAI/Training/MenuItem=Train AI Style (Save Edits)..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Style Catalog..."),
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Manage AI Styles (Catalog)..."),
 			file = "TaskStyleCatalog.lua",
-		},
-		{
-			title = LOC("$$$/StyleAI/PruneDatabase/MenuItem=Clean / Prune Database..."),
-			file = "TaskPruneDatabase.lua",
 		},
 	},
 
 	LrExportMenuItems = {
 		{
-			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index Photos..."),
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index & Auto-Tag Photos..."),
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
@@ -54,11 +50,11 @@ return {
 			file = "TaskAiEditPhotos.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Training/MenuItem=Save as AI Training Examples..."),
+			title = LOC("$$$/StyleAI/Training/MenuItem=Train AI Style (Save Edits)..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Style Catalog..."),
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Manage AI Styles (Catalog)..."),
 			file = "TaskStyleCatalog.lua",
 		},
 	},

@@ -32,7 +32,8 @@ def test_index_by_reference_returns_envelope(client, mocker, tmp_image):
         json={"images": [{"path": tmp_image, "photo_id": "abc"}]},
     )
     assert response.status_code == 200
-    payload = response.get_json()
+    _json = response.get_json()
+    payload = _json.get("results") if _json.get("results") is not None else _json
     assert payload["status"] == "processed"
     assert payload["success_count"] == 1
     assert payload["failure_count"] == 0
@@ -59,7 +60,8 @@ def test_index_by_reference_unpacks_four_values_without_error(
         },
     )
     assert response.status_code == 200
-    payload = response.get_json()
+    _json = response.get_json()
+    payload = _json.get("results") if _json.get("results") is not None else _json
     assert payload["success_count"] == 2
     assert payload["failure_count"] == 1
     assert payload["warnings"] == ["soft warning"]
@@ -91,7 +93,8 @@ def test_index_by_reference_aggregates_read_and_processing_failures(
         },
     )
     assert response.status_code == 200
-    payload = response.get_json()
+    _json = response.get_json()
+    payload = _json.get("results") if _json.get("results") is not None else _json
     assert payload["success_count"] == 1
     # 1 read failure + 0 processing failures
     assert payload["failure_count"] == 1

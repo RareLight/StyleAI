@@ -2803,6 +2803,16 @@ _request = function(method, url, body, timeout, options)
             log:trace("_request: decoding JSON result of length " .. #result)
             local ok2, decoded = LrTasks.pcall(JSON.decode, JSON, result)
             if ok2 then
+                -- Auto-unwrap standard API envelope if present
+                if type(decoded) == "table" and (decoded.results ~= nil or decoded.error ~= nil or decoded.warning ~= nil) then
+                    if decoded.error and decoded.error ~= "" then
+                        return nil, decoded.error
+                    end
+                    if decoded.warning and decoded.warning ~= "" then
+                        log:warn("API Warning for " .. tostring(url) .. ": " .. tostring(decoded.warning))
+                    end
+                    return decoded.results
+                end
                 return decoded
             else
                 local snippet = tostring(result):sub(1, 1000)
@@ -3024,7 +3034,7 @@ function SearchIndexAPI.getModels(openaiApiKey, geminiApiKey)
     local url = getBaseUrl() .. ENDPOINTS.MODELS
     local body = {
         openai_apikey = openaiApiKey,
-        gemini_apikey = geminiApiKey,
+        gemini_apikey = import("LrPasswords").retrieve("StyleAI", "geminiApiKey"),
         ollama_base_url = (prefs and prefs.ollamaBaseUrl) or nil,
         lmstudio_base_url = (prefs and prefs.lmstudioBaseUrl) or nil,
     }
@@ -3369,8 +3379,8 @@ function SearchIndexAPI.getDetailedHealth()
     local health = {
         backend = SearchIndexAPI.pingServer() == true,
         clip = SearchIndexAPI.isClipReady() == true,
-        gemini = not Util.nilOrEmpty(prefs.geminiApiKey),
-        chatgpt = not Util.nilOrEmpty(prefs.chatgptApiKey),
+        gemini = not Util.nilOrEmpty(import("LrPasswords").retrieve("StyleAI", "geminiApiKey")),
+        chatgpt = not Util.nilOrEmpty(import("LrPasswords").retrieve("StyleAI", "chatgptApiKey")),
         ollama = false,
         lmstudio = false,
     }
@@ -3393,6 +3403,33 @@ function SearchIndexAPI.getDetailedHealth()
     end
 
     return health
+end
+
+function SearchIndexAPI.getBackendHealth()
+    local url = getBaseUrl() .. "/health"
+    local response, err = SearchIndexAPI._request("GET", url)
+    if err then return nil, err end
+    return response, nil
+end
+
+function SearchIndexAPI.getLogs()
+    local url = getBaseUrl() .. "/logs"
+    local response, err = SearchIndexAPI._request("GET", url)
+    if err then return nil, err end
+    return response, nil
+end
+
+function SearchIndexAPI.renameStyle(styleId, newName)
+    if not styleId or not newName then
+        return false, "Missing style_id or new_name"
+    end
+    local url = getBaseUrl() .. "/styles/rename"
+    local response, err = SearchIndexAPI._request("POST", url, {
+        style_id = styleId,
+        new_name = newName
+    })
+    if err then return false, err end
+    return true, nil
 end
 
 -- ---------------------------------------------------------------------------

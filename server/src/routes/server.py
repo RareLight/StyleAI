@@ -85,9 +85,13 @@ def initialize():
         return jsonify({"error": "db_path is required"}), 400
 
     from services import chroma as service_chroma
+    from core.migrations import run_migrations
 
     try:
         switched = service_chroma.ensure_db_path(db_path)
+        # Run migrations on the catalog's database path immediately after binding
+        if switched:
+            run_migrations(db_path)
     except Exception as e:
         logger.error(f"Failed to initialize database at {db_path}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -98,6 +102,31 @@ def initialize():
     server_lifecycle.write_ok_file()
     server_lifecycle.write_pid_file()
     return jsonify({"status": "success", "db_path": db_path})
+
+
+@server_bp.route("/styles/rename", methods=["POST"])
+def rename_style():
+    """
+    Rename an AI-discovered style by setting a custom user_style_name.
+    JSON: { "style_id": "...", "new_name": "..." }
+    """
+    data = request.get_json(silent=True) or {}
+    style_id = data.get("style_id")
+    new_name = data.get("new_name")
+    
+    if not style_id or not new_name:
+        return jsonify({"error": "style_id and new_name are required"}), 400
+        
+    from services import style_catalog
+    try:
+        success = style_catalog.rename_style(style_id, new_name)
+        if success:
+            return jsonify({"status": "success"})
+        else:
+            return jsonify({"error": "Style not found"}), 404
+    except Exception as e:
+        logger.error(f"Failed to rename style {style_id}: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 
 @server_bp.route("/models", methods=["GET", "POST"])

@@ -135,6 +135,7 @@ Defaults.catalogWriteAccessOptions = {
 }
 
 Defaults.credits = {
+	{ name = "Style AI originally forked from: LrGeniusAI", author = "LrGenius", url = "https://github.com/LrGenius/LrGeniusAI.git" },
 	{ name = "JSON.lua by Jeffrey Friedl", author = "Jeffrey Friedl", url = "http://regex.info/blog/lua/json" },
 	{
 		name = "timm--ViT-SO400M-16-SigLIP2-384",

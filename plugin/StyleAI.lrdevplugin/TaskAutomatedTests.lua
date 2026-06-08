@@ -8,6 +8,7 @@ local LrFunctionContext = import("LrFunctionContext")
 require("JSON")
 require("Util")
 require("APISearchIndex")
+local Pipeline = require("components/Pipeline")
 
 ---
 -- Helper function to evaluate test conditions safely.
@@ -110,6 +111,62 @@ LrTasks.startAsyncTask(function()
 			assertTrue(err == nil, "pruneDatabase should not return an error")
 			assertTrue(type(results) == "table", "pruneDatabase should return a results table")
 			assertTrue(results.deleted ~= nil, "pruneDatabase should return deleted count")
+		end)
+
+		---------------------------------------------------------
+		-- PIPELINE TESTS
+		---------------------------------------------------------
+
+		runTest("Pipeline.runSequentialBatch - Success Path", function()
+			local mockPhotos = { { id = 1 }, { id = 2 } }
+			-- Mock photo object
+			for _, p in ipairs(mockPhotos) do
+				p.getFormattedMetadata = function(self, key) return "MockPhoto" .. self.id end
+			end
+
+			local processFn = function(photo, index, total, catalog)
+				return true, "Success"
+			end
+
+			local summary = Pipeline.runSequentialBatch(mockPhotos, nil, {}, processFn)
+			assertEqual(2, summary.successCount, "Should have 2 successes")
+			assertEqual(0, summary.errorCount, "Should have 0 errors")
+		end)
+
+		runTest("Pipeline.runSequentialBatch - Error Capture", function()
+			local mockPhotos = { { id = 1 }, { id = 2 } }
+			for _, p in ipairs(mockPhotos) do
+				p.getFormattedMetadata = function(self, key) return "MockPhoto" .. self.id end
+			end
+
+			local processFn = function(photo, index, total, catalog)
+				if photo.id == 1 then
+					return false, "Failed on photo 1"
+				else
+					return true, "Success"
+				end
+			end
+
+			local summary = Pipeline.runSequentialBatch(mockPhotos, nil, {}, processFn)
+			assertEqual(1, summary.successCount, "Should have 1 success")
+			assertEqual(1, summary.errorCount, "Should have 1 error")
+			assertTrue(string.find(summary.errors[1], "Failed on photo 1") ~= nil, "Error array should contain the failure message")
+		end)
+
+		runTest("Pipeline.runSequentialBatch - pcall Crash Protection", function()
+			local mockPhotos = { { id = 1 } }
+			for _, p in ipairs(mockPhotos) do
+				p.getFormattedMetadata = function(self, key) return "MockPhoto" .. self.id end
+			end
+
+			local processFn = function(photo, index, total, catalog)
+				error("Simulated crash in processing logic")
+			end
+
+			local summary = Pipeline.runSequentialBatch(mockPhotos, nil, {}, processFn)
+			assertEqual(0, summary.successCount, "Should have 0 successes")
+			assertEqual(1, summary.errorCount, "Should have 1 error")
+			assertTrue(string.find(summary.errors[1], "Simulated crash") ~= nil, "Crash message should be caught and returned")
 		end)
 
 		---------------------------------------------------------
