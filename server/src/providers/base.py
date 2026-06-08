@@ -66,6 +66,8 @@ class MetadataGenerationRequest:
     # Provider-specific overrides (e.g. Ollama/LM Studio on remote host)
     ollama_base_url: str | None = None
     lmstudio_base_url: str | None = None
+    
+    blur_faces: bool = False
 
 
 @dataclass
@@ -140,6 +142,7 @@ class EditGenerationRequest:
     ollama_base_url: str | None = None
     lmstudio_base_url: str | None = None
     training_examples: list[dict[str, Any]] | None = None
+    blur_faces: bool = False
 
 
 @dataclass
@@ -225,10 +228,15 @@ class LLMProviderBase(ABC):
         """
         # Use custom system prompt if provided
         if request.system_prompt:
-            return request.system_prompt
-
-        # Use default system prompt from config
-        return METADATA_GENERATION_SYSTEM_PROMPT
+            prompt = request.system_prompt
+        else:
+            # Use default system prompt from config
+            prompt = METADATA_GENERATION_SYSTEM_PROMPT
+            
+        if getattr(request, "blur_faces", False):
+            prompt += "\n\nNote: Human faces in this image have been intentionally blurred or pixelated for privacy protection. Do not describe the blurring as a flaw or defect, and do not let it negatively impact your analysis. Describe the rest of the scene normally."
+            
+        return prompt
 
     def _prepare_user_prompt(self, request: MetadataGenerationRequest) -> str:
         """
@@ -369,10 +377,7 @@ class LLMProviderBase(ABC):
         return base_prompt
 
     def _prepare_edit_system_prompt(self, request: EditGenerationRequest) -> str:
-        if request.system_prompt:
-            return request.system_prompt
-
-        return (
+        prompt = request.system_prompt or (
             "You are a senior Lightroom Classic retoucher producing high-end, client-ready edits. "
             "Return only a structured Lightroom edit recipe that strictly matches the provided JSON schema. "
             "Never output prose instructions, markdown, or fields not present in the schema. "
@@ -380,6 +385,11 @@ class LLMProviderBase(ABC):
             "Use the minimum number of controls needed for a strong result; avoid noisy over-adjustment. "
             "When local edits are useful, use only supported mask kinds: subject, sky, background."
         )
+        
+        if getattr(request, "blur_faces", False):
+            prompt += "\n\nNote: Human faces in this image have been intentionally blurred or pixelated for privacy protection. Do not describe the blurring as a flaw or defect, and evaluate the rest of the exposure and lighting normally."
+            
+        return prompt
 
     def _format_training_example(self, idx: int, example: dict[str, Any]) -> str:
         """Serialise one training example into a compact prompt-friendly string."""

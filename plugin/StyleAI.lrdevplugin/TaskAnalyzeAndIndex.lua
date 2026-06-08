@@ -110,6 +110,21 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.saveDataToCatalog = prefs.saveDataToCatalog ~= false -- default true
     props.appendMetadata = prefs.appendMetadata or false
 
+    -- Privacy
+    if prefs.blurFacesForCloud == nil then
+        props.blurFacesForCloud = false
+    else
+        props.blurFacesForCloud = prefs.blurFacesForCloud
+    end
+
+    if prefs.previewBlurredFaces == nil then
+        props.previewBlurredFaces = false
+    else
+        props.previewBlurredFaces = prefs.previewBlurredFaces
+    end
+
+    props.faceBlurSensitivity = prefs.faceBlurSensitivity or "balanced"
+
     -- Validation
     props.enableValidation = prefs.enableValidation or false
 
@@ -119,6 +134,7 @@ local function showAnalyzeAndIndexDialog(ctx)
         if not key or key == "" then
             properties.llmStatusText = LOC("$$$/StyleAI/AnalyzeAndIndex/LlmStatusNone=LLM: No model selected")
             properties.llmStatusColor = LrColor(0.8, 0, 0)
+            properties.isCloudModel = false
             return
         end
 
@@ -126,6 +142,12 @@ local function showAnalyzeAndIndexDialog(ctx)
         local provider = key
         if sep then
             provider = string.sub(key, 1, sep - 1)
+        end
+        
+        if provider == "chatgpt" or provider == "gemini" or provider == "vertexai" then
+            properties.isCloudModel = true
+        else
+            properties.isCloudModel = false
         end
 
         if provider == "qwen" then
@@ -273,7 +295,15 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/aiModel=AI Model:", width = share 'labelWidth' },
-                        f:popup_menu { value = bind 'modelKey', items = modelItems, width = 300 },
+                        f:column {
+                            f:popup_menu { value = bind 'modelKey', items = modelItems, width = 300 },
+                            f:static_text {
+                                title = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudWarning=⚠️ Images will be sent to the internet.",
+                                -- visible = bind 'isCloudModel', -- disabled for testing
+                                text_color = LrColor(0.8, 0.5, 0),
+                                tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudTooltip=Enterprise APIs typically do not use data for training, but privacy cannot be fully guaranteed. See our Wiki for details.",
+                            },
+                        },
                     },
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/Temperature=Temperature:", width = share 'labelWidth' },
@@ -283,8 +313,46 @@ local function showAnalyzeAndIndexDialog(ctx)
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/generateLanguage=Language:", width = share 'labelWidth' },
                         f:combo_box { value = bind 'language', items = Defaults.generateLanguages },
-                        f:checkbox { value = bind 'replaceSS', title = LOC "$$$/StyleAI/PluginInfoDialogSections/replaceSS=Replace ß with ss" },
                     },
+                }),
+
+                UIFactory.SettingsGroup(f, {
+                    title = LOC "$$$/StyleAI/UI/PrivacySettings=Privacy & Anonymization",
+                    fill_horizontal = 1,
+                    f:column {
+                        spacing = f:control_spacing(),
+                        f:checkbox {
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/BlurFaces=Blur faces before sending to cloud APIs (Privacy)",
+                            value = bind 'blurFacesForCloud',
+                            -- visible = bind 'isCloudModel', -- disabled for testing
+                        },
+                        f:row {
+                            margin_left = 20,
+                            f:checkbox {
+                                title = LOC "$$$/StyleAI/AnalyzeAndIndex/PreviewBlur=Preview blurred images before sending",
+                                value = bind 'previewBlurredFaces',
+                                visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
+                            },
+                        },
+                        f:row {
+                            margin_left = 20,
+                            f:static_text { 
+                                title = LOC "$$$/StyleAI/AnalyzeAndIndex/BlurSensitivity=Blur Sensitivity:", 
+                                width = 100,
+                                visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
+                            },
+                            f:popup_menu {
+                                value = bind 'faceBlurSensitivity',
+                                items = {
+                                    { title = LOC "$$$/StyleAI/AnalyzeAndIndex/SensitivityHigh=High (Catch more faces)", value = "high" },
+                                    { title = LOC "$$$/StyleAI/AnalyzeAndIndex/SensitivityBalanced=Balanced", value = "balanced" },
+                                    { title = LOC "$$$/StyleAI/AnalyzeAndIndex/SensitivityLow=Low (Fewer false positives)", value = "low" },
+                                },
+                                width = 200,
+                                visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
+                            }
+                        },
+                    }
                 }),
             },
 
@@ -417,6 +485,8 @@ local function showAnalyzeAndIndexDialog(ctx)
                             action = function()
                                 LrTasks.startAsyncTask(function()
                                     package.loaded["TaskPruneDatabase"] = nil
+                                    local Util = require("Util")
+                                    local PrivacyPreview = require("PrivacyPreview")
                                     local task = require("TaskPruneDatabase")
                                     task.run()
                                 end)
@@ -490,6 +560,10 @@ local function showAnalyzeAndIndexDialog(ctx)
         prefs.generateTitle = props.generateTitle
         prefs.generateAltText = props.generateAltText
         -- Persist selected model key and provider for backwards compatibility
+        prefs.replaceSS = props.replaceSS
+        prefs.blurFacesForCloud = props.blurFacesForCloud
+        prefs.previewBlurredFaces = props.previewBlurredFaces
+        prefs.faceBlurSensitivity = props.faceBlurSensitivity
         prefs.modelKey = props.modelKey
         if props.modelKey then
             local sep = string.find(props.modelKey, "::", 1, true)
@@ -736,6 +810,8 @@ LrTasks.startAsyncTask(function()
 			prompt = props.selectedPrompt,
 			bilingual_keywords = props.bilingualKeywords,
 			keyword_secondary_language = props.keywordSecondaryLanguage,
+			blurFacesForCloud = props.blurFacesForCloud,
+			faceBlurSensitivity = props.faceBlurSensitivity,
 		}
 		-- Add API key for cloud providers if configured
 		if providerFromKey == "chatgpt" and prefs then
@@ -797,10 +873,9 @@ LrTasks.startAsyncTask(function()
 			progressScope:done()
 			if errorStatus == "Invalid view" then
 				LrDialogs.message(
-					LOC("$$$/StyleAI/common/InvalidViewTitle=Invalid View"),
-					LOC(
-						"$$$/StyleAI/common/InvalidViewMessage=The 'Current view' scope only works when a folder or collection is selected."
-					)
+					LOC("$$$/StyleAI/AnalyzeAndIndex/NoPhotosTitle=No photos found"),
+					LOC("$$$/StyleAI/AnalyzeAndIndex/NoPhotosMessage=Please select a folder or collection to process."),
+					"info"
 				)
 			else
 				log:trace(
@@ -814,6 +889,15 @@ LrTasks.startAsyncTask(function()
 			return
 		end
 
+		local PrivacyPreview = require("PrivacyPreview")
+		if props.blurFacesForCloud and props.previewBlurredFaces then
+			if not PrivacyPreview.showPreviewFlow(photosToProcess, progressScope, props.faceBlurSensitivity) then
+				progressScope:done()
+				return
+			end
+		end
+
+		local LrPathUtils = import("LrPathUtils")
 		-- Per-photo progress for import and analysis (denominator = photos to process, not 1)
 		progressScope:setCaption(
 			LOC("$$$/StyleAI/AnalyzeAndIndex/ProgressCount=^1 photos to process", tostring(#photosToProcess))

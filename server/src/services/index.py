@@ -655,24 +655,8 @@ def process_image_task(
         pil_images = [res["pil_image"] for res in cpu_results]
 
         # Main Thread GPU tasks (SigLIP2 / InsightFace)
-        # 1. SigLIP2 via analyze_batch
-        try:
-            embeddings, metadata_results = analysis_service.analyze_batch(
-                image_triplets,
-                options,
-                siglip_model,
-                siglip_processor,
-                images_needing_embeddings,
-                images_needing_metadata,
-                exif_location_by_uuid or None,
-                pil_images,  # Reuse the decoded images!
-            )
-        except Exception as e:
-            logger.error(f"Error in analyze_batch: {str(e)}", exc_info=True)
-            error_messages.append(str(e))
-            return 0, total_images, error_messages, warnings
-
-        # 2. InsightFace
+        
+        # 1. InsightFace (Must run first so we have bounding boxes for potential blurring)
         per_image_results = []
         for i, (img_bytes, uid, fname) in enumerate(image_triplets):
             cpu_res = cpu_results[i]
@@ -689,12 +673,72 @@ def process_image_task(
                     pass
                 else:
                     try:
+                        opt = options[i] if isinstance(options, list) else options
+                        sensitivity = opt.get("faceBlurSensitivity", "balanced").lower()
+                        min_det_score = 0.5
+                        if sensitivity == "high":
+                            min_det_score = 0.3
+                        elif sensitivity == "low":
+                            min_det_score = 0.7
+
                         res["faces"] = face_service.detect_faces(
-                            img_bytes, pil_image=cpu_res["pil_image"]
+                            img_bytes, pil_image=cpu_res["pil_image"], min_det_score=min_det_score
                         )
                     except Exception as e:
                         res["faces_error"] = e
             per_image_results.append(res)
+            
+        # Optional: Privacy Face Blurring
+        # If blurFacesForCloud is true, blur the image before sending to LLM and Embeddings
+        blurred_image_triplets = []
+        for i, (img_bytes, uid, fname) in enumerate(image_triplets):
+            opt = options[i] if isinstance(options, list) else options
+            blur_faces = opt.get("blurFacesForCloud", False)
+            
+            if blur_faces and per_image_results[i]["faces"]:
+                from utils.image_processing import apply_face_blur
+                from PIL import Image
+                import io
+                
+                # Extract bounding boxes
+                bboxes = [face["bbox"] for face in per_image_results[i]["faces"]]
+                
+                # Blur bytes
+                blurred_bytes = apply_face_blur(img_bytes, bboxes)
+                blurred_image_triplets.append((blurred_bytes, uid, fname))
+                
+                # Update pil_images list for downstream
+                try:
+                    pil_images[i] = Image.open(io.BytesIO(blurred_bytes))
+                    if pil_images[i].mode != "RGB":
+                        pil_images[i] = pil_images[i].convert("RGB")
+                except Exception as e:
+                    logger.error(f"Failed to load blurred image into PIL: {e}")
+                    
+                # Ensure the request to the LLM also gets the flag so it can append the prompt disclaimer
+                if isinstance(options, list):
+                    options[i]["blur_faces"] = True
+                else:
+                    options["blur_faces"] = True
+            else:
+                blurred_image_triplets.append((img_bytes, uid, fname))
+
+        # 2. SigLIP2 & LLM via analyze_batch
+        try:
+            embeddings, metadata_results = analysis_service.analyze_batch(
+                blurred_image_triplets,
+                options,
+                siglip_model,
+                siglip_processor,
+                images_needing_embeddings,
+                images_needing_metadata,
+                exif_location_by_uuid or None,
+                pil_images,  # Reuse the decoded images (potentially blurred)
+            )
+        except Exception as e:
+            logger.error(f"Error in analyze_batch: {str(e)}", exc_info=True)
+            error_messages.append(str(e))
+            return 0, total_images, error_messages, warnings
 
         for i, (image_bytes, uuid, filename) in enumerate(image_triplets):
             try:

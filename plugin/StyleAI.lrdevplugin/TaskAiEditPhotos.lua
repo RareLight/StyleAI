@@ -162,6 +162,19 @@ local function showAiEditDialog(ctx)
 
 	props.scope = prefs.aiEditScope or "selected"
 	props.modelKey = prefs.aiEditModelKey or prefs.modelKey
+	if prefs.blurFacesForCloud == nil then
+		props.blurFacesForCloud = false
+	else
+		props.blurFacesForCloud = prefs.blurFacesForCloud
+	end
+
+	if prefs.previewBlurredFaces == nil then
+		props.previewBlurredFaces = false
+	else
+		props.previewBlurredFaces = prefs.previewBlurredFaces
+	end
+
+	props.faceBlurSensitivity = prefs.faceBlurSensitivity or "balanced"
 	props.temperature = prefs.aiEditTemperature or prefs.temperature or 0.1
 	props.language = prefs.aiEditLanguage or prefs.generateLanguage or "English"
 	props.styleStrength = prefs.aiEditStyleStrength or Defaults.defaultEditStyleStrength or 0.5
@@ -264,6 +277,19 @@ local function showAiEditDialog(ctx)
 	props:addObserver("editingStyle", function(properties, key, newValue)
 		properties.showLlmOptions = (newValue == "creative")
 	end)
+	
+	local function updateIsCloudModel(properties, key)
+	    local provider = key
+	    if key then
+	        local sep = string.find(key, "::", 1, true)
+	        if sep then provider = string.sub(key, 1, sep - 1) end
+	    end
+	    properties.isCloudModel = (provider == "chatgpt" or provider == "gemini" or provider == "vertexai")
+	end
+	
+	props:addObserver("modelKey", function(properties, k, newValue)
+	    updateIsCloudModel(properties, newValue)
+	end)
 
 	local modelItems = buildModelItems()
 	log:trace("showAiEditDialog: modelItems count=" .. tostring(#modelItems))
@@ -273,6 +299,7 @@ local function showAiEditDialog(ctx)
 	if not props.modelKey or props.modelKey == "" then
 		props.modelKey = modelItems[1].value
 	end
+	updateIsCloudModel(props, props.modelKey)
 
 	props.promptTitleMenu = f:popup_menu({
 		items = bind("promptTitles"),
@@ -361,41 +388,93 @@ local function showAiEditDialog(ctx)
 					title = LOC("$$$/StyleAI/common/AiModel=AI model:"),
 					width = share("labelWidth"),
 				}),
-				f:popup_menu({
-					value = bind("modelKey"),
-					items = modelItems,
-					width = 300,
-				}),
-			}),
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/common/Temperature=Temperature:"),
-					width = share("labelWidth"),
-				}),
 				f:column({
+					f:popup_menu({
+						value = bind("modelKey"),
+						items = modelItems,
+						width = 300,
+					}),
+					f:static_text {
+						title = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudWarning=⚠️ Images will be sent to the internet.",
+						-- visible = bind 'isCloudModel', -- disabled for testing
+						text_color = LrColor(0.8, 0.5, 0),
+						tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudTooltip=Enterprise APIs typically do not use data for training, but privacy cannot be fully guaranteed. See our Wiki for details.",
+					},
+				}),
+				}),
+			}),
+		}),
+			UIFactory.SettingsGroup(f, {
+				title = LOC "$$$/StyleAI/UI/PrivacySettings=Privacy & Anonymization",
+				fill_horizontal = 1,
+				f:column({
+					spacing = f:control_spacing(),
+					f:checkbox({
+						title = LOC("$$$/StyleAI/AnalyzeAndIndex/BlurFaces=Blur faces before sending to cloud APIs (Privacy)"),
+						value = bind("blurFacesForCloud"),
+					}),
 					f:row({
-						f:slider({
-							value = bind("temperature"),
-							min = 0.0,
-							max = 0.5,
-							integral = false,
-							width = 300,
-						}),
-						f:static_text({
-							title = bind("temperature"),
-							width = 40,
+						margin_left = 20,
+						f:checkbox({
+							title = LOC("$$$/StyleAI/TaskAiEditPhotos/PreviewBlur=Preview blurred images before sending"),
+							value = bind("previewBlurredFaces"),
+							visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
 						}),
 					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/common/Reset=Reset"),
-						width = 60,
-						action = function()
-							props.temperature = Defaults.defaultTemperature or 0.1
-						end,
+					f:row({
+						margin_left = 20,
+						f:static_text({ 
+							title = "Blur Sensitivity:", 
+							width = 100,
+							visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
+						}),
+						f:popup_menu({
+							value = bind("faceBlurSensitivity"),
+							items = {
+								{ title = "High (Catch more faces)", value = "high" },
+								{ title = "Balanced", value = "balanced" },
+								{ title = "Low (Fewer false positives)", value = "low" },
+							},
+							width = 200,
+							visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
+						}),
 					}),
 				}),
 			}),
-			f:row({
+			UIFactory.SettingsGroup(f, {
+				title = LOC("$$$/StyleAI/TaskAiEditPhotos/ModelSettings=Model Settings"),
+				fill_horizontal = 1,
+				f:column({
+					spacing = f:control_spacing(),
+					f:row({
+						f:static_text({
+							title = LOC("$$$/StyleAI/common/Temperature=Temperature:"),
+							width = share("labelWidth"),
+						}),
+						f:column({
+							f:row({
+								f:slider({
+									value = bind("temperature"),
+									min = 0.0,
+									max = 0.5,
+									integral = false,
+									width = 300,
+								}),
+								f:static_text({
+									title = bind("temperature"),
+									width = 40,
+								}),
+							}),
+							f:push_button({
+								title = LOC("$$$/StyleAI/common/Reset=Reset"),
+								width = 60,
+								action = function()
+									props.temperature = Defaults.defaultTemperature or 0.1
+								end,
+							}),
+						}),
+					}),
+					f:row({
 				f:static_text({
 					width = share("labelWidth"),
 					title = LOC("$$$/StyleAI/common/Prompt=Prompt:"),
@@ -453,8 +532,8 @@ local function showAiEditDialog(ctx)
 					value = bind("language"),
 					items = Defaults.generateLanguages,
 				}),
+				}),
 			}),
-		}),
 		f:group_box({
 			title = LOC("$$$/StyleAI/TaskAiEditPhotos/EditInstructions=Edit Instructions"),
 			fill_horizontal = 1,
@@ -580,6 +659,7 @@ local function showAiEditDialog(ctx)
 						props.submitKeywords = true
 						props.submitFolderName = false
 						props.useTrainingStyle = true
+						props.faceBlurSensitivity = "balanced"
 					end
 				end,
 			}),
@@ -599,6 +679,9 @@ local function showAiEditDialog(ctx)
 
 	prefs.aiEditScope = props.scope
 	prefs.aiEditModelKey = props.modelKey
+	prefs.blurFacesForCloud = props.blurFacesForCloud
+	prefs.previewBlurredFaces = props.previewBlurredFaces
+	prefs.faceBlurSensitivity = props.faceBlurSensitivity
 	prefs.aiEditTemperature = props.temperature
 	prefs.aiEditLanguage = props.language
 	prefs.aiEditStyleStrength = props.styleStrength
@@ -802,6 +885,16 @@ LrTasks.startAsyncTask(function()
 			title = LOC("$$$/StyleAI/TaskAiEditPhotos/ProgressTitle=Generating AI Lightroom edits..."),
 			functionContext = ctx,
 		})
+
+		local PrivacyPreview = require("PrivacyPreview")
+		if props.blurFacesForCloud and props.previewBlurredFaces then
+			if not PrivacyPreview.showPreviewFlow(photos, progressScope, props.faceBlurSensitivity) then
+				progressScope:done()
+				return
+			end
+		end
+
+		progressScope:setCaption(LOC("$$$/StyleAI/TaskAiEditPhotos/ProgressTitle=Generating AI Lightroom edits..."))
 		progressScope:setPortionComplete(0, #photos)
 
 		local successCount = 0
@@ -880,6 +973,9 @@ LrTasks.startAsyncTask(function()
 							photoOptions.brightPath = bright_path
 
 							local ok, apiOk, apiResponse = LrTasks.pcall(function()
+								photoOptions.blurFacesForCloud = props.blurFacesForCloud
+								photoOptions.faceBlurSensitivity = props.faceBlurSensitivity
+								photoOptions.isBatchProcessing = (#photos > 1)
 								if photoOptions.enableQuickEdit then
 									photoOptions.style_strength = photoOptions.quickEditStyleStrength
 									return SearchIndexAPI.styleEdit(photoId, base_path, photoOptions)

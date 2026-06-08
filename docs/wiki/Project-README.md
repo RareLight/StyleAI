@@ -16,9 +16,9 @@
 
 ## 📖 About the Project
 
-**StyleAI** brings the power of modern Large Language Models (LLMs) directly into Adobe Lightroom Classic. It analyzes your photos, automatically generates accurate tags and detailed descriptions, creates AI-guided Lightroom develop edit recipes, and lets you rediscover your library with semantic free-text search using natural language.
+**StyleAI** brings the power of modern Large Language Models (LLMs) directly into Adobe Lightroom Classic. It analyzes your photos, automatically generates accurate tags and detailed descriptions, creates AI-guided Lightroom develop edit recipes, and lets you rediscover your library with semantic free-text search using natural language. Whether you want to cull a massive photo shoot, find a specific photo using natural language, or have AI automatically suggest develop edits that match your style, StyleAI integrates directly into your existing workflow. 
 
-Whether you prefer running local models to ensure maximum privacy or want to leverage powerful cloud APIs, StyleAI seamlessly adapts to your photography workflow.
+**Your Privacy, First:** In an era where AI often means uploading your personal or client photos to the cloud, StyleAI flips the script. By leveraging highly optimized models (like SigLIP2, Ollama, and LM Studio), StyleAI runs powerful AI analysis **entirely locally on your own machine**. Your photos, your metadata, and your intellectual property never have to leave your hard drive unless you explicitly choose to connect a cloud provider.
 
 ---
 
@@ -28,7 +28,8 @@ Whether you prefer running local models to ensure maximum privacy or want to lev
 - **🎛️ AI Lightroom Edit (Develop):** Generates a structured Lightroom edit recipe per photo (global adjustments and optional masks) and can apply it directly in Develop mode. Includes per-photo review, style presets, style strength, composition/crop mode, and per-photo instruction overrides.
 - **🔍 Semantic Free-Text Search (Advanced Search):** Find images naturally through descriptive queries (e.g., *"Red sports car parked in front of a garage"* or *"Sunset over the mountains"*). StyleAI automatically creates a relevance-sorted Collection in Lightroom based on your prompt.
 - **📸 Image Culling:** Group similar photos into bursts or near-duplicate stacks, automatically pick the strongest frames, and create Lightroom collections for picks, alternates, reject candidates, and optional duplicates.
-- **☁️ Local & Cloud Models:** Full support for local AI models via **Ollama** and **LM Studio**, as well as integration with cloud providers like **ChatGPT/OpenAI**, **Google Gemini**, and **Vertex AI**.
+- **100% Local Inference (Privacy First):** Protect your clients and your art. Run all embeddings, face recognition, and auto-tagging locally using Ollama or LM Studio. Your data stays on your machine.
+- **Cloud Models Available:** If you need maximum reasoning capabilities, you can optionally connect to the cloud with ChatGPT, Google Gemini, and Vertex AI using your own API keys.
 - **🎨 Customizable Prompts & Temperature Control:** System prompts for the AI can be added, edited, and deleted directly within the Lightroom Plug-In Manager. Use the temperature slider to control whether the AI should be highly creative or strictly consistent.
 - **📝 Photo Context (Contextual Info):** Provide manual hints to the AI before analysis (e.g., names of people or specific background details) that aren't immediately obvious from the image itself. This can be done via a popup dialog or directly in Lightroom's metadata panel.
 - **🗄️ Custom Python Backend & Database:** The plugin utilizes a high-performance local server (`styleai-server`). Existing metadata from your Lightroom catalog can easily be imported prior to the first AI analysis.
