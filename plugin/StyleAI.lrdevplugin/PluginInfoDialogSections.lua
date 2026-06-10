@@ -749,7 +749,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 								-- To avoid circular deps or lazy load issues
 								package.loaded["TaskPruneDatabase"] = nil
 								local task = require("TaskPruneDatabase")
-								task.run()
+								task.process()
 							end)
 						end,
 					}),

@@ -66,6 +66,11 @@ function TaskPruneDatabase.process()
             -- Update progress every 500 photos to avoid slowing down Lightroom
             if i % 500 == 0 then
                 progressScope:setCaption("Gathering IDs (" .. i .. " / " .. #allPhotos .. ")...")
+                if MAC_ENV then
+                    LrTasks.yield()
+                else
+                    LrTasks.sleep(0.01)
+                end
             end
 
             -- Uses the robust stable ID logic

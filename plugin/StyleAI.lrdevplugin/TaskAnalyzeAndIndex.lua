@@ -106,9 +106,15 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.submitFolderName = prefs.submitFolderName or false
     props.showPhotoContextDialog = prefs.showPhotoContextDialog or false
 
-    -- SaveDataToCatalog
+    -- Catalog data writing options
     props.saveDataToCatalog = prefs.saveDataToCatalog ~= false -- default true
     props.appendMetadata = prefs.appendMetadata or false
+    props.use16BitTiffForHdr = prefs.use16BitTiffForHdr or false
+    props.forceFreshPreviews = prefs.forceFreshPreviews or false
+    
+    -- Auditing
+    props.auditLlmInputs = prefs.auditLlmInputs or false
+    props.auditLlmInputsPath = prefs.auditLlmInputsPath or "~/TempSSD/logs"
 
     -- Privacy
     if prefs.blurFacesForCloud == nil then
@@ -460,6 +466,13 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                 },
                 f:group_box {
+                    title = "High Fidelity Rendering",
+                    fill_horizontal = 1,
+                    f:row {
+                        f:checkbox { value = bind 'use16BitTiffForHdr', title = "Use 16-bit TIFFs for HDR Previews", tooltip = "Preserves custom camera profile highlight roll-offs perfectly, but is significantly slower to export." },
+                    },
+                },
+                f:group_box {
                     title = LOC "$$$/StyleAI/AnalyzeAndIndex/DataHandling=Data Handling",
                     fill_horizontal = 1,
                     f:row {
@@ -480,15 +493,26 @@ local function showAnalyzeAndIndexDialog(ctx)
                     title = LOC "$$$/StyleAI/PluginInfo/AdvancedSettings=Maintenance",
                     fill_horizontal = 1,
                     f:row {
+                        f:checkbox { value = bind 'forceFreshPreviews', title = "Force generate fresh LLM previews", tooltip = "Bypasses the local disk cache and forces the backend to regenerate HDR brackets." }
+                    },
+                    f:row {
+                        f:checkbox { value = bind 'auditLlmInputs', title = "Audit LLM inputs", tooltip = "Save copies of all images sent to the LLM to the specified directory for debugging/auditing." },
+                        f:edit_field { 
+                            value = bind 'auditLlmInputsPath', 
+                            enabled = bind 'auditLlmInputs',
+                            width_in_chars = 30,
+                            tooltip = "Directory to save audited images"
+                        }
+                    },
+                    f:row {
                         f:push_button {
                             title = LOC "$$$/StyleAI/PruneDatabase/MenuItem=Prune Database",
                             action = function()
                                 LrTasks.startAsyncTask(function()
-                                    package.loaded["TaskPruneDatabase"] = nil
                                     local Util = require("Util")
                                     local PrivacyPreview = require("PrivacyPreview")
                                     local task = require("TaskPruneDatabase")
-                                    task.run()
+                                    task.process()
                                 end)
                             end,
                         },
@@ -580,6 +604,10 @@ local function showAnalyzeAndIndexDialog(ctx)
         prefs.showPhotoContextDialog = props.showPhotoContextDialog
         prefs.enableValidation = props.enableValidation
         prefs.saveDataToCatalog = props.saveDataToCatalog
+        prefs.use16BitTiffForHdr = props.use16BitTiffForHdr
+        prefs.forceFreshPreviews = props.forceFreshPreviews
+        prefs.auditLlmInputs = props.auditLlmInputs
+        prefs.auditLlmInputsPath = props.auditLlmInputsPath
         prefs.replaceSS = props.replaceSS
         prefs.prompt = props.prompt
         prefs.prompts = props.prompts

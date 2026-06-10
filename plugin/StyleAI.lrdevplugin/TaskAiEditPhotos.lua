@@ -8,6 +8,7 @@
 ---
 
 require("DevelopEditManager")
+local UIFactory = require("UIFactory")
 
 local function copyOptions(source)
 	local copied = {}
@@ -322,7 +323,7 @@ local function showAiEditDialog(ctx)
 					width = 300,
 					items = {
 						{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleTrained=Apply My Trained Style (Recommended)"), value = "trained" },
-						{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleCreative=Creative Prompt-Guided Edit"), value = "creative" },
+						{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleCreative=Creative Prompt-Guided Edit - LLM"), value = "creative" },
 					},
 				}),
 			}),
@@ -401,14 +402,13 @@ local function showAiEditDialog(ctx)
 						tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudTooltip=Enterprise APIs typically do not use data for training, but privacy cannot be fully guaranteed. See our Wiki for details.",
 					},
 				}),
-				}),
 			}),
 		}),
-			UIFactory.SettingsGroup(f, {
-				title = LOC "$$$/StyleAI/UI/PrivacySettings=Privacy & Anonymization",
-				fill_horizontal = 1,
-				f:column({
-					spacing = f:control_spacing(),
+		UIFactory.SettingsGroup(f, {
+			title = LOC "$$$/StyleAI/UI/PrivacySettings=Privacy & Anonymization",
+			fill_horizontal = 1,
+			f:column({
+				spacing = f:control_spacing(),
 					f:checkbox({
 						title = LOC("$$$/StyleAI/AnalyzeAndIndex/BlurFaces=Blur faces before sending to cloud APIs (Privacy)"),
 						value = bind("blurFacesForCloud"),
@@ -444,6 +444,7 @@ local function showAiEditDialog(ctx)
 			UIFactory.SettingsGroup(f, {
 				title = LOC("$$$/StyleAI/TaskAiEditPhotos/ModelSettings=Model Settings"),
 				fill_horizontal = 1,
+				visible = bind("showLlmOptions"),
 				f:column({
 					spacing = f:control_spacing(),
 					f:row({
@@ -532,8 +533,9 @@ local function showAiEditDialog(ctx)
 					value = bind("language"),
 					items = Defaults.generateLanguages,
 				}),
-				}),
 			}),
+		}),
+		}),
 		f:group_box({
 			title = LOC("$$$/StyleAI/TaskAiEditPhotos/EditInstructions=Edit Instructions"),
 			fill_horizontal = 1,
@@ -737,6 +739,9 @@ local function showAiEditDialog(ctx)
 		use_training_style = props.useTrainingStyle ~= false,
 		enableQuickEdit = props.editingStyle == "trained",
 		quickEditStyleStrength = props.styleStrength,
+		blurFacesForCloud = props.blurFacesForCloud,
+		previewBlurredFaces = props.previewBlurredFaces,
+		faceBlurSensitivity = props.faceBlurSensitivity,
 	}
 
 	if providerFromKey == "chatgpt" then
@@ -887,8 +892,8 @@ LrTasks.startAsyncTask(function()
 		})
 
 		local PrivacyPreview = require("PrivacyPreview")
-		if props.blurFacesForCloud and props.previewBlurredFaces then
-			if not PrivacyPreview.showPreviewFlow(photos, progressScope, props.faceBlurSensitivity) then
+		if options.blurFacesForCloud and options.previewBlurredFaces then
+			if not PrivacyPreview.showPreviewFlow(photos, progressScope, options.faceBlurSensitivity) then
 				progressScope:done()
 				return
 			end
@@ -973,8 +978,8 @@ LrTasks.startAsyncTask(function()
 							photoOptions.brightPath = bright_path
 
 							local ok, apiOk, apiResponse = LrTasks.pcall(function()
-								photoOptions.blurFacesForCloud = props.blurFacesForCloud
-								photoOptions.faceBlurSensitivity = props.faceBlurSensitivity
+								photoOptions.blurFacesForCloud = options.blurFacesForCloud
+								photoOptions.faceBlurSensitivity = options.faceBlurSensitivity
 								photoOptions.isBatchProcessing = (#photos > 1)
 								if photoOptions.enableQuickEdit then
 									photoOptions.style_strength = photoOptions.quickEditStyleStrength

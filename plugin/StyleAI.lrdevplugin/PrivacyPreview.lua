@@ -14,7 +14,7 @@ function PrivacyPreview.showPreviewFlow(photos, progressScope, sensitivity)
     if not photos or #photos == 0 then return true end
 
     local f = LrView.osFactory()
-    local maxPreviews = 5
+    local maxPreviews = 6
     local numPreviews = math.min(#photos, maxPreviews)
 
     progressScope:setCaption("Fetching face blur previews...")
@@ -65,27 +65,31 @@ function PrivacyPreview.showPreviewFlow(photos, progressScope, sensitivity)
         return false
     end
 
-    local columns = {}
-    for _, p in ipairs(previewTempPaths) do
-        table.insert(columns, f:picture {
+    local customViewElements = { spacing = f:control_spacing() }
+    
+    local current_row = {}
+    for i, p in ipairs(previewTempPaths) do
+        table.insert(current_row, f:picture {
             value = p,
-            width = 300,
-            height = 300,
+            width = 250,
+            height = 250,
         })
+        if #current_row == 3 or i == #previewTempPaths then
+            table.insert(customViewElements, f:row {
+                spacing = f:control_spacing(),
+                unpack(current_row)
+            })
+            current_row = {}
+        end
     end
 
-    local customView = f:column {
+    table.insert(customViewElements, f:static_text {
+        title = "Note: These are low-res previews. The final applied blur will use full resolution.",
+        alignment = "center",
+    })
+
+    table.insert(customViewElements, f:row {
         spacing = f:control_spacing(),
-        f:row {
-            spacing = f:control_spacing(),
-            unpack(columns)
-        },
-        f:static_text {
-            title = "Note: These are low-res previews. The final applied blur will use full resolution.",
-            alignment = "center",
-        },
-        f:row {
-            spacing = f:control_spacing(),
             f:push_button {
                 title = "Export all " .. #photos .. " blurred previews to folder...",
                 action = function()
@@ -101,47 +105,7 @@ function PrivacyPreview.showPreviewFlow(photos, progressScope, sensitivity)
                         if exportDir and exportDir[1] then
                             local baseDir = exportDir[1]
                             
-                            local subResult = nil
-                            local bPropsSubfolderName = "StyleAI_Previews"
-
-                            LrFunctionContext.callWithContext("exportSubfolderContext", function(context)
-                                local LrBinding = import("LrBinding")
-                                local bProps = LrBinding.makePropertyTable(context)
-                                bProps.subfolderName = bPropsSubfolderName
-                                
-                                local subDialog = f:column {
-                                    bind_to_object = bProps,
-                                    spacing = f:control_spacing(),
-                                    f:static_text { title = "Optional: Enter a subfolder name to create within the selected directory.", wrap = true, width = 300 },
-                                    f:static_text { title = "Leave blank to export directly to the selected folder.", wrap = true, width = 300 },
-                                    f:edit_field {
-                                        value = LrView.bind('subfolderName'),
-                                        width_in_chars = 30,
-                                    }
-                                }
-                                
-                                subResult = LrDialogs.presentModalDialog({
-                                    title = "Export Subfolder",
-                                    contents = subDialog,
-                                    actionVerb = "Export",
-                                    cancelVerb = "Cancel"
-                                })
-                                bPropsSubfolderName = bProps.subfolderName
-                            end)
-                            
-                            if subResult == "cancel" then 
-                                return 
-                            end
-                            
                             local dir = baseDir
-                            if bPropsSubfolderName and bPropsSubfolderName ~= "" then
-                                dir = LrPathUtils.child(baseDir, bPropsSubfolderName)
-                                local success = LrFileUtils.createAllDirectories(dir)
-                                if not success then
-                                    LrDialogs.showError("Could not create subfolder: " .. dir)
-                                    return
-                                end
-                            end
 
                             local exportScope = import("LrProgressScope")({
                                 title = "Exporting Blurred Previews...",
@@ -199,8 +163,9 @@ function PrivacyPreview.showPreviewFlow(photos, progressScope, sensitivity)
                 end
             }
         }
-    }
+    )
 
+    local customView = f:column(customViewElements)
     local result = LrDialogs.presentModalDialog {
         title = "Preview Blurred Faces",
         contents = customView,

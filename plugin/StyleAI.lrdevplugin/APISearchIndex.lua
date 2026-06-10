@@ -521,7 +521,7 @@ end
 -- @param photo The Lightroom photo object to export.
 -- @return string|nil The path to the exported JPEG file, or nil on failure.
 --
-function SearchIndexAPI.exportPhotoForIndexing(photo)
+function SearchIndexAPI.exportPhotoForIndexing(photo, overrideSettings)
     if photo == nil then
         log:error("exportPhotoForIndexing: photo is nil. Probably it got deleted in the meantime.")
         return nil
@@ -529,11 +529,18 @@ function SearchIndexAPI.exportPhotoForIndexing(photo)
 
     local tempDir = LrPathUtils.getStandardFilePath('temp')
     local photoName = LrPathUtils.leafName(photo:getFormattedMetadata('fileName'))
-    EXPORT_SETTINGS.LR_export_destinationPathPrefix = tempDir
+    
+    local settings = {}
+    for k, v in pairs(EXPORT_SETTINGS) do settings[k] = v end
+    settings.LR_export_destinationPathPrefix = tempDir
+    
+    if type(overrideSettings) == "table" then
+        for k, v in pairs(overrideSettings) do settings[k] = v end
+    end
 
     local exportSession = LrExportSession({
         photosToExport = { photo },
-        exportSettings = EXPORT_SETTINGS
+        exportSettings = settings
     })
 
     local renditions = {}
@@ -592,93 +599,93 @@ function SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
         return nil
     end
 
-    local function saveToCache(tempPath, cachePath)
-        if tempPath and cachePath and LrFileUtils.exists(tempPath) then
-            LrFileUtils.copy(tempPath, cachePath)
-        end
-    end
+    local prefs = import 'LrPrefs'.prefsForPlugin()
+    local useTiff = prefs.use16BitTiffForHdr
+    local forceFreshPreviews = prefs.forceFreshPreviews or false
 
-    -- 1. Baseline (0 EV)
-    base_path = copyFromCache(baseCache, "_cached.jpg")
-    if not base_path then
-        base_path = SearchIndexAPI.exportPhotoForIndexing(photo)
-        saveToCache(base_path, baseCache)
-    end
-
-    -- If we still don't have a photoId, or caching isn't fully enabled, just do the old flow
-    -- But since we want to be smart, we only apply brackets if they are MISSING from cache.
-    local needDark = darkCache and not LrFileUtils.exists(darkCache)
-    local needBright = brightCache and not LrFileUtils.exists(brightCache)
-    
-    -- If neither is needed, we can just load them from cache and return!
-    if not needDark and not needBright and darkCache and brightCache then
+    -- If all brackets exist in cache and we aren't forcing fresh previews, just load them and return
+    if not forceFreshPreviews and baseCache and darkCache and brightCache and 
+       LrFileUtils.exists(baseCache) and LrFileUtils.exists(darkCache) and LrFileUtils.exists(brightCache) then
+        base_path = copyFromCache(baseCache, "_cached.jpg")
         dark_path = copyFromCache(darkCache, "_dark_cached.jpg")
         bright_path = copyFromCache(brightCache, "_bright_cached.jpg")
-        if dark_path and bright_path then
+        if base_path and dark_path and bright_path then
             log:trace("Using debug cache for HDR export completely: " .. tostring(baseCache))
             return base_path, dark_path, bright_path
         end
     end
-
-    local catalog = photo.catalog
-
-    -- Save original settings
-    local ok, devSettings = LrTasks.pcall(function() return photo:getDevelopSettings() end)
-    local originalExposure = 0.0
-    if ok and type(devSettings) == "table" and type(devSettings.Exposure2012) == "number" then
-        originalExposure = devSettings.Exposure2012
+    
+    local overrideSettings = nil
+    if useTiff then
+        overrideSettings = {
+            LR_format = 'TIFF',
+            LR_export_bitDepth = 16,
+            LR_export_colorSpace = 'ProPhotoRGB',
+            LR_export_colorSpaceUseName = 'ProPhoto RGB',
+            -- Still constrain size to avoid massive files!
+        }
+        log:trace("Exporting 16-bit TIFF for backend HDR bracketing...")
+    else
+        log:trace("Exporting 8-bit JPEG for backend software bracketing...")
     end
 
-    -- Wrap export steps in pcall to ensure we ALWAYS reach the restore block, even if canceled
-    local okExport, exportErr = LrTasks.pcall(function()
-        -- 2. Dark (-2 EV)
-        dark_path = copyFromCache(darkCache, "_dark_cached.jpg")
-        if not dark_path then
-            catalog:withWriteAccessDo("Apply -2 EV Bracket", function()
-                photo:applyDevelopSettings({Exposure2012 = originalExposure - 2.0})
-            end)
-            dark_path = SearchIndexAPI.exportPhotoForIndexing(photo)
-            saveToCache(dark_path, darkCache)
-        end
-    
-        -- 3. Bright (+2 EV)
-        bright_path = copyFromCache(brightCache, "_bright_cached.jpg")
-        if not bright_path then
-            catalog:withWriteAccessDo("Apply +2 EV Bracket", function()
-                photo:applyDevelopSettings({Exposure2012 = originalExposure + 2.0})
-            end)
-            bright_path = SearchIndexAPI.exportPhotoForIndexing(photo)
-            saveToCache(bright_path, brightCache)
-        end
-    end)
-    
-    if not okExport then
-        log:warn("Bracket export interrupted or failed: " .. tostring(exportErr))
+    -- 1. Export the single base image to temporary directory
+    local exported_path = SearchIndexAPI.exportPhotoForIndexing(photo, overrideSettings)
+    if not exported_path then
+        log:error("Failed to export base photo for HDR bracketing")
+        return nil, nil, nil
     end
 
-    -- Restore original exposure, ensuring we wrap in pcall to avoid any silent failures
-    local okRestore, restoreErr = LrTasks.pcall(function()
-        catalog:withWriteAccessDo("Restore Original Exposure", function()
-            photo:applyDevelopSettings({Exposure2012 = originalExposure})
-        end)
-    end)
-    if not okRestore then
-        log:error("Failed to restore original exposure (attempting detached): " .. tostring(restoreErr))
-        -- If the task was canceled, the synchronous restore above will fail because it's attached to the canceled scope.
-        -- We spawn a detached task to guarantee the exposure is restored.
-        LrTasks.startAsyncTask(function()
-            local okDetached, detachedErr = LrTasks.pcall(function()
-                catalog:withWriteAccessDo("Restore Original Exposure (Detached)", function()
-                    photo:applyDevelopSettings({Exposure2012 = originalExposure})
-                end)
-            end)
-            if not okDetached then
-                log:error("Detached restore also failed: " .. tostring(detachedErr))
+    local url = getBaseUrl() .. "/generate_brackets"
+    local mimeChunks = {
+        { name = 'image', filePath = exported_path, fileName = LrPathUtils.leafName(exported_path), contentType = useTiff and 'image/tiff' or 'image/jpeg' }
+    }
+    
+    if prefs.auditLlmInputs then
+        table.insert(mimeChunks, { name = 'audit_llm_inputs', value = "true" })
+        if prefs.auditLlmInputsPath then
+            table.insert(mimeChunks, { name = 'audit_llm_inputs_path', value = prefs.auditLlmInputsPath })
+        end
+    end
+    
+    log:trace("Uploading " .. tostring(exported_path) .. " to " .. url .. " for bracketing")
+    local result, hdrs = LrHttp.postMultipart(url, mimeChunks, nil, 120)
+    
+    -- We can delete the exported TIFF/JPEG since we don't need it anymore
+    LrFileUtils.delete(exported_path)
+    
+    local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
+    if status == 200 and result then
+        local response = JSON:decode(result)
+        if response and response.results then
+            local results = response.results
+            
+            -- Write base64 strings back out to the cache folder as JPEGs
+            if results.base and results.dark and results.bright then
+                local function writeB64(path, b64)
+                    local f = io.open(path, "wb")
+                    if f then
+                        f:write(LrStringUtils.decodeBase64(b64))
+                        f:close()
+                    end
+                end
+                
+                writeB64(baseCache, results.base)
+                writeB64(darkCache, results.dark)
+                writeB64(brightCache, results.bright)
+                
+                base_path = copyFromCache(baseCache, "_cached.jpg")
+                dark_path = copyFromCache(darkCache, "_dark_cached.jpg")
+                bright_path = copyFromCache(brightCache, "_bright_cached.jpg")
+                
+                log:trace("Backend successfully generated and returned HDR brackets")
+                return base_path, dark_path, bright_path
             end
-        end)
+        end
     end
 
-    return base_path, dark_path, bright_path
+    log:error("Failed to generate brackets from backend: " .. tostring(result) .. " status: " .. tostring(status))
+    return nil, nil, nil
 end
 
 function SearchIndexAPI.exportPhotosForIndexing(photos)
@@ -738,13 +745,16 @@ function SearchIndexAPI.getJpegThumbnailForPhoto(photo, minWidth, minHeight, req
         tonumber(prefs and prefs.previewThumbnailTimeoutSeconds) or 12
     local deadline = LrDate.currentTime() + timeoutSeconds
 
+    local requestRef = nil
     local callback = function(jpegData, err)
+        if done then return end
         callbackCount = callbackCount + 1
 
         -- Adobe reports that the callback may fire more than once. Prefer the
         -- first non-empty JPEG payload and otherwise keep waiting until timeout.
         if jpegData and type(jpegData) == "string" and #jpegData > 0 then
             result = jpegData
+            jpegData = nil -- release reference as per SDK guidelines
             errResult = nil
             done = true
             return
@@ -758,6 +768,7 @@ function SearchIndexAPI.getJpegThumbnailForPhoto(photo, minWidth, minHeight, req
     end
 
     local requestObj = photo:requestJpegThumbnail(minWidth, minHeight, callback)
+    requestRef = requestObj
     if not requestObj then
         return nil, "requestJpegThumbnail failed to start"
     end
@@ -1022,6 +1033,8 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
         regenerate_metadata = tostring(globalOptions.regenerate_metadata ~= false),
         cache_images = globalOptions.cache_images == true,
         semantic_clustering_threshold = tostring(globalOptions.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
+        audit_llm_inputs = tostring(globalOptions.audit_llm_inputs or (prefs and prefs.auditLlmInputs) or false),
+        audit_llm_inputs_path = globalOptions.audit_llm_inputs_path or (prefs and prefs.auditLlmInputsPath)
     }
 
     local bodyImages = {}
@@ -1307,6 +1320,13 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
     table.insert(mimeChunks, { name = "regenerate_metadata", value = tostring(options.regenerate_metadata ~= false) })
 
     table.insert(mimeChunks, { name = "semantic_clustering_threshold", value = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94) })
+
+    if prefs and prefs.auditLlmInputs then
+        table.insert(mimeChunks, { name = "audit_llm_inputs", value = "true" })
+        if prefs.auditLlmInputsPath then
+            table.insert(mimeChunks, { name = "audit_llm_inputs_path", value = prefs.auditLlmInputsPath })
+        end
+    end
 
     -- Add file
     table.insert(mimeChunks, {
@@ -2801,6 +2821,18 @@ _requestMultipart = function(url, mimeChunks, timeout)
                 log:error("_requestMultipart JSON decode failed: " .. tostring(decodedOrErr))
                 return nil, "Invalid JSON response from server"
             end
+
+            -- Auto-unwrap standard API envelope if present
+            if type(decodedOrErr) == "table" and (decodedOrErr.results ~= nil or decodedOrErr.error ~= nil or decodedOrErr.warning ~= nil) then
+                if decodedOrErr.error and decodedOrErr.error ~= "" then
+                    return nil, decodedOrErr.error
+                end
+                if decodedOrErr.warning and decodedOrErr.warning ~= "" then
+                    log:warn("API Warning for multipart " .. tostring(url) .. ": " .. tostring(decodedOrErr.warning))
+                end
+                decodedOrErr = decodedOrErr.results
+            end
+
             log:trace("_requestMultipart decode success: decodedType=" ..
                 tostring(type(decodedOrErr)) ..
                 " hasStatus=" .. tostring(type(decodedOrErr) == "table" and decodedOrErr.status or "n/a"))
