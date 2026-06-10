@@ -39,6 +39,19 @@ def generate_edit_recipe():
         return jsonify({"error": "Missing file or photo_id"}), 400
 
     image_bytes = file.read()
+    
+    # Check for HDR brackets
+    file_dark = request.files.get("image_dark")
+    file_bright = request.files.get("image_bright")
+    
+    image_dark_bytes = file_dark.read() if file_dark else None
+    image_bright_bytes = file_bright.read() if file_bright else None
+    
+    if image_dark_bytes and image_bright_bytes:
+        image_data = [image_dark_bytes, image_bytes, image_bright_bytes]
+    else:
+        image_data = image_bytes
+
     if options.get("blurFacesForCloud"):
         try:
             sensitivity = options.get("faceBlurSensitivity", "balanced").lower()
@@ -51,13 +64,38 @@ def generate_edit_recipe():
             if faces:
                 bboxes = [f["bbox"] for f in faces]
                 image_bytes = apply_face_blur(image_bytes, bboxes)
+                # Apply blur to brackets as well
+                if isinstance(image_data, list):
+                    image_data = [
+                        apply_face_blur(img, bboxes) for img in image_data
+                    ]
+                else:
+                    image_data = image_bytes
             options["blur_faces"] = True
         except Exception as e:
             logger.error(f"Failed to blur faces in edit route: {e}")
 
+    # Leave audit trail for any images sent to LLM
+    if str(options.get("audit_llm_inputs", "")).lower() == "true":
+        from services.audit import log_diagnostic_image
+        import base64
+        brackets_dict = None
+        if isinstance(image_data, list):
+            brackets_dict = {
+                'dark': base64.b64encode(image_data[0]).decode('ascii'),
+                'bright': base64.b64encode(image_data[2]).decode('ascii')
+            }
+        log_diagnostic_image(
+            image_data[1] if isinstance(image_data, list) else image_data, 
+            'aiedit', 
+            file.filename,
+            brackets_dict,
+            output_dir=options.get("audit_llm_inputs_path")
+        )
+
     analysis_service = get_analysis_service()
     response = analysis_service.generate_edit_recipe_single(
-        photo_id, image_bytes, options
+        photo_id, image_data, options
     )
     if not response.success or not response.recipe:
         return jsonify(

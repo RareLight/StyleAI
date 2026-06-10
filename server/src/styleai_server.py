@@ -24,6 +24,7 @@ from routes.training import training_bp
 from routes.style_edit import style_edit_bp
 from routes.style_catalog import style_catalog_bp
 from routes.clip import clip_bp
+from routes.image_processing import bp as image_processing_bp
 from services import chroma as service_chroma
 from services import db as service_db
 
@@ -46,6 +47,7 @@ app.register_blueprint(training_bp)
 app.register_blueprint(style_edit_bp)
 app.register_blueprint(style_catalog_bp)
 app.register_blueprint(clip_bp)
+app.register_blueprint(image_processing_bp)
 
 
 def _bool_env(name: str, default: bool = False) -> bool:

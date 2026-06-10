@@ -220,4 +220,8 @@ def _extract_options(data) -> dict[str, Any]:
     if options["catalog_id"] and isinstance(options["catalog_id"], str):
         options["catalog_id"] = options["catalog_id"].strip() or None
 
+    # Audit logging
+    options["audit_llm_inputs"] = _bool_from_data(data, "audit_llm_inputs", False)
+    options["audit_llm_inputs_path"] = data.get("audit_llm_inputs_path")
+
     return options
