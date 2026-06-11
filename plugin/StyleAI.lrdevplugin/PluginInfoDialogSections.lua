@@ -37,7 +37,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.backendServerUrl = prefs.backendServerUrl or Defaults.defaultBackendServerUrl
 	propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
 	propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
-	propertyTable.indexingParallelTasks = tonumber(prefs.indexingParallelTasks) or 3
+	propertyTable.indexingPerformanceProfile = tonumber(prefs.indexingPerformanceProfile) or 2
 	propertyTable.indexingBatchSize = tostring(prefs.indexingBatchSize or "32")
 	propertyTable.semanticClusteringThresholdInt = math.floor((tonumber(prefs.semanticClusteringThreshold) or 0.94) * 100)
 	propertyTable.forceFreshPreviews = prefs.forceFreshPreviews or false
@@ -621,7 +621,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfo/ParallelTasks=Parallel Indexing Tasks"),
+						title = LOC("$$$/StyleAI/PluginInfo/ParallelTasks=Backend Parallel Tasks"),
 						width = share("labelWidth"),
 						alignment = "right",
 					}),
@@ -629,30 +629,27 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						spacing = 2,
 						f:row({
 							f:slider({
-								value = bind("indexingParallelTasks"),
+								value = bind("indexingPerformanceProfile"),
 								min = 1,
-								max = 8,
+								max = 4,
 								integral = true,
 								width = 200,
 							}),
 							f:static_text({
 								title = bind({
-									key = "indexingParallelTasks",
+									key = "indexingPerformanceProfile",
 									transform = function(v)
-										local val = tonumber(v) or 3
-										local label = ""
-										if val <= 2 then label = LOC("$$$/StyleAI/PluginInfo/ThreadsLow=Stable")
-										elseif val <= 4 then label = LOC("$$$/StyleAI/PluginInfo/ThreadsMed=Balanced")
-										elseif val <= 6 then label = LOC("$$$/StyleAI/PluginInfo/ThreadsHigh=Fast")
-										else label = LOC("$$$/StyleAI/PluginInfo/ThreadsMax=Maximum") end
-										return tostring(val) .. " (" .. label .. ")"
+										local val = tonumber(v) or 2
+										if val == 1 then return LOC("$$$/StyleAI/PluginInfo/ThreadsLow=Stable")
+										elseif val == 2 then return LOC("$$$/StyleAI/PluginInfo/ThreadsMed=Balanced")
+										elseif val == 3 then return LOC("$$$/StyleAI/PluginInfo/ThreadsHigh=Fast")
+										else return LOC("$$$/StyleAI/PluginInfo/ThreadsMax=Maximum") end
 									end,
 								}),
-								width_in_chars = 15,
 							}),
 						}),
 						f:static_text({
-							title = "1-2: Stable  |  3-4: Balanced  |  5-6: Fast  |  7-8: Maximum",
+							title = LOC("$$$/StyleAI/PluginInfo/ParallelTasksHelp=Controls the maximum network connections to the backend server. The plugin will automatically scale down based on the active LLM or GPU constraints."),
 							text_color = LrColor(0.5, 0.5, 0.5),
 							font = "<system/small>",
 						}),
@@ -860,7 +857,7 @@ end
 function PluginInfoDialogSections.endDialog(propertyTable)
 	SettingsManager.set("geminiApiKey", propertyTable.geminiApiKey)
 	SettingsManager.set("chatgptApiKey", propertyTable.chatgptApiKey)
-	prefs.indexingParallelTasks = tonumber(propertyTable.indexingParallelTasks) or 3
+	prefs.indexingPerformanceProfile = tonumber(propertyTable.indexingPerformanceProfile) or 2
 	prefs.indexingBatchSize = tonumber(propertyTable.indexingBatchSize) or 32
 
 	prefs.exportSize = propertyTable.exportSize
