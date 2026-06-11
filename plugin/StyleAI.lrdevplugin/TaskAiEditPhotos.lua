@@ -927,6 +927,12 @@ LrTasks.startAsyncTask(function()
 		local activeProducers = 0
 		local profile = tonumber(prefs.indexingPerformanceProfile) or 2
 		local maxWorkers = profile * 2
+		
+		if options.model and (string.find(string.lower(options.model), "lmstudio") or string.find(string.lower(options.model), "ollama")) then
+			-- Local LLMs process sequentially. Limit concurrent requests to prevent Waitress deadlock and HTTP timeouts
+			maxWorkers = math.min(profile * 2, 4)
+			log:info("Local LLM detected. Capping edit producers to " .. tostring(maxWorkers) .. " to prevent Waitress thread exhaustion.")
+		end
 
 		local function producerWorker()
 			activeProducers = activeProducers + 1

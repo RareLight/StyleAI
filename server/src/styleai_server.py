@@ -240,8 +240,12 @@ if __name__ == "__main__":
             )
             app.run(debug=True, host=host, port=port)
         else:
-            logger.info(f"Starting production server on http://{host}:{port}")
-            serve(app, host=host, port=port, threads=8)
+            import multiprocessing
+            cpu_count = multiprocessing.cpu_count()
+            # Scale threads between 8 and 16 based on hardware
+            num_threads = max(8, min(16, cpu_count))
+            logger.info(f"Starting production server on http://{host}:{port} with {num_threads} threads")
+            serve(app, host=host, port=port, threads=num_threads)
     finally:
         logger.info("Shutting down server...")
         server_lifecycle.remove_pid_file()

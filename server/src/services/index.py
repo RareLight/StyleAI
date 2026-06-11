@@ -133,7 +133,6 @@ def _decode_image(image_bytes: bytes) -> Image.Image | None:
         return None
 
 
-@lru_cache(maxsize=4)
 def get_uuids_needing_processing(uuids: list[str], options: dict, search_by_lr_uuid: bool = False) -> list[str]:
     """
     Returns UUIDs that need processing based on selected tasks and existing backend data.
@@ -180,10 +179,13 @@ def get_uuids_needing_processing(uuids: list[str], options: dict, search_by_lr_u
 
     needing_processing = []
     for uuid in uuids:
+        is_existing = uuid in existing_records
         existing = existing_records.get(uuid, {})
 
         needs_embedding = compute_embeddings and (
-            regenerate_metadata or not existing.get("has_embedding", False)
+            regenerate_metadata 
+            or not is_existing 
+            or existing.get("has_embedding", True) is False
         )
         has_any_metadata = (
             existing.get("title")
@@ -273,11 +275,14 @@ def process_image_task(
         images_needing_metadata = set()
 
         for idx, (_, uuid, _, _) in enumerate(image_triplets):
+            is_existing = uuid in existing_records
             existing = existing_records.get(uuid, {})
 
             # Check if embedding is needed
             needs_embedding = compute_embeddings and (
-                regenerate_metadata or not existing.get("has_embedding", False)
+                regenerate_metadata 
+                or not is_existing 
+                or existing.get("has_embedding", True) is False
             )
             if needs_embedding:
                 images_needing_embeddings.add(uuid)
@@ -325,6 +330,10 @@ def process_image_task(
         analysis_service = get_analysis_service()
         siglip_model = None
         siglip_processor = None
+
+        if not compute_embeddings:
+            logger.info("Embeddings disabled (LLM Only path); actively unloading SigLIP2 to free memory.")
+            server_lifecycle.unload_model()
 
         if len(images_needing_embeddings) > 0:
             siglip_model = server_lifecycle.get_model()

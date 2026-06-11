@@ -473,17 +473,19 @@ function Util.getGlobalPhotoIdForPhoto(photo, options)
 		metadata.algorithm = LEGACY_HASH_ALGO
 	end
 
-	local catalog = LrApplication.activeCatalog()
-	catalog:withPrivateWriteAccessDo(function()
-		photo:setPropertyForPlugin(_PLUGIN, "globalPhotoId", globalPhotoId)
-		photo:setPropertyForPlugin(_PLUGIN, "globalPhotoIdFileSize", tostring(metadata.fileSize or ""))
-		photo:setPropertyForPlugin(
-			_PLUGIN,
-			"globalPhotoIdFileModificationDate",
-			tostring(metadata.fileModificationDate or "")
-		)
-		photo:setPropertyForPlugin(_PLUGIN, "globalPhotoIdAlgorithm", tostring(metadata.algorithm or STABLE_ID_ALGO))
-	end, { timeout = 15 })
+	if not options.skipCacheWrite then
+		local catalog = LrApplication.activeCatalog()
+		catalog:withPrivateWriteAccessDo(function()
+			photo:setPropertyForPlugin(_PLUGIN, "globalPhotoId", globalPhotoId)
+			photo:setPropertyForPlugin(_PLUGIN, "globalPhotoIdFileSize", tostring(metadata.fileSize or ""))
+			photo:setPropertyForPlugin(
+				_PLUGIN,
+				"globalPhotoIdFileModificationDate",
+				tostring(metadata.fileModificationDate or "")
+			)
+			photo:setPropertyForPlugin(_PLUGIN, "globalPhotoIdAlgorithm", tostring(metadata.algorithm or STABLE_ID_ALGO))
+		end, { timeout = 15 })
+	end
 
 	local rebuildElapsedMs = math.floor((LrDate.currentTime() - rebuildStartedAt) * 1000)
 	log:trace(
@@ -495,7 +497,7 @@ function Util.getGlobalPhotoIdForPhoto(photo, options)
 			.. tostring(string.sub(globalPhotoId, 1, 24))
 	)
 
-	return globalPhotoId, nil
+	return globalPhotoId, nil, metadata
 end
 
 function Util.getStringsFromRelativePath(absolutePath)

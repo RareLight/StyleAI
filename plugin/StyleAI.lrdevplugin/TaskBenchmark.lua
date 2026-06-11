@@ -15,35 +15,33 @@ LrTasks.startAsyncTask(function()
 		local catalog = LrApplication.activeCatalog()
 		local selectedPhotos = catalog:getTargetPhotos()
 		
-		if not selectedPhotos or #selectedPhotos < 160 then
+		local permutations = {
+			{senders = 4, analyzers = 32, batch = 32},
+			{senders = 4, analyzers = 32, batch = 64},
+			{senders = 8, analyzers = 64, batch = 32},
+			{senders = 8, analyzers = 64, batch = 64},
+		}
+
+		local minRequired = 256
+		
+		if not selectedPhotos or #selectedPhotos < minRequired then
 			LrDialogs.message(
 				"Benchmark Error",
-				"Please select a representative batch of at least 160 photos (ideally 500+) to run the benchmark.\n\nThis ensures each test permutation runs on a completely distinct set of photos, preventing Lightroom's internal preview caches from skewing the results.",
+				"Please select a representative batch of at least " .. minRequired .. " photos (ideally more) to run the benchmark.\n\nRunning it on the exact same set of photos ensures the backend gets fully saturated on later runs once Lightroom's thumbnail previews are cached.",
 				"critical"
 			)
 			return
 		end
-
+		
 		local confirm = LrDialogs.confirm(
 			"Run Performance Benchmark?",
-			"This will test 10 permutations of worker threads and batch sizes on your selected " .. #selectedPhotos .. " photos. This will take a while and will force full processing.\n\nOpen StyleAI.log after completion to view results.",
+			"This will test " .. #permutations .. " permutations of worker threads and batch sizes on your selected " .. #selectedPhotos .. " photos. This will take a while and will force full processing.\n\nOpen StyleAI.log after completion to view results.",
 			"Run Benchmark",
 			"Cancel"
 		)
 		if confirm == "cancel" then return end
-
-		local permutations = {
-			{senders = 2, analyzers = 8, batch = 8},
-			{senders = 2, analyzers = 8, batch = 16},
-			{senders = 2, analyzers = 16, batch = 16},
-			{senders = 4, analyzers = 16, batch = 16},
-			{senders = 4, analyzers = 16, batch = 32},
-			{senders = 4, analyzers = 32, batch = 32},
-			{senders = 4, analyzers = 16, batch = 64},
-			{senders = 4, analyzers = 32, batch = 64},
-		}
 		
-		local photosPerTest = math.floor(#selectedPhotos / #permutations)
+
 
 		local results = {}
 		local progressScope = LrDialogs.showModalProgressDialog({
@@ -53,6 +51,28 @@ LrTasks.startAsyncTask(function()
 
 		log:info("--- STARTING PERFORMANCE BENCHMARK ---")
 		log:info("Testing " .. #selectedPhotos .. " photos across " .. #permutations .. " permutations.")
+
+		if not progressScope:isCanceled() then
+			log:info("Starting Run 0 (Warmup Pass)")
+			progressScope:setCaption("Run 0: Warmup Pass (Generating Thumbnails...)")
+			local warmupConfig = {senders = 4, analyzers = 32, batch = 32}
+			local warmupOptions = {
+				tasks = {"embeddings"},
+				indexingMode = "embed",
+				enableEmbeddings = true,
+				enableMetadata = false,
+				regenerate_metadata = true,
+				cache_images = false,
+				benchmarkConfig = warmupConfig,
+				forceRecompute = true
+			}
+			SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressScope, warmupOptions, false)
+			log:info("Finished Run 0 (Warmup Pass)")
+			
+			if not progressScope:isCanceled() then
+				LrTasks.sleep(5)
+			end
+		end
 
 		for i, config in ipairs(permutations) do
 			if progressScope:isCanceled() then
@@ -74,11 +94,7 @@ LrTasks.startAsyncTask(function()
 				forceRecompute = true
 			}
 			
-			local testPhotos = {}
-			local startIndex = ((i - 1) * photosPerTest) + 1
-			for p = startIndex, startIndex + photosPerTest - 1 do
-				table.insert(testPhotos, selectedPhotos[p])
-			end
+			local testPhotos = selectedPhotos
 
 			local startTime = LrDate.currentTime()
 			-- Run the batch pipeline natively

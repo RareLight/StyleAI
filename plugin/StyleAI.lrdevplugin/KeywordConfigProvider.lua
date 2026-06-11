@@ -20,7 +20,6 @@ local function keywordsToText(keywords)
 	for _, v in ipairs(keywords) do
 		table.insert(sorted, v)
 	end
-	table.sort(sorted)
 	return table.concat(sorted, "\n")
 end
 

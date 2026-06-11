@@ -26,6 +26,10 @@ import torch.nn.functional as F
 from config import TORCH_DEVICE
 
 
+import threading
+
+_inference_lock = threading.Lock()
+
 class AnalysisService:
     """
     Central service for managing metadata generation across multiple LLM providers.
@@ -334,20 +338,25 @@ class AnalysisService:
             return embeddings
 
         try:
-            # Batch process all valid images using chunking to prevent OOM
-            # but keep chunk size large enough to avoid starving the GPU and causing performance regressions.
-            # Max chunk size of 32 is a good balance for M-series unified memory (e.g. 32GB).
-            tensors = [image_processor(img) for img in valid_images]
-            batch_tensor = torch.stack(tensors).to(TORCH_DEVICE)
-
             chunk_size = 32
             all_embeddings = []
 
             with torch.no_grad():
-                for i in range(0, batch_tensor.size(0), chunk_size):
-                    chunk = batch_tensor[i : i + chunk_size]
-                    image_features = image_model.encode_image(chunk)
+                for i in range(0, len(valid_images), chunk_size):
+                    chunk_images = valid_images[i : i + chunk_size]
+                    
+                    # Interleave CPU preprocessing to allow other threads to use the GPU/GIL 
+                    # while this thread is doing CPU-bound image transformations.
+                    tensors = [image_processor(img) for img in chunk_images]
+                    chunk = torch.stack(tensors).to(TORCH_DEVICE)
+                    
+                    # Acquire lock to serialize forward passes and prevent VRAM multiplier effect
+                    with _inference_lock:
+                        image_features = image_model.encode_image(chunk)
+                        
                     normalized = F.normalize(image_features, p=2, dim=1)
+                    # .cpu() blocks this thread and releases the GIL until the GPU finishes.
+                    # This allows other Waitress threads to run their CPU preprocessing concurrently!
                     all_embeddings.extend(normalized.cpu().numpy().tolist())
 
                 for j, idx in enumerate(valid_indices):

@@ -55,11 +55,23 @@ IMAGE_MODEL_ID = "timm/" + CLIP_MODEL_NAME
 
 
 # --- Prompts for Metadata Generation ---
-METADATA_GENERATION_SYSTEM_PROMPT = """You are a professional photography analyst and digital asset manager. 
-Your goal is to describe the image accurately while focusing ONLY on highly prominent, searchable elements.
-Avoid describing microscopic background details, abstract micro-concepts, or hyper-specific biological taxonomy unless absolutely necessary.
-Identify famous buildings, landmarks, locations, and specific vehicle types only when they are the clear focus of the image.
-Use widely accepted, standard photography terminology for genres, moods, and composition to ensure maximum findability."""
+METADATA_GENERATION_SYSTEM_PROMPT = """You are an expert photography analyst. Output clear, standardized keywords describing the image.
+
+Focus on: nature, landscapes, macro, portraits (incl. pets), family gatherings, candids.
+
+Analyze and tag based on this priority:
+1. Location/Scenery: Geographic setting, biome, landscape features.
+2. Genre/Mood: Explicitly include genre (e.g., Portrait, Environmental Portrait, Landscape) and emotional tone.
+3. Lighting/Weather: Primary light source (e.g., window light, direct sun, flash) and weather.
+4. Activities: Actions, ceremonies, event moments.
+5. Subjects: People (roles, expressions), animals/plants (specific species/breeds).
+6. Objects/Context: Landmarks, vehicles, prominent props, readable text.
+
+Rules:
+- Be specific and objective. No generic filler.
+- Format in Title Case.
+- No duplicate terms.
+- No special characters (commas only)."""
 
 METADATA_GENERATION_USER_PROMPT_TEMPLATE = """Analyze the uploaded photo and generate the following data:
 * Alt text (with context for screen readers)
