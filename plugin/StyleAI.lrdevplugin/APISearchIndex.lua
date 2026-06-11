@@ -1764,9 +1764,9 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local maxAnalyzeWorkers = math.min(baseWorkers, 4) -- Lightroom CPU limit
 
     if not enableMetadata and enableEmbeddings then
-        -- Embedding-only path: High GPU batching, low concurrency needed
-        -- Capping concurrent HTTP requests prevents PyTorch/MPS thread thrashing
-        maxSenderWorkers = math.min(baseWorkers, 2)
+        -- Embedding-only path: High GPU batching
+        -- We previously capped this to 2, but relaxed it to 4 to better saturate M2 Max/high-end GPUs
+        maxSenderWorkers = math.min(baseWorkers, 4)
         log:info("Embedding-only path: Capping sender workers to " .. maxSenderWorkers .. " to optimize PyTorch batching.")
     end
 
@@ -2754,7 +2754,7 @@ function SearchIndexAPI.startServer(opts)
                 startServerCmd = string.format("cd /d \"%s\" && start /b \"\" uv run python src/styleai_server.py --db-path \"%s\" > \"%s\" 2>&1",
                     devServerDir, dbPath, launchLogPath)
             else
-                startServerCmd = string.format("cd '%s' && nohup uv run python src/styleai_server.py --db-path '%s' > '%s' 2>&1 &",
+                startServerCmd = string.format("cd '%s' && nohup taskpolicy -c UserInteractive uv run python src/styleai_server.py --db-path '%s' > '%s' 2>&1 &",
                     devServerDir, dbPath, launchLogPath)
             end
         else
@@ -2770,7 +2770,7 @@ function SearchIndexAPI.startServer(opts)
                 else
                     -- Local/Dev fallback
                     local envPrefix = "KMP_DUPLICATE_LIB_OK=TRUE "
-                    startServerCmd = envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
+                    startServerCmd = "taskpolicy -c UserInteractive " .. envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
                 end
             else
                 -- Unknown platform fallback
