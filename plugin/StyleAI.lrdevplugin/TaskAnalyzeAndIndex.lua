@@ -26,7 +26,6 @@ local function showAnalyzeAndIndexDialog(ctx)
     -- Tasks to perform
     props.enableEmbeddings = (prefs.enableEmbeddings ~= false) and props.clipReady -- default true
     props.enableMetadata = prefs.enableMetadata ~= false                           -- default true
-    props.enableFaces = false
     props.regenerateMetadata = false
 
     -- Metadata generation options
@@ -39,7 +38,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.prompt = prefs.prompt
     props.prompts = prefs.prompts
 
-    props.selectedPrompt = prefs.prompts[prefs.prompt]
+    props.selectedPrompt = prefs.prompts[props.prompt]
 
     props:addObserver('prompt', function(properties, key, newValue)
         properties.selectedPrompt = properties.prompts[newValue]
@@ -110,11 +109,9 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.saveDataToCatalog = prefs.saveDataToCatalog ~= false -- default true
     props.appendMetadata = prefs.appendMetadata or false
     props.use16BitTiffForHdr = prefs.use16BitTiffForHdr or false
-    props.forceFreshPreviews = prefs.forceFreshPreviews or false
     
     -- Auditing
-    props.auditLlmInputs = prefs.auditLlmInputs or false
-    props.auditLlmInputsPath = prefs.auditLlmInputsPath or "~/TempSSD/logs"
+
 
     -- Privacy
     if prefs.blurFacesForCloud == nil then
@@ -203,7 +200,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     local contents = f:column {
         bind_to_object = props,
         spacing = f:control_spacing(),
-        width = 650,
+        fill_horizontal = 1,
 
         UIFactory.SettingsGroup(f, {
             title = LOC "$$$/StyleAI/AnalyzeAndIndex/ModeLabel=Workflow Mode",
@@ -236,33 +233,122 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                 },
             },
+            f:row {
+                f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ProcessingMode=Processing Mode:", width = share 'labelWidth' },
+                f:column {
+                    f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/SkipExisting=Resume (Skip photos with existing data)", checked_value = false },
+                    f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/RegenerateMetadata=Force Re-index (Overwrite existing AI data)", checked_value = true },
+                }
+            },
         }),
 
-        f:tab_view {
+        f:view {
+            place = 'overlapping',
             fill_horizontal = 1,
 
-            --------------------------------------------------------
-            -- 1. GENERAL SETTINGS
-            --------------------------------------------------------
-            f:tab_view_item {
-                title = LOC "$$$/StyleAI/UI/TabGeneral=General Settings",
-                identifier = 'general',
+            -- BRANCH A: Embed Only View (No Tabs)
+            f:view {
 
+                fill_horizontal = 1,
+            f:column {
+                visible = bind {
+                    key = "indexingMode",
+                    transform = function(v) return v == "embed" end,
+                },
+                fill_horizontal = 1,
+                
                 UIFactory.SettingsGroup(f, {
                     title = LOC "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks=Search Indexing (SigLIP2)",
                     fill_horizontal = 1,
                     visible = bind {
                         key = "indexingMode",
-                        transform = function(v) return v == "embed" or v == "both" end,
+                        transform = function(v) return v == "embed" end,
                     },
                     f:row {
+                        visible = bind {
+                            key = "indexingMode",
+                            transform = function(v) return v == "embed" end,
+                        },
                         f:checkbox {
+                            visible = bind {
+                                key = "indexingMode",
+                                transform = function(v) return v == "embed" end,
+                            },
                             value = bind 'enableEmbeddings',
                             title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddings=Create search embeddings",
                             tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddingsTooltip=Analyzes image content visually to enable natural language semantic search.",
                             enabled = props.clipReady,
                         },
                         f:static_text {
+                            visible = bind {
+                                key = "indexingMode",
+                                transform = function(v) return v == "embed" end,
+                            },
+                            title = bind {
+                                key = "clipReady",
+                                transform = function(v)
+                                    if v then return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPReady=SigLIP2: Ready (Model cached)")
+                                    else return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPNotReady=SigLIP2: Not Ready (Model missing)") end
+                                end,
+                            },
+                            text_color = bind {
+                                key = "clipReady",
+                                transform = function(v)
+                                    if v then return LrColor(0, 0.8, 0)
+                                    else return LrColor(0.8, 0, 0) end
+                                end
+                            },
+                        },
+                    },
+                }),
+            },
+            },
+
+            -- BRANCH B: Metadata or Both View (With Tabs)
+            f:view {
+
+                fill_horizontal = 1,
+            f:tab_view {
+                visible = bind {
+                    key = "indexingMode",
+                    transform = function(v) return v == "meta" or v == "both" end,
+                },
+                fill_horizontal = 1,
+
+                --------------------------------------------------------
+                -- 1. GENERAL SETTINGS
+                --------------------------------------------------------
+                f:tab_view_item {
+                    title = LOC "$$$/StyleAI/UI/TabGeneral=General Settings",
+                    identifier = 'general',
+
+                    UIFactory.SettingsGroup(f, {
+                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks=Search Indexing (SigLIP2)",
+                        fill_horizontal = 1,
+                        visible = bind {
+                            key = "indexingMode",
+                            transform = function(v) return v == "both" end,
+                        },
+                    f:row {
+                        visible = bind {
+                            key = "indexingMode",
+                            transform = function(v) return v == "both" end,
+                        },
+                        f:checkbox {
+                            visible = bind {
+                                key = "indexingMode",
+                                transform = function(v) return v == "both" end,
+                            },
+                            value = bind 'enableEmbeddings',
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddings=Create search embeddings",
+                            tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddingsTooltip=Analyzes image content visually to enable natural language semantic search.",
+                            enabled = props.clipReady,
+                        },
+                        f:static_text {
+                            visible = bind {
+                                key = "indexingMode",
+                                transform = function(v) return v == "both" end,
+                            },
                             title = bind {
                                 key = "clipReady",
                                 transform = function(v)
@@ -473,52 +559,16 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                 },
                 f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/DataHandling=Data Handling",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/MetadataHandling=Metadata Handling",
                     fill_horizontal = 1,
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ModeLabel=Mode:", width = share 'ctxLabelWidth' },
-                        f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/RegenerateMetadata=Regenerate all (overwrite existing AI data)", checked_value = true },
-                    },
-                    f:row {
-                        f:spacer { width = share 'ctxLabelWidth' },
-                        f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/SkipExisting=Skip photos with existing data (Default)", checked_value = false },
-                    },
-                    f:separator { fill_horizontal = 1 },
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/WriteMode=Write:", width = share 'ctxLabelWidth' },
                         f:checkbox { value = bind 'appendMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadata=Append to existing values instead of replacing", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadataTooltip=Adds AI keywords and text without erasing your existing metadata." },
                     },
                 },
-                f:group_box {
-                    title = LOC "$$$/StyleAI/PluginInfo/AdvancedSettings=Maintenance",
-                    fill_horizontal = 1,
-                    f:row {
-                        f:checkbox { value = bind 'forceFreshPreviews', title = "Force generate fresh LLM previews", tooltip = "Bypasses the local disk cache and forces the backend to regenerate HDR brackets." }
-                    },
-                    f:row {
-                        f:checkbox { value = bind 'auditLlmInputs', title = "Audit LLM inputs", tooltip = "Save copies of all images sent to the LLM to the specified directory for debugging/auditing." },
-                        f:edit_field { 
-                            value = bind 'auditLlmInputsPath', 
-                            enabled = bind 'auditLlmInputs',
-                            width_in_chars = 30,
-                            tooltip = "Directory to save audited images"
-                        }
-                    },
-                    f:row {
-                        f:push_button {
-                            title = LOC "$$$/StyleAI/PruneDatabase/MenuItem=Prune Database",
-                            action = function()
-                                LrTasks.startAsyncTask(function()
-                                    local Util = require("Util")
-                                    local PrivacyPreview = require("PrivacyPreview")
-                                    local task = require("TaskPruneDatabase")
-                                    task.process()
-                                end)
-                            end,
-                        },
-                    },
-                },
             },
+        },
+        },
         },
 
         f:row {
@@ -533,7 +583,6 @@ local function showAnalyzeAndIndexDialog(ctx)
                         props.indexingMode = "both"
                         props.scope = "selected"
                         props.enableEmbeddings = props.clipReady
-                        props.enableFaces = false
                         props.regenerateMetadata = false
                         props.temperature = 0.1
                         props.prompt = "Default"
@@ -577,7 +626,6 @@ local function showAnalyzeAndIndexDialog(ctx)
         prefs.indexScope = props.scope
         prefs.enableEmbeddings = props.enableEmbeddings
         prefs.enableMetadata = props.enableMetadata
-        prefs.enableFaces = props.enableFaces
         prefs.appendMetadata = props.appendMetadata
         prefs.generateKeywords = props.generateKeywords
         prefs.generateCaption = props.generateCaption
@@ -605,10 +653,8 @@ local function showAnalyzeAndIndexDialog(ctx)
         prefs.enableValidation = props.enableValidation
         prefs.saveDataToCatalog = props.saveDataToCatalog
         prefs.use16BitTiffForHdr = props.use16BitTiffForHdr
-        prefs.forceFreshPreviews = props.forceFreshPreviews
-        prefs.auditLlmInputs = props.auditLlmInputs
-        prefs.auditLlmInputsPath = props.auditLlmInputsPath
-        prefs.replaceSS = props.replaceSS
+        prefs.indexingParallelTasks = prefs.indexingParallelTasks or 3
+        prefs.indexingBatchSize = prefs.indexingBatchSize or 32
         prefs.prompt = props.prompt
         prefs.prompts = props.prompts
         prefs.useKeywordHierarchy = props.useKeywordHierarchy
@@ -765,7 +811,6 @@ LrTasks.startAsyncTask(function()
 		if
 			not props.enableEmbeddings
 			and not props.enableMetadata
-			and not props.enableFaces
 		then
 			LrDialogs.showError(
 				LOC("$$$/StyleAI/AnalyzeAndIndex/NoTasksSelected=Please select at least one task to perform.")
@@ -797,9 +842,7 @@ LrTasks.startAsyncTask(function()
 		if props.enableMetadata and (props.indexingMode == "meta" or props.indexingMode == "both") then
 			table.insert(tasks, "metadata")
 		end
-		if props.enableFaces then
-			table.insert(tasks, "faces")
-		end
+
 
 		-- Parse provider and model from unified modelKey (format: provider::model)
 		local providerFromKey, modelFromKey = nil, nil
@@ -831,8 +874,7 @@ LrTasks.startAsyncTask(function()
 			submit_keywords = props.submitKeywords,
 			submit_folder_names = props.submitFolderName,
 			submit_user_context = props.showPhotoContextDialog,
-			enableMetadata = props.enableMetadata,
-			enableFaces = props.enableFaces,
+			enableMetadata = props.enableMetadata and (props.indexingMode == "meta" or props.indexingMode == "both"),
 			replace_ss = props.replaceSS,
 			regenerate_metadata = props.regenerateMetadata,
 			prompt = props.selectedPrompt,
@@ -881,13 +923,18 @@ LrTasks.startAsyncTask(function()
 			functionContext = context,
 		})
 
+		-- Wait for background catalog db migrations (e.g. claim_photos) to finish
+		-- so they don't collide with our indexing loop locks.
+		progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/WaitingForMigrations=Waiting for catalog initialization..."))
+		local SearchIndexAPI = require("APISearchIndex")
+		SearchIndexAPI.waitForDbMigrations()
+
 		-- Get photos to process
 		-- For scope 'missing', pass task options so backend checks which photos need the selected tasks
 		local taskOptionsForScope = (props.scope == "missing")
 				and {
 					enableEmbeddings = props.enableEmbeddings,
 					enableMetadata = props.enableMetadata,
-					enableFaces = props.enableFaces,
 					regenerateMetadata = props.regenerateMetadata,
 				}
 			or nil
@@ -982,7 +1029,6 @@ LrTasks.startAsyncTask(function()
 						topLevelKeyword = props.topLevelKeyword,
 						appendMetadata = props.appendMetadata,
 					})
-					SearchIndexAPI.importMetadataFromCatalog({ photo }, scope, false, false)
 				end
 			end
 		end
@@ -1057,7 +1103,6 @@ LrTasks.startAsyncTask(function()
 									"Reimported validated metadata for photo: "
 										.. (photo:getFormattedMetadata("fileName") or "unknown")
 								)
-								SearchIndexAPI.importMetadataFromCatalog({ photo }, progressScope, false)
 
 								savedCount = savedCount + 1
 							elseif result == "other" then
@@ -1087,7 +1132,6 @@ LrTasks.startAsyncTask(function()
 								"Applied metadata without validation for photo (skipFromHere active): "
 									.. (photo:getFormattedMetadata("fileName") or "unknown")
 							)
-							SearchIndexAPI.importMetadataFromCatalog({ photo }, progressScope, false)
 
 							savedCount = savedCount + 1
 						end

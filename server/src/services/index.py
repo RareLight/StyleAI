@@ -9,7 +9,7 @@ dedicated GPU thread) exclusively handles SigLIP2 and InsightFace model inferenc
 eliminating UI blocking and massive pipeline stalls during bulk catalog indexing.
 """
 
-from config import logger, CULLING_CONFIG, TORCH_DEVICE
+from config import logger, TORCH_DEVICE
 from . import chroma as chroma_service
 from .chroma import DatabaseNotReadyError
 from .metadata import get_analysis_service
@@ -111,10 +111,6 @@ def _flatten_keywords(keywords):
     return ""
 
 
-def _safe_unit_interval(value: float) -> float:
-    return max(0.0, min(1.0, float(value)))
-
-
 def _load_analysis_grayscale(image_bytes: bytes, max_side: int = 512) -> np.ndarray:
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     if max(image.size) > max_side:
@@ -137,276 +133,6 @@ def _decode_image(image_bytes: bytes) -> Image.Image | None:
 
 
 @lru_cache(maxsize=4)
-def _build_dct_matrix(size: int) -> np.ndarray:
-    indices = np.arange(size, dtype=np.float32)
-    matrix = np.zeros((size, size), dtype=np.float32)
-    scale = np.pi / (2.0 * float(size))
-    for u in range(size):
-        alpha = np.sqrt(1.0 / size) if u == 0 else np.sqrt(2.0 / size)
-        matrix[u, :] = alpha * np.cos((2.0 * indices + 1.0) * u * scale)
-    return matrix
-
-
-def _compute_perceptual_hash(image: Image.Image) -> str:
-    """
-    Compute a classic 64-bit pHash (DCT-based) and return 16-char hex.
-    Returns empty string on failure.
-    """
-    try:
-        gray = image.convert("L").resize((32, 32), Image.Resampling.LANCZOS)
-        pixels = np.asarray(gray, dtype=np.float32)
-        dct_matrix = _build_dct_matrix(32)
-        dct_transformed = dct_matrix @ pixels @ dct_matrix.T
-        low_freq = dct_transformed[:8, :8]
-        median = float(np.median(low_freq[1:, :]))
-        bits = (low_freq > median).astype(np.uint8).flatten()
-        hash_value = 0
-        for bit in bits:
-            hash_value = (hash_value << 1) | int(bit)
-        return f"{hash_value:016x}"
-    except Exception:
-        return ""
-
-
-def _compute_culling_metrics(image: Image.Image) -> dict:
-    """
-    Compute cheap, deterministic image-quality metrics for culling.
-    All normalized quality scores use a 0..1 range where higher is better,
-    except the explicit clip/noise fields which are stored as penalties.
-    """
-    try:
-        if max(image.size) > 512:
-            scale = 512 / float(max(image.size))
-            resized = (
-                max(32, int(round(image.size[0] * scale))),
-                max(32, int(round(image.size[1] * scale))),
-            )
-            image = image.resize(resized, Image.Resampling.BILINEAR)
-        rgb = np.asarray(image, dtype=np.float32) / 255.0
-        gray = (0.299 * rgb[:, :, 0]) + (0.587 * rgb[:, :, 1]) + (0.114 * rgb[:, :, 2])
-        if gray.shape[0] < 8 or gray.shape[1] < 8:
-            raise ValueError("Image too small for culling metrics")
-
-        center = gray[1:-1, 1:-1]
-        laplacian = (
-            -4.0 * center
-            + gray[:-2, 1:-1]
-            + gray[2:, 1:-1]
-            + gray[1:-1, :-2]
-            + gray[1:-1, 2:]
-        )
-        sharpness_raw = float(np.var(laplacian))
-        sharpness = _safe_unit_interval(
-            sharpness_raw
-            / (sharpness_raw + CULLING_CONFIG["image_metrics"]["sharpness_denominator"])
-        )
-
-        luminance_mean = float(np.mean(gray))
-        highlight_clip = float(
-            np.mean(gray >= CULLING_CONFIG["image_metrics"]["highlight_threshold"])
-        )
-        shadow_clip = float(
-            np.mean(gray <= CULLING_CONFIG["image_metrics"]["shadow_threshold"])
-        )
-        clipping_penalty = _safe_unit_interval(
-            (highlight_clip * CULLING_CONFIG["image_metrics"]["highlight_clip_weight"])
-            + (shadow_clip * CULLING_CONFIG["image_metrics"]["shadow_clip_weight"])
-        )
-        exposure_balance = _safe_unit_interval(
-            1.0
-            - (
-                abs(luminance_mean - CULLING_CONFIG["image_metrics"]["exposure_target"])
-                / CULLING_CONFIG["image_metrics"]["exposure_tolerance"]
-            )
-        )
-        exposure = _safe_unit_interval(
-            (
-                CULLING_CONFIG["image_metrics"]["exposure_balance_weight"]
-                * exposure_balance
-            )
-            + (
-                CULLING_CONFIG["image_metrics"]["exposure_clip_weight"]
-                * (1.0 - clipping_penalty)
-            )
-        )
-
-        blurred = (
-            gray[:-2, :-2]
-            + gray[:-2, 1:-1]
-            + gray[:-2, 2:]
-            + gray[1:-1, :-2]
-            + gray[1:-1, 1:-1]
-            + gray[1:-1, 2:]
-            + gray[2:, :-2]
-            + gray[2:, 1:-1]
-            + gray[2:, 2:]
-        ) / 9.0
-        reference = gray[1:-1, 1:-1]
-        residual = np.abs(reference - blurred)
-        midtone_mask = (reference > 0.15) & (reference < 0.85)
-        if np.any(midtone_mask):
-            noise_raw = float(np.mean(residual[midtone_mask]))
-        else:
-            noise_raw = float(np.mean(residual))
-        noise_penalty = _safe_unit_interval(
-            noise_raw / CULLING_CONFIG["image_metrics"]["noise_denominator"]
-        )
-
-        technical_score = _safe_unit_interval(
-            (CULLING_CONFIG["image_metrics"]["technical_weight_sharpness"] * sharpness)
-            + (CULLING_CONFIG["image_metrics"]["technical_weight_exposure"] * exposure)
-            + (
-                CULLING_CONFIG["image_metrics"]["technical_weight_noise"]
-                * (1.0 - noise_penalty)
-            )
-        )
-
-        contrast = _safe_unit_interval(float(np.std(gray)) / 0.25)
-        rg = np.abs(rgb[:, :, 0] - rgb[:, :, 1])
-        yb = np.abs(0.5 * (rgb[:, :, 0] + rgb[:, :, 1]) - rgb[:, :, 2])
-        colorfulness = _safe_unit_interval(
-            float(np.mean(np.sqrt((rg * rg) + (yb * yb)))) / 0.35
-        )
-        aesthetic_score = _safe_unit_interval(
-            (CULLING_CONFIG["image_metrics"]["aesthetic_contrast_weight"] * contrast)
-            + (
-                CULLING_CONFIG["image_metrics"]["aesthetic_colorfulness_weight"]
-                * colorfulness
-            )
-            + (CULLING_CONFIG["image_metrics"]["aesthetic_exposure_weight"] * exposure)
-        )
-
-        return {
-            "cull_sharpness": round(sharpness, 4),
-            "cull_exposure": round(exposure, 4),
-            "cull_noise": round(noise_penalty, 4),
-            "cull_highlight_clip": round(highlight_clip, 4),
-            "cull_shadow_clip": round(shadow_clip, 4),
-            "cull_technical_score": round(technical_score, 4),
-            "cull_aesthetic": round(aesthetic_score, 4),
-        }
-    except Exception as exc:
-        logger.warning("Could not compute culling metrics: %s", exc)
-        return {
-            "cull_sharpness": 0.0,
-            "cull_exposure": 0.0,
-            "cull_noise": 1.0,
-            "cull_highlight_clip": 0.0,
-            "cull_shadow_clip": 0.0,
-            "cull_technical_score": 0.0,
-            "cull_aesthetic": 0.0,
-        }
-
-
-def _aggregate_face_culling_metrics(face_results: list[dict]) -> dict:
-    if not face_results:
-        return {
-            "cull_face_count": 0,
-            "cull_face_sharpness": 0.0,
-            "cull_face_prominence": 0.0,
-            "cull_face_visibility": 0.0,
-            "cull_face_score": 0.0,
-            "cull_eye_openness": 0.0,
-            "cull_blink_penalty": 1.0,
-            "cull_occlusion": 0.0,
-            "cull_faces_present": False,
-        }
-
-    face_count = len(face_results)
-    sharpness_values = [
-        _safe_unit_interval(face.get("sharpness", 0.0)) for face in face_results
-    ]
-    prominence_values = [
-        _safe_unit_interval(
-            face.get("area_ratio", 0.0)
-            / CULLING_CONFIG["face_metrics"]["prominence_normalizer"]
-        )
-        for face in face_results
-    ]
-    visibility_values = [
-        _safe_unit_interval(
-            (
-                CULLING_CONFIG["face_metrics"]["visibility_det_weight"]
-                * _safe_unit_interval(face.get("det_score", 0.0))
-            )
-            + (
-                CULLING_CONFIG["face_metrics"]["visibility_center_weight"]
-                * _safe_unit_interval(face.get("center_proximity", 0.0))
-            )
-        )
-        for face in face_results
-    ]
-    eye_openness_values = [
-        _safe_unit_interval(face.get("eye_openness", 0.0)) for face in face_results
-    ]
-    blink_penalties = [
-        _safe_unit_interval(face.get("blink_penalty", 1.0)) for face in face_results
-    ]
-    occlusion_values = []
-    for face in face_results:
-        if "occlusion" in face:
-            occlusion_values.append(_safe_unit_interval(face.get("occlusion", 0.0)))
-        else:
-            occlusion_values.append(
-                _safe_unit_interval(
-                    1.0
-                    - (
-                        (
-                            CULLING_CONFIG["face_metrics"]["occlusion_det_weight"]
-                            * _safe_unit_interval(face.get("det_score", 0.0))
-                        )
-                        + (
-                            CULLING_CONFIG["face_metrics"]["occlusion_center_weight"]
-                            * _safe_unit_interval(face.get("center_proximity", 0.0))
-                        )
-                        + (
-                            CULLING_CONFIG["face_metrics"]["occlusion_eye_weight"]
-                            * _safe_unit_interval(face.get("eye_openness", 0.0))
-                        )
-                    )
-                )
-            )
-
-    face_sharpness = max(sharpness_values) if sharpness_values else 0.0
-    face_prominence = max(prominence_values) if prominence_values else 0.0
-    face_visibility = (
-        sum(visibility_values) / len(visibility_values) if visibility_values else 0.0
-    )
-    eye_openness = max(eye_openness_values) if eye_openness_values else 0.0
-    blink_penalty = min(blink_penalties) if blink_penalties else 1.0
-    occlusion_penalty = min(occlusion_values) if occlusion_values else 0.0
-    face_score_raw = (
-        (CULLING_CONFIG["face_metrics"]["score_weight_sharpness"] * face_sharpness)
-        + (CULLING_CONFIG["face_metrics"]["score_weight_prominence"] * face_prominence)
-        + (CULLING_CONFIG["face_metrics"]["score_weight_visibility"] * face_visibility)
-        + (CULLING_CONFIG["face_metrics"]["score_weight_eye_openness"] * eye_openness)
-        + (
-            CULLING_CONFIG["face_metrics"]["score_weight_occlusion"]
-            * (1.0 - occlusion_penalty)
-        )
-    )
-    weight_total = (
-        CULLING_CONFIG["face_metrics"]["score_weight_sharpness"]
-        + CULLING_CONFIG["face_metrics"]["score_weight_prominence"]
-        + CULLING_CONFIG["face_metrics"]["score_weight_visibility"]
-        + CULLING_CONFIG["face_metrics"]["score_weight_eye_openness"]
-        + CULLING_CONFIG["face_metrics"]["score_weight_occlusion"]
-    )
-    face_score = _safe_unit_interval(face_score_raw / max(1e-6, weight_total))
-
-    return {
-        "cull_face_count": face_count,
-        "cull_face_sharpness": round(face_sharpness, 4),
-        "cull_face_prominence": round(face_prominence, 4),
-        "cull_face_visibility": round(face_visibility, 4),
-        "cull_face_score": round(face_score, 4),
-        "cull_eye_openness": round(eye_openness, 4),
-        "cull_blink_penalty": round(blink_penalty, 4),
-        "cull_occlusion": round(occlusion_penalty, 4),
-        "cull_faces_present": True,
-    }
-
-
 def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
     """
     Returns UUIDs that need processing based on selected tasks and existing backend data.
@@ -415,10 +141,7 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
     regenerate_metadata = options.get("regenerate_metadata", True)
     compute_embeddings = options.get("compute_embeddings", True)
     compute_metadata = options.get("compute_metadata", False)
-    compute_faces = options.get("compute_faces", False)
-    any_processing_task_enabled = (
-        compute_embeddings or compute_metadata or compute_faces
-    )
+
     catalog_id = options.get("catalog_id")
 
     if not uuids:
@@ -461,16 +184,7 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
             regenerate_metadata or not has_any_metadata
         )
 
-        # Use the cached faces_checked flag from metadata directly to avoid N+1 queries to face_collection
-        needs_faces = compute_faces and (
-            regenerate_metadata or not existing.get("faces_checked", False)
-        )
-
-        needs_cull_phash = any_processing_task_enabled and (
-            regenerate_metadata or not existing.get("cull_phash")
-        )
-
-        if needs_embedding or needs_metadata or needs_faces or needs_cull_phash:
+        if needs_embedding or needs_metadata:
             needing_processing.append(uuid)
 
     return needing_processing
@@ -537,8 +251,6 @@ def process_image_task(
         # checks inside per-image loops — O(1) vs O(n).
         images_needing_embeddings = set()
         images_needing_metadata = set()
-        images_needing_faces = set()
-        images_needing_cull_phash = set()
 
         for idx, (_, uuid, _) in enumerate(image_triplets):
             existing = existing_records.get(uuid, {})
@@ -549,13 +261,6 @@ def process_image_task(
             )
             if needs_embedding:
                 images_needing_embeddings.add(uuid)
-
-            # Check if faces are needed
-            needs_faces = compute_faces and (
-                regenerate_metadata or not chroma_service.faces_checked_for_photo(uuid)
-            )
-            if needs_faces:
-                images_needing_faces.add(uuid)
 
             # Check if metadata is needed
             has_any_metadata = (
@@ -578,13 +283,9 @@ def process_image_task(
             if needs_metadata:
                 images_needing_metadata.add(uuid)
 
-            # cull_phash is part of culling foundation and should be backfilled in delta mode.
-            if regenerate_metadata or not existing.get("cull_phash"):
-                images_needing_cull_phash.add(uuid)
-
         logger.info(
             f"Generation needed: {len(images_needing_embeddings)} embeddings, "
-            f"{len(images_needing_metadata)} metadata, {len(images_needing_faces)} faces"
+            f"{len(images_needing_metadata)} metadata"
         )
 
         # If nothing needs to be generated and we're not regenerating, skip work.
@@ -593,10 +294,8 @@ def process_image_task(
         # Also do NOT early-return when compute_faces is True - we need to process images.
         if (
             not regenerate_metadata
-            and not compute_faces
             and len(images_needing_embeddings) == 0
             and len(images_needing_metadata) == 0
-            and len(images_needing_cull_phash) == 0
         ):
             logger.info(
                 "No generation required (regenerate_metadata=False and all fields present). Returning success without changes."
@@ -626,95 +325,54 @@ def process_image_task(
                 logger.debug("Could not extract EXIF location for %s: %s", uuid, exc)
                 exif_location_by_uuid[uuid] = None
 
-        import concurrent.futures
+        # Decode each image to PIL sequentially
+        pil_images = []
+        for img_bytes, uid, fname in image_triplets:
+            pil_images.append(_decode_image(img_bytes))
 
-        # Pre-process pure CPU tasks (decode, culling, phash) in background
-        per_image_futures = []
-        import os
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, (os.cpu_count() or 4) + 4)) as executor:
-            for i, (img_bytes, uid, fname) in enumerate(image_triplets):
-
-                def _process_cpu_tasks(u=uid, b=img_bytes):
-                    res = {
-                        "culling": None,
-                        "phash": "",
-                        "pil_image": None,
-                    }
-                    p = _decode_image(b)
-                    res["pil_image"] = p
-                    if p is not None:
-                        res["culling"] = _compute_culling_metrics(p)
-                        res["phash"] = _compute_perceptual_hash(p)
-                    return res
-
-                per_image_futures.append(executor.submit(_process_cpu_tasks))
-
-            # Wait for CPU prep to finish
-            cpu_results = [f.result() for f in per_image_futures]
-
-        pil_images = [res["pil_image"] for res in cpu_results]
-
-        # Main Thread GPU tasks (SigLIP2 / InsightFace)
-        
-        # 1. InsightFace (Must run first so we have bounding boxes for potential blurring)
-        per_image_results = []
+        # Detect faces ONLY for privacy blurring if requested
+        per_image_faces = []
         for i, (img_bytes, uid, fname) in enumerate(image_triplets):
-            cpu_res = cpu_results[i]
-            res = {
-                "culling": cpu_res["culling"],
-                "phash": cpu_res["phash"],
-                "faces": None,
-                "faces_error": None,
-            }
-            if compute_faces and img_bytes:
-                if not regenerate_metadata and chroma_service.faces_checked_for_photo(
-                    uid
-                ):
-                    pass
-                else:
-                    try:
-                        opt = options[i] if isinstance(options, list) else options
-                        sensitivity = opt.get("faceBlurSensitivity", "balanced").lower()
-                        min_det_score = 0.5
-                        if sensitivity == "high":
-                            min_det_score = 0.3
-                        elif sensitivity == "low":
-                            min_det_score = 0.7
+            opt = options[i] if isinstance(options, list) else options
+            blur_faces = opt.get("blurFacesForCloud", False)
+            faces = None
+            if blur_faces and img_bytes:
+                try:
+                    sensitivity = opt.get("faceBlurSensitivity", "balanced").lower()
+                    min_det_score = 0.5
+                    if sensitivity == "high":
+                        min_det_score = 0.3
+                    elif sensitivity == "low":
+                        min_det_score = 0.7
 
-                        res["faces"] = face_service.detect_faces(
-                            img_bytes, pil_image=cpu_res["pil_image"], min_det_score=min_det_score
-                        )
-                    except Exception as e:
-                        res["faces_error"] = e
-            per_image_results.append(res)
-            
+                    faces = face_service.detect_faces(
+                        img_bytes, pil_image=pil_images[i], min_det_score=min_det_score
+                    )
+                except Exception as e:
+                    logger.error(f"Error detecting faces for blurring: {e}")
+            per_image_faces.append(faces)
+
         # Optional: Privacy Face Blurring
         # If blurFacesForCloud is true, blur the image before sending to LLM and Embeddings
         blurred_image_triplets = []
         for i, (img_bytes, uid, fname) in enumerate(image_triplets):
             opt = options[i] if isinstance(options, list) else options
             blur_faces = opt.get("blurFacesForCloud", False)
-            
-            if blur_faces and per_image_results[i]["faces"]:
+
+            if blur_faces and per_image_faces[i]:
                 from utils.image_processing import apply_face_blur
-                from PIL import Image
-                import io
-                
+
                 # Extract bounding boxes
-                bboxes = [face["bbox"] for face in per_image_results[i]["faces"]]
-                
+                bboxes = [face["bbox"] for face in per_image_faces[i]]
+
                 # Blur bytes
                 blurred_bytes = apply_face_blur(img_bytes, bboxes)
                 blurred_image_triplets.append((blurred_bytes, uid, fname))
-                
-                # Update pil_images list for downstream
-                try:
-                    pil_images[i] = Image.open(io.BytesIO(blurred_bytes))
-                    if pil_images[i].mode != "RGB":
-                        pil_images[i] = pil_images[i].convert("RGB")
-                except Exception as e:
-                    logger.error(f"Failed to load blurred image into PIL: {e}")
-                    
+
+                # Do NOT update pil_images list with blurred version
+                # SigLIP2 is 100% local and should embed the unblurred image for accuracy
+                # The LLM will still receive the blurred_bytes via blurred_image_triplets
+
                 # Ensure the request to the LLM also gets the flag so it can append the prompt disclaimer
                 if isinstance(options, list):
                     options[i]["blur_faces"] = True
@@ -725,11 +383,17 @@ def process_image_task(
 
         # Leave audit trail for indexing thumbnails if enabled
         from services.audit import log_diagnostic_image
+
         for i, (img_bytes, uid, fname) in enumerate(blurred_image_triplets):
             if uid in images_needing_metadata:
                 opt = options[i] if isinstance(options, list) else options
                 if str(opt.get("audit_llm_inputs", "")).lower() == "true":
-                    log_diagnostic_image(img_bytes, 'indexing', fname, output_dir=opt.get("audit_llm_inputs_path"))
+                    log_diagnostic_image(
+                        img_bytes,
+                        "indexing",
+                        fname,
+                        output_dir=opt.get("audit_llm_inputs_path"),
+                    )
 
         # 2. SigLIP2 & LLM via analyze_batch
         try:
@@ -757,7 +421,6 @@ def process_image_task(
 
                 need_embedding = uuid in images_needing_embeddings
                 need_metadata = uuid in images_needing_metadata
-                need_cull_phash = uuid in images_needing_cull_phash
 
                 # Validate that required new data was generated if needed
                 if need_embedding and embedding is None:
@@ -784,13 +447,7 @@ def process_image_task(
 
                 # If nothing needed for this UUID (already complete) and no face processing, skip
                 # When compute_faces is True we must not skip - we need to reach face detection
-                if (
-                    not need_embedding
-                    and not need_metadata
-                    and not need_cull_phash
-                    and not regenerate_metadata
-                    and not compute_faces
-                ):
+                if not need_embedding and not need_metadata and not regenerate_metadata:
                     logger.info(f"UUID {uuid}: already fully indexed; skipping update.")
                     success_count += 1
                     continue
@@ -846,15 +503,6 @@ def process_image_task(
 
                 if capture_time is not None:
                     main_metadata["capture_time"] = capture_time
-
-                # Retrieve threaded culling metrics
-                culling_res = per_image_results[i]["culling"]
-                if culling_res:
-                    main_metadata.update(culling_res)
-                phash_hex = per_image_results[i]["phash"]
-                if phash_hex:
-                    main_metadata["cull_phash"] = phash_hex
-                    main_metadata["phash"] = phash_hex
 
                 # Update metadata fields if newly generated
                 if metadata_data and metadata_data.success:
@@ -965,91 +613,6 @@ def process_image_task(
                         )
                         failure_count += 1
                         continue
-
-                # Face detection and indexing (second Chroma collection)
-                if compute_faces and image_bytes:
-                    # Without regenerate_metadata: skip if already checked (has faces or marked as checked, no faces)
-                    if (
-                        not regenerate_metadata
-                        and chroma_service.faces_checked_for_photo(uuid)
-                    ):
-                        logger.debug(
-                            f"UUID {uuid}: faces already checked, skipping (regenerate_metadata=False)."
-                        )
-                    else:
-                        try:
-                            chroma_service.delete_faces_by_photo_uuid(uuid)
-                            if per_image_results[i]["faces_error"]:
-                                raise per_image_results[i]["faces_error"]
-                            face_results = per_image_results[i]["faces"]
-                            if face_results:
-                                face_ids = [
-                                    f"{uuid}_{i}" for i in range(len(face_results))
-                                ]
-                                embeddings_f = [
-                                    face["embedding"] for face in face_results
-                                ]
-                                thumbnails_b64 = [
-                                    face.get("thumbnail", "") for face in face_results
-                                ]
-                                face_extra_metadatas = [
-                                    {
-                                        "bbox": json.dumps(face.get("bbox") or []),
-                                        "face_area_ratio": face.get("area_ratio", 0.0),
-                                        "face_sharpness": face.get("sharpness", 0.0),
-                                        "face_det_score": face.get("det_score", 0.0),
-                                        "face_center_proximity": face.get(
-                                            "center_proximity", 0.0
-                                        ),
-                                        "face_eye_openness": face.get(
-                                            "eye_openness", 0.0
-                                        ),
-                                        "face_blink_penalty": face.get(
-                                            "blink_penalty", 1.0
-                                        ),
-                                        "face_occlusion": face.get("occlusion", 0.0),
-                                    }
-                                    for face in face_results
-                                ]
-                                chroma_service.add_faces_batch(
-                                    face_ids,
-                                    embeddings_f,
-                                    [uuid] * len(face_results),
-                                    thumbnails_b64,
-                                    extra_metadatas=face_extra_metadatas,
-                                )
-                                main_metadata.update(
-                                    _aggregate_face_culling_metrics(face_results)
-                                )
-                                chroma_service.update_image(
-                                    uuid,
-                                    main_metadata,
-                                    embedding=update_embedding,
-                                    catalog_id=catalog_id,
-                                )
-                                logger.info(
-                                    f"UUID {uuid}: indexed {len(face_results)} face(s)."
-                                )
-                            else:
-                                main_metadata.update(
-                                    _aggregate_face_culling_metrics([])
-                                )
-                                chroma_service.update_image(
-                                    uuid,
-                                    main_metadata,
-                                    embedding=update_embedding,
-                                    catalog_id=catalog_id,
-                                )
-                                chroma_service.set_faces_checked(uuid)
-                                logger.debug(
-                                    f"UUID {uuid}: no faces detected (marked as checked)."
-                                )
-                        except Exception as e:
-                            logger.warning(
-                                f"Face detection/indexing failed for {uuid}: {e}",
-                                exc_info=True,
-                            )
-                            error_messages.append(f"{filename} faces: {e}")
 
                 success_count += 1
 

@@ -1,5 +1,6 @@
 import sqlite3
 
+
 def upgrade(conn: sqlite3.Connection):
     """
     Initial SQLite schema for StyleAI.

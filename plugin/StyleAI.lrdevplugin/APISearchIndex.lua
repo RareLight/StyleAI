@@ -161,7 +161,7 @@ local function updateInProgressHeartbeat(catalog)
         if n > 0 and updated ~= cur then
             catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", updated)
         end
-    end)
+    end, { timeout = 15 })
 end
 
 local function shouldUseGlobalPhotoId()
@@ -243,7 +243,7 @@ local function ensureDbMigrationsDone()
         catalog:withPrivateWriteAccessDo(function()
             local cur = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
             catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", stripInProgressMarkers(cur))
-        end)
+        end, { timeout = 15 })
         raw = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
         completed, inProgress, _ = parseCompletedMigrations(raw)
     end
@@ -264,7 +264,7 @@ local function ensureDbMigrationsDone()
         local marker = formatInProgressMarker()
         local newRaw = (raw == "" or raw:match("%S") == nil) and marker or (raw .. "," .. marker)
         catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", newRaw)
-    end)
+    end, { timeout = 15 })
     _migrationTaskRunning = true
     local heartbeatStop = false
 
@@ -312,7 +312,7 @@ local function ensureDbMigrationsDone()
                     done = (done == "" or done:match("%S") == nil) and m.id or (done .. "," .. m.id)
                     catalog:withPrivateWriteAccessDo(function()
                         catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", done)
-                    end)
+                    end, { timeout = 15 })
                     log:info("Catalog DB migration completed: " .. tostring(m.id))
                     if userMessage and userMessage ~= "" then
                         LrDialogs.message(LOC "$$$/StyleAI/PluginInfo/ClaimPhotosTitle=Claim photos", userMessage,
@@ -335,7 +335,7 @@ local function ensureDbMigrationsDone()
             catalog:withPrivateWriteAccessDo(function()
                 local current = catalog:getPropertyForPlugin(_PLUGIN, "catalogDbMigrations") or ""
                 catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", stripInProgressMarkers(current))
-            end)
+            end, { timeout = 15 })
         end)
         heartbeatStop = true
         _migrationTaskRunning = false
@@ -1819,6 +1819,17 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         end
     end
 
+    local enableEmbeddings = false
+    local enableMetadata = false
+    if options.tasks then
+        for _, t in ipairs(options.tasks) do
+            if t == "embeddings" then enableEmbeddings = true end
+            if t == "metadata" then enableMetadata = true end
+        end
+    end
+    if options.enableMetadata then enableMetadata = true end
+    if options.enableEmbeddings then enableEmbeddings = true end
+
     local modelDisplay = ""
     if enableEmbeddings and enableMetadata then
         modelDisplay = "SigLIP2 & " .. tostring(options.model or "LLM")
@@ -1846,16 +1857,6 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local errorMessages = {}
     local warningsList = {}
     
-    local enableEmbeddings = false
-    local enableMetadata = false
-    if options.tasks then
-        for _, t in ipairs(options.tasks) do
-            if t == "embeddings" then enableEmbeddings = true end
-            if t == "metadata" then enableMetadata = true end
-        end
-    end
-    if options.enableMetadata then enableMetadata = true end
-    if options.enableEmbeddings then enableEmbeddings = true end
     
     local llmQueue = {}
     local activeLlmWorkers = 0
@@ -2197,19 +2198,27 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end
 
     -- Start worker threads
-    for i = 1, maxWorkers do
+    -- Cap analyze workers to 4 to prevent Lightroom export pipeline instability
+    local maxAnalyzeWorkers = math.min(maxWorkers, 4)
+    for i = 1, maxAnalyzeWorkers do
         LrTasks.startAsyncTask(analyzeWorker)
         log:trace("Started analyze worker #" .. tostring(i))
         activeWorkers = activeWorkers + 1
     end
 
-    for i = 1, 2 do
+    for i = 1, maxWorkers do
         LrTasks.startAsyncTask(senderWorker)
         log:trace("Started sender worker #" .. tostring(i))
     end
 
+    local maxLlmWorkers = maxWorkers
+    if enableMetadata and options.model and (string.find(string.lower(options.model), "lmstudio") or string.find(string.lower(options.model), "ollama")) then
+        maxLlmWorkers = math.min(maxWorkers, 2)
+        log:trace("Capping local LLM workers to " .. tostring(maxLlmWorkers) .. " to prevent overloading.")
+    end
+
     if enableMetadata then
-        for i = 1, maxWorkers do
+        for i = 1, maxLlmWorkers do
             LrTasks.startAsyncTask(llmWorker)
             log:trace("Started LLM worker #" .. tostring(i))
         end
@@ -3919,6 +3928,11 @@ function SearchIndexAPI.importStyles(data)
         return true, nil
     end
     return false, response.error or "Unexpected response"
+end
+
+function SearchIndexAPI.waitForDbMigrations()
+    ensureDbMigrationsDone()
+    return waitForCatalogDbMigrationsDone(tonumber(prefs and prefs.dbMigrationWaitTimeoutSeconds) or 600)
 end
 
 return SearchIndexAPI

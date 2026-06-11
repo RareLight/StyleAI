@@ -129,7 +129,7 @@ function Util.getCatalogIdentifier(catalog)
 	local catalogId = "cat_" .. digest
 	catalog:withPrivateWriteAccessDo(function()
 		catalog:setPropertyForPlugin(_PLUGIN, "catalogIdentifier", catalogId)
-	end)
+	end, { timeout = 15 })
 	return catalogId, nil
 end
 
@@ -483,7 +483,7 @@ function Util.getGlobalPhotoIdForPhoto(photo, options)
 			tostring(metadata.fileModificationDate or "")
 		)
 		photo:setPropertyForPlugin(_PLUGIN, "globalPhotoIdAlgorithm", tostring(metadata.algorithm or STABLE_ID_ALGO))
-	end)
+	end, { timeout = 15 })
 
 	local rebuildElapsedMs = math.floor((LrDate.currentTime() - rebuildStartedAt) * 1000)
 	log:trace(

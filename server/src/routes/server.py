@@ -113,11 +113,12 @@ def rename_style():
     data = request.get_json(silent=True) or {}
     style_id = data.get("style_id")
     new_name = data.get("new_name")
-    
+
     if not style_id or not new_name:
         return jsonify({"error": "style_id and new_name are required"}), 400
-        
+
     from services import style_catalog
+
     try:
         success = style_catalog.rename_style(style_id, new_name)
         if success:

@@ -5,24 +5,76 @@ from version_info import BACKEND_BUILD, BACKEND_RELEASE_TAG, BACKEND_VERSION
 
 import os
 
+import psutil
+import subprocess
+
+
 def get_backend_version_info() -> dict:
-    cpu_count = os.cpu_count() or 4
-    if cpu_count >= 16:
-        recommended = 6
-    elif cpu_count >= 12:
-        recommended = 5
-    elif cpu_count >= 10:
-        recommended = 4
-    elif cpu_count >= 8:
-        recommended = 3
+    cpu_cores = os.cpu_count() or 4
+    gpu_cores = 0
+    total_ram_gb = psutil.virtual_memory().total / (1024**3)
+    gpu_type = "cpu"
+    vram_gb = 0
+
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            gpu_type = "cuda"
+            vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        elif torch.backends.mps.is_available():
+            gpu_type = "mps"
+            vram_gb = total_ram_gb  # Unified memory
+            try:
+                output = subprocess.check_output(
+                    ["system_profiler", "SPDisplaysDataType"], text=True
+                )
+                for line in output.split("\n"):
+                    if "Total Number of Cores" in line:
+                        gpu_cores = int(line.split(":")[1].strip())
+                        break
+            except Exception:
+                pass
+    except ImportError:
+        pass
+
+    recommended = 3
+    if gpu_type == "cuda":
+        if vram_gb >= 16 and total_ram_gb >= 32:
+            recommended = 8
+        elif vram_gb >= 8 and total_ram_gb >= 16:
+            recommended = 6
+        else:
+            recommended = 4
+    elif gpu_type == "mps":
+        if gpu_cores >= 30 and total_ram_gb >= 30:
+            recommended = 8
+        elif gpu_cores >= 14 and total_ram_gb >= 16:
+            recommended = 6
+        elif gpu_cores >= 8:
+            recommended = 4
+        else:
+            recommended = 3
     else:
-        recommended = 2
+        if cpu_cores >= 16:
+            recommended = 4
+        elif cpu_cores >= 8:
+            recommended = 3
+        else:
+            recommended = 2
 
     return {
         "backend_version": BACKEND_VERSION,
         "backend_release_tag": BACKEND_RELEASE_TAG,
         "backend_build": BACKEND_BUILD,
         "recommended_parallel_tasks": recommended,
+        "hardware_profile": {
+            "cpu_cores": cpu_cores,
+            "gpu_cores": gpu_cores,
+            "gpu_type": gpu_type,
+            "total_ram_gb": round(total_ram_gb, 1),
+            "vram_gb": round(vram_gb, 1),
+        },
     }
 
 

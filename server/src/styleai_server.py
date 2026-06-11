@@ -4,6 +4,7 @@ import threading
 import time
 from flask import Flask, jsonify, request
 from waitress import serve
+from werkzeug.exceptions import HTTPException
 
 # Import modularized components
 import config
@@ -55,6 +56,7 @@ def _bool_env(name: str, default: bool = False) -> bool:
     if not val:
         return default
     return val in ("1", "true", "yes", "on")
+
 
 def _start_housekeeping_scheduler() -> None:
     """
@@ -139,6 +141,7 @@ def _auto_bind_db_path():
         return
 
     from core.migrations import run_migrations
+
     try:
         if service_chroma.ensure_db_path(db_path):
             run_migrations(db_path)
@@ -163,29 +166,27 @@ def enforce_consistent_api_envelope(response):
                 # We check if these three keys are the ONLY keys in the dictionary
                 if set(data.keys()) == {"results", "error", "warning"}:
                     return response
-                
+
                 # It does not conform. We need to wrap it.
                 error_val = data.pop("error", None)
                 if not error_val and data.get("status") == "error":
                     error_val = data.pop("message", "Unknown error")
-                
+
                 warning_val = data.pop("warning", None)
-                
+
                 # If it's an error, results should be None. Otherwise, results is the data dict itself.
                 results_val = None if error_val else data
 
                 new_data = {
                     "results": results_val,
                     "error": str(error_val) if error_val else None,
-                    "warning": str(warning_val) if warning_val else None
+                    "warning": str(warning_val) if warning_val else None,
                 }
                 response.set_data(json.dumps(new_data))
         except Exception as e:
             logger.error(f"Error enforcing API envelope: {e}", exc_info=True)
     return response
 
-
-from werkzeug.exceptions import HTTPException
 
 @app.errorhandler(Exception)
 def handle_exception(e):
