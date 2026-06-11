@@ -663,27 +663,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						}),
 					}),
 				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfo/BatchSize=Indexing Batch Size"),
-						width = share("labelWidth"),
-						alignment = "right",
-					}),
-					f:popup_menu({
-						value = bind("indexingBatchSize"),
-						items = {
-							{ title = "4", value = "4" },
-							{ title = "8", value = "8" },
-							{ title = "16", value = "16" },
-							{ title = "32 (Recommended)", value = "32" },
-							{ title = "64", value = "64" },
-							{ title = "128", value = "128" },
-						},
-						width = 200,
-					}),
-					f:spacer({ fill_horizontal = 1 }),
-				}),
+
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({

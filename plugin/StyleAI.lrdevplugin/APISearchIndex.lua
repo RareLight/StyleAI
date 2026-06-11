@@ -1774,15 +1774,32 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     local profile = tonumber(prefs.indexingPerformanceProfile) or 2
     local multiplier = 0.5
-    if profile == 1 then multiplier = 0.25
-    elseif profile == 2 then multiplier = 0.5
-    elseif profile == 3 then multiplier = 1.0
-    elseif profile == 4 then multiplier = 1.5 end
+    local calculatedBatchSize = 16
 
-    local scaledWorkers = math.max(1, math.floor(hardwareMax * multiplier))
+    if profile == 1 then
+        multiplier = 0.5
+        calculatedBatchSize = 8
+    elseif profile == 2 then
+        multiplier = 0.5
+        calculatedBatchSize = 16
+    elseif profile == 3 then
+        multiplier = 1.0
+        calculatedBatchSize = 16
+    elseif profile == 4 then
+        multiplier = 1.0
+        calculatedBatchSize = 64
+    end
+
+    local scaledWorkers = math.max(2, math.floor(hardwareMax * multiplier))
     local maxWorkers = scaledWorkers
     local maxSenderWorkers = scaledWorkers
     local maxAnalyzeWorkers = scaledWorkers
+
+    if options.benchmarkConfig then
+        maxWorkers = options.benchmarkConfig.workers
+        maxSenderWorkers = options.benchmarkConfig.workers
+        maxAnalyzeWorkers = options.benchmarkConfig.workers
+    end
 
     if not enableMetadata and enableEmbeddings then
         -- Embedding-only path: Sender workers matched dynamically
@@ -1904,7 +1921,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local activeSenderWorkers = 0
 
     local analyzeWorker = function()
-        local batchSize = tonumber(prefs and prefs.indexingBatchSize) or 32
+        local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
         local maxQueueCapacity = batchSize * 3
         while #photoToProcessStack > 0 do
             if progressScope:isCanceled() then break end
@@ -2048,7 +2065,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     local senderWorker = function()
         activeSenderWorkers = activeSenderWorkers + 1
-        local batchSize = tonumber(prefs and prefs.indexingBatchSize) or 32
+        local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
         
         while keepRunning and not progressScope:isCanceled() do
             if #preparedQueue == 0 then

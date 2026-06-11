@@ -269,16 +269,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                             key = "indexingMode",
                             transform = function(v) return v == "embed" end,
                         },
-                        f:checkbox {
-                            visible = bind {
-                                key = "indexingMode",
-                                transform = function(v) return v == "embed" end,
-                            },
-                            value = bind 'enableEmbeddings',
-                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddings=Create search embeddings",
-                            tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddingsTooltip=Analyzes image content visually to enable natural language semantic search.",
-                            enabled = props.clipReady,
-                        },
+
                         f:static_text {
                             visible = bind {
                                 key = "indexingMode",
