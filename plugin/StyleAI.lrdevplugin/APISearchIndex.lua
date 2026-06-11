@@ -1755,21 +1755,44 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     options = options or {}
     local shouldCloseScope = (closeProgressScope ~= false)
 
-    local profile = tonumber(prefs.indexingPerformanceProfile) or 2
-    local baseWorkers = profile * 2 -- Map 1-4 scale to 2-8 threads
-    
-    -- Smart Scaling based on Task Path
-    local maxWorkers = baseWorkers
-    local maxSenderWorkers = baseWorkers
-    local maxAnalyzeWorkers = math.min(baseWorkers, 4) -- Lightroom CPU limit
+    local enableEmbeddings = false
+    local enableMetadata = false
+    if options.tasks then
+        for _, t in ipairs(options.tasks) do
+            if t == "embeddings" then enableEmbeddings = true end
+            if t == "metadata" then enableMetadata = true end
+        end
+    end
+    if options.enableMetadata then enableMetadata = true end
+    if options.enableEmbeddings then enableEmbeddings = true end
 
-    if not enableMetadata and enableEmbeddings then
-        -- Embedding-only path: High GPU batching
-        -- We previously capped this to 2, but relaxed it to 4 to better saturate M2 Max/high-end GPUs
-        maxSenderWorkers = math.min(baseWorkers, 4)
-        log:info("Embedding-only path: Capping sender workers to " .. maxSenderWorkers .. " to optimize PyTorch batching.")
+    local hardwareMax = 4
+    local success, msg, versionInfo = SearchIndexAPI.ensureVersionCompatibility()
+    if success and versionInfo and versionInfo.recommended_parallel_tasks then
+        hardwareMax = tonumber(versionInfo.recommended_parallel_tasks) or 4
     end
 
+    local profile = tonumber(prefs.indexingPerformanceProfile) or 2
+    local multiplier = 0.5
+    if profile == 1 then multiplier = 0.25
+    elseif profile == 2 then multiplier = 0.5
+    elseif profile == 3 then multiplier = 1.0
+    elseif profile == 4 then multiplier = 1.5 end
+
+    local scaledWorkers = math.max(1, math.floor(hardwareMax * multiplier))
+    local maxWorkers = scaledWorkers
+    local maxSenderWorkers = scaledWorkers
+    local maxAnalyzeWorkers = scaledWorkers
+
+    if not enableMetadata and enableEmbeddings then
+        -- Embedding-only path: Sender workers matched dynamically
+        log:info("Embedding-only path: Setting sender workers to " .. maxSenderWorkers .. " to optimize PyTorch batching.")
+    end
+
+    log:info(string.format("Performance Tracking: Profile=%d, HardwareRec=%d, Multiplier=%.2f -> Producers=%d, Consumers=%d", 
+             profile, hardwareMax, multiplier, maxAnalyzeWorkers, maxSenderWorkers))
+
+    local batchStartTime = LrDate.currentTime()
     local stats = { processed = 0, success = 0, failed = 0 }
 
     local photoToProcessStack = {}
@@ -1833,16 +1856,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         end
     end
 
-    local enableEmbeddings = false
-    local enableMetadata = false
-    if options.tasks then
-        for _, t in ipairs(options.tasks) do
-            if t == "embeddings" then enableEmbeddings = true end
-            if t == "metadata" then enableMetadata = true end
-        end
-    end
-    if options.enableMetadata then enableMetadata = true end
-    if options.enableEmbeddings then enableEmbeddings = true end
+
 
     local modelDisplay = ""
     if enableEmbeddings and enableMetadata then
@@ -2303,6 +2317,11 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         end
         combinedWarnings = table.concat(warningListStrings, "\n")
     end
+
+    local batchDuration = LrDate.currentTime() - batchStartTime
+    local avgTimePerPhoto = 0
+    if stats.processed > 0 then avgTimePerPhoto = batchDuration / stats.processed end
+    log:info(string.format("Performance Tracking: Processed %d photos in %.2f seconds (%.2f s/photo).", stats.processed, batchDuration, avgTimePerPhoto))
 
     return status, stats.processed, stats.failed, processedPhotos, combinedError, combinedWarnings
 end
