@@ -38,6 +38,10 @@ return {
 			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Manage AI Styles (Catalog)..."),
 			file = "TaskStyleCatalog.lua",
 		},
+		{
+			title = LOC("$$$/StyleAI/Developer/RunPerformanceBenchmark=Developer: Run Performance Benchmark..."),
+			file = "TaskBenchmark.lua",
+		},
 	},
 
 	LrExportMenuItems = {
@@ -63,6 +67,10 @@ return {
 		{
 			title = LOC("$$$/StyleAI/Developer/RunAutomatedTests=Developer: Run Automated Tests..."),
 			file = "TaskAutomatedTests.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Developer/RunPerformanceBenchmark=Developer: Run Performance Benchmark..."),
+			file = "TaskBenchmark.lua",
 		},
 	},
 

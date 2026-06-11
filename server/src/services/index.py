@@ -24,6 +24,7 @@ from PIL import Image
 import io
 import numpy as np
 import torch
+from concurrent.futures import ThreadPoolExecutor
 
 
 def _flatten_keywords(keywords):
@@ -237,14 +238,23 @@ def process_image_task(
             logger.info(
                 "Checking existing records to determine what needs generation..."
             )
-            for _, uuid, _ in image_triplets:
-                existing_record = chroma_service.get_image(uuid, catalog_id=catalog_id)
-                if existing_record and existing_record["ids"]:
-                    existing_records[uuid] = (
-                        existing_record["metadatas"][0]
-                        if existing_record["metadatas"]
-                        else {}
-                    )
+            uuids_to_check = [uuid for _, uuid, _ in image_triplets]
+            try:
+                # Use bulk get query to dramatically reduce DB latency
+                raw = chroma_service.collection.get(
+                    ids=uuids_to_check, include=["metadatas"]
+                )
+                if raw and raw.get("ids"):
+                    for idx, pid in enumerate(raw["ids"]):
+                        metas = raw.get("metadatas") or [{}] * len(raw["ids"])
+                        meta = metas[idx] if idx < len(metas) else {}
+                        if catalog_id:
+                            ids_set = chroma_service._parse_catalog_ids(meta)
+                            if str(catalog_id) not in ids_set:
+                                continue
+                        existing_records[pid] = meta
+            except Exception as e:
+                logger.warning(f"Bulk ChromaDB get failed: {e}")
 
         # Determine what actually needs to be computed for each image.
         # Sets (not lists) because downstream code does `uuid in ...` membership
@@ -325,10 +335,13 @@ def process_image_task(
                 logger.debug("Could not extract EXIF location for %s: %s", uuid, exc)
                 exif_location_by_uuid[uuid] = None
 
-        # Decode each image to PIL sequentially
-        pil_images = []
-        for img_bytes, uid, fname in image_triplets:
-            pil_images.append(_decode_image(img_bytes))
+        # Decode each image to PIL concurrently
+        with ThreadPoolExecutor(max_workers=min(32, len(image_triplets))) as executor:
+            pil_images = list(
+                executor.map(
+                    _decode_image, [img_bytes for img_bytes, _, _ in image_triplets]
+                )
+            )
 
         # Detect faces ONLY for privacy blurring if requested
         per_image_faces = []
