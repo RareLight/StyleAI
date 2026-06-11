@@ -653,7 +653,7 @@ local function showAnalyzeAndIndexDialog(ctx)
         prefs.enableValidation = props.enableValidation
         prefs.saveDataToCatalog = props.saveDataToCatalog
         prefs.use16BitTiffForHdr = props.use16BitTiffForHdr
-        prefs.indexingParallelTasks = prefs.indexingParallelTasks or 3
+        prefs.indexingPerformanceProfile = prefs.indexingPerformanceProfile or 2
         prefs.indexingBatchSize = prefs.indexingBatchSize or 32
         prefs.prompt = props.prompt
         prefs.prompts = props.prompts

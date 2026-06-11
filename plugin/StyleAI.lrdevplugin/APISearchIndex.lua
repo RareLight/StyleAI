@@ -1755,7 +1755,21 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     options = options or {}
     local shouldCloseScope = (closeProgressScope ~= false)
 
-    local maxWorkers = tonumber(prefs.indexingParallelTasks) or 3
+    local profile = tonumber(prefs.indexingPerformanceProfile) or 2
+    local baseWorkers = profile * 2 -- Map 1-4 scale to 2-8 threads
+    
+    -- Smart Scaling based on Task Path
+    local maxWorkers = baseWorkers
+    local maxSenderWorkers = baseWorkers
+    local maxAnalyzeWorkers = math.min(baseWorkers, 4) -- Lightroom CPU limit
+
+    if not enableMetadata and enableEmbeddings then
+        -- Embedding-only path: High GPU batching, low concurrency needed
+        -- Capping concurrent HTTP requests prevents PyTorch/MPS thread thrashing
+        maxSenderWorkers = math.min(baseWorkers, 2)
+        log:info("Embedding-only path: Capping sender workers to " .. maxSenderWorkers .. " to optimize PyTorch batching.")
+    end
+
     local stats = { processed = 0, success = 0, failed = 0 }
 
     local photoToProcessStack = {}
@@ -2198,23 +2212,23 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end
 
     -- Start worker threads
-    -- Cap analyze workers to 4 to prevent Lightroom export pipeline instability
-    local maxAnalyzeWorkers = math.min(maxWorkers, 4)
+    -- Cap analyze workers to max 4 to prevent Lightroom export pipeline instability (E-cores at 100%)
     for i = 1, maxAnalyzeWorkers do
         LrTasks.startAsyncTask(analyzeWorker)
         log:trace("Started analyze worker #" .. tostring(i))
         activeWorkers = activeWorkers + 1
     end
 
-    for i = 1, maxWorkers do
+    for i = 1, maxSenderWorkers do
         LrTasks.startAsyncTask(senderWorker)
         log:trace("Started sender worker #" .. tostring(i))
     end
 
-    local maxLlmWorkers = maxWorkers
+    local maxLlmWorkers = maxSenderWorkers
     if enableMetadata and options.model and (string.find(string.lower(options.model), "lmstudio") or string.find(string.lower(options.model), "ollama")) then
-        maxLlmWorkers = math.min(maxWorkers, 2)
-        log:trace("Capping local LLM workers to " .. tostring(maxLlmWorkers) .. " to prevent overloading.")
+        -- We trust LM Studio/Ollama's internal request queuing, but still limit concurrent Lightroom connections
+        maxLlmWorkers = math.min(maxSenderWorkers, 4)
+        log:trace("Local LLM detected. Relying on provider queuing, capping connections to " .. tostring(maxLlmWorkers))
     end
 
     if enableMetadata then

@@ -11,11 +11,13 @@ function OnboardingWizard.show(manualTrigger)
 			propertyTable.clipDownloading = false
 
 
-			if propertyTable.backendRunning == true and prefs.indexingParallelTasks == nil then
+			if propertyTable.backendRunning == true and prefs.indexingPerformanceProfile == nil then
 				local vInfo = SearchIndexAPI.getBackendVersion()
 				if vInfo and vInfo.recommended_parallel_tasks then
-					prefs.indexingParallelTasks = tonumber(vInfo.recommended_parallel_tasks)
-					log:info("Dynamically profiled indexingParallelTasks to " .. tostring(vInfo.recommended_parallel_tasks))
+					local rec = tonumber(vInfo.recommended_parallel_tasks) or 4
+					local profile = math.ceil(rec / 2)
+					prefs.indexingPerformanceProfile = math.min(math.max(profile, 1), 4)
+					log:info("Dynamically profiled indexingPerformanceProfile to " .. tostring(prefs.indexingPerformanceProfile))
 				end
 			end
 
@@ -32,11 +34,13 @@ function OnboardingWizard.show(manualTrigger)
 				LrTasks.startAsyncTask(function()
 					SearchIndexAPI.startServer({ readyTimeoutSeconds = 30 })
 					updateBackendStatus()
-					if propertyTable.backendRunning == true and prefs.indexingParallelTasks == nil then
+					if propertyTable.backendRunning == true and prefs.indexingPerformanceProfile == nil then
 						local vInfo = SearchIndexAPI.getBackendVersion()
 						if vInfo and vInfo.recommended_parallel_tasks then
-							prefs.indexingParallelTasks = tonumber(vInfo.recommended_parallel_tasks)
-							log:info("Dynamically profiled indexingParallelTasks to " .. tostring(vInfo.recommended_parallel_tasks))
+							local rec = tonumber(vInfo.recommended_parallel_tasks) or 4
+							local profile = math.ceil(rec / 2)
+							prefs.indexingPerformanceProfile = math.min(math.max(profile, 1), 4)
+							log:info("Dynamically profiled indexingPerformanceProfile to " .. tostring(prefs.indexingPerformanceProfile))
 						end
 					end
 				end)

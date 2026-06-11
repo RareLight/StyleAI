@@ -925,7 +925,8 @@ LrTasks.startAsyncTask(function()
 		local consumerIndex = 1
 		local nextIndexToProcess = 1
 		local activeProducers = 0
-		local maxWorkers = tonumber(prefs.indexingParallelTasks) or 3
+		local profile = tonumber(prefs.indexingPerformanceProfile) or 2
+		local maxWorkers = profile * 2
 
 		local function producerWorker()
 			activeProducers = activeProducers + 1
