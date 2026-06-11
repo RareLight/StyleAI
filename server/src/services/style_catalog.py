@@ -59,14 +59,15 @@ def _ensure_initialized() -> sqlite3.Connection:
 
     logger.info("Initialising style catalog SQLite at %s", db_file)
     os.makedirs(os.path.dirname(db_file), exist_ok=True)
-    
+
     from core.migrations import run_migrations
+
     try:
         run_migrations(os.path.dirname(db_file))
     except Exception as e:
         logger.error(f"Failed to run migrations for style catalog: {e}")
         # Continue to connect anyway, maybe it's just the version check failing
-        
+
     conn = sqlite3.connect(db_file, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
@@ -116,7 +117,9 @@ def upsert_style(style: dict[str, Any]) -> None:
     style_id = style["style_id"]
     with conn:
         # Priority 8 / Rename Style: Retrieve existing user_style_name if present
-        existing_row = conn.execute("SELECT user_style_name FROM styles WHERE style_id = ?", (style_id,)).fetchone()
+        existing_row = conn.execute(
+            "SELECT user_style_name FROM styles WHERE style_id = ?", (style_id,)
+        ).fetchone()
         existing_user_name = existing_row["user_style_name"] if existing_row else None
 
         conn.execute("DELETE FROM styles WHERE style_id = ?", (style_id,))
@@ -185,7 +188,7 @@ def get_style(style_id: str) -> dict[str, Any] | None:
     # Apply display name override if custom name is present
     if d.get("user_style_name"):
         d["style_name"] = d["user_style_name"]
-    
+
     # Attach example photo_ids
     rows = conn.execute(
         "SELECT photo_id FROM style_examples WHERE style_id = ?", (style_id,)
@@ -198,14 +201,14 @@ def list_styles() -> list[dict[str, Any]]:
     """Return all styles, ordered by name."""
     conn = _ensure_initialized()
     rows = conn.execute("SELECT * FROM styles ORDER BY style_name").fetchall()
-        
+
     results = []
     for r in rows:
         d = _row_to_dict(r)
         if d.get("user_style_name"):
             d["style_name"] = d["user_style_name"]
         results.append(d)
-        
+
     return results
 
 
@@ -635,7 +638,7 @@ def rename_style(style_id: str, new_name: str) -> bool:
     with conn:
         cursor = conn.execute(
             "UPDATE styles SET user_style_name = ?, updated_at = ? WHERE style_id = ?",
-            (new_name, _now(), style_id)
+            (new_name, _now(), style_id),
         )
         return cursor.rowcount > 0
 

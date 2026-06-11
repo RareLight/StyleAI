@@ -1,5 +1,6 @@
 import sqlite3
 
+
 def upgrade(conn: sqlite3.Connection):
     """
     Migration: Add `camera_profile` to `styles` table.

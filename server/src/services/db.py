@@ -29,8 +29,6 @@ def get_database_stats(catalog_id=None) -> dict:
     If catalog_id is provided, photo stats are limited to that catalog (soft state).
     """
     image_stats = chroma_service.get_image_metadata_stats(catalog_id=catalog_id)
-    face_count = chroma_service.get_face_count()
-
     return {
         "photos": {
             "total": image_stats["total"],
@@ -39,7 +37,6 @@ def get_database_stats(catalog_id=None) -> dict:
             "with_caption": image_stats["with_caption"],
             "with_keywords": image_stats["with_keywords"],
         },
-        "faces": {"total": face_count},
     }
 
 

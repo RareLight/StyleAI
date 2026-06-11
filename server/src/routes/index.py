@@ -258,10 +258,10 @@ def preview_blur_base64():
     for item in images_data:
         image_base64 = item.get("image")
         photo_id = item.get("photo_id") or item.get("uuid")
-        
+
         if not image_base64 or not photo_id:
             continue
-            
+
         try:
             image_bytes = base64.b64decode(image_base64.encode("ascii"))
             faces = face_service.detect_faces(image_bytes, min_det_score=min_det_score)
@@ -269,13 +269,25 @@ def preview_blur_base64():
                 bboxes = [f["bbox"] for f in faces]
                 blurred_bytes = apply_face_blur(image_bytes, bboxes)
                 blurred_b64 = base64.b64encode(blurred_bytes).decode("ascii")
-                results.append({"photo_id": photo_id, "image": blurred_b64, "faces_blurred": True})
+                results.append(
+                    {"photo_id": photo_id, "image": blurred_b64, "faces_blurred": True}
+                )
             else:
-                results.append({"photo_id": photo_id, "image": image_base64, "faces_blurred": False})
+                results.append(
+                    {
+                        "photo_id": photo_id,
+                        "image": image_base64,
+                        "faces_blurred": False,
+                    }
+                )
         except Exception as e:
-            logger.error(f"Error previewing blur for photo {photo_id}: {e}", exc_info=True)
-            results.append({"photo_id": photo_id, "image": image_base64, "faces_blurred": False})
-            
+            logger.error(
+                f"Error previewing blur for photo {photo_id}: {e}", exc_info=True
+            )
+            results.append(
+                {"photo_id": photo_id, "image": image_base64, "faces_blurred": False}
+            )
+
     return jsonify({"status": "success", "images": results}), 200
 
 
@@ -288,13 +300,13 @@ def generate_metadata_single():
     """
     logger.info("Metadata generate single request received")
     data = request.get_json(silent=True) or {}
-    
+
     photo_id = data.get("photo_id") or data.get("uuid")
     filename = data.get("filename", "unknown")
-    
+
     if not photo_id:
         return jsonify({"error": "Missing photo_id"}), 400
-        
+
     options = _extract_options(data)
     # Force overrides for this specialized metadata route
     options["compute_embeddings"] = False
@@ -306,21 +318,25 @@ def generate_metadata_single():
     if image_base64:
         try:
             import base64
+
             image_bytes = base64.b64decode(image_base64.encode("ascii"))
         except Exception as e:
             return jsonify({"error": f"Failed to decode base64 image: {e}"}), 400
     else:
         from services import image_cache
+
         image_bytes = image_cache.pop_image(photo_id)
-        
+
     if not image_bytes:
-        return jsonify({"error": "No image data provided and image not found in cache"}), 400
+        return jsonify(
+            {"error": "No image data provided and image not found in cache"}
+        ), 400
 
     # Let process_image_task handle the robust database commit and metadata merging logic
     success_count, failure_count, error_messages, warnings = process_image_task(
         [(image_bytes, photo_id, filename)], options=options
     )
-    
+
     if success_count == 0:
         err_msg = "Metadata generation failed"
         if error_messages:

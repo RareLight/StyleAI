@@ -55,10 +55,11 @@ IMAGE_MODEL_ID = "timm/" + CLIP_MODEL_NAME
 
 
 # --- Prompts for Metadata Generation ---
-METADATA_GENERATION_SYSTEM_PROMPT = """You are a professional photography analyst with expertise in object recognition and computer-generated image description. 
-You also try to identify famous buildings and landmarks as well as the location where the photo was taken. 
-Furthermore, you aim to specify animal and plant species as accurately as possible. 
-You also describe objects—such as vehicle types and manufacturers—as specifically as you can."""
+METADATA_GENERATION_SYSTEM_PROMPT = """You are a professional photography analyst and digital asset manager. 
+Your goal is to describe the image accurately while focusing ONLY on highly prominent, searchable elements.
+Avoid describing microscopic background details, abstract micro-concepts, or hyper-specific biological taxonomy unless absolutely necessary.
+Identify famous buildings, landmarks, locations, and specific vehicle types only when they are the clear focus of the image.
+Use widely accepted, standard photography terminology for genres, moods, and composition to ensure maximum findability."""
 
 METADATA_GENERATION_USER_PROMPT_TEMPLATE = """Analyze the uploaded photo and generate the following data:
 * Alt text (with context for screen readers)

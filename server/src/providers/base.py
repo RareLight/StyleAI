@@ -66,7 +66,7 @@ class MetadataGenerationRequest:
     # Provider-specific overrides (e.g. Ollama/LM Studio on remote host)
     ollama_base_url: str | None = None
     lmstudio_base_url: str | None = None
-    
+
     blur_faces: bool = False
 
 
@@ -232,10 +232,10 @@ class LLMProviderBase(ABC):
         else:
             # Use default system prompt from config
             prompt = METADATA_GENERATION_SYSTEM_PROMPT
-            
+
         if getattr(request, "blur_faces", False):
             prompt += "\n\nNote: Human faces in this image have been intentionally blurred or pixelated for privacy protection. Do not describe the blurring as a flaw or defect, and do not let it negatively impact your analysis. Describe the rest of the scene normally."
-            
+
         return prompt
 
     def _prepare_user_prompt(self, request: MetadataGenerationRequest) -> str:
@@ -262,7 +262,7 @@ class LLMProviderBase(ABC):
                 base_prompt += "* Image title\n"
 
             if request.generate_keywords:
-                base_prompt += "* Keywords\n"
+                base_prompt += "* Keywords (Target exactly 10 highly descriptive tags. Do not exceed 10 new keywords.)\n"
 
         # Add language instruction
         base_prompt += f"\n\nAll results should be generated in {request.language}."
@@ -295,9 +295,9 @@ class LLMProviderBase(ABC):
             )
             if vocab_str:
                 context_additions.append(
-                    f"Existing catalog vocabulary — prefer these terms over inventing "
-                    f"new ones when semantically equivalent (you may still create new "
-                    f"keywords for concepts not covered here): {vocab_str}"
+                    f"CRITICAL VOCABULARY CONSTRAINT: You must strongly prefer these existing catalog keywords: {vocab_str}. "
+                    f"Only invent a new keyword if the concept is absolutely essential to the image and completely missing from this standard vocabulary. "
+                    f"Do not create slight variations or synonyms of these existing terms."
                 )
 
         if request.user_context and str(request.user_context).strip() != "":
@@ -385,10 +385,10 @@ class LLMProviderBase(ABC):
             "Use the minimum number of controls needed for a strong result; avoid noisy over-adjustment. "
             "When local edits are useful, use only supported mask kinds: subject, sky, background."
         )
-        
+
         if getattr(request, "blur_faces", False):
             prompt += "\n\nNote: Human faces in this image have been intentionally blurred or pixelated for privacy protection. Do not describe the blurring as a flaw or defect, and evaluate the rest of the exposure and lighting normally."
-            
+
         return prompt
 
     def _format_training_example(self, idx: int, example: dict[str, Any]) -> str:

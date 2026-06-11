@@ -4,14 +4,17 @@ from PIL import Image, ImageFilter, ImageDraw
 
 logger = logging.getLogger(__name__)
 
-def apply_face_blur(image_bytes: bytes, face_bounding_boxes: list[list[float]]) -> bytes:
+
+def apply_face_blur(
+    image_bytes: bytes, face_bounding_boxes: list[list[float]]
+) -> bytes:
     """
     Applies a heavy gaussian blur in an elliptical shape to the specified bounding boxes in the image.
-    
+
     Args:
         image_bytes: The original JPEG image bytes.
         face_bounding_boxes: A list of bounding boxes, where each box is [x1, y1, x2, y2].
-        
+
     Returns:
         The new JPEG image bytes with blurred faces.
     """
@@ -20,11 +23,11 @@ def apply_face_blur(image_bytes: bytes, face_bounding_boxes: list[list[float]]) 
 
     try:
         image = Image.open(io.BytesIO(image_bytes))
-        
+
         # Ensure we can draw/process it
         if image.mode != "RGB":
             image = image.convert("RGB")
-            
+
         # For each face, crop the region, blur it, and paste it back using an elliptical mask
         for bbox in face_bounding_boxes:
             if len(bbox) >= 4:
@@ -33,32 +36,34 @@ def apply_face_blur(image_bytes: bytes, face_bounding_boxes: list[list[float]]) 
                 y1 = max(0, int(bbox[1]))
                 x2 = min(image.width, int(bbox[2]))
                 y2 = min(image.height, int(bbox[3]))
-                
+
                 if x2 > x1 and y2 > y1:
                     # Crop the face
                     face_region = image.crop((x1, y1, x2, y2))
-                    
+
                     # Calculate blur radius based on face size to ensure strong anonymization
                     face_width = x2 - x1
                     face_height = y2 - y1
                     radius = max(10, int(min(face_width, face_height) * 0.15))
-                    
+
                     # Apply a heavy Gaussian blur to the cropped region
-                    blurred_face = face_region.filter(ImageFilter.GaussianBlur(radius=radius))
-                    
+                    blurred_face = face_region.filter(
+                        ImageFilter.GaussianBlur(radius=radius)
+                    )
+
                     # Create an elliptical mask
                     mask = Image.new("L", (face_width, face_height), 0)
                     draw = ImageDraw.Draw(mask)
                     draw.ellipse((0, 0, face_width, face_height), fill=255)
-                    
+
                     # Paste back onto the main image using the mask
                     image.paste(blurred_face, (x1, y1), mask)
-                    
+
         # Re-encode to bytes
         output = io.BytesIO()
         image.save(output, format="JPEG", quality=85)
         return output.getvalue()
-        
+
     except Exception as e:
         logger.error(f"Failed to blur faces: {e}", exc_info=True)
         # Fallback to the original image if blurring fails

@@ -37,9 +37,12 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.backendServerUrl = prefs.backendServerUrl or Defaults.defaultBackendServerUrl
 	propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
 	propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
-	propertyTable.indexingParallelTasks = tostring(prefs.indexingParallelTasks or "3")
+	propertyTable.indexingParallelTasks = tonumber(prefs.indexingParallelTasks) or 3
 	propertyTable.indexingBatchSize = tostring(prefs.indexingBatchSize or "32")
 	propertyTable.semanticClusteringThresholdInt = math.floor((tonumber(prefs.semanticClusteringThreshold) or 0.94) * 100)
+	propertyTable.forceFreshPreviews = prefs.forceFreshPreviews or false
+	propertyTable.auditLlmInputs = prefs.auditLlmInputs or false
+	propertyTable.auditLlmInputsPath = prefs.auditLlmInputsPath or ""
 
 	-- Training/Style Profile stats (loaded asynchronously).
 	propertyTable.trainingCount = 0
@@ -622,19 +625,38 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						width = share("labelWidth"),
 						alignment = "right",
 					}),
-					f:popup_menu({
-						value = bind("indexingParallelTasks"),
-						items = {
-							{ title = "1", value = "1" },
-							{ title = "2", value = "2" },
-							{ title = "3 (Default)", value = "3" },
-							{ title = "4", value = "4" },
-							{ title = "5", value = "5" },
-							{ title = "6", value = "6" },
-						},
-						width = 200,
+					f:column({
+						spacing = 2,
+						f:row({
+							f:slider({
+								value = bind("indexingParallelTasks"),
+								min = 1,
+								max = 8,
+								integral = true,
+								width = 200,
+							}),
+							f:static_text({
+								title = bind({
+									key = "indexingParallelTasks",
+									transform = function(v)
+										local val = tonumber(v) or 3
+										local label = ""
+										if val <= 2 then label = LOC("$$$/StyleAI/PluginInfo/ThreadsLow=Stable")
+										elseif val <= 4 then label = LOC("$$$/StyleAI/PluginInfo/ThreadsMed=Balanced")
+										elseif val <= 6 then label = LOC("$$$/StyleAI/PluginInfo/ThreadsHigh=Fast")
+										else label = LOC("$$$/StyleAI/PluginInfo/ThreadsMax=Maximum") end
+										return tostring(val) .. " (" .. label .. ")"
+									end,
+								}),
+								width_in_chars = 15,
+							}),
+						}),
+						f:static_text({
+							title = "1-2: Stable  |  3-4: Balanced  |  5-6: Fast  |  7-8: Maximum",
+							text_color = LrColor(0.5, 0.5, 0.5),
+							font = "<system/small>",
+						}),
 					}),
-					f:spacer({ fill_horizontal = 1 }),
 				}),
 				f:row({
 					fill_horizontal = 1,
@@ -651,6 +673,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							{ title = "16", value = "16" },
 							{ title = "32 (Recommended)", value = "32" },
 							{ title = "64", value = "64" },
+							{ title = "128", value = "128" },
 						},
 						width = 200,
 					}),
@@ -706,6 +729,27 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				}),
 				f:separator({ fill_horizontal = 1 }),
 				f:row({
+					fill_horizontal = 1,
+					f:checkbox({
+						value = bind("forceFreshPreviews"),
+						title = LOC("$$$/StyleAI/PluginInfo/ForceFreshPreviews=Force generate fresh LLM previews (Bypass cache)"),
+					}),
+				}),
+				f:row({
+					fill_horizontal = 1,
+					f:checkbox({
+						value = bind("auditLlmInputs"),
+						title = LOC("$$$/StyleAI/PluginInfo/AuditLlmInputs=Audit LLM inputs (Save copies of images)"),
+					}),
+					f:edit_field({
+						value = bind("auditLlmInputsPath"),
+						enabled = bind("auditLlmInputs"),
+						width_in_chars = 30,
+						tooltip = LOC("$$$/StyleAI/PluginInfo/AuditDirTooltip=Directory to save audited images"),
+					}),
+				}),
+				f:separator({ fill_horizontal = 1 }),
+				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/ShowDbStats=Show DB stats"),
 						action = function(button)
@@ -753,6 +797,8 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							end)
 						end,
 					}),
+				}),
+				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Backend"),
 						tooltip = LOC("$$$/StyleAI/PluginInfo/RestartBackendTooltip=Restarts the local background server process."),

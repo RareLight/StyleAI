@@ -372,9 +372,9 @@ class AnalysisService:
         Generates metadata for all images in the batch concurrently.
         """
         from concurrent.futures import ThreadPoolExecutor
-        
+
         results = [None] * len(uuids)
-        
+
         def process_single(i, uuid):
             opt = options[i] if isinstance(options, list) else options
             # Inject per-image EXIF location data without mutating the options dict
@@ -383,7 +383,7 @@ class AnalysisService:
                 per_image_options["location_data"] = exif_location_map[uuid]
             else:
                 per_image_options = opt
-                
+
             return i, self.generate_metadata_single(
                 uuid, image_data[i], per_image_options
             )
@@ -392,14 +392,18 @@ class AnalysisService:
         # Max workers matches batch size to process the entire batch in parallel
         max_workers = max(1, len(uuids))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(process_single, i, uuid) for i, uuid in enumerate(uuids)]
+            futures = [
+                executor.submit(process_single, i, uuid) for i, uuid in enumerate(uuids)
+            ]
             for future in futures:
                 try:
                     idx, response = future.result()
                     results[idx] = response
                 except Exception as e:
-                    logger.error(f"Error in concurrent metadata generation: {e}", exc_info=True)
-                    
+                    logger.error(
+                        f"Error in concurrent metadata generation: {e}", exc_info=True
+                    )
+
         return results
 
     def generate_metadata_single(

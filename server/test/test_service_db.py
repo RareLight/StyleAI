@@ -33,14 +33,9 @@ class TestGetDatabaseStats:
                 "with_keywords": 3,
             },
         )
-        mocker.patch.object(
-            service_db.chroma_service, "get_face_count", return_value=11
-        )
-
         stats = service_db.get_database_stats()
         assert stats["photos"]["total"] == 7
         assert stats["photos"]["with_embedding"] == 6
-        assert stats["faces"]["total"] == 11
 
     def test_passes_catalog_id_to_chroma(self, mocker):
         spy = mocker.patch.object(
@@ -54,7 +49,6 @@ class TestGetDatabaseStats:
                 "with_keywords": 0,
             },
         )
-        mocker.patch.object(service_db.chroma_service, "get_face_count", return_value=0)
 
         service_db.get_database_stats(catalog_id="cat-42")
         spy.assert_called_once_with(catalog_id="cat-42")
