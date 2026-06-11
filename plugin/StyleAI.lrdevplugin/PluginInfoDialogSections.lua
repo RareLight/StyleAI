@@ -649,6 +649,14 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							}),
 						}),
 						f:static_text({
+							title = LOC("$$$/StyleAI/PluginInfo/ThreadsMaxWarning=⚠️ May strain system resources or cause UI instability."),
+							text_color = LrColor(0.8, 0.2, 0.2),
+							visible = bind({
+								key = "indexingPerformanceProfile",
+								transform = function(v) return tonumber(v) == 4 end
+							})
+						}),
+						f:static_text({
 							title = LOC("$$$/StyleAI/PluginInfo/ParallelTasksHelp=Controls the maximum network connections to the backend server. The plugin will automatically scale down based on the active LLM or GPU constraints."),
 							text_color = LrColor(0.5, 0.5, 0.5),
 							font = "<system/small>",
