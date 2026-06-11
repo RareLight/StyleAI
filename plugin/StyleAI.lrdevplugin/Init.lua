@@ -26,6 +26,7 @@ _G.LrDevelopController = import("LrDevelopController")
 
 -- Global initializations (move early)
 _G.prefs = _G.LrPrefs.prefsForPlugin()
+
 _G.log = import("LrLogger")("StyleAI")
 _G.prefs.logging = true
 _G.log:enable("logfile")
