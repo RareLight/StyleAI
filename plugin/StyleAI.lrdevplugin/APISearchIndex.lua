@@ -418,14 +418,20 @@ local function getCatalogId()
     return id
 end
 
-local function getPhotoIdForPhoto(photo)
+local function getPhotoIdForPhoto(photo, options)
     if not photo then
         return nil, "Photo is nil"
     end
+    
+    local idOptions = {
+        windowBytes = Util.getDefaultPartialHashWindowBytes(),
+    }
+    if options and options.forceRecompute then
+        idOptions.forceRecompute = true
+    end
+
     if shouldUseGlobalPhotoId() then
-        return Util.getGlobalPhotoIdForPhoto(photo, {
-            windowBytes = Util.getDefaultPartialHashWindowBytes(),
-        })
+        return Util.getGlobalPhotoIdForPhoto(photo, idOptions)
     end
     local uuid = photo:getRawMetadata("uuid")
     if not uuid or uuid == "" then
@@ -1055,6 +1061,7 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
         table.insert(bodyImages, {
             image = item.image,
             photo_id = item.photo_id,
+            lr_uuid = item.lr_uuid,
             filename = item.filename or "photo.jpg",
             options = encodedItemOptions
         })
@@ -1773,32 +1780,34 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end
 
     local profile = tonumber(prefs.indexingPerformanceProfile) or 2
-    local multiplier = 0.5
+    local maxSenderWorkers = 2
+    local maxAnalyzeWorkers = 8
     local calculatedBatchSize = 16
 
     if profile == 1 then
-        multiplier = 0.5
+        maxSenderWorkers = math.max(2, math.floor(hardwareMax * 0.5))
+        maxAnalyzeWorkers = maxSenderWorkers * 4
         calculatedBatchSize = 8
     elseif profile == 2 then
-        multiplier = 0.5
+        maxSenderWorkers = math.max(2, math.floor(hardwareMax * 0.5))
+        maxAnalyzeWorkers = maxSenderWorkers * 4
         calculatedBatchSize = 16
     elseif profile == 3 then
-        multiplier = 1.0
-        calculatedBatchSize = 16
+        maxSenderWorkers = math.max(2, hardwareMax)
+        maxAnalyzeWorkers = maxSenderWorkers * 8
+        calculatedBatchSize = 32
     elseif profile == 4 then
-        multiplier = 1.0
+        maxSenderWorkers = math.max(2, hardwareMax)
+        maxAnalyzeWorkers = maxSenderWorkers * 8
         calculatedBatchSize = 64
     end
 
-    local scaledWorkers = math.max(2, math.floor(hardwareMax * multiplier))
-    local maxWorkers = scaledWorkers
-    local maxSenderWorkers = scaledWorkers
-    local maxAnalyzeWorkers = scaledWorkers
+    local maxWorkers = maxSenderWorkers
 
     if options.benchmarkConfig then
-        maxWorkers = options.benchmarkConfig.workers
-        maxSenderWorkers = options.benchmarkConfig.workers
-        maxAnalyzeWorkers = options.benchmarkConfig.workers
+        maxSenderWorkers = options.benchmarkConfig.senders or options.benchmarkConfig.workers
+        maxAnalyzeWorkers = options.benchmarkConfig.analyzers or options.benchmarkConfig.workers
+        maxWorkers = maxSenderWorkers
     end
 
     if not enableMetadata and enableEmbeddings then
@@ -1806,8 +1815,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         log:info("Embedding-only path: Setting sender workers to " .. maxSenderWorkers .. " to optimize PyTorch batching.")
     end
 
-    log:info(string.format("Performance Tracking: Profile=%d, HardwareRec=%d, Multiplier=%.2f -> Producers=%d, Consumers=%d", 
-             profile, hardwareMax, multiplier, maxAnalyzeWorkers, maxSenderWorkers))
+    log:info(string.format("Performance Tracking: Profile=%d, HardwareRec=%d -> Producers=%d, Consumers=%d, Batch=%d", 
+             profile, hardwareMax, maxAnalyzeWorkers, maxSenderWorkers, calculatedBatchSize))
 
     local batchStartTime = LrDate.currentTime()
     local stats = { processed = 0, success = 0, failed = 0 }
@@ -1818,18 +1827,18 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     if options.regenerate_metadata == false and not isServerEmpty then
         progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/PreflightCheck=Verifying existing index..."))
-        local allIds = {}
-        local idToPhotoMap = {}
+        local allUuids = {}
+        local uuidToPhotoMap = {}
         local totalSelected = #selectedPhotos
         local updateInterval = math.max(1, math.floor(totalSelected / 50))
         for i, photo in ipairs(selectedPhotos) do
             if progressScope and progressScope:isCanceled() then
                 return "canceled", 0, 0, {}
             end
-            local photoId = getPhotoIdForPhoto(photo)
-            if photoId then
-                table.insert(allIds, photoId)
-                idToPhotoMap[photoId] = photo
+            local photoUuid = photo:getRawMetadata("uuid")
+            if photoUuid then
+                table.insert(allUuids, photoUuid)
+                uuidToPhotoMap[photoUuid] = photo
             end
             if i % updateInterval == 0 then
                 progressScope:setPortionComplete(i, totalSelected)
@@ -1838,7 +1847,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         end
         
         local body = {
-            photo_ids = allIds,
+            lr_uuids = allUuids,
             tasks = options.tasks,
             regenerate_metadata = false
         }
@@ -1848,14 +1857,14 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         end
         
         local result, err = _request('POST', getBaseUrl() .. ENDPOINTS.CHECK_UNPROCESSED, body)
-        if not err and result and (result.photo_ids or result.uuids) then
-            local needingPhotoIds = result.photo_ids or result.uuids
+        if not err and result and (result.lr_uuids or result.photo_ids or result.uuids) then
+            local needingIds = result.lr_uuids or result.photo_ids or result.uuids
             local needingSet = {}
-            for _, pid in ipairs(needingPhotoIds) do needingSet[pid] = true end
+            for _, pid in ipairs(needingIds) do needingSet[pid] = true end
             
-            for _, pid in ipairs(allIds) do
+            for _, pid in ipairs(allUuids) do
                 if needingSet[pid] then
-                    table.insert(photoToProcessStack, idToPhotoMap[pid])
+                    table.insert(photoToProcessStack, uuidToPhotoMap[pid])
                 else
                     stats.processed = stats.processed + 1
                     stats.success = stats.success + 1
@@ -1922,7 +1931,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     local analyzeWorker = function()
         local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
-        local maxQueueCapacity = batchSize * 3
+        local maxQueueCapacity = maxSenderWorkers * batchSize * 2
         while #photoToProcessStack > 0 do
             if progressScope:isCanceled() then break end
             if not keepRunning then break end
@@ -1930,11 +1939,11 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
             if #preparedQueue >= maxQueueCapacity then
                 if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
             else
-                local photo = table.remove(photoToProcessStack, 1)
+                local photo = table.remove(photoToProcessStack)
                 if photo then
                     local filename = photo:getFormattedMetadata("fileName")
                     local hashStart = LrDate.currentTime()
-                    local photoId, photoIdErr = getPhotoIdForPhoto(photo)
+                    local photoId, photoIdErr = getPhotoIdForPhoto(photo, options)
                     if photoId then
                         log:trace("Using photo_id for " ..
                             filename ..
@@ -2027,9 +2036,11 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
                         if jpegData and #jpegData > 0 then
                             local base64Image = LrStringUtils.encodeBase64(jpegData)
+                            local lrUuid = photo:getRawMetadata("uuid")
                             table.insert(preparedQueue, {
                                 type = "item",
                                 photo_id = photoId,
+                                lr_uuid = lrUuid,
                                 image = base64Image,
                                 filename = leafName,
                                 options = photoOptions,
@@ -2080,7 +2091,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 local subBatchPhotos = {}
 
                 while #batchItemsToSend + #localFailures < batchSize and #preparedQueue > 0 do
-                    local item = table.remove(preparedQueue, 1)
+                    local item = table.remove(preparedQueue)
                     if item.type == "item" then
                         table.insert(batchItemsToSend, item)
                         table.insert(subBatchPhotos, item.photo)
@@ -2202,7 +2213,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
                 end
             else
-                local item = table.remove(llmQueue, 1)
+                local item = table.remove(llmQueue)
                 if item then
                     local success, llmResponse = SearchIndexAPI.generateMetadataSingle(item.photo_id, item.image, item.filename, options)
                     stats.processed = stats.processed + 1

@@ -175,6 +175,7 @@ def index_images_batch_base64_v2():
     for item in images_data:
         image_base64 = item.get("image")
         photo_id = item.get("photo_id") or item.get("uuid")
+        lr_uuid = item.get("lr_uuid")
         filename = item.get("filename")
 
         if not image_base64 or not photo_id or not filename:
@@ -183,7 +184,7 @@ def index_images_batch_base64_v2():
 
         try:
             image_bytes = base64.b64decode(image_base64.encode("ascii"))
-            image_triplets.append((image_bytes, photo_id, filename))
+            image_triplets.append((image_bytes, photo_id, filename, lr_uuid))
 
             if cache_images:
                 image_cache.store_image(photo_id, image_bytes)
@@ -626,9 +627,21 @@ def check_unprocessed():
     Used by the Lightroom plugin for "New or unprocessed photos" scope.
     """
     data = request.get_json() or {}
+    
+    # Prioritize native lr_uuids if available for fast metadata searches
+    lr_uuids = data.get("lr_uuids")
+    if lr_uuids:
+        options = _extract_options(data)
+        needing = get_photo_ids_needing_processing(lr_uuids, options, search_by_lr_uuid=True)
+        logger.info(
+            f"check-unprocessed: {len(needing)} of {len(lr_uuids)} photos need processing (by LR UUID)"
+        )
+        return jsonify({"lr_uuids": needing}), 200
+
+    # Fallback to global photo IDs
     photo_ids = data.get("photo_ids") or data.get("uuids", [])
     if not photo_ids:
-        return jsonify({"photo_ids": [], "uuids": []}), 200
+        return jsonify({"photo_ids": [], "uuids": [], "lr_uuids": []}), 200
 
     options = _extract_options(data)
     needing = get_photo_ids_needing_processing(photo_ids, options)

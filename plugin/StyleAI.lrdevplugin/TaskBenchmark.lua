@@ -15,10 +15,10 @@ LrTasks.startAsyncTask(function()
 		local catalog = LrApplication.activeCatalog()
 		local selectedPhotos = catalog:getTargetPhotos()
 		
-		if not selectedPhotos or #selectedPhotos < 16 then
+		if not selectedPhotos or #selectedPhotos < 160 then
 			LrDialogs.message(
 				"Benchmark Error",
-				"Please select a representative batch of at least 16 photos (ideally 128) to run the benchmark.",
+				"Please select a representative batch of at least 160 photos (ideally 500+) to run the benchmark.\n\nThis ensures each test permutation runs on a completely distinct set of photos, preventing Lightroom's internal preview caches from skewing the results.",
 				"critical"
 			)
 			return
@@ -33,17 +33,17 @@ LrTasks.startAsyncTask(function()
 		if confirm == "cancel" then return end
 
 		local permutations = {
-			{workers = 1, batch = 8},
-			{workers = 2, batch = 8},
-			{workers = 2, batch = 16},
-			{workers = 4, batch = 16},
-			{workers = 2, batch = 32},
-			{workers = 4, batch = 32},
-			{workers = 8, batch = 32},
-			{workers = 4, batch = 64},
-			{workers = 8, batch = 64},
-			{workers = 1, batch = 32}
+			{senders = 2, analyzers = 8, batch = 8},
+			{senders = 2, analyzers = 8, batch = 16},
+			{senders = 2, analyzers = 16, batch = 16},
+			{senders = 4, analyzers = 16, batch = 16},
+			{senders = 4, analyzers = 16, batch = 32},
+			{senders = 4, analyzers = 32, batch = 32},
+			{senders = 4, analyzers = 16, batch = 64},
+			{senders = 4, analyzers = 32, batch = 64},
 		}
+		
+		local photosPerTest = math.floor(#selectedPhotos / #permutations)
 
 		local results = {}
 		local progressScope = LrDialogs.showModalProgressDialog({
@@ -60,7 +60,7 @@ LrTasks.startAsyncTask(function()
 				break
 			end
 			
-			local titleText = string.format("Test %d of %d (Workers: %d, Batch: %d)", i, #permutations, config.workers, config.batch)
+			local titleText = string.format("Test %d of %d (Senders: %d, Analyzers: %d, Batch: %d)", i, #permutations, config.senders, config.analyzers, config.batch)
 			progressScope:setCaption(titleText)
 			
 			local options = {
@@ -70,20 +70,28 @@ LrTasks.startAsyncTask(function()
 				enableMetadata = false,
 				regenerate_metadata = true,
 				cache_images = false,
-				benchmarkConfig = config
+				benchmarkConfig = config,
+				forceRecompute = true
 			}
+			
+			local testPhotos = {}
+			local startIndex = ((i - 1) * photosPerTest) + 1
+			for p = startIndex, startIndex + photosPerTest - 1 do
+				table.insert(testPhotos, selectedPhotos[p])
+			end
 
 			local startTime = LrDate.currentTime()
 			-- Run the batch pipeline natively
 			local status, processed, failed, processedPhotos, combinedError, combinedWarnings = 
-				SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressScope, options, false)
+				SearchIndexAPI.analyzeAndIndexSelectedPhotos(testPhotos, progressScope, options, false)
 				
 			local duration = LrDate.currentTime() - startTime
 			local avg = 0
 			if processed and processed > 0 then avg = duration / processed end
 
 			table.insert(results, {
-				workers = config.workers,
+				senders = config.senders,
+				analyzers = config.analyzers,
 				batch = config.batch,
 				duration = duration,
 				processed = processed or 0,
@@ -91,8 +99,8 @@ LrTasks.startAsyncTask(function()
 				avg = avg
 			})
 
-			log:info(string.format("BENCHMARK RESULT: Workers=%d, Batch=%d | Duration: %.2f sec (%.2f s/photo) | Failed: %d", 
-					 config.workers, config.batch, duration, avg, failed or 0))
+			log:info(string.format("BENCHMARK RESULT: Senders=%d, Analyzers=%d, Batch=%d | Duration: %.2f sec (%.2f s/photo) | Failed: %d", 
+					 config.senders, config.analyzers, config.batch, duration, avg, failed or 0))
 
 			-- Wait 5 seconds to let the system cool down and the DB flush between runs
 			if i < #permutations and not progressScope:isCanceled() then
@@ -109,7 +117,7 @@ LrTasks.startAsyncTask(function()
 		
 		local summary = "Benchmark Complete.\nSee StyleAI.log for full details.\n\nTop Results:\n"
 		for i, r in ipairs(results) do
-			local line = string.format("#%d: W:%d B:%d -> %.1f sec (%.2f s/photo)", i, r.workers, r.batch, r.duration, r.avg)
+			local line = string.format("#%d: S:%d A:%d B:%d -> %.1f sec (%.2f s/photo)", i, r.senders, r.analyzers, r.batch, r.duration, r.avg)
 			log:info(line)
 			if i <= 5 then
 				summary = summary .. line .. "\n"

@@ -134,10 +134,11 @@ def _decode_image(image_bytes: bytes) -> Image.Image | None:
 
 
 @lru_cache(maxsize=4)
-def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
+def get_uuids_needing_processing(uuids: list[str], options: dict, search_by_lr_uuid: bool = False) -> list[str]:
     """
     Returns UUIDs that need processing based on selected tasks and existing backend data.
-    Mirrors the same logic as process_image_task for determining what's missing.
+    If search_by_lr_uuid is True, treats uuids as Lightroom native UUIDs and searches the 
+    metadata 'uuid' field instead of ChromaDB document IDs.
     """
     regenerate_metadata = options.get("regenerate_metadata", True)
     compute_embeddings = options.get("compute_embeddings", True)
@@ -155,7 +156,11 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
         chunk = uuids[i : i + chunk_size]
         try:
             # ChromaDB handles bulk gets much faster and without massive exception overhead on empty databases
-            raw = chroma_service.collection.get(ids=chunk, include=["metadatas"])
+            if search_by_lr_uuid:
+                raw = chroma_service.collection.get(where={"uuid": {"$in": chunk}}, include=["metadatas"])
+            else:
+                raw = chroma_service.collection.get(ids=chunk, include=["metadatas"])
+            
             if raw and raw.get("ids"):
                 for idx, pid in enumerate(raw["ids"]):
                     metas = raw.get("metadatas") or [{}] * len(raw["ids"])
@@ -164,7 +169,12 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
                         ids_set = chroma_service._parse_catalog_ids(meta)
                         if str(catalog_id) not in ids_set:
                             continue
-                    existing_records[pid] = meta
+                    
+                    # If we searched by LR UUID, we need to map the result by the LR UUID to match the chunk
+                    if search_by_lr_uuid and "uuid" in meta:
+                        existing_records[meta["uuid"]] = meta
+                    else:
+                        existing_records[pid] = meta
         except Exception:
             pass
 
@@ -191,19 +201,19 @@ def get_uuids_needing_processing(uuids: list[str], options: dict) -> list[str]:
     return needing_processing
 
 
-def get_photo_ids_needing_processing(photo_ids: list[str], options: dict) -> list[str]:
+def get_photo_ids_needing_processing(photo_ids: list[str], options: dict, search_by_lr_uuid: bool = False) -> list[str]:
     """Preferred alias for get_uuids_needing_processing with generic photo IDs."""
-    return get_uuids_needing_processing(photo_ids, options)
+    return get_uuids_needing_processing(photo_ids, options, search_by_lr_uuid)
 
 
 def process_image_task(
-    image_triplets: list[tuple[bytes, str, str]], options: dict
+    image_triplets: list[tuple[bytes, str, str, str | None]], options: dict
 ) -> tuple[int, int, list[str]]:
     """
     Process a batch of images for indexing.
 
     Args:
-        image_triplets: List of (image_bytes, uuid, filename) tuples
+        image_triplets: List of (image_bytes, uuid, filename, lr_uuid) tuples
         options: Dictionary with all processing options
 
     Returns:
@@ -238,7 +248,7 @@ def process_image_task(
             logger.info(
                 "Checking existing records to determine what needs generation..."
             )
-            uuids_to_check = [uuid for _, uuid, _ in image_triplets]
+            uuids_to_check = [uuid for _, uuid, _, _ in image_triplets]
             try:
                 # Use bulk get query to dramatically reduce DB latency
                 raw = chroma_service.collection.get(
@@ -262,7 +272,7 @@ def process_image_task(
         images_needing_embeddings = set()
         images_needing_metadata = set()
 
-        for idx, (_, uuid, _) in enumerate(image_triplets):
+        for idx, (_, uuid, _, _) in enumerate(image_triplets):
             existing = existing_records.get(uuid, {})
 
             # Check if embedding is needed
@@ -326,7 +336,7 @@ def process_image_task(
         # (culling, phash, CLIP, face detection) all reuse it instead of decoding
         # the same bytes 4–5 times per photo.
         exif_location_by_uuid: dict[str, dict | None] = {}
-        for image_bytes, uuid, _ in image_triplets:
+        for image_bytes, uuid, filename, lr_uuid in image_triplets:
             try:
                 exif_location_by_uuid[uuid] = exif_service.extract_location_tags(
                     image_bytes
@@ -339,13 +349,13 @@ def process_image_task(
         with ThreadPoolExecutor(max_workers=min(32, len(image_triplets))) as executor:
             pil_images = list(
                 executor.map(
-                    _decode_image, [img_bytes for img_bytes, _, _ in image_triplets]
+                    _decode_image, [img_bytes for img_bytes, _, _, _ in image_triplets]
                 )
             )
 
         # Detect faces ONLY for privacy blurring if requested
         per_image_faces = []
-        for i, (img_bytes, uid, fname) in enumerate(image_triplets):
+        for i, (img_bytes, uid, fname, lr_uuid) in enumerate(image_triplets):
             opt = options[i] if isinstance(options, list) else options
             blur_faces = opt.get("blurFacesForCloud", False)
             faces = None
@@ -368,7 +378,7 @@ def process_image_task(
         # Optional: Privacy Face Blurring
         # If blurFacesForCloud is true, blur the image before sending to LLM and Embeddings
         blurred_image_triplets = []
-        for i, (img_bytes, uid, fname) in enumerate(image_triplets):
+        for i, (img_bytes, uid, fname, lr_uuid) in enumerate(image_triplets):
             opt = options[i] if isinstance(options, list) else options
             blur_faces = opt.get("blurFacesForCloud", False)
 
@@ -380,7 +390,7 @@ def process_image_task(
 
                 # Blur bytes
                 blurred_bytes = apply_face_blur(img_bytes, bboxes)
-                blurred_image_triplets.append((blurred_bytes, uid, fname))
+                blurred_image_triplets.append((blurred_bytes, uid, fname, lr_uuid))
 
                 # Do NOT update pil_images list with blurred version
                 # SigLIP2 is 100% local and should embed the unblurred image for accuracy
@@ -392,12 +402,12 @@ def process_image_task(
                 else:
                     options["blur_faces"] = True
             else:
-                blurred_image_triplets.append((img_bytes, uid, fname))
+                blurred_image_triplets.append((img_bytes, uid, fname, lr_uuid))
 
         # Leave audit trail for indexing thumbnails if enabled
         from services.audit import log_diagnostic_image
 
-        for i, (img_bytes, uid, fname) in enumerate(blurred_image_triplets):
+        for i, (img_bytes, uid, fname, lr_uuid) in enumerate(blurred_image_triplets):
             if uid in images_needing_metadata:
                 opt = options[i] if isinstance(options, list) else options
                 if str(opt.get("audit_llm_inputs", "")).lower() == "true":
@@ -425,7 +435,7 @@ def process_image_task(
             error_messages.append(str(e))
             return 0, total_images, error_messages, warnings
 
-        for i, (image_bytes, uuid, filename) in enumerate(image_triplets):
+        for i, (image_bytes, uuid, filename, lr_uuid) in enumerate(image_triplets):
             try:
                 embedding = embeddings[i] if embeddings is not None else None
                 metadata_data = metadata_results[i] if metadata_results else None
@@ -471,7 +481,7 @@ def process_image_task(
                     # Update only basic fields that should always be current
                     main_metadata["filename"] = filename
                     main_metadata["photo_id"] = uuid
-                    main_metadata["uuid"] = existing.get("uuid", uuid)
+                    main_metadata["uuid"] = lr_uuid or existing.get("uuid", uuid)
                 else:
                     main_metadata = {
                         "filename": filename,
