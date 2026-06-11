@@ -234,7 +234,7 @@ class LLMProviderBase(ABC):
             prompt = METADATA_GENERATION_SYSTEM_PROMPT
 
         if getattr(request, "blur_faces", False):
-            prompt += "\n\nNote: Human faces in this image have been intentionally blurred or pixelated for privacy protection. Do not describe the blurring as a flaw or defect, and do not let it negatively impact your analysis. Describe the rest of the scene normally."
+            prompt += "\n\nFaces are intentionally obscured for privacy. Ignore the blur. Do not describe the blurred areas or mention privacy in the generated metadata."
 
         return prompt
 
@@ -387,7 +387,7 @@ class LLMProviderBase(ABC):
         )
 
         if getattr(request, "blur_faces", False):
-            prompt += "\n\nNote: Human faces in this image have been intentionally blurred or pixelated for privacy protection. Do not describe the blurring as a flaw or defect, and evaluate the rest of the exposure and lighting normally."
+            prompt += "\n\nFaces are intentionally obscured for privacy. Ignore the blur. Do not evaluate the blurred areas; evaluate the rest of the exposure and lighting normally."
 
         return prompt
 
@@ -821,13 +821,13 @@ class LLMProviderBase(ABC):
     @final
     def _normalize_keyword_leaf(self, value: Any) -> str | dict[str, Any] | None:
         if isinstance(value, str):
-            keyword = value.strip()
+            keyword = value.strip().title()
             return keyword or None
         if isinstance(value, dict):
             keyword_name = value.get("name")
             if not isinstance(keyword_name, str):
                 return None
-            keyword_name = keyword_name.strip()
+            keyword_name = keyword_name.strip().title()
             if not keyword_name:
                 return None
             normalized: dict[str, Any] = {"name": keyword_name}

@@ -39,6 +39,7 @@ IDLE_SHUTDOWN_SECONDS = int(os.environ.get("STYLEAI_IDLE_SHUTDOWN_SECONDS", "600
 
 _last_used = None
 _last_request_time = time.time()  # track last HTTP request for server idle shutdown
+_resources_unloaded = False
 _model_lock = threading.RLock()
 _unloader_thread = None
 
@@ -63,12 +64,10 @@ def _set_last_used():
 
 
 def _needs_unload():
-    if model is None and processor is None and tokenizer is None:
+    if _resources_unloaded:
         return False
-    if _last_used is None:
-        return False
-    delta = datetime.datetime.utcnow() - _last_used
-    return delta.total_seconds() >= IDLE_UNLOAD_SECONDS
+    delta_seconds = time.time() - _last_request_time
+    return delta_seconds >= IDLE_UNLOAD_SECONDS
 
 
 def is_model_cached() -> bool:
@@ -277,13 +276,18 @@ def unload_all_resources():
     import gc
 
     gc.collect()
+    
+    global _resources_unloaded
+    _resources_unloaded = True
+    
     logger.info("All resources unloaded successfully.")
 
 
 def note_request():
     """Called by Flask before_request to record that the server is active."""
-    global _last_request_time
+    global _last_request_time, _resources_unloaded
     _last_request_time = time.time()
+    _resources_unloaded = False
 
 
 def _idle_unloader_loop():
@@ -298,7 +302,7 @@ def _idle_unloader_loop():
             time.sleep(60)
             try:
                 if _needs_unload():
-                    unload_model()
+                    unload_all_resources()
             except Exception:
                 logger.exception("Error in idle monitor background thread")
     finally:

@@ -425,6 +425,7 @@ local function getPhotoIdForPhoto(photo, options)
     
     local idOptions = {
         windowBytes = Util.getDefaultPartialHashWindowBytes(),
+        skipCacheWrite = true
     }
     if options and options.forceRecompute then
         idOptions.forceRecompute = true
@@ -437,7 +438,7 @@ local function getPhotoIdForPhoto(photo, options)
     if not uuid or uuid == "" then
         return nil, "Photo UUID is missing"
     end
-    return uuid, nil
+    return uuid, nil, nil
 end
 
 function SearchIndexAPI.getPhotoIdForPhoto(photo)
@@ -1785,21 +1786,23 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local calculatedBatchSize = 16
 
     if profile == 1 then
-        maxSenderWorkers = math.max(2, math.floor(hardwareMax * 0.5))
+        maxSenderWorkers = math.max(2, math.floor(hardwareMax * 0.25))
         maxAnalyzeWorkers = maxSenderWorkers * 4
-        calculatedBatchSize = 8
+        calculatedBatchSize = 16
     elseif profile == 2 then
         maxSenderWorkers = math.max(2, math.floor(hardwareMax * 0.5))
         maxAnalyzeWorkers = maxSenderWorkers * 4
-        calculatedBatchSize = 16
+        calculatedBatchSize = 32
     elseif profile == 3 then
-        maxSenderWorkers = math.max(2, hardwareMax)
-        maxAnalyzeWorkers = maxSenderWorkers * 8
+        maxSenderWorkers = math.max(2, math.floor(hardwareMax * 0.75))
+        maxAnalyzeWorkers = maxSenderWorkers * 6
         calculatedBatchSize = 32
     elseif profile == 4 then
-        maxSenderWorkers = math.max(2, hardwareMax)
+        -- Optimal max performance: cap at Waitress thread count (16) and limit batch size to 32 
+        -- to match backend pipelining chunk size.
+        maxSenderWorkers = math.min(16, math.max(4, hardwareMax))
         maxAnalyzeWorkers = maxSenderWorkers * 8
-        calculatedBatchSize = 64
+        calculatedBatchSize = 32
     end
 
     local maxWorkers = maxSenderWorkers
@@ -2136,6 +2139,22 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                                 end
                             end
 
+                            local catalog = LrApplication.activeCatalog()
+                            catalog:withPrivateWriteAccessDo(function()
+                                for _, item in ipairs(batchItemsToSend) do
+                                    if item.metadataToCache and item.photo then
+                                        item.photo:setPropertyForPlugin(_PLUGIN, "globalPhotoId", item.photo_id)
+                                        item.photo:setPropertyForPlugin(_PLUGIN, "globalPhotoIdFileSize", tostring(item.metadataToCache.fileSize or ""))
+                                        item.photo:setPropertyForPlugin(
+                                            _PLUGIN,
+                                            "globalPhotoIdFileModificationDate",
+                                            tostring(item.metadataToCache.fileModificationDate or "")
+                                        )
+                                        item.photo:setPropertyForPlugin(_PLUGIN, "globalPhotoIdAlgorithm", tostring(item.metadataToCache.algorithm or "meta1"))
+                                    end
+                                end
+                            end, { timeout = 15 })
+
                             for _, item in ipairs(batchItemsToSend) do
                                 local filename = item.photo:getFormattedMetadata("fileName")
                                 local leafName = LrPathUtils.leafName(filename or "photo.jpg")
@@ -2266,11 +2285,13 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         log:trace("Started sender worker #" .. tostring(i))
     end
 
-    local maxLlmWorkers = maxSenderWorkers
+    local maxLlmWorkers = math.max(1, maxSenderWorkers - 2)
     if enableMetadata and options.model and (string.find(string.lower(options.model), "lmstudio") or string.find(string.lower(options.model), "ollama")) then
-        -- We trust LM Studio/Ollama's internal request queuing, but still limit concurrent Lightroom connections
+        -- We trust LM Studio/Ollama's internal request queuing, but cap connections to 4 to prevent Waitress starvation and Lightroom HTTP timeouts
         maxLlmWorkers = math.min(maxSenderWorkers, 4)
-        log:trace("Local LLM detected. Relying on provider queuing, capping connections to " .. tostring(maxLlmWorkers))
+        log:trace("Local LLM detected. Capping connections to " .. tostring(maxLlmWorkers) .. " to prevent Waitress thread exhaustion.")
+    else
+        log:trace("Cloud LLM detected. Using " .. tostring(maxLlmWorkers) .. " connections to reserve Waitress threads for fast embeddings.")
     end
 
     if enableMetadata then

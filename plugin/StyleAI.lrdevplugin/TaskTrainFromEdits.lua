@@ -207,46 +207,89 @@ LrTasks.startAsyncTask(function()
 		local errorMessages = {}
 		local backendWarnings = {}
 
-		local chunk = {}
+		local trainingQueue = {}
+		local producerDone = false
+		local consumerDone = false
 		local chunkSize = 10
 
-		local function sendChunk()
-			if #chunk == 0 then return end
-			
-			progressScope:setCaption(
-				LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server...")
-			)
+		local function consumerWorker()
+			local currentChunk = {}
+			while not progressScope:isCanceled() do
+				if #trainingQueue > 0 then
+					local ex = table.remove(trainingQueue, 1)
+					table.insert(currentChunk, ex)
 
-			local ok, resp = SearchIndexAPI.addTrainingBatch(chunk, options.forceRetrain)
+					if #currentChunk >= chunkSize then
+						progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
+						local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain)
 
-			if ok and resp and resp.results then
-				for _, result in ipairs(resp.results) do
-					if result.status == "ok" then
-						successCount = successCount + 1
-						if result.warning then
-							table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+						if ok and resp and resp.results then
+							for _, result in ipairs(resp.results) do
+								if result.status == "ok" then
+									successCount = successCount + 1
+									if result.warning then
+										table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+									end
+								else
+									errorCount = errorCount + 1
+									table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
+								end
+							end
+						else
+							for _, chunkEx in ipairs(currentChunk) do
+								errorCount = errorCount + 1
+								table.insert(errorMessages, chunkEx.photo_id .. ": " .. tostring(resp or "API request failed"))
+							end
 						end
-					else
-						errorCount = errorCount + 1
-						table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
+						log:info("Batch training chunk saved. successCount=" .. tostring(successCount))
+						currentChunk = {}
 					end
-				end
-			else
-				for _, ex in ipairs(chunk) do
-					errorCount = errorCount + 1
-					table.insert(errorMessages, ex.photo_id .. ": " .. tostring(resp or "API request failed"))
+				elseif producerDone then
+					-- Flush any remaining items in the current chunk
+					if #currentChunk > 0 then
+						progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
+						local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain)
+						if ok and resp and resp.results then
+							for _, result in ipairs(resp.results) do
+								if result.status == "ok" then
+									successCount = successCount + 1
+									if result.warning then
+										table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+									end
+								else
+									errorCount = errorCount + 1
+									table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
+								end
+							end
+						else
+							for _, chunkEx in ipairs(currentChunk) do
+								errorCount = errorCount + 1
+								table.insert(errorMessages, chunkEx.photo_id .. ": " .. tostring(resp or "API request failed"))
+							end
+						end
+						log:info("Final training chunk saved. successCount=" .. tostring(successCount))
+					end
+					consumerDone = true
+					break
+				else
+					-- Wait for producer to add more items
+					if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
 				end
 			end
-			
-			log:info("Batch training chunk saved. successCount=" .. tostring(successCount))
-			
-			-- Clear chunk
-			chunk = {}
+			consumerDone = true
 		end
+
+		-- Start the consumer in the background
+		LrTasks.startAsyncTask(consumerWorker)
 
 		for index, photo in ipairs(photos) do
 			if progressScope:isCanceled() then
 				break
+			end
+
+			-- Backpressure: Pause Lightroom extraction if the queue gets too large
+			while #trainingQueue >= 20 and not progressScope:isCanceled() do
+				if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
 			end
 
 			local fileName = photo:getFormattedMetadata("fileName") or "Photo"
@@ -319,20 +362,21 @@ LrTasks.startAsyncTask(function()
 					example.user_keywords = options.userKeywords
 				end
 
-				table.insert(chunk, example)
-
-				-- Send chunk if full
-				if #chunk >= chunkSize then
-					sendChunk()
-				end
+				table.insert(trainingQueue, example)
 			end
 
 			progressScope:setPortionComplete(index, #photos)
 		end
 
-		-- Send any remaining training examples in final chunk
-		if not progressScope:isCanceled() and #chunk > 0 then
-			sendChunk()
+		producerDone = true
+
+		-- Wait for consumer to finish sending remaining chunks
+		while not consumerDone and not progressScope:isCanceled() do
+			if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+		end
+		-- Add slight delay to ensure consumerWorker cleanly exits
+		if not progressScope:isCanceled() then
+			if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.2) end
 		end
 
 		progressScope:done()

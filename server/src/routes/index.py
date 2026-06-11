@@ -60,7 +60,7 @@ def index_images_batch():
             )
             continue
 
-        image_triplets.append((file.read(), photo_id, file.filename))
+        image_triplets.append((file.read(), photo_id, file.filename, None))
 
     if not image_triplets:
         logger.info("No valid images to process in the batch.")
@@ -121,7 +121,7 @@ def index_images_batch_base64():
     options = _extract_options(data)
 
     success_count, failure_count, error_messages, warnings = process_image_task(
-        [(base64.b64decode(image.encode("ascii")), photo_id, filename)], options=options
+        [(base64.b64decode(image.encode("ascii")), photo_id, filename, None)], options=options
     )
 
     logger.info(
@@ -335,7 +335,7 @@ def generate_metadata_single():
 
     # Let process_image_task handle the robust database commit and metadata merging logic
     success_count, failure_count, error_messages, warnings = process_image_task(
-        [(image_bytes, photo_id, filename)], options=options
+        [(image_bytes, photo_id, filename, None)], options=options
     )
 
     if success_count == 0:
@@ -406,7 +406,7 @@ def index_images_batch_by_reference():
                 image_data = file.read()
 
             filename = os.path.basename(path)
-            image_triplets.append((image_data, photo_id, filename))
+            image_triplets.append((image_data, photo_id, filename, None))
         except FileNotFoundError:
             logger.warning(f"File not found at path: {path}. Skipping.")
             failed_paths.append(path)

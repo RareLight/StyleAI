@@ -58,6 +58,31 @@ function SettingsManager.initializeDefaults()
             prefs[key] = defaultValue
         end
     end
+    -- Force 'Default' prompts to update to the latest shipped version
+    -- ONLY if the user hasn't customized them (i.e., they exactly match a known legacy default)
+    if type(prefs.prompts) == "table" and prefs.prompts["Default"] then
+        local current = prefs.prompts["Default"]
+        if current ~= Defaults.defaultSystemInstruction then
+            for _, legacy in ipairs(Defaults.legacySystemInstructions or {}) do
+                if current == legacy then
+                    prefs.prompts["Default"] = Defaults.defaultSystemInstruction
+                    break
+                end
+            end
+        end
+    end
+
+    if type(prefs.editPrompts) == "table" and prefs.editPrompts["Default"] then
+        local current = prefs.editPrompts["Default"]
+        if current ~= Defaults.defaultEditSystemInstruction then
+            for _, legacy in ipairs(Defaults.legacyEditSystemInstructions or {}) do
+                if current == legacy then
+                    prefs.editPrompts["Default"] = Defaults.defaultEditSystemInstruction
+                    break
+                end
+            end
+        end
+    end
     
     -- Special handling for empty backend url
     if prefs.backendServerUrl == "" then

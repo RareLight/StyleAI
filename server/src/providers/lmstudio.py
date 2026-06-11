@@ -420,8 +420,13 @@ class LMStudioProvider(LLMProviderBase):
             # avoid relying on a not-yet-resolved default API port.
             with lms.Client(self.host) as client:
                 models = client.llm.list_downloaded()
-                all_models = [model.model_key for model in models]
-                return all_models
+                # Only populate the dropdown with vision-capable models
+                vision_models = [
+                    model.model_key
+                    for model in models
+                    if getattr(getattr(model, "info", None), "vision", False)
+                ]
+                return vision_models
 
         except Exception as e:
             logger.error(
