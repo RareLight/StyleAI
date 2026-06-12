@@ -2,8 +2,10 @@ import torch
 import open_clip
 from PIL import Image
 
-model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai')
-img = Image.new('RGB', (100, 100))
+model, _, preprocess = open_clip.create_model_and_transforms(
+    "ViT-B-32", pretrained="openai"
+)
+img = Image.new("RGB", (100, 100))
 t1 = preprocess(img)
 t2 = preprocess(img)
 

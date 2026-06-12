@@ -62,7 +62,11 @@ function PhotoSelector.getPhotosInScope(scope, taskOptions, lookupProgressScope)
 					or source:type() == "LrPublishedCollection"
 				)
 			then
-				local photos = filterPhotos(source:getPhotos())
+				local includeChildren = false
+				if source:type() == "LrFolder" then
+					includeChildren = true
+				end
+				local photos = filterPhotos(source:getPhotos(includeChildren))
 				for _, photo in ipairs(photos) do
 					local photoId = photo:getRawMetadata("uuid")
 					if not addedPhotos[photoId] then

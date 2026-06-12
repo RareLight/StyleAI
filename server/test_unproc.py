@@ -9,7 +9,7 @@ data = {
     "compute_metadata": False,
     "compute_faces": False,
     "regenerate_metadata": True,
-    "catalog_id": "test_catalog"
+    "catalog_id": "test_catalog",
 }
 
 start = time.time()

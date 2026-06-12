@@ -7,7 +7,9 @@ import time
 if os.path.exists("test_db3"):
     shutil.rmtree("test_db3")
 
-client = chromadb.PersistentClient(path="test_db3", settings=Settings(anonymized_telemetry=False))
+client = chromadb.PersistentClient(
+    path="test_db3", settings=Settings(anonymized_telemetry=False)
+)
 coll = client.get_or_create_collection(name="test_col3")
 
 print("Collection created")
@@ -17,7 +19,7 @@ start = time.time()
 
 chunk_size = 2000
 for i in range(0, len(uuids), chunk_size):
-    chunk = uuids[i:i + chunk_size]
+    chunk = uuids[i : i + chunk_size]
     try:
         raw = coll.get(ids=chunk, include=["metadatas"])
     except Exception as e:
