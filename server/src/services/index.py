@@ -671,4 +671,14 @@ def process_image_task(
                 torch.mps.empty_cache()
             except Exception:
                 pass
+        
+        # Explicitly close Pillow images to instantly free unmanaged C-level memory buffers
+        # Without this, iterating through 7200 photos will leak memory while waiting on GC
+        if "pil_images" in locals() and pil_images:
+            for img in pil_images:
+                try:
+                    img.close()
+                except Exception:
+                    pass
+                    
         gc.collect()
