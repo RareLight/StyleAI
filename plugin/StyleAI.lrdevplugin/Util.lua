@@ -406,49 +406,49 @@ function Util.getGlobalPhotoIdForPhoto(photo, options)
 		end
 	end
 
-	-- Only check availability and check disk if there's a cache miss or we need file attributes for legacy verification
-	if photo.checkPhotoAvailability then
-		local isAvailable = photo:checkPhotoAvailability()
-		if not isAvailable then
-			return nil, "Photo is offline or missing"
-		end
-	end
-
-	local originalFilePath = photo:getRawMetadata("path")
-	local attributes, attrErr = getFileAttributes(originalFilePath)
-	if not attributes then
-		log:error(
-			"getGlobalPhotoIdForPhoto: file attributes unavailable for photo path="
-				.. tostring(originalFilePath)
-				.. " err="
-				.. tostring(attrErr)
-		)
-		return nil, attrErr
-	end
-
-	local cachedSize = tonumber(photo:getPropertyForPlugin(_PLUGIN, "globalPhotoIdFileSize") or "")
-	local cachedMtime = tonumber(photo:getPropertyForPlugin(_PLUGIN, "globalPhotoIdFileModificationDate") or "")
-
-	if not options.forceRecompute and not Util.nilOrEmpty(cachedId) then
-		if
-			cachedAlgorithm == LEGACY_HASH_ALGO
-			and cachedSize == tonumber(attributes.fileSize)
-			and math.floor(cachedMtime or 0) == math.floor(tonumber(attributes.fileModificationDate) or 0)
-		then
-			-- Cache hit for legacy hash
-			return cachedId, nil
-		end
-	end
-
+	-- Fast-path #2: Compute STABLE_ID_ALGO strictly from memory/EXIF without hitting disk
 	local rebuildStartedAt = LrDate.currentTime()
 	local globalPhotoId, idErr = Util.computeStableMetadataPhotoId(photo)
-	local metadata = {
-		fileSize = attributes.fileSize,
-		fileModificationDate = attributes.fileModificationDate,
-		algorithm = STABLE_ID_ALGO,
-	}
+	local metadata = {}
 
-	if not globalPhotoId then
+	if globalPhotoId then
+		metadata.algorithm = STABLE_ID_ALGO
+		-- STABLE_ID_ALGO does not need fileSize or mtime, so we avoid hitting the disk entirely.
+	else
+		-- Only check availability and check disk if there's a cache miss AND we need file attributes for legacy verification
+		if photo.checkPhotoAvailability then
+			local isAvailable = photo:checkPhotoAvailability()
+			if not isAvailable then
+				return nil, "Photo is offline or missing"
+			end
+		end
+
+		local originalFilePath = photo:getRawMetadata("path")
+		local attributes, attrErr = getFileAttributes(originalFilePath)
+		if not attributes then
+			log:error(
+				"getGlobalPhotoIdForPhoto: file attributes unavailable for photo path="
+					.. tostring(originalFilePath)
+					.. " err="
+					.. tostring(attrErr)
+			)
+			return nil, attrErr
+		end
+
+		local cachedSize = tonumber(photo:getPropertyForPlugin(_PLUGIN, "globalPhotoIdFileSize") or "")
+		local cachedMtime = tonumber(photo:getPropertyForPlugin(_PLUGIN, "globalPhotoIdFileModificationDate") or "")
+
+		if not options.forceRecompute and not Util.nilOrEmpty(cachedId) then
+			if
+				cachedAlgorithm == LEGACY_HASH_ALGO
+				and cachedSize == tonumber(attributes.fileSize)
+				and math.floor(cachedMtime or 0) == math.floor(tonumber(attributes.fileModificationDate) or 0)
+			then
+				-- Cache hit for legacy hash
+				return cachedId, nil
+			end
+		end
+
 		log:warn(
 			"getGlobalPhotoIdForPhoto: stable metadata id failed, falling back to partial hash for "
 				.. tostring(originalFilePath)
