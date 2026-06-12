@@ -1856,18 +1856,18 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     if options.regenerate_metadata == false and not isServerEmpty then
         progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/PreflightCheck=Verifying existing index..."))
-        local allUuids = {}
-        local uuidToPhotoMap = {}
+        local allPhotoIds = {}
+        local photoIdToPhotoMap = {}
         local totalSelected = #selectedPhotos
         local updateInterval = math.max(1, math.floor(totalSelected / 50))
         for i, photo in ipairs(selectedPhotos) do
             if progressScope and progressScope:isCanceled() then
                 return "canceled", 0, 0, {}
             end
-            local photoUuid = photo:getRawMetadata("uuid")
-            if photoUuid then
-                table.insert(allUuids, photoUuid)
-                uuidToPhotoMap[photoUuid] = photo
+            local photoId = getPhotoIdForPhoto(photo, options)
+            if photoId then
+                table.insert(allPhotoIds, photoId)
+                photoIdToPhotoMap[photoId] = photo
             end
             if i % updateInterval == 0 then
                 progressScope:setPortionComplete(i, totalSelected)
@@ -1876,7 +1876,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         end
         
         local body = {
-            lr_uuids = allUuids,
+            photo_ids = allPhotoIds,
             tasks = options.tasks,
             regenerate_metadata = false
         }
@@ -1886,14 +1886,14 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         end
         
         local result, err = _request('POST', getBaseUrl() .. ENDPOINTS.CHECK_UNPROCESSED, body)
-        if not err and result and (result.lr_uuids or result.photo_ids or result.uuids) then
-            local needingIds = result.lr_uuids or result.photo_ids or result.uuids
+        if not err and result and (result.photo_ids or result.uuids) then
+            local needingIds = result.photo_ids or result.uuids
             local needingSet = {}
             for _, pid in ipairs(needingIds) do needingSet[pid] = true end
             
-            for _, pid in ipairs(allUuids) do
+            for _, pid in ipairs(allPhotoIds) do
                 if needingSet[pid] then
-                    table.insert(photoToProcessStack, uuidToPhotoMap[pid])
+                    table.insert(photoToProcessStack, photoIdToPhotoMap[pid])
                 else
                     stats.processed = stats.processed + 1
                     stats.success = stats.success + 1

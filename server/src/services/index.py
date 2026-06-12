@@ -509,7 +509,7 @@ def process_image_task(
                     main_metadata = {
                         "filename": filename,
                         "photo_id": uuid,
-                        "uuid": uuid,
+                        "uuid": lr_uuid or uuid,
                         "provider": provider,
                         "model": model_name,
                     }
