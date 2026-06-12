@@ -788,6 +788,15 @@ function SearchIndexAPI.getJpegThumbnailForPhoto(photo, minWidth, minHeight, req
         end
     end
 
+    -- Explicitly instruct Adobe's internal engine to release the preview memory
+    -- Without this, processing 7200 photos will rapidly exhaust memory
+    if requestRef then
+        if type(requestRef.cancel) == "function" then
+            requestRef:cancel()
+        end
+        requestRef = nil
+    end
+
     if not done then
         return nil,
             string.format("Thumbnail request timed out after %.1fs (callbacks=%d)", timeoutSeconds, callbackCount)
