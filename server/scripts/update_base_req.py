@@ -1,4 +1,3 @@
-
 filepath = "/Users/anna/Documents/Coding/StyleAI/server/src/providers/base.py"
 with open(filepath, "r") as f:
     content = f.read()

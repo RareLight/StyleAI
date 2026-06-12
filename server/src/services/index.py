@@ -133,10 +133,12 @@ def _decode_image(image_bytes: bytes) -> Image.Image | None:
         return None
 
 
-def get_uuids_needing_processing(uuids: list[str], options: dict, search_by_lr_uuid: bool = False) -> list[str]:
+def get_uuids_needing_processing(
+    uuids: list[str], options: dict, search_by_lr_uuid: bool = False
+) -> list[str]:
     """
     Returns UUIDs that need processing based on selected tasks and existing backend data.
-    If search_by_lr_uuid is True, treats uuids as Lightroom native UUIDs and searches the 
+    If search_by_lr_uuid is True, treats uuids as Lightroom native UUIDs and searches the
     metadata 'uuid' field instead of ChromaDB document IDs.
     """
     regenerate_metadata = options.get("regenerate_metadata", True)
@@ -156,10 +158,12 @@ def get_uuids_needing_processing(uuids: list[str], options: dict, search_by_lr_u
         try:
             # ChromaDB handles bulk gets much faster and without massive exception overhead on empty databases
             if search_by_lr_uuid:
-                raw = chroma_service.collection.get(where={"uuid": {"$in": chunk}}, include=["metadatas"])
+                raw = chroma_service.collection.get(
+                    where={"uuid": {"$in": chunk}}, include=["metadatas"]
+                )
             else:
                 raw = chroma_service.collection.get(ids=chunk, include=["metadatas"])
-            
+
             if raw and raw.get("ids"):
                 for idx, pid in enumerate(raw["ids"]):
                     metas = raw.get("metadatas") or [{}] * len(raw["ids"])
@@ -168,7 +172,7 @@ def get_uuids_needing_processing(uuids: list[str], options: dict, search_by_lr_u
                         ids_set = chroma_service._parse_catalog_ids(meta)
                         if str(catalog_id) not in ids_set:
                             continue
-                    
+
                     # If we searched by LR UUID, we need to map the result by the LR UUID to match the chunk
                     if search_by_lr_uuid and "uuid" in meta:
                         existing_records[meta["uuid"]] = meta
@@ -183,8 +187,8 @@ def get_uuids_needing_processing(uuids: list[str], options: dict, search_by_lr_u
         existing = existing_records.get(uuid, {})
 
         needs_embedding = compute_embeddings and (
-            regenerate_metadata 
-            or not is_existing 
+            regenerate_metadata
+            or not is_existing
             or existing.get("has_embedding", True) is False
         )
         has_any_metadata = (
@@ -203,7 +207,9 @@ def get_uuids_needing_processing(uuids: list[str], options: dict, search_by_lr_u
     return needing_processing
 
 
-def get_photo_ids_needing_processing(photo_ids: list[str], options: dict, search_by_lr_uuid: bool = False) -> list[str]:
+def get_photo_ids_needing_processing(
+    photo_ids: list[str], options: dict, search_by_lr_uuid: bool = False
+) -> list[str]:
     """Preferred alias for get_uuids_needing_processing with generic photo IDs."""
     return get_uuids_needing_processing(photo_ids, options, search_by_lr_uuid)
 
@@ -226,6 +232,12 @@ def process_image_task(
     error_messages = []
     warnings = []
     total_images = len(image_triplets)
+
+    from server_lifecycle import GLOBAL_CANCEL_EVENT
+
+    if GLOBAL_CANCEL_EVENT.is_set():
+        error_messages.append("Batch canceled by watchdog.")
+        return 0, total_images, error_messages, warnings
 
     try:
         global_opts = options[0] if isinstance(options, list) else options
@@ -280,8 +292,8 @@ def process_image_task(
 
             # Check if embedding is needed
             needs_embedding = compute_embeddings and (
-                regenerate_metadata 
-                or not is_existing 
+                regenerate_metadata
+                or not is_existing
                 or existing.get("has_embedding", True) is False
             )
             if needs_embedding:
@@ -332,7 +344,9 @@ def process_image_task(
         siglip_processor = None
 
         if not compute_embeddings:
-            logger.info("Embeddings disabled (LLM Only path); actively unloading SigLIP2 to free memory.")
+            logger.info(
+                "Embeddings disabled (LLM Only path); actively unloading SigLIP2 to free memory."
+            )
             server_lifecycle.unload_model()
 
         if len(images_needing_embeddings) > 0:
@@ -671,7 +685,7 @@ def process_image_task(
                 torch.mps.empty_cache()
             except Exception:
                 pass
-        
+
         # Explicitly close Pillow images to instantly free unmanaged C-level memory buffers
         # Without this, iterating through 7200 photos will leak memory while waiting on GC
         if "pil_images" in locals() and pil_images:
@@ -680,5 +694,5 @@ def process_image_task(
                     img.close()
                 except Exception:
                     pass
-                    
+
         gc.collect()

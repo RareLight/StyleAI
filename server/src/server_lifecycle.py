@@ -42,6 +42,7 @@ _last_request_time = time.time()  # track last HTTP request for server idle shut
 _resources_unloaded = False
 _model_lock = threading.RLock()
 _unloader_thread = None
+GLOBAL_CANCEL_EVENT = threading.Event()
 
 
 def _get_open_clip_tokenizer(local_files_only=False):
@@ -276,10 +277,10 @@ def unload_all_resources():
     import gc
 
     gc.collect()
-    
+
     global _resources_unloaded
     _resources_unloaded = True
-    
+
     logger.info("All resources unloaded successfully.")
 
 

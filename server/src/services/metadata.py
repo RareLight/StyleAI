@@ -30,6 +30,7 @@ import threading
 
 _inference_lock = threading.Lock()
 
+
 class AnalysisService:
     """
     Central service for managing metadata generation across multiple LLM providers.
@@ -342,18 +343,22 @@ class AnalysisService:
             all_embeddings = []
 
             with torch.no_grad():
+                from server_lifecycle import GLOBAL_CANCEL_EVENT
+
                 for i in range(0, len(valid_images), chunk_size):
+                    if GLOBAL_CANCEL_EVENT.is_set():
+                        raise RuntimeError("Batch canceled by watchdog.")
                     chunk_images = valid_images[i : i + chunk_size]
-                    
-                    # Interleave CPU preprocessing to allow other threads to use the GPU/GIL 
+
+                    # Interleave CPU preprocessing to allow other threads to use the GPU/GIL
                     # while this thread is doing CPU-bound image transformations.
                     tensors = [image_processor(img) for img in chunk_images]
                     chunk = torch.stack(tensors).to(TORCH_DEVICE)
-                    
+
                     # Acquire lock to serialize forward passes and prevent VRAM multiplier effect
                     with _inference_lock:
                         image_features = image_model.encode_image(chunk)
-                        
+
                     normalized = F.normalize(image_features, p=2, dim=1)
                     # .cpu() blocks this thread and releases the GIL until the GPU finishes.
                     # This allows other Waitress threads to run their CPU preprocessing concurrently!
@@ -383,8 +388,11 @@ class AnalysisService:
         from concurrent.futures import ThreadPoolExecutor
 
         results = [None] * len(uuids)
+        from server_lifecycle import GLOBAL_CANCEL_EVENT
 
         def process_single(i, uuid):
+            if GLOBAL_CANCEL_EVENT.is_set():
+                raise RuntimeError("Batch canceled by watchdog.")
             opt = options[i] if isinstance(options, list) else options
             # Inject per-image EXIF location data without mutating the options dict
             if exif_location_map and uuid in exif_location_map:

@@ -45,6 +45,8 @@ local ENDPOINTS = {
     START_CLIP_DOWNLOAD = "/clip/download/start",
     STATUS_CLIP_DOWNLOAD = "/clip/download/status",
     CLIP_STATUS = "/clip/status",
+    CANCEL_ALL_TASKS = "/cancel_all_tasks",
+    CLEAR_CANCEL_TASKS = "/clear_cancel_tasks",
     CHECK_UNPROCESSED = "/index/check-unprocessed",
     DB_BACKUP = "/db/backup",
     DB_PRUNE = "/db/prune",
@@ -1415,6 +1417,20 @@ function SearchIndexAPI.isServerEmpty()
     return false
 end
 
+function SearchIndexAPI.cancelBackendTasks()
+    log:info("Sending /cancel_all_tasks signal to backend...")
+    local url = getBaseUrl() .. ENDPOINTS.CANCEL_ALL_TASKS
+    -- Short timeout since it's just setting an event flag
+    _request('POST', url, nil, 3)
+end
+
+function SearchIndexAPI.clearBackendCancelTasks()
+    log:trace("Clearing backend cancellation flag...")
+    local url = getBaseUrl() .. ENDPOINTS.CLEAR_CANCEL_TASKS
+    _request('POST', url, nil, 3)
+end
+
+
 function SearchIndexAPI.getBackendVersion()
     return _request('GET', getBaseUrl() .. ENDPOINTS.VERSION)
 end
@@ -1768,6 +1784,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     if not SearchIndexAPI.pingServer() then
         return "allfailed", numPhotos, numPhotos, {}
     end
+    SearchIndexAPI.clearBackendCancelTasks()
 
     options = options or {}
     local shouldCloseScope = (closeProgressScope ~= false)
@@ -1911,6 +1928,19 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local processedPhotos = {}
     local activeWorkers = 0
     local keepRunning = true
+
+    -- Watchdog worker: immediately sends a cancellation signal to the backend if the user clicks the "X" in LrC UI.
+    -- This unblocks sender workers that are hung waiting for a long-running batch response.
+    LrTasks.startAsyncTask(function()
+        while keepRunning do
+            if progressScope and progressScope:isCanceled() then
+                SearchIndexAPI.cancelBackendTasks()
+                break
+            end
+            if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.5) end
+        end
+    end)
+
     local previewRequestState = {
         enabled = (prefs and prefs.usePreviewThumbnails ~= false),
         timeoutSeconds = tonumber(prefs and prefs.previewThumbnailTimeoutSeconds) or 12,

@@ -8,7 +8,9 @@ for i, uuid in enumerate(uuids):
         images_to_embed.append(uuid)
         valid_indices.append(i)
 
-batch_embeddings = [f"emb_{x}" for x in images_to_embed] # Mocking _generate_image_embeddings
+batch_embeddings = [
+    f"emb_{x}" for x in images_to_embed
+]  # Mocking _generate_image_embeddings
 
 for j, idx in enumerate(valid_indices):
     embeddings[idx] = batch_embeddings[j]

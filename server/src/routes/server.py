@@ -23,6 +23,22 @@ def shutdown():
     return jsonify({"status": "Server is shutting down..."})
 
 
+@server_bp.route("/cancel_all_tasks", methods=["POST"])
+def cancel_all_tasks():
+    """Immediately flags any running backend tasks to abort their processing loops."""
+    logger.info("Cancel request received: Aborting all ongoing backend tasks.")
+    server_lifecycle.GLOBAL_CANCEL_EVENT.set()
+    return jsonify({"status": "Canceled active tasks."})
+
+@server_bp.route("/clear_cancel_tasks", methods=["POST"])
+def clear_cancel_tasks():
+    """Clears the cancellation flag to allow new tasks to run."""
+    logger.info("Clear cancel request received: Backend ready for new tasks.")
+    server_lifecycle.GLOBAL_CANCEL_EVENT.clear()
+    return jsonify({"status": "Ready for new tasks."})
+
+
+
 @server_bp.route("/unload", methods=["POST"])
 def unload():
     """Unload models and collections from memory without stopping the server."""

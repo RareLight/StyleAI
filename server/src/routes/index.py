@@ -26,6 +26,11 @@ def index_images_batch():
     Returns a 200 OK status once all images are processed.
     """
     logger.info("Index request received")
+
+    import server_lifecycle
+
+    server_lifecycle.GLOBAL_CANCEL_EVENT.clear()
+
     images = request.files.getlist("image")
     photo_ids = _extract_photo_ids(request.form)
 
@@ -102,6 +107,10 @@ def index_images_batch_base64():
     Returns a 200 OK status once processed.
     """
     logger.info("Index base64 request received")
+    import server_lifecycle
+
+    server_lifecycle.GLOBAL_CANCEL_EVENT.clear()
+
     data = request.get_json()
 
     if not data:
@@ -121,7 +130,8 @@ def index_images_batch_base64():
     options = _extract_options(data)
 
     success_count, failure_count, error_messages, warnings = process_image_task(
-        [(base64.b64decode(image.encode("ascii")), photo_id, filename, None)], options=options
+        [(base64.b64decode(image.encode("ascii")), photo_id, filename, None)],
+        options=options,
     )
 
     logger.info(
@@ -160,6 +170,10 @@ def index_images_batch_base64_v2():
     }
     """
     logger.info("Index base64 batch request received")
+    import server_lifecycle
+
+    server_lifecycle.GLOBAL_CANCEL_EVENT.clear()
+
     data = request.get_json(silent=True) or {}
 
     images_data = data.get("images", [])
@@ -627,12 +641,14 @@ def check_unprocessed():
     Used by the Lightroom plugin for "New or unprocessed photos" scope.
     """
     data = request.get_json() or {}
-    
+
     # Prioritize native lr_uuids if available for fast metadata searches
     lr_uuids = data.get("lr_uuids")
     if lr_uuids:
         options = _extract_options(data)
-        needing = get_photo_ids_needing_processing(lr_uuids, options, search_by_lr_uuid=True)
+        needing = get_photo_ids_needing_processing(
+            lr_uuids, options, search_by_lr_uuid=True
+        )
         logger.info(
             f"check-unprocessed: {len(needing)} of {len(lr_uuids)} photos need processing (by LR UUID)"
         )
