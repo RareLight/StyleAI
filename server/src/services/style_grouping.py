@@ -539,26 +539,24 @@ def _build_subgroup(
 # ---------------------------------------------------------------------------
 
 
-def group_examples_by_camera_genre(
+def group_examples_by_profile_genre(
     examples: list[dict[str, Any]],
-) -> dict[tuple[str, str, str, str], list[dict[str, Any]]]:
-    """Group training examples by (camera_make, camera_model, profile, genre).
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    """Group training examples by (profile, genre).
 
     Args:
         examples: List of training-example metadata dicts (from ChromaDB).
 
     Returns:
-        Dict keyed by (camera_make, camera_model, profile, genre) → list of examples.
+        Dict keyed by (profile, genre) → list of examples.
     """
-    groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for ex in examples:
-        camera_make = (ex.get("camera_make") or "").strip()
-        camera_model = (ex.get("camera_model") or "").strip()
         profile = _profile_name(ex.get("camera_profile"))
         scene_tags = _safe_json_loads(ex.get("scene_tags"), [])
         user_keywords = _safe_json_loads(ex.get("user_keywords"), [])
         genre = _primary_genre_with_keywords(scene_tags, user_keywords)
-        key = (camera_make, camera_model, profile, genre)
+        key = (profile, genre)
         groups.setdefault(key, []).append(ex)
     return groups
 
@@ -570,7 +568,7 @@ def split_subgenres(
     """Auto-split a group of examples into subgenres when develop variance is high.
 
     Args:
-        group_examples: List of examples sharing the same (camera, profile, genre).
+        group_examples: List of examples sharing the same (profile, genre).
         variance_threshold: Maximum acceptable *normalised* variance before splitting.
 
     Returns:
@@ -582,22 +580,22 @@ def split_subgenres(
 
 
 def generate_style_name(
-    camera_model: str,
+    camera_profile: str,
     genre: str,
     subgenre: str | None,
-    camera_profile: str | None = None,
 ) -> str:
-    """Generate a human-readable style name.
+    """Generate a human-readable style name based on profile and genre.
 
     Examples:
-        "Nikon Z 7 — Architecture & City"
-        "Nikon Z 7 — Portrait (Natural Light)"
-        "Nikon Z 7 — Landscape [AgX-Like Med++]"
+        "Adobe Color — Architecture & City"
+        "Adobe Landscape — Portrait (Natural Light)"
+        "Camera Standard — Landscape [AgX-Like Med++]"
     """
     # Clean up genre tag (remove "scene_" prefix, title-case)
     clean_genre = genre.replace("scene_", "").replace("_", " ").title()
 
-    parts = [f"{camera_model} — {clean_genre}"]
+    base_name = camera_profile if camera_profile else "Adobe Standard"
+    parts = [f"{base_name} — {clean_genre}"]
 
     if subgenre and subgenre != "unknown":
         clean_sub = subgenre.replace("scene_", "").replace("_", " ").title()

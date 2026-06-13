@@ -1,4 +1,3 @@
-import json
 from src.utils.request_parsing import _extract_options
 
 data = {

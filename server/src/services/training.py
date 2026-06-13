@@ -986,13 +986,16 @@ def get_training_stats() -> dict[str, Any]:
     top_styles: list[dict[str, Any]] = []
     try:
         from services import style_catalog
+
         styles = style_catalog.list_styles()
         styles.sort(key=lambda s: s.get("example_count", 0), reverse=True)
         for s in styles[:5]:
-            top_styles.append({
-                "name": s.get("style_name") or s.get("style_id") or "Unknown",
-                "count": s.get("example_count", 0)
-            })
+            top_styles.append(
+                {
+                    "name": s.get("style_name") or s.get("style_id") or "Unknown",
+                    "count": s.get("example_count", 0),
+                }
+            )
     except Exception:
         pass
 

@@ -30,13 +30,13 @@ def cancel_all_tasks():
     server_lifecycle.GLOBAL_CANCEL_EVENT.set()
     return jsonify({"status": "Canceled active tasks."})
 
+
 @server_bp.route("/clear_cancel_tasks", methods=["POST"])
 def clear_cancel_tasks():
     """Clears the cancellation flag to allow new tasks to run."""
     logger.info("Clear cancel request received: Backend ready for new tasks.")
     server_lifecycle.GLOBAL_CANCEL_EVENT.clear()
     return jsonify({"status": "Ready for new tasks."})
-
 
 
 @server_bp.route("/unload", methods=["POST"])

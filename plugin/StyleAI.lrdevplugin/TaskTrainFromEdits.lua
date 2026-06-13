@@ -228,7 +228,11 @@ LrTasks.startAsyncTask(function()
 								if result.status == "ok" then
 									successCount = successCount + 1
 									if result.warning then
-										table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+										if string.find(result.warning, "Already trained") then
+											log:info("Suppressed warning: " .. result.warning)
+										else
+											table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+										end
 									end
 								else
 									errorCount = errorCount + 1

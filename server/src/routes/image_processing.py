@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("image_processing", __name__)
 
 # Since Lightroom now correctly downsamples TIFFs to 1024px before sending them here,
-# the memory footprint per image is ~20MB instead of 2.4GB. We can safely scale 
-# concurrency to the maximum number of Waitress threads (based on CPU cores) 
+# the memory footprint per image is ~20MB instead of 2.4GB. We can safely scale
+# concurrency to the maximum number of Waitress threads (based on CPU cores)
 # instead of heavily restricting it due to RAM.
 _max_bracket_workers = max(4, multiprocessing.cpu_count())
 BRACKET_SEMAPHORE = threading.Semaphore(_max_bracket_workers)
@@ -121,6 +121,4 @@ def generate_brackets():
 
         except Exception as e:
             logger.error(f"Error generating brackets: {e}", exc_info=True)
-            return jsonify(
-                {"error": str(e), "results": None, "warning": None}
-            ), 500
+            return jsonify({"error": str(e), "results": None, "warning": None}), 500
