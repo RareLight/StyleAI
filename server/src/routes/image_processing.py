@@ -3,11 +3,15 @@ import logging
 import base64
 import cv2
 import numpy as np
+import threading
 from services.audit import log_diagnostic_image
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("image_processing", __name__)
+
+# Prevent OOM killer when processing multiple 50MP 16-bit TIFFs concurrently
+BRACKET_SEMAPHORE = threading.Semaphore(2)
 
 
 def prophoto_to_linear(img_16bit):
@@ -46,69 +50,72 @@ def apply_ev_shift(img_linear, ev_shift):
 
 @bp.route("/generate_brackets", methods=["POST"])
 def generate_brackets():
-    if "image" not in request.files:
-        return jsonify(
-            {"error": "No image file provided", "results": None, "warning": None}
-        ), 400
+    with BRACKET_SEMAPHORE:
+        if "image" not in request.files:
+            return jsonify(
+                {"error": "No image file provided", "results": None, "warning": None}
+            ), 400
 
-    file = request.files["image"]
-    file_bytes_raw = file.read()
-    file_bytes = np.frombuffer(file_bytes_raw, np.uint8)
+        file = request.files["image"]
+        file_bytes_raw = file.read()
+        file_bytes = np.frombuffer(file_bytes_raw, np.uint8)
 
-    # Attempt to read as unchanged (which preserves 16-bit TIFF depth if present)
-    img = cv2.imdecode(file_bytes, cv2.IMREAD_UNCHANGED)
+        # Attempt to read as unchanged (which preserves 16-bit TIFF depth if present)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_UNCHANGED)
 
-    if img is None:
-        # Save original file so we can inspect why OpenCV failed
-        audit_llm_inputs = (
-            str(request.form.get("audit_llm_inputs", "")).lower() == "true"
-        )
-        audit_path = request.form.get("audit_llm_inputs_path")
-        if audit_llm_inputs:
-            log_diagnostic_image(
-                file_bytes_raw, "aiedit", file.filename, output_dir=audit_path
+        if img is None:
+            # Save original file so we can inspect why OpenCV failed
+            audit_llm_inputs = (
+                str(request.form.get("audit_llm_inputs", "")).lower() == "true"
             )
-        return jsonify(
-            {"error": "Failed to decode image", "results": None, "warning": None}
-        ), 400
+            audit_path = request.form.get("audit_llm_inputs_path")
+            if audit_llm_inputs:
+                log_diagnostic_image(
+                    file_bytes_raw, "aiedit", file.filename, output_dir=audit_path
+                )
+            return jsonify(
+                {"error": "Failed to decode image", "results": None, "warning": None}
+            ), 400
 
-    try:
-        if img.dtype == np.uint16:
-            # It's a 16-bit TIFF in ProPhoto RGB
-            logger.info("Processing 16-bit TIFF for bracketing")
-            linear = prophoto_to_linear(img)
+        try:
+            if img.dtype == np.uint16:
+                # It's a 16-bit TIFF in ProPhoto RGB
+                logger.info("Processing 16-bit TIFF for bracketing")
+                linear = prophoto_to_linear(img)
 
-            base_b64 = apply_ev_shift(linear, 0.0)
-            dark_b64 = apply_ev_shift(linear, -2.0)
-            bright_b64 = apply_ev_shift(linear, 2.0)
-        else:
-            # It's an 8-bit JPEG in sRGB
-            logger.info("Processing 8-bit JPEG for bracketing")
-            linear = srgb_to_linear(img)
+                base_b64 = apply_ev_shift(linear, 0.0)
+                dark_b64 = apply_ev_shift(linear, -2.0)
+                bright_b64 = apply_ev_shift(linear, 2.0)
+            else:
+                # It's an 8-bit JPEG in sRGB
+                logger.info("Processing 8-bit JPEG for bracketing")
+                linear = srgb_to_linear(img)
 
-            base_b64 = apply_ev_shift(linear, 0.0)
-            dark_b64 = apply_ev_shift(linear, -2.0)
-            bright_b64 = apply_ev_shift(linear, 2.0)
+                base_b64 = apply_ev_shift(linear, 0.0)
+                dark_b64 = apply_ev_shift(linear, -2.0)
+                bright_b64 = apply_ev_shift(linear, 2.0)
 
-        # Leave audit trail for debugging if enabled
-        audit_llm_inputs = (
-            str(request.form.get("audit_llm_inputs", "")).lower() == "true"
-        )
-        audit_path = request.form.get("audit_llm_inputs_path")
-
-        if audit_llm_inputs:
-            log_diagnostic_image(
-                file_bytes_raw,
-                "aiedit",
-                file.filename,
-                {"base": base_b64, "dark": dark_b64, "bright": bright_b64},
-                output_dir=audit_path,
+            # Leave audit trail for debugging if enabled
+            audit_llm_inputs = (
+                str(request.form.get("audit_llm_inputs", "")).lower() == "true"
             )
+            audit_path = request.form.get("audit_llm_inputs_path")
 
-        results = {"base": base_b64, "dark": dark_b64, "bright": bright_b64}
+            if audit_llm_inputs:
+                log_diagnostic_image(
+                    file_bytes_raw,
+                    "aiedit",
+                    file.filename,
+                    {"base": base_b64, "dark": dark_b64, "bright": bright_b64},
+                    output_dir=audit_path,
+                )
 
-        return jsonify({"results": results, "error": None, "warning": None}), 200
+            results = {"base": base_b64, "dark": dark_b64, "bright": bright_b64}
 
-    except Exception as e:
-        logger.error(f"Error generating brackets: {e}", exc_info=True)
-        return jsonify({"error": str(e), "results": None, "warning": None}), 500
+            return jsonify({"results": results, "error": None, "warning": None}), 200
+
+        except Exception as e:
+            logger.error(f"Error generating brackets: {e}", exc_info=True)
+            return jsonify(
+                {"error": str(e), "results": None, "warning": None}
+            ), 500
