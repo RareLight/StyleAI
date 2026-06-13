@@ -4036,6 +4036,29 @@ function SearchIndexAPI.exportStyles()
 end
 
 ---
+-- Export the style catalog as a Lightroom Classic Presets .zip file.
+-- @return boolean success, string zipData or error message
+---
+function SearchIndexAPI.exportPresets()
+    local url = getBaseUrl() .. "/styles/export-presets"
+    -- 60s timeout, raw=true to receive binary zip without JSON decoding
+    local responseBody, hdrs = _request('GET', url, {}, 60, { raw = true })
+    if not responseBody then
+        return false, hdrs or "Unknown error downloading presets"
+    end
+    
+    -- Check if it looks like a JSON error instead of a zip file
+    if type(responseBody) == "string" and responseBody:match("^%s*{") then
+        local ok, errJson = pcall(JSON.decode, responseBody)
+        if ok and errJson and errJson.error then
+            return false, errJson.error
+        end
+    end
+    
+    return true, responseBody
+end
+
+---
 -- Import a style catalog from JSON data.
 -- @param data table The JSON data representing styles
 -- @return boolean success, string error message if any

@@ -133,6 +133,38 @@ def migrate_styles():
 
 
 # ---------------------------------------------------------------------------
+# GET /styles/export-presets
+# ---------------------------------------------------------------------------
+
+
+@style_catalog_bp.route("/styles/export-presets", methods=["GET"])
+def export_presets():
+    try:
+        from services import preset_generator
+
+        styles = catalog_service.list_styles()
+        if not styles:
+            return jsonify({"error": "No styles available to export."}), 400
+
+        zip_data = preset_generator.create_presets_zip(
+            styles, catalog_service.get_style_recipe
+        )
+
+        import io
+        from flask import send_file
+
+        return send_file(
+            io.BytesIO(zip_data),
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name="SignatureStyles_Presets.zip",
+        )
+    except Exception as exc:
+        logger.error("Failed to export presets: %s", exc, exc_info=True)
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
 # GET /styles/export
 # ---------------------------------------------------------------------------
 
