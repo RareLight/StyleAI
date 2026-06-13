@@ -4,14 +4,19 @@ import base64
 import cv2
 import numpy as np
 import threading
+import multiprocessing
 from services.audit import log_diagnostic_image
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("image_processing", __name__)
 
-# Prevent OOM killer when processing multiple 50MP 16-bit TIFFs concurrently
-BRACKET_SEMAPHORE = threading.Semaphore(2)
+# Since Lightroom now correctly downsamples TIFFs to 1024px before sending them here,
+# the memory footprint per image is ~20MB instead of 2.4GB. We can safely scale 
+# concurrency to the maximum number of Waitress threads (based on CPU cores) 
+# instead of heavily restricting it due to RAM.
+_max_bracket_workers = max(4, multiprocessing.cpu_count())
+BRACKET_SEMAPHORE = threading.Semaphore(_max_bracket_workers)
 
 
 def prophoto_to_linear(img_16bit):

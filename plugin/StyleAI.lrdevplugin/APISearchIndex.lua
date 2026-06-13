@@ -79,6 +79,7 @@ local EXPORT_SETTINGS = {
     LR_format = 'JPEG',
     LR_jpeg_quality = 85,
     LR_size_doConstrain = true,
+    LR_size_maxWidth = 1024,
     LR_size_maxHeight = 1024,
     LR_size_resizeType = 'longEdge',
     LR_size_units = 'pixels',
