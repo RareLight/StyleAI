@@ -346,7 +346,7 @@ def add_training_batch():
     try:
         from services import style_catalog
 
-        style_catalog.recalculate_all_styles()
+        style_catalog.discover_styles_from_examples()
     except Exception as exc:
         logger.error("Failed to recalculate styles after batch: %s", exc)
 

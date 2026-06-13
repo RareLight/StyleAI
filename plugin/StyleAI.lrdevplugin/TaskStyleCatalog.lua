@@ -34,7 +34,7 @@ LrTasks.startAsyncTask(function()
 		props.detailDesc = ""
 
 		local function updateDetailView()
-			local idx = props.selectedStyleIndex
+			local idx = tonumber(props.selectedStyleIndex)
 			if not idx or idx < 1 or not props.styles or idx > #props.styles then
 				props.detailName = "Select a style to view details."
 				props.detailGenre = ""
@@ -55,13 +55,10 @@ LrTasks.startAsyncTask(function()
 			props.detailCount = tostring(count)
 			if count < 3 then
 				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthWeak=🔴 Undertrained")
-				props.detailStrengthColor = LrColor(0.8, 0, 0)
 			elseif count < 10 then
 				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthGood=🟡 Good")
-				props.detailStrengthColor = LrColor(0.8, 0.6, 0)
 			else
 				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthStrong=🟢 Strong")
-				props.detailStrengthColor = LrColor(0, 0.8, 0)
 			end
 			
 			props.detailDesc = s.description or ""
@@ -409,7 +406,7 @@ LrTasks.startAsyncTask(function()
 								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailExamples=Examples:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
 								f:static_text({ title = bind("detailCount") }),
 								f:spacer({ width = 10 }),
-								f:static_text({ title = bind("detailStrengthText"), text_color = bind("detailStrengthColor"), font = "<system/bold>" }),
+								f:static_text({ title = bind("detailStrengthText"), font = "<system/bold>" }),
 							}),
 						}),
 						f:column({
