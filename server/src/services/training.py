@@ -983,6 +983,19 @@ def get_training_stats() -> dict[str, Any]:
             sum(exp_colorfulness) / len(exp_colorfulness), 3
         )
 
+    top_styles: list[dict[str, Any]] = []
+    try:
+        from services import style_catalog
+        styles = style_catalog.list_styles()
+        styles.sort(key=lambda s: s.get("example_count", 0), reverse=True)
+        for s in styles[:5]:
+            top_styles.append({
+                "name": s.get("style_name") or s.get("style_id") or "Unknown",
+                "count": s.get("example_count", 0)
+            })
+    except Exception:
+        pass
+
     return {
         "count": count,
         "has_enough_examples": count >= 10,
@@ -992,6 +1005,7 @@ def get_training_stats() -> dict[str, Any]:
         "time_of_day": tod_dist,
         "camera_distribution": camera_dist,
         "exposure": exposure_stats,
+        "top_signature_styles": top_styles,
     }
 
 

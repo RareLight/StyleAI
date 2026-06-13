@@ -41,8 +41,11 @@ LrTasks.startAsyncTask(function()
 			if type(rawIdx) == "table" then
 				if rawIdx.value then
 					idx = tonumber(rawIdx.value)
+				elseif rawIdx[1] ~= nil then
+					-- Lightroom sometimes returns an array of the 'value' fields of selected items
+					idx = tonumber(rawIdx[1])
 				else
-					for _, item in ipairs(props.listItems) do
+					for _, item in ipairs(props.listItems or {}) do
 						if item == rawIdx or item.title == rawIdx.title then
 							idx = item.value
 							break
@@ -61,6 +64,7 @@ LrTasks.startAsyncTask(function()
 				props.detailDesc = ""
 				return
 			end
+			
 			local s = props.styles[idx]
 			props.detailName = s.style_name or ""
 			props.detailGenre = s.genre or ""
