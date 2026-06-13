@@ -19,6 +19,7 @@ LrTasks.startAsyncTask(function()
 
 		-- State
 		props.styles = {}
+		props.listItems = {}
 		props.selectedStyleIndex = 0
 		props.isLoading = false
 		props.statusMessage = ""
@@ -35,11 +36,19 @@ LrTasks.startAsyncTask(function()
 
 		local function updateDetailView()
 			local rawIdx = props.selectedStyleIndex
-			log:info("updateDetailView called with selectedStyleIndex type:", type(rawIdx), "value:", tostring(rawIdx))
-			
 			local idx = tonumber(rawIdx)
-			if type(rawIdx) == "table" and rawIdx.value then
-				idx = tonumber(rawIdx.value)
+			
+			if type(rawIdx) == "table" then
+				if rawIdx.value then
+					idx = tonumber(rawIdx.value)
+				else
+					for _, item in ipairs(props.listItems) do
+						if item == rawIdx or item.title == rawIdx.title then
+							idx = item.value
+							break
+						end
+					end
+				end
 			end
 			
 			if not idx or idx < 1 or not props.styles or idx > #props.styles then
@@ -83,6 +92,18 @@ LrTasks.startAsyncTask(function()
 				local success, result = SearchIndexAPI.listStyles()
 				if success then
 					props.styles = result or {}
+					
+					-- Build list items
+					local items = {}
+					for i, style in ipairs(props.styles) do
+						local name = style.style_name or style.style_id or "Unknown"
+						local count = style.example_count or 0
+						local profile = style.camera_profile or "default"
+						local label = name .. "  [" .. count .. " examples, " .. profile .. "]"
+						table.insert(items, { title = label, value = i })
+					end
+					props.listItems = items
+
 					props.statusMessage = LOC(
 						"$$$/StyleAI/StyleCatalog/LoadedCount=^1 style(s) discovered.",
 						tostring(#props.styles)
@@ -96,6 +117,7 @@ LrTasks.startAsyncTask(function()
 						tostring(result)
 					)
 					props.styles = {}
+					props.listItems = {}
 				end
 
 				props.isLoading = false
@@ -231,54 +253,53 @@ LrTasks.startAsyncTask(function()
 			props.isLoading = false
 		end
 
-		-- Export styles to file
+		-- Export styles to file as Presets ZIP
 		local function exportStyles()
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Exporting=Exporting styles...")
+			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportingPresets=Exporting presets...")
 
-			local success, data = SearchIndexAPI.exportStyles()
-			if not success then
-				props.statusMessage = LOC(
-					"$$$/StyleAI/StyleCatalog/ExportError=Export failed: ^1",
-					tostring(data)
-				)
-				props.isLoading = false
-				return
-			end
-
-			local catalog = LrApplication.activeCatalog()
-			local catalogPath = catalog:getPath()
-			local catalogDir = LrPathUtils.parent(catalogPath)
-
-			local path = LrDialogs.runSavePanel({
-				title = LOC("$$$/StyleAI/StyleCatalog/ExportDialogTitle=Export Style Catalog"),
-				prompt = LOC("$$$/StyleAI/StyleCatalog/ExportDialogPrompt=Save"),
-				requiredFileType = "json",
-				initialDirectory = catalogDir,
-			})
-
-			if path then
-				-- Ensure .json extension
-				if not path:match("%.json$") then
-					path = path .. ".json"
-				end
-
-				local file = io.open(path, "w")
-				if file then
-					file:write(JSON:encode(data))
-					file:close()
+			LrTasks.startAsyncTask(function()
+				local success, data = SearchIndexAPI.exportPresets()
+				if not success then
 					props.statusMessage = LOC(
-						"$$$/StyleAI/StyleCatalog/ExportedTo=Exported to ^1",
-						path
+						"$$$/StyleAI/StyleCatalog/ExportError=Export failed: ^1",
+						tostring(data)
 					)
-				else
-					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportFileError=Could not write file.")
+					props.isLoading = false
+					return
 				end
-			else
-				props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportCancelled=Export cancelled.")
-			end
 
-			props.isLoading = false
+				local catalog = LrApplication.activeCatalog()
+				local catalogPath = catalog:getPath()
+				local catalogDir = LrPathUtils.parent(catalogPath)
+
+				local path = LrDialogs.runSavePanel({
+					title = LOC("$$$/StyleAI/StyleCatalog/ExportDialogTitle=Export Signature Style Presets"),
+					prompt = LOC("$$$/StyleAI/StyleCatalog/ExportDialogPrompt=Save ZIP"),
+					requiredFileType = "zip",
+					initialDirectory = catalogDir,
+					initialFilename = "SignatureStyles_Presets.zip",
+				})
+
+				if path then
+					local file = io.open(path, "wb")
+					if file then
+						file:write(data)
+						file:close()
+						props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportSuccess=Presets exported successfully!")
+						LrDialogs.message(
+							LOC("$$$/StyleAI/StyleCatalog/ExportSuccessTitle=Export Successful"),
+							LOC("$$$/StyleAI/StyleCatalog/ExportSuccessMsg=Your presets have been saved to the ZIP file. Unzip them and import them into Lightroom Classic's Presets panel."),
+							"info"
+						)
+					else
+						props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportFileError=Failed to open file for writing.")
+					end
+				else
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportCancelled=Export cancelled.")
+				end
+				props.isLoading = false
+			end)
 		end
 
 		-- Build the dialog contents
@@ -369,20 +390,7 @@ LrTasks.startAsyncTask(function()
 					fill_horizontal = 1,
 					fill_vertical = 1,
 					f:simple_list({
-						items = bind({
-							key = "styles",
-							transform = function(styles)
-								local items = {}
-								for i, style in ipairs(styles) do
-									local name = style.style_name or style.style_id or "Unknown"
-									local count = style.example_count or 0
-									local profile = style.camera_profile or "default"
-									local label = name .. "  [" .. count .. " examples, " .. profile .. "]"
-									table.insert(items, { title = label, value = i })
-								end
-								return items
-							end,
-						}),
+						items = bind("listItems"),
 						value = bind("selectedStyleIndex"),
 						allows_multiple_selection = false,
 						height_in_lines = 12,
