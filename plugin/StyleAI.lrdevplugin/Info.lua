@@ -27,12 +27,12 @@ return {
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
-			file = "TaskAiEditPhotos.lua",
-		},
-		{
 			title = LOC("$$$/StyleAI/Training/MenuItem=Train AI Style (Save Edits)..."),
 			file = "TaskTrainFromEdits.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
+			file = "TaskAiEditPhotos.lua",
 		},
 		{
 			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Manage AI Styles (Catalog)..."),
@@ -50,12 +50,12 @@ return {
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
-			file = "TaskAiEditPhotos.lua",
-		},
-		{
 			title = LOC("$$$/StyleAI/Training/MenuItem=Train AI Style (Save Edits)..."),
 			file = "TaskTrainFromEdits.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
+			file = "TaskAiEditPhotos.lua",
 		},
 		{
 			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Manage AI Styles (Catalog)..."),

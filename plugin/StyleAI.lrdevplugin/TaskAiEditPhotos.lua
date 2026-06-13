@@ -407,6 +407,7 @@ local function showAiEditDialog(ctx)
 		UIFactory.SettingsGroup(f, {
 			title = LOC "$$$/StyleAI/UI/PrivacySettings=Privacy & Anonymization",
 			fill_horizontal = 1,
+			visible = bind("showLlmOptions"),
 			f:column({
 				spacing = f:control_spacing(),
 					f:checkbox({
