@@ -34,7 +34,14 @@ LrTasks.startAsyncTask(function()
 		props.detailDesc = ""
 
 		local function updateDetailView()
-			local idx = tonumber(props.selectedStyleIndex)
+			local rawIdx = props.selectedStyleIndex
+			log:info("updateDetailView called with selectedStyleIndex type:", type(rawIdx), "value:", tostring(rawIdx))
+			
+			local idx = tonumber(rawIdx)
+			if type(rawIdx) == "table" and rawIdx.value then
+				idx = tonumber(rawIdx.value)
+			end
+			
 			if not idx or idx < 1 or not props.styles or idx > #props.styles then
 				props.detailName = "Select a style to view details."
 				props.detailGenre = ""
@@ -72,25 +79,27 @@ LrTasks.startAsyncTask(function()
 			props.isLoading = true
 			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Loading=Loading styles...")
 
-			local success, result = SearchIndexAPI.listStyles()
-			if success then
-				props.styles = result or {}
-				props.statusMessage = LOC(
-					"$$$/StyleAI/StyleCatalog/LoadedCount=^1 style(s) discovered.",
-					tostring(#props.styles)
-				)
-				if #props.styles > 0 then
-					props.selectedStyleIndex = 1
+			LrTasks.startAsyncTask(function()
+				local success, result = SearchIndexAPI.listStyles()
+				if success then
+					props.styles = result or {}
+					props.statusMessage = LOC(
+						"$$$/StyleAI/StyleCatalog/LoadedCount=^1 style(s) discovered.",
+						tostring(#props.styles)
+					)
+					if #props.styles > 0 then
+						props.selectedStyleIndex = 1
+					end
+				else
+					props.statusMessage = LOC(
+						"$$$/StyleAI/StyleCatalog/LoadError=Error loading styles: ^1",
+						tostring(result)
+					)
+					props.styles = {}
 				end
-			else
-				props.statusMessage = LOC(
-					"$$$/StyleAI/StyleCatalog/LoadError=Error loading styles: ^1",
-					tostring(result)
-				)
-				props.styles = {}
-			end
 
-			props.isLoading = false
+				props.isLoading = false
+			end)
 		end
 
 		-- Discover styles from all training examples
