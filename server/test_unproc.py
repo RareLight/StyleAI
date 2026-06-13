@@ -1,5 +1,4 @@
 import requests
-import json
 import time
 
 uuids = [f"uuid_{i}" for i in range(50000)]

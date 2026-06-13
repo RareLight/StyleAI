@@ -1,5 +1,4 @@
 import lmstudio as lms
-import sys
 
 client = lms.Client("localhost:1234")
 try:

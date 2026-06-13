@@ -19,7 +19,6 @@ from . import exif as exif_service
 import gc
 import json
 from datetime import datetime as time
-from functools import lru_cache
 from PIL import Image
 import io
 import numpy as np

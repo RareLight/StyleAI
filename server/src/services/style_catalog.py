@@ -303,12 +303,12 @@ def discover_styles_from_examples(
     # Pull full metadatas from ChromaDB.
     rich_examples = _fetch_rich_examples([ex["photo_id"] for ex in examples])
 
-    # 2. Group by (camera_make, camera_model, camera_profile, primary_genre)
-    groups = grouping.group_examples_by_camera_genre(rich_examples)
+    # 2. Group by (camera_profile, primary_genre)
+    groups = grouping.group_examples_by_profile_genre(rich_examples)
 
     created_styles: list[dict[str, Any]] = []
 
-    for (camera_make, camera_model, camera_profile, genre), group_ex in groups.items():
+    for (camera_profile, genre), group_ex in groups.items():
         if len(group_ex) < 2:
             continue  # Need at least 2 examples for a meaningful style
 
@@ -318,9 +318,7 @@ def discover_styles_from_examples(
         for sg in subgroups:
             subgenre = sg["subgenre"]
             profile = sg.get("camera_profile") or camera_profile
-            style_name = grouping.generate_style_name(
-                camera_model, genre, subgenre, camera_profile=profile
-            )
+            style_name = grouping.generate_style_name(profile, genre, subgenre)
             style_id = _slugify(style_name)
 
             # Ensure uniqueness
@@ -335,8 +333,8 @@ def discover_styles_from_examples(
             style = {
                 "style_id": style_id,
                 "style_name": style_name,
-                "camera_make": camera_make,
-                "camera_model": camera_model,
+                "camera_make": "",
+                "camera_model": "",
                 "camera_profile": profile,
                 "genre": genre,
                 "subgenre": subgenre,
@@ -439,22 +437,13 @@ def find_matching_styles(
     for style in all_styles:
         score = 0.0
 
-        # Camera component (40%)
-        cam_score = 0.0
-        if camera_model and style.get("camera_model"):
-            if camera_model.strip().lower() == style["camera_model"].strip().lower():
-                cam_score = 1.0
-                # Profile bonus/penalty within same camera model
-                style_profile = (style.get("camera_profile") or "").strip()
-                if profile and style_profile:
-                    if profile.lower() == style_profile.lower():
-                        cam_score = 1.0  # exact camera + profile
-                    else:
-                        cam_score = 0.7  # same camera, different profile
-            elif camera_make and style.get("camera_make"):
-                if camera_make.strip().lower() == style["camera_make"].strip().lower():
-                    cam_score = 0.5
-        score += 0.40 * cam_score
+        # Profile component (40%)
+        profile_score = 0.0
+        style_profile = (style.get("camera_profile") or "").strip()
+        if profile and style_profile:
+            if profile.lower() == style_profile.lower():
+                profile_score = 1.0
+        score += 0.40 * profile_score
 
         # Genre component (35%)
         genre_score = 0.0

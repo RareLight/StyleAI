@@ -2,8 +2,6 @@ import sys
 
 sys.path.append("src")
 import server_lifecycle
-from services.training import compute_scene_tags, _SCENE_PROBES
-import open_clip
 from PIL import Image
 import torch
 import torch.nn.functional as F

@@ -98,7 +98,7 @@ def create_presets_zip(styles: List[Dict[str, Any]], recipe_fetcher) -> bytes:
                 continue
 
             # Formatting the name and group
-            camera_model = style.get("camera_model", "Unknown Camera")
+            camera_profile = style.get("camera_profile") or "Adobe Standard"
             style_name = (
                 style.get("style_name") or style.get("user_style_name") or style_id
             )
@@ -110,7 +110,7 @@ def create_presets_zip(styles: List[Dict[str, Any]], recipe_fetcher) -> bytes:
             if not safe_name:
                 safe_name = style_id
 
-            group_name = f"{camera_model} Signature Styles"
+            group_name = f"{camera_profile} Signature Styles"
 
             xmp_content = generate_xmp_preset(
                 name=style_name, group=group_name, settings=recipe
