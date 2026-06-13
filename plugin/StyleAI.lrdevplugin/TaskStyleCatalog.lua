@@ -14,6 +14,7 @@ LrTasks.startAsyncTask(function()
 
 		local f = LrView.osFactory()
 		local bind = LrView.bind
+		local share = LrView.share
 		local props = LrBinding.makePropertyTable(ctx)
 
 		-- State

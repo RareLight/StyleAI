@@ -6,12 +6,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Linting (Python)
-        uses: astral-sh/ruff-action@v4
+        uses: astral-sh/ruff-action@v4.0.0
         with:
           args: "check"
           src: "./server"
       - name: Formatting (Python)
-        uses: astral-sh/ruff-action@v4
+        uses: astral-sh/ruff-action@v4.0.0
         with:
           args: "format --check --diff"
           src: "./server"
