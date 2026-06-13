@@ -285,7 +285,7 @@ LrTasks.startAsyncTask(function()
 				-- Title
 				f:row({
 					f:static_text({
-						title = LOC("$$$/StyleAI/StyleCatalog/Title=AI Style Catalog"),
+						title = LOC("$$$/StyleAI/StyleCatalog/Title=Signature Styles Index"),
 						font = "bold",
 						size = "large",
 					}),
@@ -426,7 +426,7 @@ LrTasks.startAsyncTask(function()
 
 		-- Show the dialog
 		LrDialogs.presentModalDialog({
-			title = LOC("$$$/StyleAI/StyleCatalog/DialogTitle=AI Style Catalog"),
+			title = LOC("$$$/StyleAI/StyleCatalog/DialogTitle=Signature Styles Index"),
 			contents = buildDialog(),
 			actionVerb = LOC("$$$/StyleAI/common/Close=Close"),
 		})

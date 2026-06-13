@@ -35,7 +35,7 @@ return {
 			file = "TaskAiEditPhotos.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Manage AI Styles (Catalog)..."),
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=AI Styles Index..."),
 			file = "TaskStyleCatalog.lua",
 		},
 		{
@@ -58,7 +58,7 @@ return {
 			file = "TaskAiEditPhotos.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=Manage AI Styles (Catalog)..."),
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=AI Styles Index..."),
 			file = "TaskStyleCatalog.lua",
 		},
 	},
