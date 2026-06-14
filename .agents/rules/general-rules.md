@@ -14,7 +14,11 @@ These rules ensure consistency across the Lightroom plugin and the Python backen
 ## Plugin Development (Lua)
 - **Asynchronicity**: Long-running operations must run in `LrTasks.startAsyncTask`.
 - **Task Pattern**: Follow the `Task*.lua` naming convention for top-level plugin actions.
-- **Yielding**: Use `LrTasks.pcall` instead of native `pcall` to allow for yielding during asynchronous operations.
+- **Yielding & C-Stack Overflows**: 
+  - Use `LrTasks.pcall` instead of native `pcall` to allow for yielding during asynchronous operations.
+  - **CRITICAL**: NEVER call `LrTasks.yield()` inside `withWriteAccessDo` or `withPrivateWriteAccessDo` closures. Doing so while holding a C-level transaction lock will cause fatal C-stack overflows.
+  - **macOS Spin-Locks**: NEVER use `if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end`. On macOS, `yield()` without sleep fails to return control to the UI scheduler, causing C-stack accumulation during batches. ALWAYS use `LrTasks.yield(); LrTasks.sleep(0.01)` to ensure proper flushing.
+  - **Transaction Bloat**: Consolidate multiple database transactions into a single `withWriteAccessDo` block per photo to minimize SQLite queue overhead.
 - **Localization**: All GUI strings MUST be localized using the `LOC` function. Keep `TranslatedStrings_de.txt` (German) and `TranslatedStrings_fr.txt` (French) synchronized with the primary English strings.
 - **Utilities**: Leverage `Util.lua` for common logic (e.g., table manipulation, stable photo IDs, file hashing).
 - **Photo Identity**: Prefer the stable `globalPhotoId` (metadata-based) generated via `Util.getGlobalPhotoIdForPhoto` for cross-catalog consistency.
@@ -23,6 +27,7 @@ These rules ensure consistency across the Lightroom plugin and the Python backen
 - **Structure**: Organize endpoints using Flask Blueprints (`routes/*.py`). Keep business logic in the service layer (`services/*.py`).
 - **API Response Format**: Return structured JSON. Standard fields include `results`, `error`, and `warning` (actionable short message for the GUI).
 - **Environment**: Configuration should be driven by environment variables (e.g., `STYLEAI_PORT`, `STYLEAI_BACKUP_ENABLED`).
+- **Memory Efficiency**: ALWAYS call `Image.thumbnail()` BEFORE `.convert("RGB")` when processing user images. Calling `.convert("RGB")` first allocates the full uncompressed array in RAM, leading to severe OOM spikes during batch processing.
 - **Lifecycle**: Respect `server_lifecycle.py` for PID management and "OK" file signaling.
 - **Code Style**: Code should be formatted with `uv run ruff format` and should have no errors from `server/scripts/lint_format.sh`.
 
