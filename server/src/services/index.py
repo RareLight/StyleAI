@@ -112,21 +112,22 @@ def _flatten_keywords(keywords):
 
 
 def _load_analysis_grayscale(image_bytes: bytes, max_side: int = 512) -> np.ndarray:
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    if max(image.size) > max_side:
-        scale = max_side / float(max(image.size))
-        resized = (
-            max(32, int(round(image.size[0] * scale))),
-            max(32, int(round(image.size[1] * scale))),
-        )
-        image = image.resize(resized, Image.Resampling.BILINEAR)
+    image = Image.open(io.BytesIO(image_bytes))
+    image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+    image = image.convert("RGB")
     rgb = np.asarray(image, dtype=np.float32) / 255.0
     return (0.299 * rgb[:, :, 0]) + (0.587 * rgb[:, :, 1]) + (0.114 * rgb[:, :, 2])
 
 
 def _decode_image(image_bytes: bytes) -> Image.Image | None:
     try:
-        return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img = Image.open(io.BytesIO(image_bytes))
+        # Defensive resizing to prevent OOM (12GB+ RAM spikes) on massive images.
+        # SigLIP2 uses 384px, InsightFace uses 640px, so 1024px is plenty.
+        max_dim = 1024
+        if max(img.size) > max_dim:
+            img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+        return img.convert("RGB")
     except Exception as exc:
         logger.warning("Could not decode image: %s", exc)
         return None

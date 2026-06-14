@@ -277,7 +277,8 @@ LrTasks.startAsyncTask(function()
 					break
 				else
 					-- Wait for producer to add more items
-					if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+					LrTasks.yield()
+					LrTasks.sleep(0.1)
 				end
 			end
 			consumerDone = true
@@ -293,7 +294,8 @@ LrTasks.startAsyncTask(function()
 
 			-- Backpressure: Pause Lightroom extraction if the queue gets too large
 			while #trainingQueue >= 20 and not progressScope:isCanceled() do
-				if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+				LrTasks.yield()
+				LrTasks.sleep(0.1)
 			end
 
 			local fileName = photo:getFormattedMetadata("fileName") or "Photo"
@@ -376,11 +378,13 @@ LrTasks.startAsyncTask(function()
 
 		-- Wait for consumer to finish sending remaining chunks
 		while not consumerDone and not progressScope:isCanceled() do
-			if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+			LrTasks.yield()
+			LrTasks.sleep(0.1)
 		end
 		-- Add slight delay to ensure consumerWorker cleanly exits
 		if not progressScope:isCanceled() then
-			if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.2) end
+			LrTasks.yield()
+			LrTasks.sleep(0.2)
 		end
 
 		progressScope:done()

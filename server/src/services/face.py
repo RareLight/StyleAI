@@ -90,11 +90,12 @@ def detect_faces(
         - det_score: detector confidence if available
     """
     app = _get_face_app()
-    source = (
-        pil_image
-        if pil_image is not None
-        else Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    )
+    if pil_image is not None:
+        source = pil_image
+    else:
+        img_temp = Image.open(io.BytesIO(image_bytes))
+        img_temp.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+        source = img_temp.convert("RGB")
     img = np.array(source)
     faces = app.get(img)
 

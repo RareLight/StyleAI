@@ -118,7 +118,7 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 
 	log:trace("Saving title, caption, altText, keywords to catalog")
 	catalog:withWriteAccessDo(
-		LOC("$$$/StyleAI/AnalyzeImageTask/saveTitleCaption=Save AI generated title and caption"),
+		"Apply AI Metadata",
 		function()
 			if saveCaption and caption and caption ~= "" then
 				photo:setRawMetadata("caption", caption)
@@ -129,35 +129,29 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 			if saveAltText and altText and altText ~= "" then
 				photo:setRawMetadata("altTextAccessibility", altText)
 			end
-		end,
-		Defaults.catalogWriteAccessOptions
-	)
 
-	-- Save keywords (sessionCache avoids LrKeyword:getChildren() when the SDK errors there)
-	log:trace("Saving keywords to catalog")
-	if saveKeywords and keywords ~= nil and type(keywords) == "table" and prefs.generateKeywords then
-		local keywordSessionCache = {}
+			-- Save keywords (sessionCache avoids LrKeyword:getChildren() when the SDK errors there)
+			log:trace("Saving keywords to catalog")
+			if saveKeywords and keywords ~= nil and type(keywords) == "table" and prefs.generateKeywords then
+				local keywordSessionCache = {}
 
-		-- Build alias-dedup index when alias mode is on. Scope follows the user's
-		-- top-level-keyword preference so we don't merge into hand-curated branches.
-		if options.generateAliases then
-			local indexScope = nil
-			if options.useTopLevelKeyword and options.topLevelKeyword and options.topLevelKeyword ~= "" then
-				indexScope = findKeywordByNameInParent(nil, catalog, keywordSessionCache, nil, options.topLevelKeyword)
-			end
-			keywordSessionCache._aliasIndex = MetadataManager.buildAliasIndex(catalog, indexScope)
-			local aliasIndexCount = 0
-			for _ in pairs(keywordSessionCache._aliasIndex) do
-				aliasIndexCount = aliasIndexCount + 1
-			end
-			log:trace("Alias index built with " .. tostring(aliasIndexCount) .. " entries")
-		end
+				-- Build alias-dedup index when alias mode is on. Scope follows the user's
+				-- top-level-keyword preference so we don't merge into hand-curated branches.
+				if options.generateAliases then
+					local indexScope = nil
+					if options.useTopLevelKeyword and options.topLevelKeyword and options.topLevelKeyword ~= "" then
+						indexScope = findKeywordByNameInParent(nil, catalog, keywordSessionCache, nil, options.topLevelKeyword)
+					end
+					keywordSessionCache._aliasIndex = MetadataManager.buildAliasIndex(catalog, indexScope)
+					local aliasIndexCount = 0
+					for _ in pairs(keywordSessionCache._aliasIndex) do
+						aliasIndexCount = aliasIndexCount + 1
+					end
+					log:trace("Alias index built with " .. tostring(aliasIndexCount) .. " entries")
+				end
 
-		local topKeyword = nil
-		if prefs.useKeywordHierarchy and options.useTopLevelKeyword then
-			catalog:withWriteAccessDo(
-				"$$$/StyleAI/AnalyzeImageTask/saveTopKeyword=Save AI generated keywords",
-				function()
+				local topKeyword = nil
+				if prefs.useKeywordHierarchy and options.useTopLevelKeyword then
 					topKeyword = createKeywordSafely(
 						catalog,
 						options.topLevelKeyword or "StyleAI",
@@ -174,18 +168,13 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 							log:error("Failed to add top-level keyword to photo: " .. tostring(errAdd))
 						end
 					end
+					-- Keep track of used top-level keywords
+					if not Util.table_contains(prefs.knownTopLevelKeywords, options.topLevelKeyword) then
+						table.insert(prefs.knownTopLevelKeywords, options.topLevelKeyword)
+					end
 				end
-			)
-			-- Keep track of used top-level keywords
-			if not Util.table_contains(prefs.knownTopLevelKeywords, options.topLevelKeyword) then
-				table.insert(prefs.knownTopLevelKeywords, options.topLevelKeyword)
-			end
-		end
-		local existingKeywordNames = nil
-		local currentTopLevelKeyword = options.useTopLevelKeyword and (options.topLevelKeyword or "StyleAI") or nil
-		catalog:withWriteAccessDo(
-			"$$$/StyleAI/AnalyzeImageTask/saveTopKeyword=Save AI generated keywords",
-			function()
+				local existingKeywordNames = nil
+				local currentTopLevelKeyword = options.useTopLevelKeyword and (options.topLevelKeyword or "StyleAI") or nil
 				MetadataManager.addKeywordRecursively(
 					photo,
 					catalog,
@@ -195,18 +184,16 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 					currentTopLevelKeyword,
 					keywordSessionCache
 				)
-			end,
-			Defaults.catalogWriteAccessOptions
-		)
-	end
+			end
 
-	if response.ai_model then
-		catalog:withPrivateWriteAccessDo(function()
-			log:trace("Saving AI model to catalog")
-			photo:setPropertyForPlugin(_PLUGIN, "aiModel", tostring(response.ai_model))
-			photo:setPropertyForPlugin(_PLUGIN, "aiLastRun", tostring(response.ai_rundate or ""))
-		end, Defaults.catalogWriteAccessOptions)
-	end
+			if response.ai_model then
+				log:trace("Saving AI model to catalog")
+				photo:setPropertyForPlugin(_PLUGIN, "aiModel", tostring(response.ai_model))
+				photo:setPropertyForPlugin(_PLUGIN, "aiLastRun", tostring(response.ai_rundate or ""))
+			end
+		end,
+		Defaults.catalogWriteAccessOptions
+	)
 end
 
 ---

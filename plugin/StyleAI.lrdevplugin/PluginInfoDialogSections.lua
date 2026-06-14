@@ -897,5 +897,9 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 		prefs.lmstudioBaseUrl = Defaults.defaultLmStudioBaseUrl
 	end
 
+	prefs.forceFreshPreviews = propertyTable.forceFreshPreviews
+	prefs.auditLlmInputs = propertyTable.auditLlmInputs
+	prefs.auditLlmInputsPath = propertyTable.auditLlmInputsPath
+
 	propertyTable.keepChecksRunning = false -- Stop background health polling
 end

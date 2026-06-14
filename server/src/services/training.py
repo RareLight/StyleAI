@@ -122,15 +122,10 @@ def _load_thumbnail(image_bytes: bytes) -> tuple[np.ndarray, tuple[int, int]]:
     from PIL import Image
     import io
 
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    image = Image.open(io.BytesIO(image_bytes))
     orig_size = image.size
-    if max(image.size) > _THUMBNAIL_LONG_EDGE:
-        scale = _THUMBNAIL_LONG_EDGE / float(max(image.size))
-        new_size = (
-            max(32, int(round(image.size[0] * scale))),
-            max(32, int(round(image.size[1] * scale))),
-        )
-        image = image.resize(new_size, Image.Resampling.LANCZOS)
+    image.thumbnail((_THUMBNAIL_LONG_EDGE, _THUMBNAIL_LONG_EDGE), Image.Resampling.LANCZOS)
+    image = image.convert("RGB")
     rgb = np.asarray(image, dtype=np.float32) / 255.0
     return rgb, orig_size
 
@@ -236,8 +231,9 @@ def compute_dominant_colors(image_bytes: bytes, n_colors: int = 5) -> list[str]:
         from PIL import Image
 
         # Load a very small thumbnail for extremely fast clustering
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image = Image.open(io.BytesIO(image_bytes))
         image.thumbnail((100, 100), Image.Resampling.LANCZOS)
+        image = image.convert("RGB")
 
         # Reshape the image to be a list of pixels
         pixels = np.asarray(image)
