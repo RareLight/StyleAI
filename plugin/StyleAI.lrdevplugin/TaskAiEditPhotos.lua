@@ -943,13 +943,15 @@ LrTasks.startAsyncTask(function()
 
 				-- Throttle to avoid unbounded memory/disk usage (max workers ahead of consumer)
 				if index > consumerIndex + (maxWorkers * 2) then
-					if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+					LrTasks.yield()
+					LrTasks.sleep(0.1)
 				else
 					nextIndexToProcess = nextIndexToProcess + 1
 
 					-- Wait for consumer to provide context (if dialogs are pending)
 					while not contextReady[index] and not progressScope:isCanceled() do
-						if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+						LrTasks.yield()
+						LrTasks.sleep(0.1)
 					end
 					if progressScope:isCanceled() then break end
 

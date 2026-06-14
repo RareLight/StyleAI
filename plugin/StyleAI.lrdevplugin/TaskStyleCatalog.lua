@@ -311,7 +311,7 @@ LrTasks.startAsyncTask(function()
 			return f:column({
 				bind_to_object = props,
 				spacing = f:control_spacing(),
-				width = 750,
+				width = 1000,
 
 				-- Title
 				f:row({
@@ -398,6 +398,8 @@ LrTasks.startAsyncTask(function()
 						value = bind("selectedStyleIndex"),
 						allows_multiple_selection = false,
 						height_in_lines = 12,
+						width_in_chars = 150,
+						fill_horizontal = 1,
 					}),
 				}),
 

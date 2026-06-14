@@ -81,7 +81,7 @@ local EXPORT_SETTINGS = {
     LR_size_doConstrain = true,
     LR_size_maxWidth = 1024,
     LR_size_maxHeight = 1024,
-    LR_size_resizeType = 'longEdge',
+    LR_size_resizeType = 'dimensions',
     LR_size_units = 'pixels',
     LR_size_resolution = 72,
     LR_size_resolutionUnits = 'inch',
@@ -784,11 +784,8 @@ function SearchIndexAPI.getJpegThumbnailForPhoto(photo, minWidth, minHeight, req
     end
 
     while not done and LrDate.currentTime() < deadline do
-        if MAC_ENV then
-            LrTasks.yield()
-        else
-            LrTasks.sleep(0.05)
-        end
+        LrTasks.yield()
+        LrTasks.sleep(0.05)
     end
 
     -- Explicitly instruct Adobe's internal engine to release the preview memory
@@ -1938,7 +1935,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 SearchIndexAPI.cancelBackendTasks()
                 break
             end
-            if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.5) end
+            LrTasks.yield()
+            LrTasks.sleep(0.5)
         end
     end)
 
@@ -1980,7 +1978,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
             if not keepRunning then break end
 
             if #preparedQueue >= maxQueueCapacity then
-                if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+                LrTasks.yield()
+                LrTasks.sleep(0.1)
             else
                 local photo = table.remove(photoToProcessStack)
                 if photo then
@@ -2126,7 +2125,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 if preparationDone then
                     break
                 else
-                    if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+                    LrTasks.yield()
+                    LrTasks.sleep(0.1)
                 end
             else
                 local batchItemsToSend = {}
@@ -2209,11 +2209,16 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                                         stats.success = stats.success + 1
                                         table.insert(processedPhotos, item.photo)
                                         if options.onPhotoAnalyzed then
+                                            LrTasks.yield()
+                                            LrTasks.sleep(0.01)
                                             local okCb, cbErr = LrTasks.pcall(function()
                                                 options.onPhotoAnalyzed(item.photo, item.photo_id, progressScope)
                                             end)
                                             if not okCb then
                                                 log:error("onPhotoAnalyzed callback failed for " .. filename .. ": " .. tostring(cbErr))
+                                                stats.success = stats.success - 1
+                                                stats.failed = stats.failed + 1
+                                                table.insert(errorMessages, filename .. ": Failed to save metadata (" .. tostring(cbErr) .. ")")
                                             end
                                         end
                                     end
@@ -2269,7 +2274,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 if activeSenderWorkers == 0 and preparationDone then
                     break
                 else
-                    if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+                    LrTasks.yield()
+                    LrTasks.sleep(0.1)
                 end
             else
                 local item = table.remove(llmQueue)
@@ -2281,11 +2287,16 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     if success then
                         stats.success = stats.success + 1
                         if options.onPhotoAnalyzed then
+                            LrTasks.yield()
+                            LrTasks.sleep(0.01)
                             local okCb, cbErr = LrTasks.pcall(function()
                                 options.onPhotoAnalyzed(item.photo, item.photo_id, progressScope)
                             end)
                             if not okCb then
                                 log:error("onPhotoAnalyzed callback failed for " .. item.filename .. ": " .. tostring(cbErr))
+                                stats.success = stats.success - 1
+                                stats.failed = stats.failed + 1
+                                table.insert(errorMessages, item.filename .. ": Failed to save metadata (" .. tostring(cbErr) .. ")")
                             end
                         end
                     else
@@ -2344,22 +2355,16 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     -- Monitor workers and server availability
     while activeWorkers > 0 or activeSenderWorkers > 0 or activeLlmWorkers > 0 do
         if progressScope:isCanceled() then break end
-        if MAC_ENV then
-            LrTasks.yield()
-        else
-            LrTasks.sleep(0.1)
-        end
+        LrTasks.yield()
+        LrTasks.sleep(0.1)
     end
 
 
     -- Wait for workers to stop in case of server failure
     if not keepRunning then
         while activeWorkers > 0 or activeSenderWorkers > 0 do
-            if MAC_ENV then
-                LrTasks.yield()
-            else
-                LrTasks.sleep(0.5)
-            end
+            LrTasks.yield()
+            LrTasks.sleep(0.5)
         end
     end
 
