@@ -1510,6 +1510,14 @@ function DevelopEditManager.applyRecipe(photo, response, options)
 	local applyMasks = options ~= nil and options.applyMasks == true
 
 	local globalApplied = true
+	if options and options.createVirtualCopies then
+		local LrApplication = import("LrApplication")
+		local catalog = LrApplication.activeCatalog()
+		catalog:withWriteAccessDo("Create Virtual Copy (StyleAI)", function()
+			catalog:createVirtualCopies({photo})
+		end)
+	end
+
 	if applyGlobal then
 		globalApplied = applyGlobalDevelopSettings(photo, recipe, warnings)
 	end

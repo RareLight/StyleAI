@@ -51,11 +51,11 @@ local ENDPOINTS = {
     DB_BACKUP = "/db/backup",
     DB_PRUNE = "/db/prune",
     SYNC_CLEANUP = "/sync/cleanup",
-    SYNC_CLAIM = "/sync/claim",
     TRAINING_ADD = "/training/add",
     TRAINING_ADD_BATCH = "/training/add-batch",
     TRAINING_LIST = "/training/list",
     TRAINING_COUNT = "/training/count",
+    BACKUP = "/backup",
     TRAINING_DELETE = "/training", -- DELETE /training/<photo_id>
     TRAINING_CLEAR = "/training",  -- DELETE /training (all)
     TRAINING_STATS = "/training/stats",
@@ -121,16 +121,7 @@ end
 -- Catalog DB migrations: one-time backend operations per catalog (e.g. claim_photos after cross-catalog soft state).
 -- Each entry: { id = "unique_id", run = function(progressScope) return ok, err [, userMessage] end }. progressScope is optional (nil for migrations that don't need it). Optional userMessage is shown via LrDialogs when present.
 local CATALOG_DB_MIGRATIONS = {
-    {
-        id = "claim_photos_v1",
-        run = function(progressScope)
-            local ok, err, result = SearchIndexAPI.claimPhotosForCatalog(progressScope)
-            local msg = (ok and result and (result.claimed or 0) >= 0) and
-                (LOC("$$$/StyleAI/SearchIndexAPI/PhotosClaimedCount=^1 photos claimed for this catalog.", tostring(result.claimed or 0))) or
-                nil
-            return ok, err, msg
-        end,
-    },
+    -- Add future migrations here, e.g. { id = "some_breaking_change_v1", run = function(progressScope) ... return ok, err [, userMessage] end },
     -- Add future migrations here, e.g. { id = "some_breaking_change_v1", run = function(progressScope) ... return ok, err [, userMessage] end },
 }
 
@@ -834,7 +825,6 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
         image = base64Image,
         photo_id = photoId,
         filename = filename or "photo.jpg",
-        catalog_id = getCatalogId(),
         tasks = options.tasks or {},
         provider = options.provider,
         model = options.model,
@@ -901,7 +891,6 @@ function SearchIndexAPI.generateMetadataSingle(photoId, base64Image, filename, o
         image = base64Image, -- Can be nil if cached on server
         photo_id = photoId,
         filename = filename or "photo.jpg",
-        catalog_id = getCatalogId(),
         tasks = options.tasks or {},
         provider = options.provider,
         model = options.model,
@@ -1027,7 +1016,6 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
         provider = globalOptions.provider,
         model = globalOptions.model,
         api_key = globalOptions.api_key,
-        catalog_id = getCatalogId(),
         language = globalOptions.language or (prefs and prefs.generateLanguage) or "English",
         temperature = tostring(globalOptions.temperature or (prefs and prefs.temperature) or 0.2),
         replace_ss = tostring(globalOptions.replace_ss or false),
@@ -1148,10 +1136,7 @@ function SearchIndexAPI.generateEditRecipePhoto(photoId, filepath, options)
     local mimeChunks = {}
 
     table.insert(mimeChunks, { name = "photo_id", value = photoId })
-    local cid = getCatalogId()
-    if cid then
-        table.insert(mimeChunks, { name = "catalog_id", value = cid })
-    end
+
     if options.provider then
         table.insert(mimeChunks, { name = "provider", value = options.provider })
     end
@@ -1266,10 +1251,7 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
 
     -- Add form fields
     table.insert(mimeChunks, { name = "photo_id", value = photoId })
-    local cid = getCatalogId()
-    if cid then
-        table.insert(mimeChunks, { name = "catalog_id", value = cid })
-    end
+
     table.insert(mimeChunks, { name = "tasks", value = JSON:encode(options.tasks or {}) })
 
     if options.provider then
@@ -1399,11 +1381,7 @@ end
 
 
 function SearchIndexAPI.getStats()
-    local cid = getCatalogId()
     local url = getBaseUrl() .. ENDPOINTS.STATS
-    if cid then
-        url = url .. (url:find("?") and "&" or "?") .. "catalog_id=" .. cid
-    end
     return _request('GET', url)
 end
 
@@ -1492,7 +1470,6 @@ function SearchIndexAPI.getAllIndexedPhotoIds(requireEmbeddings)
     end
     local cid = getCatalogId()
     if cid then
-        params.catalog_id = cid
     end
     if next(params) then
         local sep = "?"
@@ -1529,7 +1506,6 @@ function SearchIndexAPI.getPhotoData(photoId)
     local body = { photo_id = photoId }
     local cid = getCatalogId()
     if cid then
-        body.catalog_id = cid
     end
 
     log:trace("Retrieving photo data for photo_id: " .. photoId)
@@ -1584,175 +1560,17 @@ function SearchIndexAPI.removePhotoMetadata(photoId)
     end
 end
 
----
--- Sync cleanup: disassociate this catalog from backend photos that are no longer in the catalog.
--- Does not delete backend data; works with global photo ID and cross-catalog backends.
--- @return boolean success, string|nil error message
---
-function SearchIndexAPI.syncCleanup()
-    local catalogId = getCatalogId()
-    if not catalogId then
-        log:warn("syncCleanup: no catalog identifier")
-        return false, "No catalog identifier"
-    end
 
-    if not SearchIndexAPI.pingServer() then
-        return false, "Backend not reachable"
+function SearchIndexAPI.triggerBackup(rotationDays)
+    local body = {
+        rotation_days = rotationDays or 0
+    }
+    local result, err = _request('POST', getBaseUrl() .. ENDPOINTS.BACKUP, body)
+    if err then
+        log:warn("Backend autosave failed: " .. tostring(err))
+        return false, err
     end
-
-    local catalog = LrApplication.activeCatalog()
-    local allPhotos = catalog:getAllPhotos()
-    local photoIds = {}
-    local updateInterval = math.max(1, math.floor(#allPhotos / 50))
-
-    local progressScope = LrProgressScope({
-        title = LOC "$$$/StyleAI/SearchIndexAPI/cleaningIndex=Cleaning search index",
-        functionContext = nil,
-    })
-
-    for i, photo in ipairs(allPhotos) do
-        if progressScope:isCanceled() then
-            progressScope:done()
-            return false, "canceled"
-        end
-        local photoId = getPhotoIdForPhoto(photo)
-        if photoId then
-            photoIds[#photoIds + 1] = photoId
-        end
-        if i % updateInterval == 0 or i == #allPhotos then
-            progressScope:setPortionComplete(i, #allPhotos)
-            progressScope:setCaption(
-                LOC "$$$/StyleAI/SearchIndexAPI/cleaningIndexProgress=Cleaning index. Photo ^1/^2", tostring(i),
-                tostring(#allPhotos))
-        end
-    end
-
-    progressScope:setCaption(LOC "$$$/StyleAI/SearchIndexAPI/syncCleanupSending=Syncing with backend...")
-    local batchSize = 5000
-    local disassociated = 0
-    for startIdx = 1, #photoIds, batchSize do
-        if progressScope:isCanceled() then
-            progressScope:done()
-            return false, "canceled"
-        end
-        local stopIdx = math.min(startIdx + batchSize - 1, #photoIds)
-        local batch = {}
-        for j = startIdx, stopIdx do
-            batch[#batch + 1] = photoIds[j]
-        end
-        local result, err = _request("POST", getBaseUrl() .. ENDPOINTS.SYNC_CLEANUP, {
-            catalog_id = catalogId,
-            photo_ids = batch,
-        }, 120)
-        if err then
-            progressScope:done()
-            log:error("syncCleanup failed: " .. tostring(err))
-            return false, err
-        end
-        if result and result.disassociated then
-            disassociated = disassociated + result.disassociated
-        end
-    end
-    progressScope:done()
-    log:info("syncCleanup finished: " ..
-        tostring(#photoIds) .. " photos in catalog, " .. tostring(disassociated) .. " disassociated")
-    return true
-end
-
----
--- Claim backend photos for this catalog (add catalog_id to their catalog_ids).
--- Use after migration so existing indexed photos become visible to this catalog.
--- @param progressScope LrProgressScope|nil Optional; when provided, shows progress and supports cancel.
--- @return boolean success, string|nil error message, table|nil result
---
-function SearchIndexAPI.claimPhotosForCatalog(progressScope)
-    -- This function is executed as one of the catalog-scoped background DB migrations.
-    -- Avoid calling `getCatalogId()` here because it would wait for migrations that include
-    -- this very function (self-wait / deadlock-like behavior).
-    local catalogId = getCatalogIdValue()
-    if not catalogId then
-        return false, "No catalog identifier", nil
-    end
-    if not SearchIndexAPI.pingServer() then
-        return false, "Backend not reachable", nil
-    end
-    local catalog = LrApplication.activeCatalog()
-    local allPhotos = catalog:getAllPhotos()
-    local totalPhotos = #allPhotos
-    local photoIds = {}
-
-    -- Hash phase dominates wall time (~6ms per photo); report progress against
-    -- photo count so the UI doesn't sit at 0% for minutes on large catalogs.
-    if progressScope then
-        progressScope:setPortionComplete(0, totalPhotos)
-        progressScope:setCaption(LOC(
-            "$$$/StyleAI/SearchIndexAPI/claimingPhotosPreparing=Preparing ^1 photos for this catalog...",
-            tostring(totalPhotos)))
-    end
-    local progressStride = math.max(50, math.floor(totalPhotos / 200))
-    for i, photo in ipairs(allPhotos) do
-        if progressScope and progressScope:isCanceled() then
-            progressScope:done()
-            return false, "canceled", nil
-        end
-        local photoId, _ = getPhotoIdForPhoto(photo)
-        if photoId then
-            photoIds[#photoIds + 1] = photoId
-        end
-        if progressScope and (i % progressStride == 0 or i == totalPhotos) then
-            progressScope:setPortionComplete(i, totalPhotos)
-            progressScope:setCaption(LOC(
-                "$$$/StyleAI/SearchIndexAPI/claimingPhotosPreparingCount=Preparing ^1 of ^2 photos...",
-                tostring(i), tostring(totalPhotos)))
-        end
-    end
-    if #photoIds == 0 then
-        if progressScope then progressScope:done() end
-        return true, nil, { claimed = 0, errors = 0 }
-    end
-    local batchSize = 2500
-    local totalBatches = math.ceil(#photoIds / batchSize)
-    local totalClaimed = 0
-    local totalErrors = 0
-    for startIdx = 1, #photoIds, batchSize do
-        if progressScope then
-            if progressScope:isCanceled() then
-                progressScope:done()
-                return false, "canceled", nil
-            end
-            local batchNum = math.floor((startIdx - 1) / batchSize) + 1
-            progressScope:setCaption(LOC(
-                "$$$/StyleAI/SearchIndexAPI/claimingPhotosBatch=Claiming photos... batch ^1/^2", tostring(batchNum),
-                tostring(totalBatches)))
-        end
-        local stopIdx = math.min(startIdx + batchSize - 1, #photoIds)
-        local batch = {}
-        for j = startIdx, stopIdx do
-            batch[#batch + 1] = photoIds[j]
-        end
-        local result, err = _request("POST", getBaseUrl() .. ENDPOINTS.SYNC_CLAIM, {
-            catalog_id = catalogId,
-            photo_ids = batch,
-        }, 120)
-        if err then
-            if progressScope then progressScope:done() end
-            return false, err, nil
-        end
-        if result then
-            totalClaimed = totalClaimed + (result.claimed or 0)
-            totalErrors = totalErrors + (result.errors or 0)
-        end
-    end
-    if progressScope then
-        progressScope:setPortionComplete(totalPhotos, totalPhotos)
-    end
-    return true, nil, { claimed = totalClaimed, errors = totalErrors }
-end
-
-function SearchIndexAPI.removeMissingFromIndex()
-    -- Use sync cleanup (soft state): disassociate this catalog from photos no longer in catalog.
-    -- Works with global photo ID and cross-catalog backends; no backend data is deleted.
-    return SearchIndexAPI.syncCleanup()
+    return true, nil
 end
 
 ---
@@ -1878,10 +1696,6 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
             tasks = options.tasks,
             regenerate_metadata = false
         }
-        local checkCid = getCatalogId()
-        if checkCid then
-            body.catalog_id = checkCid
-        end
         
         local result, err = _request('POST', getBaseUrl() .. ENDPOINTS.CHECK_UNPROCESSED, body)
         if not err and result and (result.photo_ids or result.uuids) then
@@ -3089,7 +2903,6 @@ end
 ---
 function SearchIndexAPI.pruneDatabase(catalogId, validPhotoIds)
     local body = {
-        catalog_id = catalogId,
         valid_photo_ids = validPhotoIds
     }
     local url = getBaseUrl() .. ENDPOINTS.DB_PRUNE
@@ -3175,7 +2988,6 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
         }
         local checkCid = getCatalogId()
         if checkCid then
-            body.catalog_id = checkCid
         end
         local result, err = _request('POST', getBaseUrl() .. ENDPOINTS.CHECK_UNPROCESSED, body)
         if err then

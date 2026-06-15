@@ -37,21 +37,7 @@ class TestGetDatabaseStats:
         assert stats["photos"]["total"] == 7
         assert stats["photos"]["with_embedding"] == 6
 
-    def test_passes_catalog_id_to_chroma(self, mocker):
-        spy = mocker.patch.object(
-            service_db.chroma_service,
-            "get_image_metadata_stats",
-            return_value={
-                "total": 0,
-                "with_embedding": 0,
-                "with_title": 0,
-                "with_caption": 0,
-                "with_keywords": 0,
-            },
-        )
 
-        service_db.get_database_stats(catalog_id="cat-42")
-        spy.assert_called_once_with(catalog_id="cat-42")
 
 
 class TestPruneOldBackups:

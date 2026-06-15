@@ -215,10 +215,7 @@ def _extract_options(data) -> dict[str, Any]:
     options["compute_metadata"] = "metadata" in tasks
     options["compute_faces"] = "faces" in tasks
 
-    # Cross-catalog soft-state
-    options["catalog_id"] = data.get("catalog_id") or None
-    if options["catalog_id"] and isinstance(options["catalog_id"], str):
-        options["catalog_id"] = options["catalog_id"].strip() or None
+
 
     # Audit logging
     options["audit_llm_inputs"] = _bool_from_data(data, "audit_llm_inputs", False)

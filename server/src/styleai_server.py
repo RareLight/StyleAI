@@ -13,8 +13,9 @@ from services.version import get_backend_version_info
 
 import json
 
-# Lazy import server_lifecycle to speed up startup
+from config import logger, DB_PATH
 import server_lifecycle
+from services import backup
 
 # Import blueprints only (services are imported by routes when needed)
 from routes.index import index_bp
@@ -224,6 +225,15 @@ if __name__ == "__main__":
 
     # Start idle monitor (model unload + server auto-shutdown)
     server_lifecycle._ensure_unloader_thread()
+
+    # Start automated backups if enabled (default true)
+    if os.environ.get("STYLEAI_BACKUP_ENABLED", "true").lower() == "true":
+        import threading
+        threading.Thread(
+            target=backup.run_backup_loop,
+            args=(server_lifecycle.GLOBAL_CANCEL_EVENT,),
+            daemon=True
+        ).start()
 
     # Priority 8 Security: Strictly bind to localhost to prevent local network exposure.
     # We only allow override via STYLEAI_HOST when running in debug mode.

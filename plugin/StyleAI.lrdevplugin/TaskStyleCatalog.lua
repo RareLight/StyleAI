@@ -103,7 +103,17 @@ LrTasks.startAsyncTask(function()
 						local name = style.style_name or style.style_id or "Unknown"
 						local count = style.example_count or 0
 						local profile = style.camera_profile or "default"
-						local label = name .. "  [" .. count .. " examples, " .. profile .. "]"
+						
+						local cleanName = name
+						
+						local strength = "🔴 Undertrained"
+						if count >= 10 then
+							strength = "🟢 Strong"
+						elseif count >= 3 then
+							strength = "🟡 Good"
+						end
+						
+						local label = string.format("%s • %s (%d ex)  [%s]", cleanName, profile, count, strength)
 						table.insert(items, { title = label, value = i })
 					end
 					props.listItems = items
@@ -311,7 +321,6 @@ LrTasks.startAsyncTask(function()
 			return f:column({
 				bind_to_object = props,
 				spacing = f:control_spacing(),
-				width = 1000,
 
 				-- Title
 				f:row({
@@ -398,7 +407,6 @@ LrTasks.startAsyncTask(function()
 						value = bind("selectedStyleIndex"),
 						allows_multiple_selection = false,
 						height_in_lines = 12,
-						width_in_chars = 150,
 						fill_horizontal = 1,
 					}),
 				}),

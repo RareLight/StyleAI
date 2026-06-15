@@ -25,7 +25,6 @@ def _persist_edit_recipe(
     photo_id: str, filename: str | None, recipe: dict, options: dict
 ) -> None:
     """Persist a generated edit recipe into ChromaDB alongside the photo record."""
-    catalog_id = options.get("catalog_id")
     existing = chroma_service.get_image(photo_id)
     existing_has_ids = existing is not None and _has_items(existing.get("ids"))
     existing_has_metadatas = existing is not None and _has_items(
@@ -69,11 +68,11 @@ def _persist_edit_recipe(
 
     if existing_has_ids:
         chroma_service.update_image(
-            photo_id, metadata, embedding=existing_embedding, catalog_id=catalog_id
+            photo_id, metadata, embedding=existing_embedding
         )
     else:
         chroma_service.add_image(
-            photo_id, existing_embedding, metadata, catalog_id=catalog_id
+            photo_id, existing_embedding, metadata
         )
 
 
