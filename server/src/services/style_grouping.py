@@ -580,35 +580,24 @@ def split_subgenres(
 
 
 def generate_style_name(
-    camera_profile: str,
     genre: str,
     subgenre: str | None,
 ) -> str:
-    """Generate a human-readable style name based on profile and genre.
+    """Generate a human-readable style name based on genre.
 
     Examples:
-        "Adobe Color — Architecture & City"
-        "Adobe Landscape — Portrait (Natural Light)"
-        "Camera Standard — Landscape [AgX-Like Med++]"
+        "Architecture & City"
+        "Portrait (Natural Light)"
+        "Landscape (Med++)"
     """
     # Clean up genre tag (remove "scene_" prefix, title-case)
     clean_genre = genre.replace("scene_", "").replace("_", " ").title()
 
-    base_name = camera_profile if camera_profile else "Adobe Standard"
-    parts = [f"{base_name} — {clean_genre}"]
+    parts = [clean_genre]
 
     if subgenre and subgenre != "unknown":
         clean_sub = subgenre.replace("scene_", "").replace("_", " ").title()
         parts.append(f"({clean_sub})")
-
-    if camera_profile and camera_profile != "default":
-        # Abbreviate long profile names
-        short_profile = camera_profile
-        if "AgX-Like" in short_profile:
-            short_profile = short_profile.replace("Nikon Z7 ", "")
-        if len(short_profile) > 30:
-            short_profile = short_profile[:27] + "..."
-        parts.append(f"[{short_profile}]")
 
     return " ".join(parts)
 

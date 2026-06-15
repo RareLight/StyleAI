@@ -194,8 +194,9 @@ local function showAiEditDialog(ctx)
 	if props.isCustomEditIntent then
 		props.editIntent = props.customEditIntentText
 	else
-		props.editIntent = getEditIntentPresetInstruction(props.editIntentPreset) or Defaults.defaultEditIntent
+	props.editIntent = getEditIntentPresetInstruction(props.editIntentPreset) or Defaults.defaultEditIntent
 	end
+	props.createVirtualCopies = prefs.aiEditCreateVirtualCopies ~= false
 	props.reviewBeforeApply = prefs.aiEditReviewBeforeApply ~= false
 	props.applyMasks = prefs.aiEditApplyMasks ~= false
 	props.adjustWhiteBalance = prefs.aiEditAdjustWhiteBalance ~= false
@@ -656,6 +657,7 @@ local function showAiEditDialog(ctx)
 						props.customEditIntentText = Defaults.defaultEditIntent
 						props.editIntent = "Natural professional Lightroom edit with balanced contrast, realistic color, and clean detail."
 						props.styleStrength = 0.5
+						props.createVirtualCopies = true
 						props.reviewBeforeApply = true
 						props.applyMasks = true
 						props.showPhotoContextDialog = true
@@ -691,6 +693,7 @@ local function showAiEditDialog(ctx)
 	prefs.aiEditIntent = props.editIntent
 	prefs.aiEditIntentPreset = props.editIntentPreset
 	prefs.aiEditIntentCustomText = props.customEditIntentText
+	prefs.aiEditCreateVirtualCopies = props.createVirtualCopies
 	prefs.aiEditReviewBeforeApply = props.reviewBeforeApply
 	prefs.aiEditApplyMasks = props.applyMasks
 	prefs.aiEditAdjustWhiteBalance = props.adjustWhiteBalance
@@ -734,6 +737,7 @@ local function showAiEditDialog(ctx)
 		include_masks = props.applyMasks,
 		applyMasks = props.applyMasks,
 		reviewBeforeApply = props.reviewBeforeApply,
+		createVirtualCopies = props.createVirtualCopies,
 		submit_keywords = props.submitKeywords,
 		submit_folder_names = props.submitFolderName,
 		showPhotoContextDialog = props.showPhotoContextDialog,
@@ -891,6 +895,14 @@ LrTasks.startAsyncTask(function()
 			title = LOC("$$$/StyleAI/TaskAiEditPhotos/ProgressTitle=Generating AI Lightroom edits..."),
 			functionContext = ctx,
 		})
+
+		if #photos >= 50 then
+			log:info("Triggering database autosave before processing " .. tostring(#photos) .. " photos")
+			progressScope:setCaption(LOC("$$$/StyleAI/TaskAiEditPhotos/CreatingSafetyBackup=Creating safety backup..."))
+			local SearchIndexAPI = require("APISearchIndex")
+			local prefs = import("LrPrefs").prefsForPlugin(_PLUGIN)
+			SearchIndexAPI.triggerBackup(prefs.backupRotationDays)
+		end
 
 		local PrivacyPreview = require("PrivacyPreview")
 		if options.blurFacesForCloud and options.previewBlurredFaces then

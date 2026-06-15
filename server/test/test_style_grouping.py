@@ -61,7 +61,7 @@ def example_sony_landscape():
 
 
 # ---------------------------------------------------------------------------
-# group_examples_by_camera_genre
+# group_examples_by_profile_genre
 # ---------------------------------------------------------------------------
 
 
@@ -77,24 +77,24 @@ def test_group_examples_splits_by_camera_profile_and_genre(
         example_nikon_portrait,
         example_sony_landscape,
     ]
-    groups = sg.group_examples_by_camera_genre(examples)
+    groups = sg.group_examples_by_profile_genre(examples)
 
     assert len(groups) == 3
 
     # Nikon + default profile + Architecture
-    key_arch = ("NIKON CORPORATION", "NIKON Z 7", "default", "scene_architecture")
+    key_arch = ("default", "scene_architecture")
     assert key_arch in groups
     assert len(groups[key_arch]) == 2
 
     # Nikon + default profile + Portrait
-    key_portrait = ("NIKON CORPORATION", "NIKON Z 7", "default", "scene_portrait")
+    key_portrait = ("default", "scene_portrait")
     assert key_portrait in groups
     assert len(groups[key_portrait]) == 1
 
     # Sony + default profile + Landscape
-    key_landscape = ("SONY", "ILCE-7M3", "default", "scene_landscape")
-    assert key_landscape in groups
-    assert len(groups[key_landscape]) == 1
+    key_sony = ("default", "scene_landscape")
+    assert key_sony in groups
+    assert len(groups[key_sony]) == 1
 
 
 def test_group_examples_handles_unknown_genre():
@@ -107,8 +107,8 @@ def test_group_examples_handles_unknown_genre():
             "canonical_settings": "{}",
         }
     ]
-    groups = sg.group_examples_by_camera_genre(examples)
-    key = ("Canon", "EOS R5", "default", "scene_unknown")
+    groups = sg.group_examples_by_profile_genre(examples)
+    key = ("default", "scene_unknown")
     assert key in groups
     assert len(groups[key]) == 1
 
@@ -196,27 +196,24 @@ def test_split_subgenres_by_secondary_tag():
 # ---------------------------------------------------------------------------
 
 
-def test_generate_style_name_without_subgenre():
-    name = sg.generate_style_name("NIKON Z 7", "scene_architecture", None)
-    assert name == "NIKON Z 7 — Architecture"
+def test_generate_style_name_simple():
+    name = sg.generate_style_name("scene_architecture", None)
+    assert name == "Architecture"
 
 
 def test_generate_style_name_with_subgenre():
-    name = sg.generate_style_name("NIKON Z 7", "scene_architecture", "scene_street")
-    assert name == "NIKON Z 7 — Architecture (Street)"
+    name = sg.generate_style_name("scene_architecture", "scene_street")
+    assert name == "Architecture (Street)"
 
 
 def test_generate_style_name_unknown_genre():
-    name = sg.generate_style_name("Canon EOS R5", "scene_unknown", None)
-    assert name == "Canon EOS R5 — Unknown"
+    name = sg.generate_style_name("scene_unknown", None)
+    assert name == "Unknown"
 
 
 def test_generate_style_name_with_profile():
-    name = sg.generate_style_name(
-        "NIKON Z 7", "scene_landscape", None, camera_profile="Nikon Z7 AgX-Like"
-    )
-    assert "NIKON Z 7 — Landscape" in name
-    assert "AgX-Like" in name
+    name = sg.generate_style_name("scene_landscape", None)
+    assert "Landscape" in name
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +293,7 @@ def test_group_examples_uses_user_keywords_for_genre():
             "canonical_settings": "{}",
         }
     ]
-    groups = sg.group_examples_by_camera_genre(examples)
+    groups = sg.group_examples_by_profile_genre(examples)
     # Should use user keyword "macro" → scene_macro, not scene_portrait
-    key = ("Canon", "EOS R5", "default", "scene_macro")
+    key = ("default", "scene_macro")
     assert key in groups

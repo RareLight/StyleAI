@@ -145,12 +145,10 @@ def get_uuids_needing_processing(
     compute_embeddings = options.get("compute_embeddings", True)
     compute_metadata = options.get("compute_metadata", False)
 
-    catalog_id = options.get("catalog_id")
-
     if not uuids:
         return []
 
-    # Load existing records for all UUIDs (catalog-scoped when catalog_id provided) in bulk
+    # Load existing records for all UUIDs in bulk
     existing_records = {}
     chunk_size = 2000
     for i in range(0, len(uuids), chunk_size):
@@ -168,10 +166,6 @@ def get_uuids_needing_processing(
                 for idx, pid in enumerate(raw["ids"]):
                     metas = raw.get("metadatas") or [{}] * len(raw["ids"])
                     meta = metas[idx] if idx < len(metas) else {}
-                    if catalog_id:
-                        ids_set = chroma_service._parse_catalog_ids(meta)
-                        if str(catalog_id) not in ids_set:
-                            continue
 
                     # If we searched by LR UUID, we need to map the result by the LR UUID to match the chunk
                     if search_by_lr_uuid and "uuid" in meta:
@@ -256,7 +250,6 @@ def process_image_task(
         )
 
         # Check existing records if regenerate_metadata is False
-        catalog_id = global_opts.get("catalog_id")
         existing_records = {}
         if not regenerate_metadata:
             logger.info(
@@ -272,10 +265,6 @@ def process_image_task(
                     for idx, pid in enumerate(raw["ids"]):
                         metas = raw.get("metadatas") or [{}] * len(raw["ids"])
                         meta = metas[idx] if idx < len(metas) else {}
-                        if catalog_id:
-                            ids_set = chroma_service._parse_catalog_ids(meta)
-                            if str(catalog_id) not in ids_set:
-                                continue
                         existing_records[pid] = meta
             except Exception as e:
                 logger.warning(f"Bulk ChromaDB get failed: {e}")
@@ -598,7 +587,6 @@ def process_image_task(
                             uuid,
                             main_metadata,
                             embedding=update_embedding,
-                            catalog_id=catalog_id,
                         )
                     except Exception as e:
                         logger.error(
@@ -621,11 +609,10 @@ def process_image_task(
                                 uuid,
                                 main_metadata,
                                 embedding=update_embedding,
-                                catalog_id=catalog_id,
                             )
                         else:
                             chroma_service.add_image(
-                                uuid, embedding, main_metadata, catalog_id=catalog_id
+                                uuid, embedding, main_metadata
                             )
                     except Exception as e:
                         logger.error(
@@ -647,7 +634,7 @@ def process_image_task(
                         )
                     try:
                         chroma_service.add_image(
-                            uuid, embedding, main_metadata, catalog_id=catalog_id
+                            uuid, embedding, main_metadata
                         )
                     except Exception as e:
                         logger.error(

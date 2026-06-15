@@ -542,12 +542,12 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						end,
 					}),
 					f:push_button({
-						title = LOC("$$$/StyleAI/Training/ClearAll=Clear all training data"),
+						title = LOC("$$$/StyleAI/Training/ClearAll=Reset Signature Styles"),
 						action = function(button)
 							local confirm = LrDialogs.confirm(
-								LOC("$$$/StyleAI/Training/ClearConfirmTitle=Clear Training Examples"),
-								LOC("$$$/StyleAI/Training/ClearConfirmMsg=This will permanently delete all saved training examples. The Style Engine will be reset to Cold Start. Continue?"),
-								LOC("$$$/StyleAI/Training/ClearConfirmOk=Delete All"),
+								LOC("$$$/StyleAI/Training/ClearConfirmTitle=Reset Discovered Styles"),
+								LOC("$$$/StyleAI/Training/ClearConfirmMsg=This will clear your auto-discovered signature styles while preserving the underlying training examples and vector embeddings. Continue?"),
+								LOC("$$$/StyleAI/Training/ClearConfirmOk=Reset Styles"),
 								LOC("$$$/StyleAI/Training/ClearConfirmCancel=Cancel")
 							)
 							if confirm == "ok" then
@@ -555,9 +555,9 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 									local ok, err = SearchIndexAPI.clearAllTrainingExamples()
 									if ok then
 										propertyTable.refreshStyleStats()
-										LrDialogs.message(LOC("$$$/StyleAI/Training/ClearedTitle=Training Data Cleared"), LOC("$$$/StyleAI/Training/ClearedMsg=All training examples have been removed."), "info")
+										LrDialogs.message(LOC("$$$/StyleAI/Training/ClearedTitle=Styles Reset"), LOC("$$$/StyleAI/Training/ClearedMsg=Your signature styles have been reset. Training examples were preserved."), "info")
 									else
-										ErrorHandler.handleError(LOC("$$$/StyleAI/Training/ClearFailedTitle=Clear Failed"), tostring(err or "Unknown error"))
+										ErrorHandler.handleError(LOC("$$$/StyleAI/Training/ClearFailedTitle=Reset Failed"), tostring(err or "Unknown error"))
 									end
 								end)
 							end
@@ -612,10 +612,22 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 										LOC("$$$/StyleAI/PluginInfo/DbPathChangedMessage=The AI search index will be created fresh at the new location. Your existing index data will remain at the old path and will not be moved. Re-run indexing after saving to rebuild the index."),
 										"warning"
 									)
-								end
 								propertyTable.dbStoragePath = newPath
 							end
 						end,
+					}),
+				}),
+				f:row({
+					fill_horizontal = 1,
+					f:static_text({
+						title = LOC("$$$/StyleAI/PluginInfo/BackupRotationDays=Days before DB backups rotate (0 = off)"),
+						alignment = "right",
+						width = share("labelWidth"),
+					}),
+					f:edit_field({
+						value = bind("backupRotationDays"),
+						fill_horizontal = 1,
+						width_in_chars = 4,
 					}),
 				}),
 				f:row({
@@ -788,23 +800,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 									LrDialogs.message(LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Backend"), LOC("$$$/StyleAI/PluginInfo/RestartSuccess=Backend restarted successfully."))
 								else
 									LrDialogs.message(LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Backend"), LOC("$$$/StyleAI/PluginInfo/RestartFailed=Failed to restart backend: ^1", tostring(err)), "critical")
-								end
-							end)
-						end,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfo/ClaimPhotos=Sync Database (Claim Photos)"),
-						tooltip = LOC("$$$/StyleAI/PluginInfo/ClaimPhotosTooltip=Syncs existing backend photo records with this Lightroom catalog. Only needed if you share the backend across multiple catalogs."),
-						action = function(button)
-							LrTasks.startAsyncTask(function()
-								local progressScope = LrProgressScope({ title = LOC("$$$/StyleAI/SearchIndexAPI/claimingPhotos=Claiming photos for this catalog..."), functionContext = nil })
-								local ok, err, result = SearchIndexAPI.claimPhotosForCatalog(progressScope)
-								progressScope:done()
-								if ok then
-									local msg = result and (LOC("$$$/StyleAI/PluginInfo/ClaimedPrefix=Claimed: ") .. tostring(result.claimed) .. (result.errors and result.errors > 0 and (LOC("$$$/StyleAI/PluginInfo/ClaimedErrors=; errors: ") .. tostring(result.errors)) or "")) or LOC("$$$/StyleAI/common/Done=Done.")
-									LrDialogs.message(LOC("$$$/StyleAI/PluginInfo/ClaimPhotosTitle=Claim photos"), msg)
-								else
-									LrDialogs.message(LOC("$$$/StyleAI/PluginInfo/ClaimPhotosFailed=Claim photos failed"), tostring(err or LOC("$$$/StyleAI/common/UnknownError=Unknown error")), "critical")
 								end
 							end)
 						end,

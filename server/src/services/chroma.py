@@ -1,7 +1,6 @@
 import chromadb
 from chromadb.config import Settings
 from chromadb.errors import InternalError as ChromaInternalError
-import json
 import threading
 import numpy as np
 import time
@@ -56,78 +55,7 @@ STATS_GET_LIMIT = 2_000_000
 
 PHOTO_ID_FIELD = "photo_id"
 LEGACY_UUID_FIELD = "uuid"
-CATALOG_IDS_FIELD = "catalog_ids"
 
-
-def _parse_catalog_ids(metadata):
-    """Parse catalog_ids from metadata (JSON list string). Return set of catalog id strings."""
-    if not metadata:
-        return set()
-    raw = metadata.get(CATALOG_IDS_FIELD)
-    if not raw:
-        return set()
-    if isinstance(raw, list):
-        return set(str(x) for x in raw if x)
-    try:
-        parsed = json.loads(raw) if isinstance(raw, str) else raw
-        return set(str(x) for x in parsed if x) if isinstance(parsed, list) else set()
-    except (TypeError, ValueError):
-        return set()
-
-
-def _serialize_catalog_ids(catalog_ids_set):
-    """Serialize set of catalog ids to JSON list string for ChromaDB metadata."""
-    return json.dumps(sorted(catalog_ids_set)) if catalog_ids_set else "[]"
-
-
-def _add_catalog_id(photo_id, catalog_id):
-    """Ensure catalog_id is in the photo's catalog_ids list; update metadata only."""
-    if not catalog_id or not photo_id:
-        return
-    _ensure_initialized()
-    if collection is None:
-        return
-    try:
-        data = collection.get(ids=[photo_id], include=["metadatas", "embeddings"])
-    except ChromaInternalError:
-        return
-    if not data or not data.get("ids"):
-        return
-    meta = dict(data["metadatas"][0]) if data.get("metadatas") else {}
-    ids_set = _parse_catalog_ids(meta)
-    ids_set.add(str(catalog_id).strip())
-    meta[CATALOG_IDS_FIELD] = _serialize_catalog_ids(ids_set)
-    meta = _ensure_photo_metadata(photo_id, meta)
-    embedding = _first_result_item(data.get("embeddings"))
-    if embedding is not None:
-        collection.update(ids=[photo_id], metadatas=[meta], embeddings=[embedding])
-    else:
-        collection.update(ids=[photo_id], metadatas=[meta])
-
-
-def _remove_catalog_id(photo_id, catalog_id):
-    """Remove catalog_id from the photo's catalog_ids list; update metadata only. Does not delete the photo."""
-    if not catalog_id or not photo_id:
-        return
-    _ensure_initialized()
-    if collection is None:
-        return
-    try:
-        data = collection.get(ids=[photo_id], include=["metadatas", "embeddings"])
-    except ChromaInternalError:
-        return
-    if not data or not data.get("ids"):
-        return
-    meta = dict(data["metadatas"][0]) if data.get("metadatas") else {}
-    ids_set = _parse_catalog_ids(meta)
-    ids_set.discard(str(catalog_id).strip())
-    meta[CATALOG_IDS_FIELD] = _serialize_catalog_ids(ids_set)
-    meta = _ensure_photo_metadata(photo_id, meta)
-    embedding = _first_result_item(data.get("embeddings"))
-    if embedding is not None:
-        collection.update(ids=[photo_id], metadatas=[meta], embeddings=[embedding])
-    else:
-        collection.update(ids=[photo_id], metadatas=[meta])
 
 
 def _normalize_photo_id(photo_id=None, legacy_uuid=None):
@@ -246,7 +174,7 @@ def unload_collections():
 
 
 @retry_on_lock(max_retries=3, initial_delay=0.5)
-def add_image(photo_id, embedding, metadata, *, legacy_uuid=None, catalog_id=None):
+def add_image(photo_id, embedding, metadata, *, legacy_uuid=None):
     """Add a new image record to the Chroma collection.
 
     embedding may be None for metadata-only records; in that case we add
@@ -256,8 +184,6 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None, catalog_id=Non
     Note: Metadata-only entries are marked with has_embedding=False in their
     metadata and are filtered out of semantic search results in services/search.py.
     They can still be found via metadata keyword searches.
-
-    If catalog_id is provided, the photo is associated with that catalog (soft state).
     """
     _ensure_initialized()
     if collection is None:
@@ -268,8 +194,6 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None, catalog_id=Non
     if not photo_id:
         raise ValueError("photo_id is required")
     metadata = _ensure_photo_metadata(photo_id, metadata, legacy_uuid=legacy_uuid)
-    if catalog_id:
-        metadata[CATALOG_IDS_FIELD] = _serialize_catalog_ids({str(catalog_id).strip()})
     try:
         if embedding is None:
             # Add metadata-only record with a dummy zero embedding
@@ -293,7 +217,7 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None, catalog_id=Non
 
 @retry_on_lock(max_retries=3, initial_delay=0.5)
 def update_image(
-    photo_id, metadata, embedding=None, *, legacy_uuid=None, catalog_id=None
+    photo_id, metadata, embedding=None, *, legacy_uuid=None
 ):
     _ensure_initialized()
     if collection is None:
@@ -308,11 +232,9 @@ def update_image(
         collection.update(ids=[photo_id], metadatas=[metadata], embeddings=[embedding])
     else:
         collection.update(ids=[photo_id], metadatas=[metadata])
-    if catalog_id:
-        _add_catalog_id(photo_id, catalog_id)
 
 
-def get_image(photo_id, *, legacy_uuid=None, catalog_id=None):
+def get_image(photo_id, *, legacy_uuid=None):
     _ensure_initialized()
     if collection is None:
         return {"ids": [], "metadatas": [], "embeddings": []}
@@ -326,11 +248,6 @@ def get_image(photo_id, *, legacy_uuid=None, catalog_id=None):
             "ChromaDB get_image: index not yet built (empty collection): %s", e
         )
         return {"ids": [], "metadatas": [], "embeddings": []}
-    if catalog_id and data and data.get("ids"):
-        meta = (data.get("metadatas") or [None])[0]
-        ids_set = _parse_catalog_ids(meta)
-        if str(catalog_id).strip() not in ids_set:
-            return {"ids": [], "metadatas": [], "embeddings": []}
     return data
 
 
@@ -400,40 +317,17 @@ def clear_image_metadata(photo_id, *, legacy_uuid=None):
     return True
 
 
-def query_images(query_embedding, n_results, where_clause=None, catalog_id=None):
+def query_images(query_embedding, n_results, where_clause=None):
     _ensure_initialized()
     if collection is None:
         return {"ids": [[]], "distances": [[]], "metadatas": [[]]}
     try:
-        # Over-fetch when filtering by catalog so we have enough after post-filter
-        n_fetch = (int(n_results) * 2 + 100) if catalog_id else n_results
         result = collection.query(
             where=where_clause,
             query_embeddings=query_embedding,
-            n_results=min(n_fetch, STATS_GET_LIMIT),
+            n_results=min(n_results, STATS_GET_LIMIT),
             include=["metadatas", "distances"],
         )
-        if (
-            not catalog_id
-            or not result
-            or not result.get("ids")
-            or not result["ids"][0]
-        ):
-            return result
-        catalog_id_str = str(catalog_id).strip()
-        keep = []
-        ids0 = result["ids"][0]
-        dist0 = result["distances"][0] if result.get("distances") else []
-        meta0 = result["metadatas"][0] if result.get("metadatas") else []
-        for i, pid in enumerate(ids0):
-            m = meta0[i] if i < len(meta0) else {}
-            if catalog_id_str in _parse_catalog_ids(m):
-                keep.append(i)
-            if len(keep) >= n_results:
-                break
-        result["ids"] = [[ids0[j] for j in keep]]
-        result["distances"] = [[dist0[j] for j in keep]] if dist0 else [[]]
-        result["metadatas"] = [[meta0[j] for j in keep]] if meta0 else [[]]
         return result
     except Exception as e:
         logger.error(f"Error querying images: {e}", exc_info=True)
@@ -448,11 +342,9 @@ def get_image_count():
     return len(collection.get(include=[], limit=STATS_GET_LIMIT)["ids"])
 
 
-def get_image_metadata_stats(catalog_id=None):
+def get_image_metadata_stats():
     """
-    Return counts of images by metadata presence (no embeddings loaded).
-    Returns dict: total, with_embedding, with_title, with_caption, with_keywords.
-    If catalog_id is set, only count photos whose catalog_ids contain that catalog.
+    Return statistics on metadata presence across the collection.
     """
     _ensure_initialized()
     if collection is None:
@@ -465,17 +357,12 @@ def get_image_metadata_stats(catalog_id=None):
         }
     result = collection.get(include=["metadatas"], limit=STATS_GET_LIMIT)
     metadatas = result.get("metadatas", []) or []
-    catalog_id_str = str(catalog_id).strip() if catalog_id else None
     total = 0
     with_embedding = 0
     with_title = 0
     with_caption = 0
     with_keywords = 0
     for idx, m in enumerate(metadatas):
-        if catalog_id_str is not None:
-            ids_set = _parse_catalog_ids(m)
-            if catalog_id_str not in ids_set:
-                continue
         total += 1
         if m.get("has_embedding", True):
             with_embedding += 1
@@ -494,147 +381,27 @@ def get_image_metadata_stats(catalog_id=None):
     }
 
 
-# Batch size for sync_claim: one get + one or two updates per batch instead of per photo
-SYNC_CLAIM_BATCH_SIZE = 200
-
-
-def sync_claim(catalog_id, photo_ids):
-    """Add catalog_id to each photo's catalog_ids (claim existing backend photos for this catalog).
-    Used for migration: unclaimed photos become visible to this catalog.
-    Returns {"claimed": N, "errors": M}. Uses batched get/update for speed.
-    Deduplicates photo_ids so Chroma get() is not given duplicate IDs (e.g. virtual copies share file-based id).
-    """
-    _ensure_initialized()
-    if collection is None:
-        return {"claimed": 0, "errors": 0}
-    if not catalog_id:
-        return {"claimed": 0, "errors": 0}
-    catalog_id_str = str(catalog_id).strip()
-    # Deduplicate: same photo_id can appear multiple times (virtual copies, same file)
-    seen = set()
-    unique = []
-    for pid in photo_ids or []:
-        pid = str(pid).strip()
-        if not pid or pid in seen:
-            continue
-        seen.add(pid)
-        unique.append(pid)
-    photo_ids = unique
-    claimed = 0
-    errors = 0
-    for start in range(0, len(photo_ids), SYNC_CLAIM_BATCH_SIZE):
-        chunk = photo_ids[start : start + SYNC_CLAIM_BATCH_SIZE]
-        try:
-            data = collection.get(ids=chunk, include=["metadatas", "embeddings"])
-            if not data or not data.get("ids"):
-                continue
-            ids = data["ids"]
-            metadatas = data.get("metadatas") or [{}] * len(ids)
-            embeddings = data.get("embeddings")
-            if embeddings is not None and isinstance(embeddings, np.ndarray):
-                embeddings = list(embeddings)
-            elif embeddings is None:
-                embeddings = [None] * len(ids)
-            update_ids = []
-            update_metadatas = []
-            update_embeddings = []
-            no_emb_ids = []
-            no_emb_metadatas = []
-            for i, pid in enumerate(ids):
-                meta = dict(metadatas[i]) if i < len(metadatas) else {}
-                ids_set = _parse_catalog_ids(meta)
-                ids_set.add(catalog_id_str)
-                meta[CATALOG_IDS_FIELD] = _serialize_catalog_ids(ids_set)
-                meta = _ensure_photo_metadata(pid, meta)
-                emb = embeddings[i] if i < len(embeddings) else None
-                if emb is not None:
-                    update_ids.append(pid)
-                    update_metadatas.append(meta)
-                    update_embeddings.append(
-                        emb if not isinstance(emb, np.ndarray) else emb.tolist()
-                    )
-                else:
-                    no_emb_ids.append(pid)
-                    no_emb_metadatas.append(meta)
-            if update_ids:
-                collection.update(
-                    ids=update_ids,
-                    metadatas=update_metadatas,
-                    embeddings=update_embeddings,
-                )
-                claimed += len(update_ids)
-            if no_emb_ids:
-                collection.update(ids=no_emb_ids, metadatas=no_emb_metadatas)
-                claimed += len(no_emb_ids)
-        except Exception as e:
-            logger.warning(
-                "sync_claim batch failed for chunk %s..%s: %s",
-                start,
-                start + len(chunk),
-                e,
-            )
-            errors += len(chunk)
-    return {"claimed": claimed, "errors": errors}
-
-
-def sync_cleanup(catalog_id, active_photo_ids):
-    """Disassociate catalog_id from photos that are no longer in active_photo_ids.
-    Does not delete any documents; only updates catalog_ids metadata.
-    Returns {"checked": N, "disassociated": M}.
-    """
-    _ensure_initialized()
-    if collection is None:
-        return {"checked": 0, "disassociated": 0}
-    if not catalog_id:
-        return {"checked": 0, "disassociated": 0}
-    active = set(active_photo_ids) if active_photo_ids is not None else set()
-    result = collection.get(include=["metadatas"], limit=STATS_GET_LIMIT)
-    ids = result.get("ids") or []
-    metadatas = result.get("metadatas") or []
-    checked = 0
-    disassociated = 0
-    catalog_id_str = str(catalog_id).strip()
-    for i, meta in enumerate(metadatas):
-        pid = ids[i] if i < len(ids) else None
-        if not pid:
-            continue
-        ids_set = _parse_catalog_ids(meta)
-        if catalog_id_str not in ids_set:
-            continue
-        checked += 1
-        if pid not in active:
-            _remove_catalog_id(pid, catalog_id_str)
-            disassociated += 1
-    return {"checked": checked, "disassociated": disassociated}
-
-
-def get_all_image_ids(has_embedding=None, catalog_id=None):
-    """Get all image IDs, optionally filtered by embedding status and/or catalog_id.
+def get_all_image_ids(has_embedding=None):
+    """Get all image IDs, optionally filtered by embedding status.
 
     Args:
         has_embedding: If True, only return IDs with real embeddings.
                       If False, only return IDs with dummy embeddings.
                       If None, return all IDs.
-        catalog_id: If set, only return IDs whose catalog_ids metadata contains this catalog.
     """
     _ensure_initialized()
     if collection is None:
         return []
-    need_metadata = has_embedding is not None or catalog_id is not None
+    need_metadata = has_embedding is not None
     if not need_metadata:
         result = collection.get(include=[], limit=STATS_GET_LIMIT)
         return result["ids"]
     result = collection.get(include=["metadatas"], limit=STATS_GET_LIMIT)
     filtered_ids = []
-    catalog_id_str = str(catalog_id).strip() if catalog_id else None
     for i, metadata in enumerate(result["metadatas"]):
         if has_embedding is not None:
             has_emb = metadata.get("has_embedding", True) if metadata else True
             if has_emb != has_embedding:
-                continue
-        if catalog_id_str is not None:
-            ids_set = _parse_catalog_ids(metadata)
-            if catalog_id_str not in ids_set:
                 continue
         filtered_ids.append(result["ids"][i])
     return filtered_ids

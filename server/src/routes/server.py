@@ -47,6 +47,20 @@ def unload():
     return jsonify({"status": "Resources unloaded successfully."})
 
 
+@server_bp.route("/backup", methods=["POST"])
+def backup_db():
+    """Manually trigger a database backup with rotation settings."""
+    data = request.get_json() or {}
+    rotation_days = int(data.get("rotation_days", 0))
+    try:
+        from services import backup
+        backup._do_backup(rotation_days=rotation_days)
+        return jsonify({"results": {"status": "Backup created successfully."}})
+    except Exception as e:
+        logger.error(f"Backup failed: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @server_bp.route("/restart", methods=["POST"])
 def restart():
     """

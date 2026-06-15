@@ -318,17 +318,9 @@ def discover_styles_from_examples(
         for sg in subgroups:
             subgenre = sg["subgenre"]
             profile = sg.get("camera_profile") or camera_profile
-            style_name = grouping.generate_style_name(profile, genre, subgenre)
+            style_name = grouping.generate_style_name(genre, subgenre)
             style_id = _slugify(style_name)
 
-            # Ensure uniqueness
-            existing = get_style(style_id)
-            suffix = 1
-            original_id = style_id
-            while existing:
-                style_id = f"{original_id}-{suffix}"
-                existing = get_style(style_id)
-                suffix += 1
 
             style = {
                 "style_id": style_id,

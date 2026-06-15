@@ -24,11 +24,10 @@ def _get_backups_dir():
     return os.path.join(config.DB_PATH, "backups")
 
 
-def get_database_stats(catalog_id=None) -> dict:
+def get_database_stats() -> dict:
     """Return database statistics for photos, faces, and persons.
-    If catalog_id is provided, photo stats are limited to that catalog (soft state).
     """
-    image_stats = chroma_service.get_image_metadata_stats(catalog_id=catalog_id)
+    image_stats = chroma_service.get_image_metadata_stats()
     return {
         "photos": {
             "total": image_stats["total"],
@@ -147,43 +146,22 @@ def prune_old_backups(max_keep: int = 10) -> int:
     return deleted
 
 
-def prune_database(valid_photo_ids: list, catalog_id: str = None) -> dict:
+def prune_database(valid_photo_ids: list) -> dict:
     """
     Removes photo metadata, embeddings, and face embeddings for any photo NOT in valid_photo_ids.
-    If catalog_id is provided, it only prunes photos that belong to that catalog.
-    If a photo belongs to multiple catalogs, it is disassociated from the provided catalog_id.
     """
     valid_set = set(valid_photo_ids)
-    all_ids = chroma_service.get_all_image_ids(catalog_id=catalog_id)
+    all_ids = chroma_service.get_all_image_ids()
 
     deleted = 0
-    disassociated = 0
-
-    catalog_id_str = str(catalog_id).strip() if catalog_id else None
 
     for pid in all_ids:
         if pid not in valid_set:
-            data = chroma_service.get_image(pid)
-            if not data or not data.get("metadatas"):
-                chroma_service.delete_image(pid)
-                chroma_service.delete_faces_by_photo_uuid(pid)
-                deleted += 1
-                continue
-
-            meta = data["metadatas"][0] or {}
-            cats = chroma_service._parse_catalog_ids(meta)
-            if catalog_id_str:
-                cats.discard(catalog_id_str)
-
-            if not cats:
-                chroma_service.delete_image(pid)
-                chroma_service.delete_faces_by_photo_uuid(pid)
-                deleted += 1
-            elif catalog_id_str:
-                chroma_service._remove_catalog_id(pid, catalog_id_str)
-                disassociated += 1
+            chroma_service.delete_image(pid)
+            chroma_service.delete_faces_by_photo_uuid(pid)
+            deleted += 1
 
     logger.info(
-        f"Pruned database: {deleted} deleted, {disassociated} disassociated, from {len(all_ids)} checked."
+        f"Pruned database: {deleted} deleted from {len(all_ids)} checked."
     )
-    return {"deleted": deleted, "disassociated": disassociated, "checked": len(all_ids)}
+    return {"deleted": deleted, "checked": len(all_ids)}

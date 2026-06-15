@@ -12,9 +12,6 @@ from services.chroma import (
     _ensure_photo_metadata,
     _first_result_item,
     _normalize_photo_id,
-    _parse_catalog_ids,
-    _serialize_catalog_ids,
-    CATALOG_IDS_FIELD,
     LEGACY_UUID_FIELD,
     PHOTO_ID_FIELD,
 )
@@ -36,35 +33,6 @@ class TestNormalizePhotoId:
     def test_empty_string_normalizes_to_none(self):
         assert _normalize_photo_id(photo_id="   ") is None
 
-
-class TestCatalogIds:
-    def test_parse_returns_empty_for_missing_metadata(self):
-        assert _parse_catalog_ids({}) == set()
-        assert _parse_catalog_ids(None) == set()
-
-    def test_parse_handles_json_string(self):
-        meta = {CATALOG_IDS_FIELD: json.dumps(["cat-1", "cat-2"])}
-        assert _parse_catalog_ids(meta) == {"cat-1", "cat-2"}
-
-    def test_parse_handles_list_directly(self):
-        meta = {CATALOG_IDS_FIELD: ["cat-1", "cat-2"]}
-        assert _parse_catalog_ids(meta) == {"cat-1", "cat-2"}
-
-    def test_parse_invalid_json_returns_empty(self):
-        meta = {CATALOG_IDS_FIELD: "{not valid json"}
-        assert _parse_catalog_ids(meta) == set()
-
-    def test_serialize_produces_sorted_json_list(self):
-        result = _serialize_catalog_ids({"b", "a", "c"})
-        assert json.loads(result) == ["a", "b", "c"]
-
-    def test_serialize_empty_set_returns_bracket_pair(self):
-        assert _serialize_catalog_ids(set()) == "[]"
-
-    def test_round_trip(self):
-        original = {"x", "y", "z"}
-        meta = {CATALOG_IDS_FIELD: _serialize_catalog_ids(original)}
-        assert _parse_catalog_ids(meta) == original
 
 
 class TestEnsurePhotoMetadata:

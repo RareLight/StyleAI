@@ -26,9 +26,8 @@ def database_stats():
         "persons": { "total" }
     }
     """
-    catalog_id = request.args.get("catalog_id")
     try:
-        return jsonify(service_db.get_database_stats(catalog_id=catalog_id))
+        return jsonify(service_db.get_database_stats())
     except Exception as e:
         logger.error(f"Error computing database stats: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -67,17 +66,16 @@ def backup_database():
 def prune_database():
     """
     Remove orphaned metadata and embeddings for photos that no longer exist in the catalog.
-    Expects JSON: { "catalog_id": "...", "valid_photo_ids": ["id1", "id2", ...] }
+    Expects JSON: { "valid_photo_ids": ["id1", "id2", ...] }
     """
     try:
         data = request.get_json(silent=True) or {}
-        catalog_id = data.get("catalog_id")
         valid_photo_ids = data.get("valid_photo_ids")
 
         if not isinstance(valid_photo_ids, list):
             return jsonify({"error": "valid_photo_ids must be a list of strings"}), 400
 
-        result = service_db.prune_database(valid_photo_ids, catalog_id)
+        result = service_db.prune_database(valid_photo_ids)
         return jsonify({"results": result, "error": None, "warning": None})
     except Exception as e:
         logger.error("Database prune failed: %s", e, exc_info=True)

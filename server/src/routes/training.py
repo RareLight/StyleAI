@@ -22,6 +22,7 @@ import io
 
 from config import logger
 from services import training as training_service
+from services import style_catalog
 
 training_bp = Blueprint("training", __name__)
 
@@ -443,8 +444,10 @@ def delete_training_example(photo_id: str):
 @training_bp.route("/training", methods=["DELETE"])
 def clear_training_examples():
     try:
-        removed = training_service.clear_all_training_examples()
-        return jsonify({"status": "ok", "removed": removed}), 200
+        # Per user instruction, we ONLY clear the derived styles (which are cheap to regenerate)
+        # and we preserve the actual training examples (which contain expensive vector embeddings and LLM metadata)
+        styles_removed = style_catalog.reset_all_styles()
+        return jsonify({"status": "ok", "removed": 0, "styles_removed": styles_removed}), 200
     except Exception as exc:
         logger.error("Failed to clear training examples: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500

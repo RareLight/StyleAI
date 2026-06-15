@@ -107,7 +107,10 @@ local function showAnalyzeAndIndexDialog(ctx)
 
     -- Catalog data writing options
     props.saveDataToCatalog = prefs.saveDataToCatalog ~= false -- default true
-    props.appendMetadata = prefs.appendMetadata or false
+    props.appendMetadata = prefs.appendMetadata
+    if props.appendMetadata == nil then
+        props.appendMetadata = true
+    end
     props.use16BitTiffForHdr = prefs.use16BitTiffForHdr or false
     
     -- Auditing
@@ -596,7 +599,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         props.submitFolderName = false
                         props.showPhotoContextDialog = false
                         props.saveDataToCatalog = true
-                        props.appendMetadata = false
+                        props.appendMetadata = true
                         props.enableValidation = false
                     end
                 end,
@@ -914,11 +917,7 @@ LrTasks.startAsyncTask(function()
 			functionContext = context,
 		})
 
-		-- Wait for background catalog db migrations (e.g. claim_photos) to finish
-		-- so they don't collide with our indexing loop locks.
-		progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/WaitingForMigrations=Waiting for catalog initialization..."))
 		local SearchIndexAPI = require("APISearchIndex")
-		SearchIndexAPI.waitForDbMigrations()
 
 		-- Get photos to process
 		-- For scope 'missing', pass task options so backend checks which photos need the selected tasks
@@ -969,6 +968,12 @@ LrTasks.startAsyncTask(function()
 			LOC("$$$/StyleAI/AnalyzeAndIndex/ProgressCount=^1 photos to process", tostring(#photosToProcess))
 		)
 		progressScope:setPortionComplete(0, #photosToProcess)
+
+		if #photosToProcess >= 50 then
+			log:info("Triggering database autosave before processing " .. tostring(#photosToProcess) .. " photos")
+			progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/CreatingSafetyBackup=Creating safety backup..."))
+			SearchIndexAPI.triggerBackup(prefs.backupRotationDays)
+		end
 
 		-- If photo context dialog is enabled, show it for each photo
 		if props.showPhotoContextDialog and props.enableMetadata then
