@@ -240,8 +240,14 @@ function Util.getPhotoExif(photo)
 	local okDev, devSettings = LrTasks.pcall(function()
 		return photo:getDevelopSettings()
 	end)
-	if okDev and type(devSettings) == "table" and type(devSettings.Profile) == "string" and devSettings.Profile ~= "" then
-		exif.camera_profile = devSettings.Profile
+	if okDev and type(devSettings) == "table" then
+		if type(devSettings.Profile) == "string" and devSettings.Profile ~= "" then
+			exif.camera_profile = devSettings.Profile
+		end
+		-- HDR mode dramatically changes slider physics, so treat it as a separate profile
+		if devSettings.HDREditMode == true then
+			exif.camera_profile = (exif.camera_profile or "Unknown Profile") .. " + HDR"
+		end
 	end
 
 	return exif

@@ -53,9 +53,19 @@ def backup_db():
     data = request.get_json() or {}
     rotation_days = int(data.get("rotation_days", 0))
     try:
-        from services import backup
+        from services import db as service_db
+        import os
 
-        backup._do_backup(rotation_days=rotation_days)
+        zip_path, backup_name = service_db.build_backup_zip()
+        if rotation_days > 0:
+            service_db.prune_old_backups(max_keep=rotation_days)
+
+        # Remove the temporary zip since it was copied to backups_dir by build_backup_zip
+        try:
+            os.remove(zip_path)
+        except OSError as e:
+            logger.warning("Could not remove temporary backup zip %s: %s", zip_path, e)
+
         return jsonify({"results": {"status": "Backup created successfully."}})
     except Exception as e:
         logger.error(f"Backup failed: {e}", exc_info=True)

@@ -51,155 +51,140 @@ function OnboardingWizard.show(manualTrigger)
 				spacing = f:control_spacing(),
 				width = 650,
 
-				f:tab_view({
+				f:group_box({
+					title = LOC("$$$/StyleAI/Onboarding/Step1Title=Step 1: Initialize Local ML Server (Required)"),
 					fill_horizontal = 1,
-
-					-- BACKEND TAB
-					f:tab_view_item({
-						title = LOC("$$$/StyleAI/Onboarding/BackendTitle=Backend Server"),
-						identifier = "backend",
-
-						f:group_box({
-							title = LOC("$$$/StyleAI/Onboarding/WelcomeTitle=Welcome to StyleAI!"),
-							fill_horizontal = 1,
-							f:static_text({
-								title = LOC(
-									"$$$/StyleAI/Onboarding/WelcomeMessage=Thank you for choosing StyleAI. This wizard will guide you through the initial setup to ensure everything is running smoothly."
-								),
-								width_in_chars = 60,
-								wrap = true,
+					f:static_text({
+						title = LOC(
+							"$$$/StyleAI/Onboarding/Step1Desc=StyleAI runs a lightweight, local Python server in the background to handle heavy mathematical tasks without sending your photos to the cloud. This server is the foundation of the AI Editing system."
+						),
+						width_in_chars = 60,
+						wrap = true,
+					}),
+					f:spacer({ height = 5 }),
+					f:row({
+						f:static_text({
+							title = LOC("$$$/StyleAI/Onboarding/BackendStatus=Server Status:"),
+							width = share("label"),
+						}),
+						f:static_text({
+							title = bind({
+								key = "backendRunning",
+								transform = function(v)
+									if v == true then
+										return LOC("$$$/StyleAI/Onboarding/BackendRunning=Running")
+									end
+									if v == "starting" then
+										return LOC("$$$/StyleAI/Onboarding/BackendStarting=Starting...")
+									end
+									return LOC("$$$/StyleAI/Onboarding/BackendError=Failed to start")
+								end,
+							}),
+							text_color = bind({
+								key = "backendRunning",
+								transform = function(v)
+									if v == true then
+										return LrColor(0, 0.8, 0)
+									end
+									if v == "starting" then
+										return LrColor(0.8, 0.8, 0)
+									end
+									return LrColor(0.8, 0, 0)
+								end,
 							}),
 						}),
-
-						f:group_box({
-							title = LOC("$$$/StyleAI/Onboarding/BackendTitle=Backend Server"),
-							fill_horizontal = 1,
-							f:static_text({
-								title = LOC(
-									"$$$/StyleAI/Onboarding/BackendDesc=StyleAI requires a local backend server to process your photos. We will attempt to start it now."
-								),
-								width_in_chars = 60,
-								wrap = true,
-							}),
-							f:spacer({ height = 5 }),
-							f:row({
-								f:static_text({
-									title = LOC("$$$/StyleAI/Onboarding/BackendStatus=Server Status:"),
-									width = share("label"),
-								}),
-								f:static_text({
-									title = bind({
-										key = "backendRunning",
-										transform = function(v)
-											if v == true then
-												return LOC("$$$/StyleAI/Onboarding/BackendRunning=Running")
-											end
-											if v == "starting" then
-												return LOC("$$$/StyleAI/Onboarding/BackendStarting=Starting...")
-											end
-											return LOC("$$$/StyleAI/Onboarding/BackendError=Failed to start")
-										end,
-									}),
-									text_color = bind({
-										key = "backendRunning",
-										transform = function(v)
-											if v == true then
-												return LrColor(0, 0.8, 0)
-											end
-											if v == "starting" then
-												return LrColor(0.8, 0.8, 0)
-											end
-											return LrColor(0.8, 0, 0)
-										end,
-									}),
-								}),
-								f:push_button({
-									title = LOC("$$$/StyleAI/common/Start=Start"),
-									action = startBackend,
-									enabled = bind({
-										key = "backendRunning",
-										transform = function(v)
-											return v ~= true and v ~= "starting"
-										end,
-									}),
-								}),
-							}),
-							f:spacer({ height = 5 }),
-							f:static_text({
-								title = LOC(
-									"$$$/StyleAI/Onboarding/BackendHint=If the server fails to start, check if another application is using port 19819 or if your firewall is blocking it."
-								),
-								size = "small",
-								width_in_chars = 60,
-								wrap = true,
+						f:push_button({
+							title = LOC("$$$/StyleAI/common/Start=Start Server"),
+							action = startBackend,
+							enabled = bind({
+								key = "backendRunning",
+								transform = function(v)
+									return v ~= true and v ~= "starting"
+								end,
 							}),
 						}),
 					}),
+					f:spacer({ height = 5 }),
+					f:static_text({
+						title = LOC(
+							"$$$/StyleAI/Onboarding/BackendHint=If the server fails to start, check if another application is using port 19819 or if your firewall is blocking it."
+						),
+						size = "small",
+						width_in_chars = 60,
+						wrap = true,
+					}),
+				}),
 
-					-- SEMANTIC SEARCH TAB
-					f:tab_view_item({
-						title = LOC("$$$/StyleAI/Onboarding/SemanticTitle=Semantic Search"),
-						identifier = "semantic",
-
-						f:group_box({
-							title = LOC("$$$/StyleAI/Onboarding/SemanticTitle=Semantic Search"),
-							fill_horizontal = 1,
-							f:static_text({
-								title = LOC(
-									"$$$/StyleAI/Onboarding/SemanticDesc=To enable advanced search by content, you need the SigLIP2 AI model. This is a ~4GB download."
-								),
-								width_in_chars = 60,
-								wrap = true,
+				f:group_box({
+					title = LOC("$$$/StyleAI/Onboarding/Step2Title=Step 2: Download AI Editing Engine (Required)"),
+					fill_horizontal = 1,
+					f:static_text({
+						title = LOC(
+							"$$$/StyleAI/Onboarding/Step2Desc=To predict your unique editing style, StyleAI requires the SigLIP2 vision model. This local model analyzes the lighting, subject, and composition of your photos entirely offline. (~4GB download)"
+						),
+						width_in_chars = 60,
+						wrap = true,
+					}),
+					f:spacer({ height = 5 }),
+					f:row({
+						f:checkbox({
+							title = LOC(
+								"$$$/StyleAI/Onboarding/ClipAlreadyDownloaded=SigLIP2 model is downloaded and ready."
+							),
+							value = bind("clipReady"),
+							enabled = false,
+						}),
+					}),
+					f:row({
+						f:push_button({
+							title = bind({
+								key = "clipDownloading",
+								transform = function(v)
+									if v then
+										return LOC("$$$/StyleAI/Onboarding/DownloadingClip=Downloading (Check progress bar)...")
+									end
+									return LOC("$$$/StyleAI/Onboarding/DownloadClip=Download SigLIP2 Model")
+								end,
 							}),
-							f:spacer({ height = 5 }),
-							f:row({
-								f:checkbox({
-									title = LOC(
-										"$$$/StyleAI/Onboarding/ClipAlreadyDownloaded=SigLIP2 model is already available."
-									),
-									value = bind("clipReady"),
-									enabled = false,
-								}),
-							}),
-							f:row({
-								f:push_button({
-									title = bind({
-										key = "clipDownloading",
-										transform = function(v)
-											if v then
-												return LOC("$$$/StyleAI/Onboarding/DownloadingClip=Downloading (Check progress bar)...")
-											end
-											return LOC("$$$/StyleAI/Onboarding/DownloadClip=Download SigLIP2 Model")
-										end,
-									}),
-									action = function()
-										propertyTable.clipDownloading = true
-										LrTasks.startAsyncTask(function()
-											SearchIndexAPI.startClipDownload()
-											propertyTable.clipReady = SearchIndexAPI.isClipReady()
-											propertyTable.clipDownloading = false
-										end)
-									end,
-									enabled = bind({
-										keys = { "clipReady", "clipDownloading" },
-										transform = function(v)
-											return not propertyTable.clipReady and not propertyTable.clipDownloading
-										end,
-									}),
-								}),
+							action = function()
+								propertyTable.clipDownloading = true
+								LrTasks.startAsyncTask(function()
+									SearchIndexAPI.startClipDownload()
+									propertyTable.clipReady = SearchIndexAPI.isClipReady()
+									propertyTable.clipDownloading = false
+								end)
+							end,
+							enabled = bind({
+								keys = { "clipReady", "clipDownloading" },
+								transform = function(v)
+									return not propertyTable.clipReady and not propertyTable.clipDownloading
+								end,
 							}),
 						}),
-						f:group_box({
-							title = LOC("$$$/StyleAI/Onboarding/FinishTitle=All Set!"),
-							fill_horizontal = 1,
-							f:static_text({
-								title = LOC(
-									"$$$/StyleAI/Onboarding/FinishDesc=Configuration complete. StyleAI is ready to help you manage your Lightroom catalog."
-								),
-								width_in_chars = 60,
-								wrap = true,
-							}),
-						}),
+					}),
+				}),
+
+				f:group_box({
+					title = LOC("$$$/StyleAI/Onboarding/Step3Title=Step 3: Auto-Tagging & Semantic Search (Optional)"),
+					fill_horizontal = 1,
+					f:static_text({
+						title = LOC(
+							"$$$/StyleAI/Onboarding/Step3Desc=If you want StyleAI to automatically write titles, captions, and keywords for your photos, or search your catalog using natural language, you can configure an optional Cloud LLM API key later in the Plugin Manager."
+						),
+						width_in_chars = 60,
+						wrap = true,
+					}),
+				}),
+
+				f:group_box({
+					title = LOC("$$$/StyleAI/Onboarding/FinishTitle=All Set!"),
+					fill_horizontal = 1,
+					f:static_text({
+						title = LOC(
+							"$$$/StyleAI/Onboarding/FinishDesc=Configuration complete. Click OK below. StyleAI is ready to help you manage and edit your Lightroom catalog."
+						),
+						width_in_chars = 60,
+						wrap = true,
 					}),
 				}),
 			})

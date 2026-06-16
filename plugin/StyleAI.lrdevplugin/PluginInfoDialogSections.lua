@@ -105,20 +105,22 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 				status = "critical"
 				table.insert(issues, LOC("$$$/StyleAI/Health/BackendFailed=Backend server is not reachable."))
 				color = { 0.8, 0, 0 }
+			else
+				table.insert(issues, LOC("$$$/StyleAI/Health/BackendOk=Local ML Engine: Running (Editing fully functional)."))
 			end
 			if not health.gemini and not health.chatgpt and not health.ollama and not health.lmstudio then
 				if status ~= "critical" then
 					status = "warning"
-					color = { 0.8, 0.8, 0 }
+					color = { 0.1, 0.5, 0.8 } -- Blue instead of yellow to indicate it's optional
 				end
 				table.insert(
 					issues,
-					LOC("$$$/StyleAI/Health/ApiKeysMissing=No AI providers configured for AI generation.")
+					LOC("$$$/StyleAI/Health/ApiKeysMissing=LLM not configured (Semantic search disabled, but AI Editing works).")
 				)
 			end
 
 			propertyTable.healthStatus = status
-			propertyTable.healthIssues = table.concat(issues, "; ")
+			propertyTable.healthIssues = table.concat(issues, "\n")
 			propertyTable.healthColor = color
 		end)
 	end
@@ -325,90 +327,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				}),
 			}),
 
-			-- 2. AI Provider Configuration
-			f:group_box({
-				width = groupBoxWidth,
-				title = LOC("$$$/StyleAI/PluginInfoDialogSections/AiProviderConfig=AI Provider Configuration"),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GoogleApiKey=Google API key"),
-						alignment = "right",
-						width = share("apiKeyLabelWidth"),
-					}),
-					f:edit_field({
-						value = bind("geminiApiKey"),
-						fill_horizontal = 1,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
-						action = function(button)
-							LrHttp.openUrlInBrowser("https://aistudio.google.com/app/apikey")
-						end,
-						width = share("apiKeyButtonWidth"),
-					}),
-				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/ChatGPTApiKey=ChatGPT API key"),
-						alignment = "right",
-						width = share("apiKeyLabelWidth"),
-					}),
-					f:edit_field({
-						value = bind("chatgptApiKey"),
-						fill_horizontal = 1,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
-						action = function(button)
-							LrHttp.openUrlInBrowser("https://platform.openai.com/api-keys")
-						end,
-						width = share("apiKeyButtonWidth"),
-					}),
-				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaBaseUrl=Ollama Base URL"),
-						alignment = "right",
-						width = share("apiKeyLabelWidth"),
-					}),
-					f:edit_field({
-						value = bind("ollamaBaseUrl"),
-						fill_horizontal = 1,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
-						tooltip = LOC("$$$/StyleAI/PluginInfo/OllamaTooltip=Opens the setup guide for Ollama integration."),
-						action = function(button)
-							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-Ollama-Setup")
-						end,
-						width = share("apiKeyButtonWidth"),
-					}),
-				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfo/LmStudioUrl=LM Studio Base URL"),
-						alignment = "right",
-						width = share("apiKeyLabelWidth"),
-					}),
-					f:edit_field({
-						value = bind("lmstudioBaseUrl"),
-						fill_horizontal = 1,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfo/SetupLmStudio=Setup LM Studio"),
-						tooltip = LOC("$$$/StyleAI/PluginInfo/LmStudioTooltip=Opens the setup guide for LM Studio integration."),
-						action = function(button)
-							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-LM-Studio-Setup")
-						end,
-						width = share("apiKeyButtonWidth"),
-					}),
-				}),
-			}),
-
+			-- 2. My Signature Styles (Editing Engine Prerequisites)
 			f:group_box({
 				width = groupBoxWidth,
 				title = LOC("$$$/StyleAI/Training/SectionTitle=My Signature Styles"),
@@ -565,6 +484,90 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 								end)
 							end
 						end,
+					}),
+				}),
+			}),
+
+			-- 3. AI Provider Configuration (Optional for Auto-Tagging)
+			f:group_box({
+				width = groupBoxWidth,
+				title = LOC("$$$/StyleAI/PluginInfoDialogSections/AiProviderConfig=AI Provider Configuration"),
+				f:row({
+					fill_horizontal = 1,
+					f:static_text({
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GoogleApiKey=Google API key"),
+						alignment = "right",
+						width = share("apiKeyLabelWidth"),
+					}),
+					f:edit_field({
+						value = bind("geminiApiKey"),
+						fill_horizontal = 1,
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
+						action = function(button)
+							LrHttp.openUrlInBrowser("https://aistudio.google.com/app/apikey")
+						end,
+						width = share("apiKeyButtonWidth"),
+					}),
+				}),
+				f:row({
+					fill_horizontal = 1,
+					f:static_text({
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/ChatGPTApiKey=ChatGPT API key"),
+						alignment = "right",
+						width = share("apiKeyLabelWidth"),
+					}),
+					f:edit_field({
+						value = bind("chatgptApiKey"),
+						fill_horizontal = 1,
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
+						action = function(button)
+							LrHttp.openUrlInBrowser("https://platform.openai.com/api-keys")
+						end,
+						width = share("apiKeyButtonWidth"),
+					}),
+				}),
+				f:row({
+					fill_horizontal = 1,
+					f:static_text({
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaBaseUrl=Ollama Base URL"),
+						alignment = "right",
+						width = share("apiKeyLabelWidth"),
+					}),
+					f:edit_field({
+						value = bind("ollamaBaseUrl"),
+						fill_horizontal = 1,
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
+						tooltip = LOC("$$$/StyleAI/PluginInfo/OllamaTooltip=Opens the setup guide for Ollama integration."),
+						action = function(button)
+							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-Ollama-Setup")
+						end,
+						width = share("apiKeyButtonWidth"),
+					}),
+				}),
+				f:row({
+					fill_horizontal = 1,
+					f:static_text({
+						title = LOC("$$$/StyleAI/PluginInfo/LmStudioUrl=LM Studio Base URL"),
+						alignment = "right",
+						width = share("apiKeyLabelWidth"),
+					}),
+					f:edit_field({
+						value = bind("lmstudioBaseUrl"),
+						fill_horizontal = 1,
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/PluginInfo/SetupLmStudio=Setup LM Studio"),
+						tooltip = LOC("$$$/StyleAI/PluginInfo/LmStudioTooltip=Opens the setup guide for LM Studio integration."),
+						action = function(button)
+							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-LM-Studio-Setup")
+						end,
+						width = share("apiKeyButtonWidth"),
 					}),
 				}),
 			}),

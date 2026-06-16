@@ -209,7 +209,7 @@ local function showAiEditDialog(ctx)
 	props.adjustDetail = prefs.aiEditAdjustDetail ~= false
 	props.adjustEffects = prefs.aiEditAdjustEffects ~= false
 	props.adjustLensCorrections = prefs.aiEditAdjustLensCorrections ~= false
-	props.allowAutoCrop = prefs.aiEditAllowAutoCrop ~= false
+	props.allowAutoCrop = prefs.aiEditAllowAutoCrop == true
 	props.compositionModes = Defaults.compositionModes or {}
 	props.compositionMode = prefs.aiEditCompositionMode or Defaults.defaultCompositionMode or "subtle"
 	if not hasCompositionModeValue(props.compositionMode) then
@@ -653,6 +653,7 @@ local function showAiEditDialog(ctx)
 						props.showPhotoContextDialog = true
 						props.submitKeywords = true
 						props.submitFolderName = false
+						props.allowAutoCrop = false
 						props.useTrainingStyle = true
 						props.faceBlurSensitivity = "balanced"
 					end

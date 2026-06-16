@@ -23,20 +23,20 @@ return {
 
 	LrLibraryMenuItems = {
 		{
-			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index & Auto-Tag Photos..."),
-			file = "TaskAnalyzeAndIndex.lua",
+			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
+			file = "TaskAiEditPhotos.lua",
 		},
 		{
 			title = LOC("$$$/StyleAI/Training/MenuItem=Train AI Style (Save Edits)..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
-			file = "TaskAiEditPhotos.lua",
-		},
-		{
 			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=AI Styles Index..."),
 			file = "TaskStyleCatalog.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index & Auto-Tag Photos..."),
+			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
 			title = LOC("$$$/StyleAI/Developer/RunPerformanceBenchmark=Developer: Run Performance Benchmark..."),
@@ -46,20 +46,20 @@ return {
 
 	LrExportMenuItems = {
 		{
-			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index & Auto-Tag Photos..."),
-			file = "TaskAnalyzeAndIndex.lua",
+			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
+			file = "TaskAiEditPhotos.lua",
 		},
 		{
 			title = LOC("$$$/StyleAI/Training/MenuItem=Train AI Style (Save Edits)..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
-			file = "TaskAiEditPhotos.lua",
-		},
-		{
 			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=AI Styles Index..."),
 			file = "TaskStyleCatalog.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index & Auto-Tag Photos..."),
+			file = "TaskAnalyzeAndIndex.lua",
 		},
 	},
 

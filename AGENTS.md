@@ -105,3 +105,13 @@ Dependencies are managed exclusively by [uv](https://docs.astral.sh/uv/). Do not
 - **Response Format**: Unconditionally return the standard JSON results/error/warning envelope.
 - **Imports**: Sibling-relative form within a subpackage (e.g. `from .face import ...` in `services/`); absolute form across subpackages (e.g. `from services.face import ...` in `routes/`).
 - **Infrastructure**: Update `Dockerfile`, `docker-compose-dev.yml`, and `docker-compose-prod.yml` when changing dependencies or environment requirements.
+
+### ML Architecture Constraints (CRITICAL)
+- **Database Isolation**: The `photos` collection (Semantic Search) and `training_examples` collection (Style Training) in ChromaDB MUST remain strictly isolated. Do NOT merge them. This separation ensures users can safely prune or wipe their massive search index without risking their precious, manually-curated ML training data.
+- **Training Optimization Limits**: During "Train AI Style", the plugin MUST export a JPEG preview and send it to the backend even if the photo was already indexed in the search database. The backend ML engine requires the raw image pixels to compute specialized exposure metrics (`zone_deep_shadows`, `histogram_signature`, `dominant_colors`), which the search database does not calculate or store.
+- **HDR Handling**: 
+  - The ML Predictive Pipeline (SigLIP2) is an SDR vision model. It does NOT use or accept HDR bracketed JPEGs. It relies purely on the base SDR JPEG to categorize the scene lighting.
+  - To prevent HDR edits from corrupting SDR style predictions, the `+ HDR` suffix is automatically appended to the camera profile name for HDR photos.
+  - HDR Brackets (`-2EV`, `+2EV`) are used EXCLUSIVELY by the Generative LLM fallback pipeline.
+- **White Balance**: Categorical WB ("As Shot" vs "Custom") is predicted as a scalar probability (`is_custom`). During recipe reconstruction, the engine enforces a strict threshold (0.7) to favor "As Shot" unless the AI is highly confident (70%+) that the user would apply a custom WB override in that specific lighting scenario.
+- **Crop Handling**: The ML engine predicts cropping by normalizing the aspect ratio (`width = height`) to prevent the system from predicting distorted or non-proportional crops.

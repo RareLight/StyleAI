@@ -84,79 +84,40 @@ Triggered when a user imports or indexes photos (`TaskAnalyzeAndIndex.lua`). Thi
 
 ## 2. Style Training Pipeline
 
-Triggered via `TaskTrainFromEdits.lua`. This pipeline allows the system to learn the user's personal grading style.
+Triggered via `TaskTrainFromEdits.lua`. This pipeline allows the system to learn the user's personal grading style using purely mathematical, LLM-free extraction.
 
 ### Data Flow & Stages
 1. **Lightroom (Client)**:
    - Evaluates the user's selected photo.
    - Extracts the final Lightroom Develop settings (the "Edit Recipe").
+   - Computes deterministic metadata fields (e.g. `+ HDR` is appended to the Camera Profile name to strictly partition HDR edits from SDR edits).
    - Sends the JPEG + Recipe to the backend.
-2. **Embedding & Semantic Extraction**:
-   - Runs through the exact same SigLIP2 and LLM Semantic Tagging steps as the standard Indexing pipeline.
-3. **Storage (`services/training.py` & `services/style_catalog.py`)**:
-   - **Input**: The visual embedding, the semantic metadata (lighting, genre), and the Lightroom Edit Recipe.
-   - **Output**: The record is saved into a specialized `edit_training` ChromaDB collection and the SQLite `style_profiles` table. This builds a searchable database of the user's grading decisions mapped to specific lighting and composition contexts.
+2. **Embedding & Exposure Analysis**:
+   - **Visual Context**: Runs the SigLIP2 vision model to extract the 1152-dimensional dense embedding (categorizes the scene lighting).
+   - **Exposure Metrics**: Analyzes the raw pixel values of the JPEG to compute crucial lighting metadata (`zone_deep_shadows`, `histogram_signature`, `dominant_colors`). Note: Because the Search index does not compute these metrics, Lightroom must export the JPEG during training even if the photo was previously indexed.
+3. **Storage (`services/training.py` & `services/predictive_engine.py`)**:
+   - **Input**: The visual embedding, the exposure metrics, and the Lightroom Edit Recipe.
+   - **Output**: The record is saved into the strictly isolated `training_examples` ChromaDB collection. Once enough examples are saved, `predictive_engine.py` refits the Scikit-Learn ML models (Ridge Regression + PCA).
 
 ---
 
 ## 3. AI Editing Pipeline
 
-Triggered via `TaskAiEditPhotos.lua`. This pipeline generates a custom edit recipe for a target photo based on learned styles or generative prompts.
+Triggered via `TaskAiEditPhotos.lua`. This pipeline generates a custom edit recipe for a target photo based purely on learned styles. The Generative LLM fallback has been deprecated for standard edits to prioritize predictability and speed.
 
 ### Data Flow & Stages
 1. **Lightroom (Client)**:
    - Renders a temporary JPEG of the unedited target photo.
-   - Gathers EXIF data, user intent strings ("Make it moody"), and AI slider constraints (e.g., "Don't touch Color Grading").
    - Sends to `POST /edit_base64`.
 2. **Target Evaluation**:
-   - The backend runs the target photo through SigLIP2 to get its visual embedding.
-3. **Style Retrieval & Scoring (`services/style_engine.py`)**:
-   - **Input**: Target photo's SigLIP2 embedding.
-   - **Query**: ChromaDB's `edit_training` collection is queried for the top-N visually similar training examples.
-   - **Scoring**: Candidates are re-ranked using a composite score based on exposure proximity (luminance/contrast match), scene-type overlap (genre match), and time-of-day proximity.
-4. **Recipe Generation (Two Paths)**:
-   - **Path A: LLM-Free Interpolation (High Confidence)**:
-     - **Input**: The top-K retrieved training examples and their Edit Recipes.
-     - **Execution**: A mathematical interpolation of the slider values weighted by the composite match score, followed by a RAW-adaptive compensation layer to adjust for exposure differences between the training images and the target image.
-     - **Output**: The final interpolated Edit Recipe JSON.
-   - **Path B: Generative LLM (Low Confidence or Fallback)**:
-     - *See "LLM Fallback Deep Dive" below.*
+   - The backend runs the target photo through SigLIP2 to get its visual embedding and computes its `exposure_metrics`.
+3. **Prediction Engine (`services/predictive_engine.py` & `services/style_engine.py`)**:
+   - **Direct Prediction (High Volume)**: If the matched style has 20+ training examples, the system bypasses retrieval and runs the target embedding directly through the pre-trained Ridge/PCA matrices to infer the exact slider values.
+   - **KNN Interpolation (Low Volume)**: If the style has <20 examples, it falls back to `style_engine.py`. The system queries the `training_examples` ChromaDB collection for the closest matches, scoring them on SigLIP2 visual distance and Exposure Proximity, and mathematically averages their recipes.
+4. **Special Parameter Constraints**:
+   - **Crop Handling**: Cropping is predicted, but the aspect ratio is strictly normalized (`width = height`) to prevent distorted crops.
+   - **White Balance**: Categorical WB (e.g., "As Shot" vs "Custom") is predicted as a probabilistic scalar (`is_custom`). The engine enforces a rigid 0.7 (70%) threshold, defaulting to "As Shot" unless the math is highly confident the user would override it.
+   - **HDR Partitions**: Since the camera profile was appended with `+ HDR` during training, an SDR photo will never query HDR training data, ensuring tone curve math remains accurate.
 5. **Lightroom Execution (`DevelopEditManager.lua`)**:
    - The backend returns the JSON recipe to the Lua plugin.
-   - The plugin maps the JSON keys to Lightroom's internal Develop parameters (e.g., `Exposure2012`, `Contrast2012`) and applies them to the RAW file.
-
----
-
-## 4. LLM Fallback Deep Dive
-
-When the Style Engine evaluates a target photo but cannot find a sufficiently close match in the `edit_training` database (i.e., confidence score falls below the threshold), it relies on the generative capabilities of vision-language models (e.g., Gemini 1.5 Pro or GPT-4o).
-
-Instead of producing a generic auto-edit, the pipeline dynamically injects the top retrieved (but low-confidence) training examples as **few-shot context** into the LLM prompt. This forces the LLM to extrapolate the user's general grading philosophy rather than relying on its base weights.
-
-### Prompt Construction Payload
-When executing the fallback, the `providers/base.py` module constructs a prompt comprising the following elements:
-
-1. **System Instruction**:
-   > "You are an expert, professional Lightroom colorist. Your goal is to analyze the provided image and generate a complete Lightroom edit recipe. You must format your output perfectly adhering to the provided JSON schema."
-2. **Target Image**: Base64 encoded JPEG.
-3. **Target EXIF Data**: Camera Model, Lens, ISO, Aperture, Shutter Speed (crucial for the LLM to understand sensor dynamic range and noise floor).
-4. **User Intent & Constraints**: 
-   - Intent: e.g., "Warm and vintage cinematic look."
-   - Constraints: Instructing the LLM which JSON keys it is *forbidden* from generating (e.g., if the user unchecked "Apply Auto Crop" or "Adjust White Balance" in the Lightroom UI).
-5. **Few-Shot Examples (The Context Injection)**:
-   - The prompt dynamically appends the top 3-5 matches from the `edit_training` database, formatted as:
-   ```json
-   {
-     "example_1": {
-       "image_description": "A sunny portrait taken at 35mm ISO 100",
-       "user_edit_recipe": {
-         "Exposure2012": 0.45,
-         "Contrast2012": 15,
-         "Highlights2012": -50,
-         "Shadows2012": 25,
-         ...
-       }
-     }
-   }
-   ```
-6. **Output Requirement**: The model is instructed to output the final recipe matching the exact slider ranges valid in Adobe Lightroom (e.g., -100 to +100 for Basic Tone sliders, -5 to +5 for Exposure).
+   - The plugin maps the JSON keys to Lightroom's internal Develop parameters and applies them to the RAW file.
