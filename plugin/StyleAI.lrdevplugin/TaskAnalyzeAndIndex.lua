@@ -207,9 +207,10 @@ local function showAnalyzeAndIndexDialog(ctx)
 
         f:static_text {
             title = LOC "$$$/StyleAI/AnalyzeAndIndex/Disclaimer=Note: This tool is ONLY for Semantic Search and LLM Auto-Tagging. It is NOT required for AI Editing or Style Training, which run independently and securely via local ML.",
-            fill_horizontal = 1,
+            wrap = true,
+            width_in_chars = 75,
             height_in_lines = 2,
-            text_color = LrColor(0.3, 0.5, 0.8),
+            text_color = LrColor(0.1, 0.4, 0.9),
         },
 
         UIFactory.SettingsGroup(f, {

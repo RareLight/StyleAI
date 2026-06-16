@@ -18,8 +18,6 @@ local function showTrainDialog(ctx)
 	local bind = LrView.bind
 	local props = LrBinding.makePropertyTable(ctx)
 
-	props.label = prefs.trainingLabel or ""
-	props.summary = prefs.trainingSummary or ""
 	props.scope = prefs.trainingScope or "selected"
 	props.forceRetrain = false
 
@@ -45,61 +43,20 @@ local function showTrainDialog(ctx)
 				}),
 			}),
 		}),
-		f:group_box({
-			title = LOC("$$$/StyleAI/Training/StyleGroup=Edit Style"),
-			fill_horizontal = 1,
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/Training/LabelLabel=Style label (optional):"),
-					width = 180,
-				}),
-				f:edit_field({
-					value = bind("label"),
-					width_in_chars = 30,
-					placeholder_string = LOC("$$$/StyleAI/Training/LabelPlaceholder=e.g. Wedding, Portrait, Street"),
-				}),
-			}),
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/Training/SummaryLabel=Description (optional):"),
-					width = 180,
-				}),
-				f:edit_field({
-					value = bind("summary"),
-					width_in_chars = 30,
-					height_in_lines = 2,
-				}),
-			}),
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/Training/KeywordsLabel=Keywords (optional):"),
-					width = 180,
-				}),
-				f:edit_field({
-					value = bind("userKeywords"),
-					width_in_chars = 30,
-					placeholder_string = LOC("$$$/StyleAI/Training/KeywordsPlaceholder=e.g. macro, nature, golden hour"),
-				}),
-			}),
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/Training/KeywordsHint=These keywords help group your style. Common: portrait, landscape, macro, street, architecture, wildlife"),
-					size = "small",
-					font = "italic",
-				}),
-			}),
-		}),
 		f:row({
 			f:static_text({
 				title = LOC(
-					"$$$/StyleAI/Training/DialogHint=Hint: Only select photos that you have manually edited. The AI will learn your style from these examples."
+					"$$$/StyleAI/Training/DialogHint=Hint: StyleAI will analyze your edits and extract the lighting and color grading recipes to build your personalized signature styles."
 				),
 				font = "italic",
+				wrap = true,
+				width_in_chars = 60,
 			}),
 		}),
+		f:spacer({ height = 5 }),
 		f:row({
 			f:checkbox({
-				title = LOC("$$$/StyleAI/Training/ForceRetrain=Re-train already trained photos (overwrite existing data)"),
+				title = LOC("$$$/StyleAI/Training/ForceRetrain=Re-analyze photos that have already been learned (overwrites existing data)"),
 				value = bind("forceRetrain"),
 			}),
 		}),
@@ -113,9 +70,6 @@ local function showTrainDialog(ctx)
 					)
 					if confirm == "ok" then
 						props.scope = "selected"
-						props.label = ""
-						props.summary = ""
-						props.userKeywords = ""
 						props.forceRetrain = false
 					end
 				end,
@@ -124,25 +78,19 @@ local function showTrainDialog(ctx)
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/StyleAI/Training/DialogTitle=Save Edits as AI Training Examples"),
+		title = LOC("$$$/StyleAI/Training/DialogTitle=Learn My Styles"),
 		contents = contents,
-		actionVerb = LOC("$$$/StyleAI/Training/SaveButton=Save Examples"),
+		actionVerb = LOC("$$$/StyleAI/Training/SaveButton=Learn Styles"),
 	})
 
 	if result ~= "ok" then
 		return nil
 	end
 
-	prefs.trainingLabel = props.label
-	prefs.trainingSummary = props.summary
 	prefs.trainingScope = props.scope
-	prefs.trainingKeywords = props.userKeywords
 
 	return {
-		label = props.label,
-		summary = props.summary,
 		scope = props.scope,
-		userKeywords = props.userKeywords,
 		forceRetrain = props.forceRetrain,
 	}
 end
