@@ -22,6 +22,7 @@ These rules ensure consistency across the Lightroom plugin and the Python backen
 - **Localization**: All GUI strings MUST be localized using the `LOC` function. Keep `TranslatedStrings_de.txt` (German) and `TranslatedStrings_fr.txt` (French) synchronized with the primary English strings.
 - **Utilities**: Leverage `Util.lua` for common logic (e.g., table manipulation, stable photo IDs, file hashing).
 - **Photo Identity**: Prefer the stable `globalPhotoId` (metadata-based) generated via `Util.getGlobalPhotoIdForPhoto` for cross-catalog consistency.
+- **Proactive Nil Checks & Refactoring**: Because Lua lacks strict typing, runtime `nil` errors are extremely common. When deleting or refactoring methods, parameters, or variables, you MUST execute a project-wide search to ensure you remove ALL lingering references across other files. Additionally, preemptively initialize empty property tables and settings with default safe values to prevent 'attempt to index global / local nil value' errors.
 
 ## Backend Development (Python/Flask)
 - **Structure**: Organize endpoints using Flask Blueprints (`routes/*.py`). Keep business logic in the service layer (`services/*.py`).
