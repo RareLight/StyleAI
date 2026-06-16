@@ -50,14 +50,14 @@ If you prefer to configure settings manually, open the **Lightroom Plug-in Manag
 
 *Having trouble? Refer to the [Troubleshooting](Troubleshooting) guide for connectivity and API issues.*
 
-## 3. Index Photos
+## 3. Optional: Semantic Search & Auto-Tagging
 
-Before AI editing, style learning, or metadata generation can work, the backend needs to process ("index") your photos.
+If you want to be able to search your photos using natural language (e.g., "red sports car in the rain") or automatically generate keywords and captions, you must "index" your photos. This uses a Large Language Model (LLM) to write text metadata.
 1. Select one or more photos in your Lightroom Library grid.
 2. Navigate to `Library -> Plug-in Extras -> Analyze & Index Photos`.
-3. The plugin will pass the photos to the backend, generate descriptions, tags, and AI embeddings, and store them.
+3. The plugin will pass the photos to the backend, generate descriptions, tags, and AI embeddings, and store them in the Search database.
 
-Once indexing finishes, try out **AI Edit Photos**, **Save as AI Training Examples**, or **AI Index Photos** workflows.
+**Note:** You do **not** need to index photos if you only want to use the AI Editing or Style Training features! Those features run independently and skip the slow LLM keyword process entirely.
 
 ## 4. Create a DB Backup
 

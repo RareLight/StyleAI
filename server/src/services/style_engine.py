@@ -343,6 +343,18 @@ def interpolate_recipes(
                     if chan not in pc_fields:
                         pc_fields[chan] = []
                     pc_fields[chan].append((curve, weight))
+            elif key == "crop" and isinstance(value, dict):
+                for crop_key, crop_val in value.items():
+                    if isinstance(crop_val, (int, float)):
+                        composite_key = f"crop_{crop_key}"
+                        num_fields[composite_key] = num_fields.get(
+                            composite_key, 0.0
+                        ) + weight * float(crop_val)
+            elif key == "white_balance":
+                is_custom = 1.0 if str(value).lower() != "as shot" else 0.0
+                num_fields["white_balance_is_custom"] = (
+                    num_fields.get("white_balance_is_custom", 0.0) + weight * is_custom
+                )
 
     blended: dict[str, Any] = {k: round(v, 1) for k, v in num_fields.items()}
 
@@ -376,6 +388,48 @@ def interpolate_recipes(
             blended["tone_curve"]["point_curve"][chan] = _interpolate_point_curve(
                 curves
             )
+
+    # Reconstruct crop and enforce original aspect ratio constraint
+    crop_keys = [k for k in blended if k.startswith("crop_")]
+    if crop_keys:
+        crop = {}
+        for k in crop_keys:
+            crop[k.replace("crop_", "")] = blended.pop(k)
+
+        left = crop.get("left")
+        right = crop.get("right")
+        top = crop.get("top")
+        bottom = crop.get("bottom")
+
+        if (
+            all(v is not None for v in (left, right, top, bottom))
+            and right > left
+            and bottom > top
+        ):
+            crop_width = right - left
+            crop_height = bottom - top
+
+            if abs(crop_width - crop_height) <= 0.02:
+                avg_dim = (crop_width + crop_height) / 2.0
+                center_x = (left + right) / 2.0
+                center_y = (top + bottom) / 2.0
+                crop["left"] = max(0.0, center_x - avg_dim / 2.0)
+                crop["right"] = min(1.0, center_x + avg_dim / 2.0)
+                crop["top"] = max(0.0, center_y - avg_dim / 2.0)
+                crop["bottom"] = min(1.0, center_y + avg_dim / 2.0)
+                if "angle" in crop:
+                    crop["angle"] = max(-45.0, min(45.0, crop["angle"]))
+                blended["crop"] = crop
+        elif "angle" in crop and not any(
+            k in crop for k in ("left", "right", "top", "bottom")
+        ):
+            # It's just a rotation
+            crop["angle"] = max(-45.0, min(45.0, crop["angle"]))
+            blended["crop"] = crop
+
+    if "white_balance_is_custom" in blended:
+        is_custom = blended.pop("white_balance_is_custom")
+        blended["white_balance"] = "Custom" if is_custom >= 0.7 else "As Shot"
 
     return _prune_neutral_tools(blended)
 

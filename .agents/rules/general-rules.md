@@ -42,3 +42,6 @@ These rules ensure consistency across the Lightroom plugin and the Python backen
 
 ## Translations
 - Always update all three translation files: TranslatedString_*.txt
+
+## Database Architecture
+- **Isolation**: Keep ChromaDB collections `photos` (Semantic Search) and `training_examples` (Style Training) strictly isolated. Never merge them. This protects precious ML training data when a user bulk-deletes their search index.

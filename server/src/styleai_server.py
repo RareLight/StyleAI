@@ -14,7 +14,6 @@ from services.version import get_backend_version_info
 import json
 
 import server_lifecycle
-from services import backup
 
 # Import blueprints only (services are imported by routes when needed)
 from routes.index import index_bp
@@ -67,8 +66,8 @@ def _start_housekeeping_scheduler() -> None:
       STYLEAI_BACKUP_INTERVAL      (seconds; default: 86400, min 600)
       STYLEAI_BACKUP_MAX_KEEP      (int; number of backup files to keep; default: 14)
     """
-    if not _bool_env("STYLEAI_BACKUP_ENABLED", default=False):
-        logger.info("DB backup scheduler disabled (STYLEAI_BACKUP_ENABLED not set).")
+    if not _bool_env("STYLEAI_BACKUP_ENABLED", default=True):
+        logger.info("DB backup scheduler disabled (STYLEAI_BACKUP_ENABLED is false).")
         return
 
     try:
@@ -91,21 +90,25 @@ def _start_housekeeping_scheduler() -> None:
             max_keep,
         )
         while True:
-            try:
-                zip_path, backup_name = service_db.build_backup_zip()
-                logger.info(
-                    "Periodic DB backup created: %s (%s)", backup_name, zip_path
-                )
-                service_db.prune_old_backups(max_keep=max_keep)
+            if config.DB_PATH:
                 try:
-                    os.remove(zip_path)
-                except OSError as e:
-                    logger.warning(
-                        "Could not remove temporary backup zip %s: %s", zip_path, e
+                    zip_path, backup_name = service_db.build_backup_zip()
+                    logger.info(
+                        "Periodic DB backup created: %s (%s)", backup_name, zip_path
                     )
-            except Exception as e:
-                logger.error("Periodic DB backup failed: %s", e, exc_info=True)
-            time.sleep(interval)
+                    service_db.prune_old_backups(max_keep=max_keep)
+                    try:
+                        os.remove(zip_path)
+                    except OSError as e:
+                        logger.warning(
+                            "Could not remove temporary backup zip %s: %s", zip_path, e
+                        )
+                except Exception as e:
+                    logger.error("Periodic DB backup failed: %s", e, exc_info=True)
+                time.sleep(interval)
+            else:
+                # Wait 5 seconds and check again if the plugin has initialized us
+                time.sleep(5)
 
     t = threading.Thread(target=_loop, name="db-backup-scheduler", daemon=True)
     t.start()
@@ -224,16 +227,6 @@ if __name__ == "__main__":
 
     # Start idle monitor (model unload + server auto-shutdown)
     server_lifecycle._ensure_unloader_thread()
-
-    # Start automated backups if enabled (default true)
-    if os.environ.get("STYLEAI_BACKUP_ENABLED", "true").lower() == "true":
-        import threading
-
-        threading.Thread(
-            target=backup.run_backup_loop,
-            args=(server_lifecycle.GLOBAL_CANCEL_EVENT,),
-            daemon=True,
-        ).start()
 
     # Priority 8 Security: Strictly bind to localhost to prevent local network exposure.
     # We only allow override via STYLEAI_HOST when running in debug mode.

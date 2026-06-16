@@ -79,15 +79,16 @@ def train_style_models():
                     pass
             continue
 
+
 def flatten_canonical_settings(canonical: dict) -> dict[str, float]:
     """Flattens nested HSL, Color Grading, and Tone Curve arrays into scalar ML targets."""
     flat = {}
-    
+
     # 1. Global scalars (top level)
     for k, v in canonical.items():
         if isinstance(v, (int, float)) and not isinstance(v, bool):
             flat[k] = float(v)
-            
+
     # 2. HSL
     hsl = canonical.get("hsl", {})
     for color, props in hsl.items():
@@ -95,7 +96,7 @@ def flatten_canonical_settings(canonical: dict) -> dict[str, float]:
             for prop, val in props.items():
                 if isinstance(val, (int, float)):
                     flat[f"hsl_{color}_{prop}"] = float(val)
-                
+
     # 3. Color Grading
     cg = canonical.get("color_grading", {})
     for region, props in cg.items():
@@ -118,19 +119,26 @@ def flatten_canonical_settings(canonical: dict) -> dict[str, float]:
             for i, y in enumerate(y_eval):
                 flat[f"curve_{chan}_y_{i}"] = float(y)
 
+    # 5. Crop
+    crop = canonical.get("crop", {})
+    if isinstance(crop, dict) and crop:
+        for prop in ["left", "right", "top", "bottom", "angle"]:
+            if prop in crop and isinstance(crop[prop], (int, float)):
+                flat[f"crop_{prop}"] = float(crop[prop])
+
+    # 6. Categorical Overrides (White Balance)
+    wb = canonical.get("white_balance", "As Shot")
+    flat["white_balance_is_custom"] = 1.0 if str(wb).lower() != "as shot" else 0.0
+
     return flat
 
 
 def unflatten_canonical_settings(flat: dict[str, float]) -> dict:
     """Rebuilds the standard Lightroom canonical nested JSON structure from flat ML predictions."""
-    canonical = {
-        "hsl": {},
-        "color_grading": {},
-        "tone_curve": {"point_curve": {}}
-    }
-    
+    canonical = {"hsl": {}, "color_grading": {}, "tone_curve": {"point_curve": {}}}
+
     curve_data = {}
-    
+
     for k, v in flat.items():
         # Clamp standard Hue predictions back to safe boundaries
         if k.endswith("_hue"):
@@ -141,25 +149,29 @@ def unflatten_canonical_settings(flat: dict[str, float]) -> dict:
 
         if k.startswith("hsl_"):
             parts = k.split("_")
-            if len(parts) == 3: # hsl_red_hue
+            if len(parts) == 3:  # hsl_red_hue
                 _, color, prop = parts
                 canonical["hsl"].setdefault(color, {})[prop] = v
         elif k.startswith("cg_"):
             parts = k.split("_")
-            if len(parts) == 3: # cg_shadows_hue
+            if len(parts) == 3:  # cg_shadows_hue
                 _, region, prop = parts
                 canonical["color_grading"].setdefault(region, {})[prop] = v
-            elif len(parts) == 2: # cg_balance
+            elif len(parts) == 2:  # cg_balance
                 _, region = parts
                 canonical["color_grading"][region] = v
         elif k.startswith("curve_"):
             parts = k.split("_")
-            if len(parts) == 4: # curve_rgb_y_0
+            if len(parts) == 4:  # curve_rgb_y_0
                 _, chan, _, idx = parts
                 curve_data.setdefault(chan, {})[int(idx)] = v
+        elif k.startswith("crop_"):
+            parts = k.split("_")
+            if len(parts) == 2:
+                canonical.setdefault("crop", {})[parts[1]] = v
         else:
             canonical[k] = v
-            
+
     # Reconstruct curves using fixed x-axis spacing
     x_eval = np.linspace(0, 255, 16)
     for chan, y_dict in curve_data.items():
@@ -168,12 +180,58 @@ def unflatten_canonical_settings(flat: dict[str, float]) -> dict:
             for i in range(16):
                 curve.extend([round(float(x_eval[i]), 1), round(float(y_dict[i]), 1)])
             canonical["tone_curve"]["point_curve"][chan] = curve
-            
-    # Cleanup empty dicts
-    if not canonical["hsl"]: del canonical["hsl"]
-    if not canonical["color_grading"]: del canonical["color_grading"]
-    if not canonical["tone_curve"]["point_curve"]: del canonical["tone_curve"]
-    
+
+    # Enforce original aspect ratio constraint on crops
+    if "crop" in canonical:
+        crop = canonical["crop"]
+        left = crop.get("left")
+        right = crop.get("right")
+        top = crop.get("top")
+        bottom = crop.get("bottom")
+
+        # We only care about aspect ratio if all 4 boundaries exist and form a valid box
+        if (
+            all(v is not None for v in (left, right, top, bottom))
+            and right > left
+            and bottom > top
+        ):
+            crop_width = right - left
+            crop_height = bottom - top
+
+            # If the normalized crop deviates from a square by more than 2% of the image size, abandon it
+            if abs(crop_width - crop_height) > 0.02:
+                del canonical["crop"]
+            else:
+                # Force perfect aspect ratio preservation by averaging width/height
+                avg_dim = (crop_width + crop_height) / 2.0
+                center_x = (left + right) / 2.0
+                center_y = (top + bottom) / 2.0
+                crop["left"] = max(0.0, center_x - avg_dim / 2.0)
+                crop["right"] = min(1.0, center_x + avg_dim / 2.0)
+                crop["top"] = max(0.0, center_y - avg_dim / 2.0)
+                crop["bottom"] = min(1.0, center_y + avg_dim / 2.0)
+                if "angle" in crop:
+                    crop["angle"] = max(-45.0, min(45.0, crop["angle"]))
+        elif "angle" in crop and not any(
+            k in crop for k in ("left", "right", "top", "bottom")
+        ):
+            # It's just a rotation
+            crop["angle"] = max(-45.0, min(45.0, crop["angle"]))
+        else:
+            del canonical["crop"]
+
+    # Categorical Overrides
+    if "white_balance_is_custom" in canonical:
+        is_custom = canonical.pop("white_balance_is_custom")
+        canonical["white_balance"] = "Custom" if is_custom >= 0.7 else "As Shot"
+
+    if not canonical.get("hsl"):
+        canonical.pop("hsl", None)
+    if not canonical.get("color_grading"):
+        canonical.pop("color_grading", None)
+    if not canonical.get("tone_curve", {}).get("point_curve"):
+        canonical.pop("tone_curve", None)
+
     return canonical
 
 
@@ -218,7 +276,7 @@ def _train_single_style(style_id: str, example_ids: list[str]):
 
         # Flatten dictionary to handle nested HSL, CG, and Tone Curves
         numeric_canonical = flatten_canonical_settings(canonical)
-        
+
         if not numeric_canonical:
             continue
 
@@ -298,13 +356,13 @@ def predict_edits(
 
         # Zip with keys and round for neatness
         flat_predictions = {k: round(float(v), 4) for k, v in zip(target_keys, Y_pred)}
-        
+
         # Unflatten back to nested Lightroom JSON structure
         predictions = unflatten_canonical_settings(flat_predictions)
-        
+
         # Add the tier info into a special key so the caller knows it was ML-predicted
         predictions["_ml_tier"] = meta_info.get("tier", "unknown")
-        
+
         return predictions
     except Exception as exc:
         logger.error(f"Failed to run predictive inference for {style_id}: {exc}")

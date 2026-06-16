@@ -222,11 +222,11 @@
 "$$$/StyleAI/Onboarding/BackendStatus" = "Server Status:"
 "$$$/StyleAI/Onboarding/BackendTitle" = "Backend Server"
 "$$$/StyleAI/Onboarding/ChatGPTTitle" = "OpenAI ChatGPT"
-"$$$/StyleAI/Onboarding/ClipAlreadyDownloaded" = "SigLIP2 model is already available."
+"$$$/StyleAI/Onboarding/ClipAlreadyDownloaded" = "SigLIP2 model is downloaded and ready."
 "$$$/StyleAI/Onboarding/DownloadClip" = "Download SigLIP2 Model"
 "$$$/StyleAI/Onboarding/DownloadingClip" = "Downloading (Check progress bar)..."
 "$$$/StyleAI/Onboarding/Finish" = "Finish"
-"$$$/StyleAI/Onboarding/FinishDesc" = "Configuration complete. StyleAI is ready to help you manage your Lightroom catalog."
+"$$$/StyleAI/Onboarding/FinishDesc" = "Configuration complete. Click OK below. StyleAI is ready to help you manage and edit your Lightroom catalog."
 "$$$/StyleAI/Onboarding/FinishTitle" = "All Set!"
 "$$$/StyleAI/Onboarding/GeminiTitle" = "Google Gemini (Recommended)"
 "$$$/StyleAI/Onboarding/LocalTitle" = "Local AI (Ollama / LM Studio)"
@@ -641,7 +641,7 @@
 "$$$/StyleAI/common/ServerTimeout/Message" = "Timed out waiting for the StyleAI server to respond. Please contact StyleAI support for assistance."
 "$$$/StyleAI/common/ServerTimeout/Title" = "StyleAI Database Timeout"
 "$$$/StyleAI/common/Skipped" = "Skipped: ^1"
-"$$$/StyleAI/common/Start" = "Start"
+"$$$/StyleAI/common/Start" = "Start Server"
 "$$$/StyleAI/common/Status" = "Status:"
 "$$$/StyleAI/common/SummaryLanguage" = "Summary language:"
 "$$$/StyleAI/common/SystemInstruction" = "System instruction:"
@@ -652,3 +652,14 @@
 "$$$/StyleAI/common/Temperature" = "Temperature:"
 "$$$/StyleAI/common/Unknown" = "unknown"
 "$$$/StyleAI/common/UnknownError" = "Unknown error\\\\\"\n-- New UI Overhaul Strings\n\\\\\"$$$/StyleAI/TaskAiEditPhotos/Workflow\\\\\" = \\\\\"Workflow\\\\\"\n\\\\\"$$$/StyleAI/TaskAiEditPhotos/EditingStyle\\\\\" = \\\\\"Editing Style:\\\\\"\n\\\\\"$$$/StyleAI/TaskAiEditPhotos/StyleTrained\\\\\" = \\\\\"Apply My Trained Style (Recommended)\\\\\"\n\\\\\"$$$/StyleAI/TaskAiEditPhotos/StyleCreative\\\\\" = \\\\\"Creative Prompt-Guided Edit\\\\\"\n\\\\\"$$$/StyleAI/StyleCatalog/DetailName\\\\\" = \\\\\"Name:\\\\\"\n\\\\\"$$$/StyleAI/StyleCatalog/DetailGenre\\\\\" = \\\\\"Genre:\\\\\"\n\\\\\"$$$/StyleAI/StyleCatalog/DetailCamera\\\\\" = \\\\\"Camera:\\\\\"\n\\\\\"$$$/StyleAI/StyleCatalog/DetailProfile\\\\\" = \\\\\"Profile:\\\\\"\n\\\\\"$$$/StyleAI/StyleCatalog/DetailExamples\\\\\" = \\\\\"Examples:\\\\\"\n\\\\\"$$$/StyleAI/StyleCatalog/DetailDescription\\\\\" = \\\\\"Description:\\\\\"\n\\\\\"$$$/StyleAI/StyleCatalog/StrengthWeak\\\\\" = \\\\\"🔴 Undertrained\\\\\"\n\\\\\"$$$/StyleAI/StyleCatalog/StrengthGood\\\\\" = \\\\\"🟡 Good\\\\\"\n\\\\\"$$$/StyleAI/StyleCatalog/StrengthStrong\\\\\" = \\\\\"🟢 Strong\\\\\"\n\\\\\"$$$/StyleAI/Training/RecommendMore\\\\\" = \\\\\"Tip: Your \\\\\"^1\\\\\" style only has ^2 examples (🔴 Undertrained). For the best AI edit results, try to provide at least 5-10 examples for this style.\\\\\"\n\\\\\"$$$/StyleAI/Training/RecommendGood\\\\\" = \\\\\"Tip: Your \\\\\"^1\\\\\" style has ^2 examples (🟡 Good). Adding a few more examples will make it even stronger.\\\\\"\n\\\\\"$$$/StyleAI/Training/RecommendStrong\\\\\" = \\\\\"Tip: Your styles look 🟢 Strong! The AI has a robust understanding of your editing preferences."
+"$$$/StyleAI/Onboarding/Step1Title" = "Step 1: Initialize Local ML Server (Required)"
+
+"$$$/StyleAI/Onboarding/Step1Desc" = "StyleAI runs a lightweight, local Python server in the background to handle heavy mathematical tasks without sending your photos to the cloud. This server is the foundation of the AI Editing system."
+
+"$$$/StyleAI/Onboarding/Step2Title" = "Step 2: Download AI Editing Engine (Required)"
+
+"$$$/StyleAI/Onboarding/Step2Desc" = "To predict your unique editing style, StyleAI requires the SigLIP2 vision model. This local model analyzes the lighting, subject, and composition of your photos entirely offline. (~4GB download)"
+
+"$$$/StyleAI/Onboarding/Step3Title" = "Step 3: Auto-Tagging & Semantic Search (Optional)"
+
+"$$$/StyleAI/Onboarding/Step3Desc" = "If you want StyleAI to automatically write titles, captions, and keywords for your photos, or search your catalog using natural language, you can configure an optional Cloud LLM API key later in the Plugin Manager."

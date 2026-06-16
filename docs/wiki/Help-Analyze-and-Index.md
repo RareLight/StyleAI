@@ -1,6 +1,6 @@
 # Guide to AI Indexing and Auto-Tagging
 
-The Analyze and Index feature is the core engine of StyleAI. It scans your photos, generates rich visual descriptions, and embeds them into a specialized database to enable semantic search and AI-assisted develop edits.
+The Analyze and Index feature powers the Semantic Search and Auto-Tagging capabilities of StyleAI. It scans your photos, generates rich visual descriptions using an LLM, and embeds them into a specialized search database. It is **not** required for AI editing or style training.
 
 ## Accessing the Tool
 

@@ -315,8 +315,7 @@ def discover_styles_from_examples(
         # 3. Aggregate all examples into a single style group
         # We bypass subgenre splitting because Predictive ML needs pooled data
         sg = grouping._build_subgroup(group_ex, subgenre=None)
-        
-        subgenre = None
+
         profile = camera_profile
         clean_genre = grouping.generate_style_name(genre, None)
         style_name = f"{profile} • {clean_genre}"
