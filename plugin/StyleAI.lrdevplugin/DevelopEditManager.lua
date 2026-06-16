@@ -74,48 +74,6 @@ local HSL_LABELS = {
 	magenta = "Magenta",
 }
 
-local ADDITIVE_GLOBAL_KEYS = {
-	Exposure2012 = true,
-	Contrast2012 = true,
-	Highlights2012 = true,
-	Shadows2012 = true,
-	Whites2012 = true,
-	Blacks2012 = true,
-	Temp = true,
-	Tint = true,
-	Texture = true,
-	Clarity2012 = true,
-	Dehaze = true,
-	Vibrance = true,
-	Saturation = true,
-	Sharpness = true,
-	SharpenRadius = true,
-	SharpenDetail = true,
-	SharpenEdgeMasking = true,
-	LuminanceSmoothing = true,
-	LuminanceNoiseReductionDetail = true,
-	LuminanceNoiseReductionContrast = true,
-	ColorNoiseReduction = true,
-	ColorNoiseReductionDetail = true,
-	ColorNoiseReductionSmoothness = true,
-	PostCropVignetteAmount = true,
-	PostCropVignetteMidpoint = true,
-	PostCropVignetteRoundness = true,
-	PostCropVignetteFeather = true,
-	PostCropVignetteHighlightContrast = true,
-	GrainAmount = true,
-	GrainSize = true,
-	GrainFrequency = true,
-	SplitToningShadowHue = true,
-	SplitToningShadowSaturation = true,
-	SplitToningHighlightHue = true,
-	SplitToningHighlightSaturation = true,
-	SplitToningBalance = true,
-	ParametricHighlights = true,
-	ParametricLights = true,
-	ParametricDarks = true,
-	ParametricShadows = true,
-}
 
 local DEVELOP_VALUE_BOUNDS = {
 	Exposure2012 = { min = -5, max = 5 },
@@ -172,9 +130,6 @@ for _, label in pairs(HSL_LABELS) do
 	DEVELOP_VALUE_BOUNDS["HueAdjustment" .. label] = { min = -100, max = 100 }
 	DEVELOP_VALUE_BOUNDS["SaturationAdjustment" .. label] = { min = -100, max = 100 }
 	DEVELOP_VALUE_BOUNDS["LuminanceAdjustment" .. label] = { min = -100, max = 100 }
-	ADDITIVE_GLOBAL_KEYS["HueAdjustment" .. label] = true
-	ADDITIVE_GLOBAL_KEYS["SaturationAdjustment" .. label] = true
-	ADDITIVE_GLOBAL_KEYS["LuminanceAdjustment" .. label] = true
 end
 
 local function appendWarning(warnings, text)
@@ -517,15 +472,7 @@ local function mergeGlobalDevelopSettings(currentSettings, aiSettings)
 	merged["Look"] = nil
 
 	for key, value in pairs(aiSettings or {}) do
-		if ADDITIVE_GLOBAL_KEYS[key] and type(value) == "number" then
-			local baseValue = currentSettings and currentSettings[key]
-			if type(baseValue) ~= "number" then
-				baseValue = 0
-			end
-			merged[key] = normalizeDevelopValue(key, baseValue + value)
-		else
-			merged[key] = normalizeDevelopValue(key, value)
-		end
+		merged[key] = normalizeDevelopValue(key, value)
 	end
 	return merged
 end
@@ -562,6 +509,7 @@ local function formatGlobalSettings(globalSettings)
 end
 
 function DevelopEditManager.formatRecipeDetails(response)
+	local recipe = response and response.recipe
 	if not recipe then
 		return LOC("$$$/StyleAI/DevelopEdit/NoRecipe=No edit recipe available.")
 	end
