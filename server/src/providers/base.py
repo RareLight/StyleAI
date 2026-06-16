@@ -389,6 +389,21 @@ class LLMProviderBase(ABC):
         if getattr(request, "blur_faces", False):
             prompt += "\n\nFaces are intentionally obscured for privacy. Ignore the blur. Do not evaluate the blurred areas; evaluate the rest of the exposure and lighting normally."
 
+        # Inject Signature Style Summary
+        try:
+            from services.style_summary import get_signature_style_summary
+
+            sig_summary = get_signature_style_summary()
+            if sig_summary:
+                prompt += "\n\n### User's Signature Style\n"
+                prompt += "The user has established the following global editing preferences across their photo catalog:\n"
+                prompt += f'"{sig_summary}"\n'
+                prompt += "Use this signature style as a foundation to guide your aesthetic decisions, ensuring the resulting edit feels cohesive with their personal brand."
+        except Exception as e:
+            from config import logger
+
+            logger.warning(f"Failed to inject signature style summary: {e}")
+
         return prompt
 
     def _format_training_example(self, idx: int, example: dict[str, Any]) -> str:

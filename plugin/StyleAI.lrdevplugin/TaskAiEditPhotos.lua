@@ -323,8 +323,8 @@ local function showAiEditDialog(ctx)
 					value = bind("editingStyle"),
 					width = 300,
 					items = {
-						{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleTrained=Apply My Trained Style (Recommended)"), value = "trained" },
-						{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleCreative=Creative Prompt-Guided Edit - LLM"), value = "creative" },
+						{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleTrained=Predictive ML Edit (Fast & Local)"), value = "trained" },
+						{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleCreative=Generative AI Edit (Zero-Shot / Creative)"), value = "creative" },
 					},
 				}),
 			}),
@@ -624,16 +624,6 @@ local function showAiEditDialog(ctx)
 							title = LOC("$$$/StyleAI/TaskAiEditPhotos/SendFolders=Send folder names"),
 						}),
 					}),
-					f:row({
-						f:checkbox({
-							value = bind("useTrainingStyle"),
-						}),
-						f:static_text({
-							title = LOC(
-								"$$$/StyleAI/Training/UseTrainingCheckbox=Apply my saved edit style (training examples)"
-							),
-						}),
-					}),
 				}),
 			}),
 		}),
@@ -741,7 +731,7 @@ local function showAiEditDialog(ctx)
 		submit_keywords = props.submitKeywords,
 		submit_folder_names = props.submitFolderName,
 		showPhotoContextDialog = props.showPhotoContextDialog,
-		use_training_style = props.useTrainingStyle ~= false,
+		use_training_style = false,
 		enableQuickEdit = props.editingStyle == "trained",
 		quickEditStyleStrength = props.styleStrength,
 		blurFacesForCloud = props.blurFacesForCloud,
@@ -1022,6 +1012,27 @@ LrTasks.startAsyncTask(function()
 								resultObj.errorMsg = fileName .. ": exception thrown: " .. tostring(apiOk)
 								resultObj.continueProcessing = false
 							else
+								if apiOk and type(apiResponse) == "table" and apiResponse.status == "error" and apiResponse.error == "profile_mismatch" then
+									-- Default button is "Cancel" so it is highlighted
+									local action = LrDialogs.confirm(
+										LOC("$$$/StyleAI/TaskAiEditPhotos/ProfileMismatchTitle=Camera Profile Mismatch"),
+										LOC("$$$/StyleAI/TaskAiEditPhotos/ProfileMismatchMessage=No training examples exist for the camera profile used by ^1. Do you want to proceed with a 100% LLM-based edit?", fileName),
+										LOC("$$$/StyleAI/TaskAiEditPhotos/Cancel=Cancel"),
+										LOC("$$$/StyleAI/TaskAiEditPhotos/ProceedWithLLM=Proceed with LLM")
+									)
+									if action == "cancel" then -- They clicked the secondary "Proceed with LLM" button
+										local llmOk, llmApiOk, llmResponse = LrTasks.pcall(function()
+											photoOptions.use_training_style = false
+											return SearchIndexAPI.generateEditRecipePhoto(photoId, base_path, photoOptions)
+										end)
+										ok = llmOk
+										apiOk = llmApiOk
+										apiResponse = llmResponse
+									else
+										apiResponse = { status = "error", error = "Cancelled due to profile mismatch" }
+									end
+								end
+
 								resultObj.response = apiResponse
 								if apiResponse and apiResponse.warning then
 									resultObj.warning = fileName .. ": " .. tostring(apiResponse.warning)

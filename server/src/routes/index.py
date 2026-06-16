@@ -623,9 +623,7 @@ def get_ids():
         has_embedding = has_embedding_param.lower() == "true"
         logger.info(f"Filtering IDs by has_embedding={has_embedding}")
 
-    ids_data = chroma_service.get_all_image_ids(
-        has_embedding=has_embedding
-    )
+    ids_data = chroma_service.get_all_image_ids(has_embedding=has_embedding)
     logger.info(f"Returning {len(ids_data)} image IDs")
     return jsonify(ids_data)
 
@@ -661,6 +659,3 @@ def check_unprocessed():
         f"check-unprocessed: {len(needing)} of {len(photo_ids)} photos need processing"
     )
     return jsonify({"photo_ids": needing, "uuids": needing}), 200
-
-
-

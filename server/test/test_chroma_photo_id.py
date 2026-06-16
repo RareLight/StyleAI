@@ -4,8 +4,6 @@ Covers photo-id normalization, catalog id (de)serialization, metadata
 shaping, and the result-extraction helper.
 """
 
-import json
-
 import numpy as np
 
 from services.chroma import (
@@ -32,7 +30,6 @@ class TestNormalizePhotoId:
 
     def test_empty_string_normalizes_to_none(self):
         assert _normalize_photo_id(photo_id="   ") is None
-
 
 
 class TestEnsurePhotoMetadata:

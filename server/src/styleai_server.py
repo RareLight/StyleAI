@@ -13,7 +13,6 @@ from services.version import get_backend_version_info
 
 import json
 
-from config import logger, DB_PATH
 import server_lifecycle
 from services import backup
 
@@ -229,10 +228,11 @@ if __name__ == "__main__":
     # Start automated backups if enabled (default true)
     if os.environ.get("STYLEAI_BACKUP_ENABLED", "true").lower() == "true":
         import threading
+
         threading.Thread(
             target=backup.run_backup_loop,
             args=(server_lifecycle.GLOBAL_CANCEL_EVENT,),
-            daemon=True
+            daemon=True,
         ).start()
 
     # Priority 8 Security: Strictly bind to localhost to prevent local network exposure.

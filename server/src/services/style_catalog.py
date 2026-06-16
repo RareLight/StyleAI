@@ -312,57 +312,74 @@ def discover_styles_from_examples(
         if len(group_ex) < 2:
             continue  # Need at least 2 examples for a meaningful style
 
-        # 3. Subgenre splitting
-        subgroups = grouping.split_subgenres(group_ex)
+        # 3. Aggregate all examples into a single style group
+        # We bypass subgenre splitting because Predictive ML needs pooled data
+        sg = grouping._build_subgroup(group_ex, subgenre=None)
+        
+        subgenre = None
+        profile = camera_profile
+        clean_genre = grouping.generate_style_name(genre, None)
+        style_name = f"{profile} • {clean_genre}"
+        style_id = _slugify(f"{profile}_{genre}")
 
-        for sg in subgroups:
-            subgenre = sg["subgenre"]
-            profile = sg.get("camera_profile") or camera_profile
-            style_name = grouping.generate_style_name(genre, subgenre)
-            style_id = _slugify(style_name)
+        style = {
+            "style_id": style_id,
+            "style_name": style_name,
+            "camera_make": "",
+            "camera_model": "",
+            "camera_profile": profile,
+            "genre": genre,
+            "subgenre": "",
+            "description": grouping.generate_style_description(
+                sg["mean_develop_settings"],
+                genre,
+                sg["scene_distribution"],
+                camera_profile=profile,
+            ),
+            "example_count": len(sg["example_photo_ids"]),
+            "mean_exposure_dna": sg["mean_exposure_dna"],
+            "scene_distribution": sg["scene_distribution"],
+            "develop_variance": sg["variance"],
+            "example_photo_ids": sg["example_photo_ids"],
+            "confidence_threshold": 0.45,
+            "created_at": _now(),
+        }
 
+        upsert_style(style)
+        # Update the training examples in ChromaDB with the new style label and description
+        try:
+            training_service.update_training_example_labels(
+                photo_ids=sg["example_photo_ids"],
+                label=style_name,
+                summary=style["description"],
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Failed to propagate style labels to training examples: {exc}"
+            )
 
-            style = {
-                "style_id": style_id,
-                "style_name": style_name,
-                "camera_make": "",
-                "camera_model": "",
-                "camera_profile": profile,
-                "genre": genre,
-                "subgenre": subgenre,
-                "description": grouping.generate_style_description(
-                    sg["mean_develop_settings"],
-                    genre,
-                    sg["scene_distribution"],
-                    camera_profile=profile,
-                ),
-                "example_count": len(sg["example_photo_ids"]),
-                "mean_exposure_dna": sg["mean_exposure_dna"],
-                "scene_distribution": sg["scene_distribution"],
-                "develop_variance": sg["variance"],
-                "example_photo_ids": sg["example_photo_ids"],
-                "confidence_threshold": 0.45,
-                "created_at": _now(),
-            }
-
-            upsert_style(style)
-            # Update the training examples in ChromaDB with the new style label and description
-            try:
-                training_service.update_training_example_labels(
-                    photo_ids=sg["example_photo_ids"],
-                    label=style_name,
-                    summary=style["description"],
-                )
-            except Exception as exc:
-                logger.warning(
-                    f"Failed to propagate style labels to training examples: {exc}"
-                )
-
-            created_styles.append(style)
+        created_styles.append(style)
 
     logger.info(
         "Discovered %d styles from %d examples", len(created_styles), len(examples)
     )
+
+    # Generate signature style summary in the background or synchronously
+    try:
+        from services import style_summary
+
+        style_summary.summarize_catalog_styles()
+    except Exception as exc:
+        logger.warning(f"Failed to trigger signature style summarization: {exc}")
+
+    # Train predictive ML models
+    try:
+        from services import predictive_engine
+
+        predictive_engine.train_style_models()
+    except Exception as exc:
+        logger.warning(f"Failed to train predictive ML models: {exc}")
+
     return created_styles
 
 

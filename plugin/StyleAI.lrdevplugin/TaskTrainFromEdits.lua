@@ -201,6 +201,15 @@ LrTasks.startAsyncTask(function()
 		})
 		progressScope:setPortionComplete(0, #photos)
 
+		-- Fetch styles before training to detect tier upgrades later
+		local _, preStyles = SearchIndexAPI.listStyles()
+		local preStyleCounts = {}
+		if preStyles then
+			for _, s in ipairs(preStyles) do
+				preStyleCounts[s.style_id] = tonumber(s.example_count) or 0
+			end
+		end
+
 		-- Collect and send examples in chunks (reduces RAM usage by holding fewer base64 strings).
 		local successCount = 0
 		local errorCount = 0
@@ -442,10 +451,33 @@ LrTasks.startAsyncTask(function()
 			end
 
 			local recommendationMsg = ""
+			local upgradeMsg = ""
 			if successCount > 0 then
 				local ok, styles = SearchIndexAPI.listStyles()
 				if ok and styles and #styles > 0 then
-					-- Sort styles by example count
+					-- Detect tier upgrades
+					local upgradedMLDirect = {}
+					local upgradedMLPCA = {}
+					for _, s in ipairs(styles) do
+						local currentCount = tonumber(s.example_count) or 0
+						local preCount = preStyleCounts[s.style_id] or 0
+						local name = s.style_name or s.genre or "Unknown"
+						
+						if preCount < 50 and currentCount >= 50 then
+							table.insert(upgradedMLDirect, name)
+						elseif preCount < 20 and currentCount >= 20 and preCount < 50 and currentCount < 50 then
+							table.insert(upgradedMLPCA, name)
+						end
+					end
+
+					if #upgradedMLDirect > 0 then
+						upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLDirect=🎉 '^1' reached 50 examples! Upgraded to ⭐️ ML Predictive (Best).", table.concat(upgradedMLDirect, ", "))
+					end
+					if #upgradedMLPCA > 0 then
+						upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLPCA=🎉 '^1' reached 20 examples! Upgraded to 🌟 ML Predictive (Good).", table.concat(upgradedMLPCA, ", "))
+					end
+
+					-- Sort styles by example count for the weakest link recommendation
 					table.sort(styles, function(a, b) return (tonumber(a.example_count) or 0) < (tonumber(b.example_count) or 0) end)
 					local weakest = styles[1]
 					local weakestCount = tonumber(weakest.example_count) or 0
@@ -454,13 +486,17 @@ LrTasks.startAsyncTask(function()
 						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMore=Tip: Your '^1' style only has ^2 examples (🔴 Undertrained). For the best AI edit results, try to provide at least 5-10 examples for this style.", name, tostring(weakestCount))
 					elseif weakestCount < 10 then
 						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendGood=Tip: Your '^1' style has ^2 examples (🟡 Good). Adding a few more examples will make it even stronger.", name, tostring(weakestCount))
-					else
+					elseif weakestCount < 20 then
 						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendStrong=Tip: Your styles look 🟢 Strong! The AI has a robust understanding of your editing preferences.")
+					elseif weakestCount < 50 then
+						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLPCA=Tip: Your styles look 🌟 ML Predictive (Good)! The AI has trained a personalized local model for your edits.")
+					else
+						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLBest=Tip: Your styles look ⭐️ ML Predictive (Best)! The AI has trained a highly robust predictive model for your edits.")
 					end
 				end
 			end
 
-			combinedReport = combinedReport .. recommendationMsg
+			combinedReport = combinedReport .. upgradeMsg .. recommendationMsg
 
 
 			ErrorHandler.handleError(

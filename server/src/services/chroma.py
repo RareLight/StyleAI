@@ -57,7 +57,6 @@ PHOTO_ID_FIELD = "photo_id"
 LEGACY_UUID_FIELD = "uuid"
 
 
-
 def _normalize_photo_id(photo_id=None, legacy_uuid=None):
     pid = photo_id or legacy_uuid
     if pid is None:
@@ -216,9 +215,7 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None):
 
 
 @retry_on_lock(max_retries=3, initial_delay=0.5)
-def update_image(
-    photo_id, metadata, embedding=None, *, legacy_uuid=None
-):
+def update_image(photo_id, metadata, embedding=None, *, legacy_uuid=None):
     _ensure_initialized()
     if collection is None:
         raise DatabaseNotReadyError(

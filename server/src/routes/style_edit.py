@@ -82,9 +82,9 @@ def _run_single_style_edit(
         style_strength=options.get("style_strength"),
     )
 
-    # LLM fallback when style engine couldn't produce a confident result
+    # LLM fallback when style engine couldn't produce a confident result but has some matches
     if (
-        result.engine == "none" or result.confidence < CONFIDENCE_LOW
+        result.engine != "none" and result.confidence < CONFIDENCE_LOW
     ) and use_llm_fallback:
         logger.info(
             "Style engine confidence %.3f below threshold for photo_id=%s, falling back to LLM",
@@ -133,7 +133,7 @@ def _run_single_style_edit(
         payload["output_tokens"] = llm_response.output_tokens
         return payload
 
-    # Style engine had no result and fallback disabled — return error
+    # Style engine had no result and fallback disabled (or engine was none) — return error
     if result.engine == "none":
         return {
             "status": "error",
@@ -141,7 +141,8 @@ def _run_single_style_edit(
             "photo_id": photo_id,
             "confidence": 0.0,
             "matched_examples": 0,
-            "error": result.warning or "Style engine could not produce a result.",
+            "error": "profile_mismatch",
+            "message": result.warning or "Style engine could not produce a result.",
         }
 
     # Successful style engine result

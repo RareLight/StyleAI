@@ -54,6 +54,7 @@ def backup_db():
     rotation_days = int(data.get("rotation_days", 0))
     try:
         from services import backup
+
         backup._do_backup(rotation_days=rotation_days)
         return jsonify({"results": {"status": "Backup created successfully."}})
     except Exception as e:

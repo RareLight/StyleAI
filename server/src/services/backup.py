@@ -1,5 +1,4 @@
 import os
-import shutil
 import time
 import zipfile
 from pathlib import Path
@@ -7,6 +6,7 @@ import threading
 from config import logger, DB_PATH
 
 BACKUP_INTERVAL_SECONDS = 86400  # 24 hours
+
 
 def _do_backup(rotation_days: int = 0):
     """Perform the actual backup of styles.sqlite and chroma/.
@@ -25,17 +25,17 @@ def _do_backup(rotation_days: int = 0):
             logger.info("Backup skipped: No databases found to backup.")
             return
 
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             if styles_db.exists():
                 zipf.write(styles_db, arcname="styles.sqlite")
-            
+
             if chroma_dir.exists():
                 for root, _, files in os.walk(chroma_dir):
                     for file in files:
                         file_path = Path(root) / file
                         arcname = file_path.relative_to(DB_PATH)
                         zipf.write(file_path, arcname=str(arcname))
-        
+
         logger.info(f"Successfully created database backup: {zip_path.name}")
 
         # Rotate old backups
@@ -46,9 +46,13 @@ def _do_backup(rotation_days: int = 0):
                 try:
                     if old_backup.stat().st_mtime < cutoff_time:
                         old_backup.unlink()
-                        logger.debug(f"Removed old backup: {old_backup.name} (older than {rotation_days} days)")
+                        logger.debug(
+                            f"Removed old backup: {old_backup.name} (older than {rotation_days} days)"
+                        )
                 except Exception as e:
-                    logger.warning(f"Failed to remove old backup {old_backup.name}: {e}")
+                    logger.warning(
+                        f"Failed to remove old backup {old_backup.name}: {e}"
+                    )
 
     except Exception as e:
         logger.error(f"Database backup failed: {e}", exc_info=True)
@@ -57,7 +61,7 @@ def _do_backup(rotation_days: int = 0):
 def run_backup_loop(cancel_event: threading.Event):
     """Run the backup loop in a background thread."""
     logger.info("Starting automated database backup service.")
-    
+
     # Do an initial backup on startup if the last backup is older than 24h
     try:
         if DB_PATH is None:
@@ -71,7 +75,9 @@ def run_backup_loop(cancel_event: threading.Event):
                 last_backup = backups[-1]
                 age = time.time() - last_backup.stat().st_mtime
                 if age < BACKUP_INTERVAL_SECONDS:
-                    logger.info(f"Skipping initial backup. Last backup was {age/3600:.1f} hours ago.")
+                    logger.info(
+                        f"Skipping initial backup. Last backup was {age / 3600:.1f} hours ago."
+                    )
                 else:
                     _do_backup()
             else:

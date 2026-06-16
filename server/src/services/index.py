@@ -611,9 +611,7 @@ def process_image_task(
                                 embedding=update_embedding,
                             )
                         else:
-                            chroma_service.add_image(
-                                uuid, embedding, main_metadata
-                            )
+                            chroma_service.add_image(uuid, embedding, main_metadata)
                     except Exception as e:
                         logger.error(
                             f"Failed to regenerate image {uuid} in ChromaDB: {e}",
@@ -633,9 +631,7 @@ def process_image_task(
                             f"UUID {uuid} is new. Indexing metadata-only entry (no embedding)."
                         )
                     try:
-                        chroma_service.add_image(
-                            uuid, embedding, main_metadata
-                        )
+                        chroma_service.add_image(uuid, embedding, main_metadata)
                     except Exception as e:
                         logger.error(
                             f"Failed to add image {uuid} to ChromaDB: {e}",
