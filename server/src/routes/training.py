@@ -447,7 +447,9 @@ def clear_training_examples():
         # Per user instruction, we ONLY clear the derived styles (which are cheap to regenerate)
         # and we preserve the actual training examples (which contain expensive vector embeddings and LLM metadata)
         styles_removed = style_catalog.reset_all_styles()
-        return jsonify({"status": "ok", "removed": 0, "styles_removed": styles_removed}), 200
+        return jsonify(
+            {"status": "ok", "removed": 0, "styles_removed": styles_removed}
+        ), 200
     except Exception as exc:
         logger.error("Failed to clear training examples: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500

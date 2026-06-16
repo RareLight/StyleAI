@@ -70,12 +70,16 @@ LrTasks.startAsyncTask(function()
 			
 			local count = tonumber(s.example_count) or 0
 			props.detailCount = tostring(count)
-			if count < 3 then
-				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthWeak=🔴 Undertrained")
-			elseif count < 10 then
+			if count >= 50 then
+				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthML=⭐️ ML Predictive (Best)")
+			elseif count >= 20 then
+				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthMLPCA=🌟 ML Predictive (Good)")
+			elseif count >= 10 then
+				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthStrong=🟢 Strong")
+			elseif count >= 3 then
 				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthGood=🟡 Good")
 			else
-				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthStrong=🟢 Strong")
+				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthWeak=🔴 Undertrained")
 			end
 			
 			props.detailDesc = s.description or ""
@@ -104,7 +108,11 @@ LrTasks.startAsyncTask(function()
 						local cleanName = name
 						
 						local strength = "🔴 Undertrained"
-						if count >= 10 then
+						if count >= 50 then
+							strength = "⭐️ ML Predictive (Best)"
+						elseif count >= 20 then
+							strength = "🌟 ML Predictive (Good)"
+						elseif count >= 10 then
 							strength = "🟢 Strong"
 						elseif count >= 3 then
 							strength = "🟡 Good"

@@ -204,15 +204,14 @@ local function buildColorGradingDevelopSettings(colorGrading, warnings)
 	if type(shadows) == "table" then
 		if shadows.hue ~= nil then
 			settings.SplitToningShadowHue = shadows.hue
+			settings.ColorGradeShadowHue = shadows.hue
 		end
 		if shadows.saturation ~= nil then
 			settings.SplitToningShadowSaturation = shadows.saturation
+			settings.ColorGradeShadowSat = shadows.saturation
 		end
 		if shadows.luminance ~= nil then
-			appendWarning(
-				warnings,
-				"Shadow color grading luminance is not supported by Lightroom develop settings and was ignored."
-			)
+			settings.ColorGradeShadowLum = shadows.luminance
 		end
 	end
 
@@ -220,35 +219,50 @@ local function buildColorGradingDevelopSettings(colorGrading, warnings)
 	if type(highlights) == "table" then
 		if highlights.hue ~= nil then
 			settings.SplitToningHighlightHue = highlights.hue
+			settings.ColorGradeHighlightHue = highlights.hue
 		end
 		if highlights.saturation ~= nil then
 			settings.SplitToningHighlightSaturation = highlights.saturation
+			settings.ColorGradeHighlightSat = highlights.saturation
 		end
 		if highlights.luminance ~= nil then
-			appendWarning(
-				warnings,
-				"Highlight color grading luminance is not supported by Lightroom develop settings and was ignored."
-			)
+			settings.ColorGradeHighlightLum = highlights.luminance
 		end
 	end
 
 	if colorGrading.balance ~= nil then
 		settings.SplitToningBalance = colorGrading.balance
+		settings.ColorGradeBalance = colorGrading.balance
 	end
-	if type(colorGrading.midtones) == "table" then
-		appendWarning(
-			warnings,
-			"Midtone color grading is not currently mapped by the Lightroom plugin and was ignored."
-		)
+	
+	local midtones = colorGrading.midtones
+	if type(midtones) == "table" then
+		if midtones.hue ~= nil then
+			settings.ColorGradeMidtoneHue = midtones.hue
+		end
+		if midtones.saturation ~= nil then
+			settings.ColorGradeMidtoneSat = midtones.saturation
+		end
+		if midtones.luminance ~= nil then
+			settings.ColorGradeMidtoneLum = midtones.luminance
+		end
 	end
-	if type(colorGrading.global) == "table" then
-		appendWarning(warnings, "Global color grading is not currently mapped by the Lightroom plugin and was ignored.")
+	
+	local global_cg = colorGrading.global
+	if type(global_cg) == "table" then
+		if global_cg.hue ~= nil then
+			settings.ColorGradeGlobalHue = global_cg.hue
+		end
+		if global_cg.saturation ~= nil then
+			settings.ColorGradeGlobalSat = global_cg.saturation
+		end
+		if global_cg.luminance ~= nil then
+			settings.ColorGradeGlobalLum = global_cg.luminance
+		end
 	end
+	
 	if colorGrading.blending ~= nil then
-		appendWarning(
-			warnings,
-			"Color grading blending is not currently mapped by the Lightroom plugin and was ignored."
-		)
+		settings.ColorGradeBlending = colorGrading.blending
 	end
 
 	if next(settings) ~= nil then

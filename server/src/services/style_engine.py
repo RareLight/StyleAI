@@ -24,6 +24,8 @@ few-shot context.
 from __future__ import annotations
 
 import json
+import math
+import numpy as np
 from typing import Any
 
 from config import logger
@@ -184,6 +186,90 @@ def calculate_composite_score(
 # ---------------------------------------------------------------------------
 
 
+def _circular_mean(angles_and_weights: list[tuple[float, float]]) -> float:
+    sum_sin = 0.0
+    sum_cos = 0.0
+    total_w = sum(w for _, w in angles_and_weights)
+    if total_w <= 0:
+        return 0.0
+    for angle, weight in angles_and_weights:
+        rad = math.radians(angle)
+        sum_sin += (weight / total_w) * math.sin(rad)
+        sum_cos += (weight / total_w) * math.cos(rad)
+    return round((math.degrees(math.atan2(sum_sin, sum_cos)) + 360) % 360, 1)
+
+
+def _interpolate_point_curve(
+    curves_and_weights: list[tuple[list[float], float]],
+) -> list[float]:
+    x_eval = np.linspace(0, 255, 16)  # 16 control points
+    y_sum = np.zeros_like(x_eval)
+    total_w = sum(w for _, w in curves_and_weights)
+    if total_w <= 0:
+        return [0.0, 0.0, 255.0, 255.0]
+    for curve, weight in curves_and_weights:
+        xs = curve[::2]
+        ys = curve[1::2]
+        y_eval = np.interp(x_eval, xs, ys)
+        y_sum += (weight / total_w) * y_eval
+
+    # Flatten back to [x1, y1, x2, y2...]
+    result = []
+    for x, y in zip(x_eval, y_sum):
+        result.extend([round(float(x), 1), round(float(y), 1)])
+    return result
+
+
+def _prune_neutral_tools(recipe: dict[str, Any]) -> dict[str, Any]:
+    # Prune HSL if all values are 0
+    if "hsl" in recipe:
+        all_zero = True
+        for color, vals in recipe["hsl"].items():
+            if any(
+                abs(v) > 0.1
+                for k, v in vals.items()
+                if k in ("saturation", "luminance", "hue")
+            ):
+                all_zero = False
+                break
+        if all_zero:
+            del recipe["hsl"]
+
+    # Prune Color Grading if all saturations are 0 and no blending/balance
+    if "color_grading" in recipe:
+        cg = recipe["color_grading"]
+        sat_zero = all(
+            abs(cg.get(r, {}).get("saturation", 0)) < 0.1
+            for r in ["shadows", "midtones", "highlights", "global"]
+        )
+        if (
+            sat_zero
+            and abs(cg.get("balance", 0)) < 0.1
+            and abs(cg.get("blending", 50) - 50) < 0.1
+        ):
+            del recipe["color_grading"]
+
+    # Prune linear point curves
+    if "tone_curve" in recipe and "point_curve" in recipe["tone_curve"]:
+        pc = recipe["tone_curve"]["point_curve"]
+        all_linear = True
+        for chan in ["master", "red", "green", "blue"]:
+            curve = pc.get(chan)
+            if curve:
+                # evaluate curve at 0, 128, 255 to see if it's strictly y=x
+                xs = curve[::2]
+                ys = curve[1::2]
+                if any(abs(x - y) > 1.0 for x, y in zip(xs, ys)):
+                    all_linear = False
+                    break
+        if all_linear:
+            del recipe["tone_curve"]["point_curve"]
+            if not recipe["tone_curve"]:
+                del recipe["tone_curve"]
+
+    return recipe
+
+
 def interpolate_recipes(
     winners: list[tuple[dict[str, Any], float]],
 ) -> dict[str, Any]:
@@ -199,7 +285,12 @@ def interpolate_recipes(
     if total_weight <= 0:
         return {}
 
-    blended: dict[str, float] = {}
+    # Gather data across winners
+    num_fields = {}
+    hsl_fields = {}
+    cg_fields = {}
+    pc_fields = {}
+
     for example, score in winners:
         weight = score / total_weight
         canonical = example.get("canonical_settings", {})
@@ -210,10 +301,83 @@ def interpolate_recipes(
                 canonical = {}
         for key, value in canonical.items():
             if isinstance(value, (int, float)):
-                blended[key] = blended.get(key, 0.0) + weight * float(value)
+                num_fields[key] = num_fields.get(key, 0.0) + weight * float(value)
+            elif key == "hsl" and isinstance(value, dict):
+                for color, vals in value.items():
+                    if color not in hsl_fields:
+                        hsl_fields[color] = {"hues": [], "sat": 0.0, "lum": 0.0}
+                    if "hue" in vals:
+                        hsl_fields[color]["hues"].append((float(vals["hue"]), weight))
+                    hsl_fields[color]["sat"] += weight * float(
+                        vals.get("saturation", 0)
+                    )
+                    hsl_fields[color]["lum"] += weight * float(vals.get("luminance", 0))
+            elif key == "color_grading" and isinstance(value, dict):
+                for region, vals in value.items():
+                    if isinstance(vals, dict):
+                        if region not in cg_fields:
+                            cg_fields[region] = {"hues": [], "sat": 0.0, "lum": 0.0}
+                        if "hue" in vals:
+                            cg_fields[region]["hues"].append(
+                                (float(vals["hue"]), weight)
+                            )
+                        cg_fields[region]["sat"] += weight * float(
+                            vals.get("saturation", 0)
+                        )
+                        if "luminance" in vals:
+                            cg_fields[region]["lum"] += weight * float(
+                                vals["luminance"]
+                            )
+                    else:
+                        # global balance/blending
+                        cg_fields[region] = cg_fields.get(region, 0.0) + weight * float(
+                            vals
+                        )
+            elif (
+                key == "tone_curve"
+                and isinstance(value, dict)
+                and "point_curve" in value
+            ):
+                pc = value["point_curve"]
+                for chan, curve in pc.items():
+                    if chan not in pc_fields:
+                        pc_fields[chan] = []
+                    pc_fields[chan].append((curve, weight))
 
-    # Round to 1 decimal place – LR sliders don't need more precision
-    return {k: round(v, 1) for k, v in blended.items()}
+    blended: dict[str, Any] = {k: round(v, 1) for k, v in num_fields.items()}
+
+    if hsl_fields:
+        blended["hsl"] = {}
+        for color, data in hsl_fields.items():
+            blended["hsl"][color] = {
+                "hue": _circular_mean(data["hues"]),
+                "saturation": round(data["sat"], 1),
+                "luminance": round(data["lum"], 1),
+            }
+
+    if cg_fields:
+        blended["color_grading"] = {}
+        for region, data in cg_fields.items():
+            if isinstance(data, dict):  # shadow, midtone, highlight, global
+                blended["color_grading"][region] = {
+                    "hue": _circular_mean(data["hues"]),
+                    "saturation": round(data["sat"], 1),
+                }
+                if region != "global":
+                    blended["color_grading"][region]["luminance"] = round(
+                        data["lum"], 1
+                    )
+            else:
+                blended["color_grading"][region] = round(data, 1)
+
+    if pc_fields:
+        blended["tone_curve"] = {"point_curve": {}}
+        for chan, curves in pc_fields.items():
+            blended["tone_curve"]["point_curve"][chan] = _interpolate_point_curve(
+                curves
+            )
+
+    return _prune_neutral_tools(blended)
 
 
 # ---------------------------------------------------------------------------
@@ -329,8 +493,13 @@ def _canonical_to_edit_recipe(
         if canon_key in canonical:
             global_settings[recipe_key] = canonical[canon_key]
 
-    # Build parametric tone_curve if any tone-curve keys are present
-    tone_curve: dict[str, Any] = {}
+    if "hsl" in canonical:
+        global_settings["hsl"] = canonical["hsl"]
+    if "color_grading" in canonical:
+        global_settings["color_grading"] = canonical["color_grading"]
+
+    # Build tone_curve
+    tone_curve: dict[str, Any] = canonical.get("tone_curve", {})
     for canon_key, tc_key in _TONE_CURVE_KEYS.items():
         if canon_key in canonical:
             tone_curve[tc_key] = canonical[canon_key]
@@ -508,34 +677,72 @@ def generate_style_edit(
 
     if style_matches:
         best_style, best_confidence = style_matches[0]
-        # Confidence thresholds for style catalog
         if best_confidence >= CONFIDENCE_GOOD:
-            # High confidence: use style recipe directly
-            recipe_settings = style_catalog_service.get_style_recipe(
-                best_style["style_id"]
-            )
-            if recipe_settings:
+            # Check for Predictive ML Model first
+            from services import predictive_engine
+
+            # Combine query metadata for the predictor
+            query_metadata = dict(query_exposure)
+            # Add any other metadata needed by the predictive engine (e.g., tags)
+            # Actually, predictive_engine just needs exposure metrics currently
+
+            ml_prediction = None
+            if clip_embedding:
+                ml_prediction = predictive_engine.predict_edits(
+                    best_style["style_id"], clip_embedding, query_metadata
+                )
+
+            if ml_prediction:
+                ml_tier = ml_prediction.pop("_ml_tier", "unknown")
                 summary = (
                     f"Style: {best_style.get('style_name', 'Unknown')} "
-                    f"(confidence {best_confidence:.0%})"
+                    f"[{ml_tier.upper()}] (confidence {best_confidence:.0%})"
                 )
-                recipe = _canonical_to_edit_recipe(recipe_settings, summary=summary)
+                recipe = _canonical_to_edit_recipe(ml_prediction, summary=summary)
                 recipe = _finalize_recipe(
                     recipe, query_exposure, current_settings, style_strength
                 )
                 logger.info(
-                    "Style engine catalog match: photo_id=%s style=%s confidence=%.3f",
+                    "Style engine catalog ML match: photo_id=%s style=%s tier=%s confidence=%.3f",
                     photo_id,
                     best_style.get("style_name", "?"),
+                    ml_tier,
                     best_confidence,
                 )
                 return StyleEngineResult(
                     recipe=recipe,
                     confidence=round(best_confidence, 3),
                     matched_count=best_style.get("example_count", 0),
-                    engine="style_catalog",
+                    engine=ml_tier,
                     matched_filenames=[best_style.get("style_name", "")],
                 )
+            else:
+                # High confidence: use style recipe directly (fallback to KNN averaging)
+                recipe_settings = style_catalog_service.get_style_recipe(
+                    best_style["style_id"]
+                )
+                if recipe_settings:
+                    summary = (
+                        f"Style: {best_style.get('style_name', 'Unknown')} "
+                        f"(confidence {best_confidence:.0%})"
+                    )
+                    recipe = _canonical_to_edit_recipe(recipe_settings, summary=summary)
+                    recipe = _finalize_recipe(
+                        recipe, query_exposure, current_settings, style_strength
+                    )
+                    logger.info(
+                        "Style engine catalog match: photo_id=%s style=%s confidence=%.3f",
+                        photo_id,
+                        best_style.get("style_name", "?"),
+                        best_confidence,
+                    )
+                    return StyleEngineResult(
+                        recipe=recipe,
+                        confidence=round(best_confidence, 3),
+                        matched_count=best_style.get("example_count", 0),
+                        engine="style_catalog",
+                        matched_filenames=[best_style.get("style_name", "")],
+                    )
         elif best_confidence >= CONFIDENCE_LOW and len(style_matches) >= 2:
             # Medium confidence: blend top 2 styles
             style1, conf1 = style_matches[0]

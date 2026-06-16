@@ -67,13 +67,9 @@ def _persist_edit_recipe(
     )
 
     if existing_has_ids:
-        chroma_service.update_image(
-            photo_id, metadata, embedding=existing_embedding
-        )
+        chroma_service.update_image(photo_id, metadata, embedding=existing_embedding)
     else:
-        chroma_service.add_image(
-            photo_id, existing_embedding, metadata
-        )
+        chroma_service.add_image(photo_id, existing_embedding, metadata)
 
 
 def _success_payload(

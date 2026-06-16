@@ -26,8 +26,7 @@ def _get_backups_dir():
 
 
 def get_database_stats() -> dict:
-    """Return database statistics for photos, faces, and persons.
-    """
+    """Return database statistics for photos, faces, and persons."""
     image_stats = chroma_service.get_image_metadata_stats()
     return {
         "photos": {
@@ -152,7 +151,9 @@ def prune_database(valid_photo_ids: list) -> dict:
     Removes photo metadata, embeddings, and face embeddings for any photo NOT in valid_photo_ids.
     """
     if not valid_photo_ids:
-        raise ValueError("Cannot prune database with 0 valid photo IDs. Aborting to prevent accidental data loss.")
+        raise ValueError(
+            "Cannot prune database with 0 valid photo IDs. Aborting to prevent accidental data loss."
+        )
 
     try:
         backup_path, _ = build_backup_zip()
@@ -172,7 +173,5 @@ def prune_database(valid_photo_ids: list) -> dict:
             training_service.delete_training_example(pid)
             deleted += 1
 
-    logger.info(
-        f"Pruned database: {deleted} deleted from {len(all_ids)} checked."
-    )
+    logger.info(f"Pruned database: {deleted} deleted from {len(all_ids)} checked.")
     return {"deleted": deleted, "checked": len(all_ids)}

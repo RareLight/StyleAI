@@ -124,7 +124,9 @@ def _load_thumbnail(image_bytes: bytes) -> tuple[np.ndarray, tuple[int, int]]:
 
     image = Image.open(io.BytesIO(image_bytes))
     orig_size = image.size
-    image.thumbnail((_THUMBNAIL_LONG_EDGE, _THUMBNAIL_LONG_EDGE), Image.Resampling.LANCZOS)
+    image.thumbnail(
+        (_THUMBNAIL_LONG_EDGE, _THUMBNAIL_LONG_EDGE), Image.Resampling.LANCZOS
+    )
     image = image.convert("RGB")
     rgb = np.asarray(image, dtype=np.float32) / 255.0
     return rgb, orig_size
@@ -597,13 +599,82 @@ _LR_TO_CANONICAL: dict[str, str] = {
 
 def normalize_develop_settings_for_style(
     develop_settings: dict[str, Any],
-) -> dict[str, float]:
-    """Convert raw LR develop settings dict to canonical float form for interpolation."""
-    canonical: dict[str, float] = {}
+) -> dict[str, Any]:
+    """Convert raw LR develop settings dict to canonical dict for interpolation."""
+    canonical: dict[str, Any] = {}
     for lr_key, canon_key in _LR_TO_CANONICAL.items():
         raw = develop_settings.get(lr_key)
         if raw is not None and isinstance(raw, (int, float)):
             canonical[canon_key] = round(float(raw), 4)
+
+    # Extract HSL
+    hsl = {}
+    colors = ["Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"]
+    for color in colors:
+        c_lower = color.lower()
+        hue = develop_settings.get(f"HueAdjustment{color}")
+        sat = develop_settings.get(f"SaturationAdjustment{color}")
+        lum = develop_settings.get(f"LuminanceAdjustment{color}")
+        if hue is not None and sat is not None and lum is not None:
+            hsl[c_lower] = {
+                "hue": round(float(hue), 2),
+                "saturation": round(float(sat), 2),
+                "luminance": round(float(lum), 2),
+            }
+    if len(hsl) == 8:
+        canonical["hsl"] = hsl
+
+    # Extract Color Grading
+    cg = {}
+    for region, lr_prefix in [
+        ("shadows", "Shadows"),
+        ("midtones", "Midtones"),
+        ("highlights", "Highlights"),
+        ("global", "Global"),
+    ]:
+        h = develop_settings.get(f"ColorGrade{lr_prefix}Hue") or develop_settings.get(
+            f"SplitToning{lr_prefix}Hue"
+        )
+        s = develop_settings.get(f"ColorGrade{lr_prefix}Sat") or develop_settings.get(
+            f"SplitToning{lr_prefix}Saturation"
+        )
+        l = develop_settings.get(f"ColorGrade{lr_prefix}Lum")
+        if h is not None and s is not None:
+            cg_part = {"hue": round(float(h), 2), "saturation": round(float(s), 2)}
+            if l is not None and region != "global":
+                cg_part["luminance"] = round(float(l), 2)
+            cg[region] = cg_part
+
+    blending = (
+        develop_settings.get("ColorGradeBlending")
+        or develop_settings.get("SplitToningBalance")
+    )  # Balance used as fallback blending sometimes? Actually Lightroom has SplitToningBalance and ColorGradeBlending.
+    balance = develop_settings.get("ColorGradeBalance") or develop_settings.get(
+        "SplitToningBalance"
+    )
+
+    if len(cg) >= 3:  # at least shadows, midtones, highlights
+        cg["blending"] = round(float(blending if blending is not None else 50.0), 2)
+        cg["balance"] = round(float(balance if balance is not None else 0.0), 2)
+        canonical["color_grading"] = cg
+
+    # Extract Point Curves
+    point_curve = {}
+    for curve_key, lr_key in [
+        ("master", "ToneCurvePV2012"),
+        ("red", "ToneCurvePV2012Red"),
+        ("green", "ToneCurvePV2012Green"),
+        ("blue", "ToneCurvePV2012Blue"),
+    ]:
+        raw_curve = develop_settings.get(lr_key)
+        if isinstance(raw_curve, list) and len(raw_curve) >= 4:
+            # Flatten or ensure it's a flat array of numbers
+            point_curve[curve_key] = [float(x) for x in raw_curve]
+    if len(point_curve) == 4:
+        if "tone_curve" not in canonical:
+            canonical["tone_curve"] = {}
+        canonical["tone_curve"]["point_curve"] = point_curve
+
     return canonical
 
 
@@ -1011,6 +1082,7 @@ def get_training_stats() -> dict[str, Any]:
 def query_similar_training_examples(
     query_embedding: list[float],
     n_results: int = 5,
+    camera_profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return up to n_results training examples closest to query_embedding.
 
@@ -1030,10 +1102,16 @@ def query_similar_training_examples(
         return []
 
     n_results = min(n_results, count)
+
+    where = None
+    if camera_profile:
+        where = {"camera_profile": camera_profile}
+
     try:
         result = _training_collection.query(
             query_embeddings=[query_embedding],
             n_results=n_results,
+            where=where,
             include=["metadatas", "distances"],
         )
     except Exception as exc:

@@ -215,8 +215,6 @@ def _extract_options(data) -> dict[str, Any]:
     options["compute_metadata"] = "metadata" in tasks
     options["compute_faces"] = "faces" in tasks
 
-
-
     # Audit logging
     options["audit_llm_inputs"] = _bool_from_data(data, "audit_llm_inputs", False)
     options["audit_llm_inputs_path"] = data.get("audit_llm_inputs_path")

@@ -38,8 +38,6 @@ class TestGetDatabaseStats:
         assert stats["photos"]["with_embedding"] == 6
 
 
-
-
 class TestPruneOldBackups:
     def _make_zip(self, dirpath, name, mtime):
         path = os.path.join(dirpath, name)
