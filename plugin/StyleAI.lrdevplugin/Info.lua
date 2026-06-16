@@ -27,7 +27,7 @@ return {
 			file = "TaskAiEditPhotos.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Training/MenuItem=Train AI Style (Save Edits)..."),
+			title = LOC("$$$/StyleAI/Training/MenuItem=Learn My Styles..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
@@ -50,7 +50,7 @@ return {
 			file = "TaskAiEditPhotos.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Training/MenuItem=Train AI Style (Save Edits)..."),
+			title = LOC("$$$/StyleAI/Training/MenuItem=Learn My Styles..."),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{

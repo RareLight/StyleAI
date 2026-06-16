@@ -103,7 +103,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 
 			if not health.backend then
 				status = "critical"
-				table.insert(issues, LOC("$$$/StyleAI/Health/BackendFailed=Backend server is not reachable."))
+				table.insert(issues, LOC("$$$/StyleAI/Health/BackendFailed=Local background service is not reachable."))
 				color = { 0.8, 0, 0 }
 			else
 				table.insert(issues, LOC("$$$/StyleAI/Health/BackendOk=Local ML Engine: Running (Editing fully functional)."))
@@ -485,89 +485,27 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							end
 						end,
 					}),
-				}),
-			}),
-
-			-- 3. AI Provider Configuration (Optional for Auto-Tagging)
-			f:group_box({
-				width = groupBoxWidth,
-				title = LOC("$$$/StyleAI/PluginInfoDialogSections/AiProviderConfig=AI Provider Configuration"),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GoogleApiKey=Google API key"),
-						alignment = "right",
-						width = share("apiKeyLabelWidth"),
-					}),
-					f:edit_field({
-						value = bind("geminiApiKey"),
-						fill_horizontal = 1,
-					}),
 					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
+						title = LOC("$$$/StyleAI/Training/WipeAll=🛑 Wipe All Training"),
 						action = function(button)
-							LrHttp.openUrlInBrowser("https://aistudio.google.com/app/apikey")
+							local confirm = LrDialogs.confirm(
+								LOC("$$$/StyleAI/Training/WipeConfirmTitle=Wipe All Training Data"),
+								LOC("$$$/StyleAI/Training/WipeConfirmMsg=This is a destructive process. It will completely delete all discovered signature styles AND all underlying vector embeddings for your training examples. This cannot be undone. Continue?"),
+								LOC("$$$/StyleAI/Training/WipeConfirmOk=Wipe Everything"),
+								LOC("$$$/StyleAI/Training/WipeConfirmCancel=Cancel")
+							)
+							if confirm == "ok" then
+								LrTasks.startAsyncTask(function()
+									local ok, err = SearchIndexAPI.clearAllTrainingData()
+									if ok then
+										propertyTable.refreshStyleStats()
+										LrDialogs.message(LOC("$$$/StyleAI/Training/WipedTitle=Training Wiped"), LOC("$$$/StyleAI/Training/WipedMsg=All training examples and signature styles have been permanently deleted."), "info")
+									else
+										ErrorHandler.handleError(LOC("$$$/StyleAI/Training/WipeFailedTitle=Wipe Failed"), tostring(err or "Unknown error"))
+									end
+								end)
+							end
 						end,
-						width = share("apiKeyButtonWidth"),
-					}),
-				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/ChatGPTApiKey=ChatGPT API key"),
-						alignment = "right",
-						width = share("apiKeyLabelWidth"),
-					}),
-					f:edit_field({
-						value = bind("chatgptApiKey"),
-						fill_horizontal = 1,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
-						action = function(button)
-							LrHttp.openUrlInBrowser("https://platform.openai.com/api-keys")
-						end,
-						width = share("apiKeyButtonWidth"),
-					}),
-				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaBaseUrl=Ollama Base URL"),
-						alignment = "right",
-						width = share("apiKeyLabelWidth"),
-					}),
-					f:edit_field({
-						value = bind("ollamaBaseUrl"),
-						fill_horizontal = 1,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
-						tooltip = LOC("$$$/StyleAI/PluginInfo/OllamaTooltip=Opens the setup guide for Ollama integration."),
-						action = function(button)
-							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-Ollama-Setup")
-						end,
-						width = share("apiKeyButtonWidth"),
-					}),
-				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfo/LmStudioUrl=LM Studio Base URL"),
-						alignment = "right",
-						width = share("apiKeyLabelWidth"),
-					}),
-					f:edit_field({
-						value = bind("lmstudioBaseUrl"),
-						fill_horizontal = 1,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfo/SetupLmStudio=Setup LM Studio"),
-						tooltip = LOC("$$$/StyleAI/PluginInfo/LmStudioTooltip=Opens the setup guide for LM Studio integration."),
-						action = function(button)
-							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-LM-Studio-Setup")
-						end,
-						width = share("apiKeyButtonWidth"),
 					}),
 				}),
 			}),
@@ -575,11 +513,11 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			-- 4. Advanced Server Settings & Maintenance
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("$$$/StyleAI/PluginInfo/AdvancedSettings=Advanced Server Settings & Maintenance"),
+				title = LOC("$$$/StyleAI/PluginInfo/AdvancedSettings=Advanced Service Settings & Maintenance"),
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/BackendServerUrl=Backend server URL"),
+						title = LOC("$$$/StyleAI/PluginInfoDialogSections/BackendServerUrl=Background service URL"),
 						alignment = "right",
 						width = share("labelWidth"),
 					}),
@@ -633,7 +571,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							}),
 						}),
 						f:static_text({
-							title = LOC("$$$/StyleAI/PluginInfo/ParallelTasksHelp=Controls the maximum network connections to the backend server. The plugin will automatically scale down based on the active LLM or GPU constraints."),
+							title = LOC("$$$/StyleAI/PluginInfo/ParallelTasksHelp=Controls the maximum network connections to the background service. The plugin will automatically scale down based on the active LLM or GPU constraints."),
 							text_color = LrColor(0.5, 0.5, 0.5),
 							font = "<system/small>",
 						}),
@@ -685,7 +623,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					fill_horizontal = 1,
 					f:checkbox({
 						value = bind("shutdownServerOnExit"),
-						title = LOC("$$$/StyleAI/PluginInfo/ShutdownOnExit=Shut down backend server when Lightroom exits"),
+						title = LOC("$$$/StyleAI/PluginInfo/ShutdownOnExit=Shut down background service when Lightroom exits"),
 					}),
 				}),
 				f:separator({ fill_horizontal = 1 }),
@@ -756,20 +694,18 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							end)
 						end,
 					}),
-				}),
-				f:row({
 					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Backend"),
-						tooltip = LOC("$$$/StyleAI/PluginInfo/RestartBackendTooltip=Restarts the local background server process."),
+						title = LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Service"),
+						tooltip = LOC("$$$/StyleAI/PluginInfo/RestartBackendTooltip=Restarts the local background service process."),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
 								local progressScope = LrProgressScope({ title = LOC("$$$/StyleAI/PluginInfo/Restarting=Restarting..."), functionContext = nil })
 								local ok, err = SearchIndexAPI.restartBackend()
 								progressScope:done()
 								if ok then
-									LrDialogs.message(LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Backend"), LOC("$$$/StyleAI/PluginInfo/RestartSuccess=Backend restarted successfully."))
+									LrDialogs.message(LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Service"), LOC("$$$/StyleAI/PluginInfo/RestartSuccess=Service restarted successfully."))
 								else
-									LrDialogs.message(LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Backend"), LOC("$$$/StyleAI/PluginInfo/RestartFailed=Failed to restart backend: ^1", tostring(err)), "critical")
+									LrDialogs.message(LOC("$$$/StyleAI/PluginInfo/RestartBackend=Restart Service"), LOC("$$$/StyleAI/PluginInfo/RestartFailed=Failed to restart service: ^1", tostring(err)), "critical")
 								end
 							end)
 						end,

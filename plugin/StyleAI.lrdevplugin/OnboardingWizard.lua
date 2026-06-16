@@ -56,7 +56,7 @@ function OnboardingWizard.show(manualTrigger)
 					fill_horizontal = 1,
 					f:static_text({
 						title = LOC(
-							"$$$/StyleAI/Onboarding/Step1Desc=StyleAI runs a lightweight, local Python server in the background to handle heavy mathematical tasks without sending your photos to the cloud. This server is the foundation of the AI Editing system."
+							"$$$/StyleAI/Onboarding/Step1Desc=StyleAI runs a lightweight, local Python server in the background to handle heavy mathematical tasks without sending your photos to the cloud. This local server is the foundation of the AI Editing system."
 						),
 						width_in_chars = 60,
 						wrap = true,
@@ -64,7 +64,7 @@ function OnboardingWizard.show(manualTrigger)
 					f:spacer({ height = 5 }),
 					f:row({
 						f:static_text({
-							title = LOC("$$$/StyleAI/Onboarding/BackendStatus=Server Status:"),
+							title = LOC("$$$/StyleAI/Onboarding/BackendStatus=Local Server Status:"),
 							width = share("label"),
 						}),
 						f:static_text({
@@ -94,7 +94,7 @@ function OnboardingWizard.show(manualTrigger)
 							}),
 						}),
 						f:push_button({
-							title = LOC("$$$/StyleAI/common/Start=Start Server"),
+							title = LOC("$$$/StyleAI/common/Start=Start Local Server"),
 							action = startBackend,
 							enabled = bind({
 								key = "backendRunning",
@@ -169,10 +169,89 @@ function OnboardingWizard.show(manualTrigger)
 					fill_horizontal = 1,
 					f:static_text({
 						title = LOC(
-							"$$$/StyleAI/Onboarding/Step3Desc=If you want StyleAI to automatically write titles, captions, and keywords for your photos, or search your catalog using natural language, you can configure an optional Cloud LLM API key later in the Plugin Manager."
+							"$$$/StyleAI/Onboarding/Step3Desc=If you want StyleAI to automatically write titles, captions, and keywords for your photos, or search your catalog using natural language, you can configure an optional AI Provider below."
 						),
 						width_in_chars = 60,
 						wrap = true,
+					}),
+					f:spacer({ height = 10 }),
+					f:row({
+						fill_horizontal = 1,
+						f:static_text({
+							title = LOC("$$$/StyleAI/PluginInfoDialogSections/GoogleApiKey=Google API key"),
+							alignment = "right",
+							width = share("apiKeyLabelWidth"),
+						}),
+						f:edit_field({
+							value = bind({ bind_to_object = prefs, key = "geminiApiKey" }),
+							fill_horizontal = 1,
+						}),
+						f:push_button({
+							title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
+							action = function(button)
+								LrHttp.openUrlInBrowser("https://aistudio.google.com/app/apikey")
+							end,
+							width = share("apiKeyButtonWidth"),
+						}),
+					}),
+					f:row({
+						fill_horizontal = 1,
+						f:static_text({
+							title = LOC("$$$/StyleAI/PluginInfoDialogSections/ChatGPTApiKey=ChatGPT API key"),
+							alignment = "right",
+							width = share("apiKeyLabelWidth"),
+						}),
+						f:edit_field({
+							value = bind({ bind_to_object = prefs, key = "chatgptApiKey" }),
+							fill_horizontal = 1,
+						}),
+						f:push_button({
+							title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
+							action = function(button)
+								LrHttp.openUrlInBrowser("https://platform.openai.com/api-keys")
+							end,
+							width = share("apiKeyButtonWidth"),
+						}),
+					}),
+					f:row({
+						fill_horizontal = 1,
+						f:static_text({
+							title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaBaseUrl=Ollama Base URL"),
+							alignment = "right",
+							width = share("apiKeyLabelWidth"),
+						}),
+						f:edit_field({
+							value = bind({ bind_to_object = prefs, key = "ollamaBaseUrl" }),
+							fill_horizontal = 1,
+						}),
+						f:push_button({
+							title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
+							tooltip = LOC("$$$/StyleAI/PluginInfo/OllamaTooltip=Opens the setup guide for Ollama integration."),
+							action = function(button)
+								LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-Ollama-Setup")
+							end,
+							width = share("apiKeyButtonWidth"),
+						}),
+					}),
+					f:row({
+						fill_horizontal = 1,
+						f:static_text({
+							title = LOC("$$$/StyleAI/PluginInfo/LmStudioUrl=LM Studio Base URL"),
+							alignment = "right",
+							width = share("apiKeyLabelWidth"),
+						}),
+						f:edit_field({
+							value = bind({ bind_to_object = prefs, key = "lmstudioBaseUrl" }),
+							fill_horizontal = 1,
+						}),
+						f:push_button({
+							title = LOC("$$$/StyleAI/PluginInfo/SetupLmStudio=Setup LM Studio"),
+							tooltip = LOC("$$$/StyleAI/PluginInfo/LmStudioTooltip=Opens the setup guide for LM Studio integration."),
+							action = function(button)
+								LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-LM-Studio-Setup")
+							end,
+							width = share("apiKeyButtonWidth"),
+						}),
 					}),
 				}),
 

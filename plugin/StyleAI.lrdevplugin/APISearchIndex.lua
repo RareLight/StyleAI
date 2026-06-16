@@ -58,6 +58,7 @@ local ENDPOINTS = {
     BACKUP = "/backup",
     TRAINING_DELETE = "/training", -- DELETE /training/<photo_id>
     TRAINING_CLEAR = "/training",  -- DELETE /training (all)
+    TRAINING_CLEAR_ALL = "/training/all",  -- DELETE /training/all (all data)
     TRAINING_STATS = "/training/stats",
     STYLE_EDIT = "/style_edit",
     STYLE_LIST = "/styles",
@@ -318,7 +319,7 @@ local function ensureDbMigrationsDone()
                         LrDialogs.message(LOC "$$$/StyleAI/PluginInfo/ClaimPhotosFailed=Claim photos failed",
                             tostring(err or LOC "$$$/StyleAI/common/UnknownError=Unknown error") ..
                             "\n\n" ..
-                            LOC "$$$/StyleAI/SearchIndexAPI/ClaimPhotosRetryHint=You can try again from Plug-in Manager → StyleAI → Backend Server → Claim photos for this catalog.",
+                            LOC "$$$/StyleAI/SearchIndexAPI/ClaimPhotosRetryHint=You can try again from Plug-in Manager → StyleAI → Background Service → Claim photos for this catalog.",
                             "critical")
                     end
                 end
@@ -2469,7 +2470,7 @@ end
 function SearchIndexAPI.restartBackend()
     local url = getBaseUrl() .. ENDPOINTS.RESTART
     log:info("Requesting backend restart via API")
-    local _, err = _request("POST", url, {}, 5)
+    local _, err = _request('POST', url, {}, 5)
     if err then
         log:error("Failed to request backend restart: " .. tostring(err))
         return false, err
@@ -2637,6 +2638,25 @@ function SearchIndexAPI.startServer(opts)
         local devServerDir = LrPathUtils.child(LrPathUtils.parent(LrPathUtils.parent(_PLUGIN.path)), "server")
         local devServerScript = LrPathUtils.child(LrPathUtils.child(devServerDir, "src"), "styleai_server.py")
 
+        if not LrFileUtils.exists(devServerScript) then
+            -- Fallback: If plugin was copied to Lightroom's Modules directory via a redeploy script,
+            -- it loses its relative path to the server. Check the standard source location.
+            local docs = LrPathUtils.getStandardFilePath("documents")
+            if docs then
+                local altDevServerDir
+                if MAC_ENV then
+                    altDevServerDir = docs .. "/Coding/StyleAI/server"
+                else
+                    altDevServerDir = docs .. "\\Coding\\StyleAI\\server"
+                end
+                local altDevServerScript = LrPathUtils.child(LrPathUtils.child(altDevServerDir, "src"), "styleai_server.py")
+                if LrFileUtils.exists(altDevServerScript) then
+                    devServerDir = altDevServerDir
+                    devServerScript = altDevServerScript
+                end
+            end
+        end
+
         if LrFileUtils.exists(devServerScript) then
             isDevMode = true
         end
@@ -2652,7 +2672,7 @@ function SearchIndexAPI.startServer(opts)
                 startServerCmd = string.format("cd /d \"%s\" && start /b \"\" uv run python src/styleai_server.py --db-path \"%s\" > \"%s\" 2>&1",
                     devServerDir, dbPath, launchLogPath)
             else
-                startServerCmd = string.format("cd '%s' && nohup taskpolicy -c UserInteractive uv run python src/styleai_server.py --db-path '%s' > '%s' 2>&1 &",
+                startServerCmd = string.format("cd '%s' && nohup taskpolicy -c UserInteractive bash -c 'PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run python src/styleai_server.py --db-path \"%s\"' > '%s' 2>&1 &",
                     devServerDir, dbPath, launchLogPath)
             end
         else
@@ -2701,12 +2721,12 @@ function SearchIndexAPI.startServer(opts)
         -- Diagnose failure
         local diag = SearchIndexAPI.diagnoseStartupFailure()
         if diag.binaryMissing then
-            log:error(LOC "$$$/StyleAI/Diagnostics/BinaryMissing=The backend server binary is missing from the plugin folder.")
+            log:error(LOC "$$$/StyleAI/Diagnostics/BinaryMissing=The background service binary is missing from the plugin folder.")
         elseif diag.portBusy then
             log:error(LOC "$$$/StyleAI/Diagnostics/PortBusy=Port 19819 is already in use by another application.")
         end
         if diag.logSnippet then
-            log:error(LOC "$$$/StyleAI/Diagnostics/LogSnippet=Recent server errors:" .. "\n" .. diag.logSnippet)
+            log:error(LOC "$$$/StyleAI/Diagnostics/LogSnippet=Recent service errors:" .. "\n" .. diag.logSnippet)
         end
         return false
     end)
@@ -2910,7 +2930,7 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
     if taskOptions and type(taskOptions) == "table" then
         if isServerEmpty then
             if lookupProgressScope then
-                lookupProgressScope:setCaption(LOC "$$$/StyleAI/AnalyzeAndIndex/LookupPhase1Bypass=Bypassing lookup for empty server...")
+                lookupProgressScope:setCaption(LOC "$$$/StyleAI/AnalyzeAndIndex/LookupPhase1Bypass=Bypassing lookup for empty service...")
                 lookupProgressScope:setPortionComplete(totalCatalog, totalCatalog)
             end
             -- Since the server is empty, all photos are missing. Return all catalog photos instantly.
@@ -2944,7 +2964,7 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
         end
 
         if lookupProgressScope then
-            lookupProgressScope:setCaption(LOC "$$$/StyleAI/AnalyzeAndIndex/LookupPhase2=Checking server for unprocessed photos...")
+            lookupProgressScope:setCaption(LOC "$$$/StyleAI/AnalyzeAndIndex/LookupPhase2=Checking service for unprocessed photos...")
         end
 
         local tasks = {}
@@ -3596,6 +3616,23 @@ function SearchIndexAPI.clearAllTrainingExamples()
     local response, err = _request('DELETE', url)
     if not response then
         log:error("clearAllTrainingExamples failed: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" then
+        return true, nil
+    end
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- Clear ALL training data including actual embeddings from the backend.
+-- @return boolean success, string|nil error
+---
+function SearchIndexAPI.clearAllTrainingData()
+    local url = getBaseUrl() .. ENDPOINTS.TRAINING_CLEAR_ALL
+    local response, err = _request('DELETE', url)
+    if not response then
+        log:error("clearAllTrainingData failed: " .. tostring(err))
         return false, err or "Unknown error"
     end
     if response.status == "ok" then
