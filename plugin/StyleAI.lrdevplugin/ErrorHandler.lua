@@ -60,3 +60,6 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
 		end)
 	end
 end
+
+return ErrorHandler
+

@@ -31,9 +31,8 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 		properties.prompts[properties.prompt] = newValue
 	end)
 
-	propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck
-	propertyTable.shutdownServerOnExit = prefs.shutdownServerOnExit
-	propertyTable.dbStoragePath = prefs.dbStoragePath or ""
+	propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck == nil and true or prefs.periodicalUpdateCheck
+	propertyTable.shutdownServerOnExit = prefs.shutdownServerOnExit == nil and true or prefs.shutdownServerOnExit
 	propertyTable.backendServerUrl = prefs.backendServerUrl or Defaults.defaultBackendServerUrl
 	propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
 	propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
@@ -43,6 +42,10 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.forceFreshPreviews = prefs.forceFreshPreviews or false
 	propertyTable.auditLlmInputs = prefs.auditLlmInputs or false
 	propertyTable.auditLlmInputsPath = prefs.auditLlmInputsPath or ""
+	propertyTable.backupRotationDays = prefs.backupRotationDays or "0"
+	propertyTable.usePreviewThumbnails = prefs.usePreviewThumbnails == nil and true or prefs.usePreviewThumbnails
+	propertyTable.geminiApiKey = prefs.geminiApiKey or ""
+	propertyTable.chatgptApiKey = prefs.chatgptApiKey or ""
 
 	-- Training/Style Profile stats (loaded asynchronously).
 	propertyTable.trainingCount = 0
@@ -279,12 +282,12 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							key = "healthStatus",
 							transform = function(v)
 								if v == "healthy" then
-									return LOC("$$$/StyleAI/Health/StatusHealthy=Everything looks good!")
+									return LOC("$$$/StyleAI/Health/StatusHealthy=✅ Everything looks good!")
 								end
 								if v == "warning" then
-									return LOC("$$$/StyleAI/Health/StatusWarning=Some features might not work correctly.")
+									return LOC("$$$/StyleAI/Health/StatusWarning=⚠️ Some features might not work correctly.")
 								end
-								return LOC("$$$/StyleAI/Health/StatusCritical=Critical issues detected. Plugin cannot function.")
+								return LOC("$$$/StyleAI/Health/StatusCritical=🚨 Critical issues detected. Plugin cannot function.")
 							end,
 						}),
 						text_color = bind("healthColor"),
@@ -526,7 +529,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 								for i = 1, math.min(5, #s.top_signature_styles) do
 									table.insert(top, string.format("%s (%d)", s.top_signature_styles[i].name, s.top_signature_styles[i].count))
 								end
-								return #top > 0 and table.concat(top, "\\n") or "None yet"
+								return #top > 0 and table.concat(top, "\n") or "None yet"
 							end,
 						}),
 						font = "<system/bold>",
@@ -542,7 +545,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						end,
 					}),
 					f:push_button({
-						title = LOC("$$$/StyleAI/Training/ClearAll=Reset Signature Styles"),
+						title = LOC("$$$/StyleAI/Training/ClearAll=⚠️ Reset Signature Styles"),
 						action = function(button)
 							local confirm = LrDialogs.confirm(
 								LOC("$$$/StyleAI/Training/ClearConfirmTitle=Reset Discovered Styles"),
@@ -582,41 +585,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						fill_horizontal = 1,
 					}),
 				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfo/DbStoragePath=Database storage folder"),
-						alignment = "right",
-						width = share("labelWidth"),
-					}),
-					f:edit_field({
-						value = bind("dbStoragePath"),
-						fill_horizontal = 1,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfo/Browse=Browse..."),
-						action = function(button)
-							local result = LrDialogs.runOpenPanel({
-								title = LOC("$$$/StyleAI/PluginInfo/SelectDbFolderTitle=Select Database Storage Folder"),
-								prompt = LOC("$$$/StyleAI/PluginInfo/SelectFolder=Select"),
-								canChooseFiles = false,
-								canChooseDirectories = true,
-								allowsMultipleSelection = false,
-							})
-							if result and result[1] then
-								local newPath = result[1]
-								local oldPath = (propertyTable.dbStoragePath or ""):gsub("^%s*(.-)%s*$", "%1")
-								if oldPath ~= "" and oldPath ~= newPath then
-									LrDialogs.message(
-										LOC("$$$/StyleAI/PluginInfo/DbPathChangedTitle=Database Path Changed"),
-										LOC("$$$/StyleAI/PluginInfo/DbPathChangedMessage=The AI search index will be created fresh at the new location. Your existing index data will remain at the old path and will not be moved. Re-run indexing after saving to rebuild the index."),
-										"warning"
-									)
-								propertyTable.dbStoragePath = newPath
-							end
-						end,
-					}),
-				}),
+				-- dbStoragePath UI removed
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
@@ -779,8 +748,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						tooltip = LOC("$$$/StyleAI/PluginInfo/PruneDatabaseTooltip=Removes deleted or missing photos from the AI database to free up space."),
 						action = function(button)
 							LrTasks.startAsyncTask(function()
-								-- To avoid circular deps or lazy load issues
-								package.loaded["TaskPruneDatabase"] = nil
 								local task = require("TaskPruneDatabase")
 								task.process()
 							end)
@@ -852,27 +819,7 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 
 	prefs.periodicalUpdateCheck = propertyTable.periodicalUpdateCheck
 	prefs.shutdownServerOnExit = (propertyTable.shutdownServerOnExit ~= false)
-	prefs.dbStoragePath = (propertyTable.dbStoragePath and propertyTable.dbStoragePath:gsub("^%s*(.-)%s*$", "%1")) or ""
-
-	if prefs.dbStoragePath ~= "" then
-		LrTasks.startAsyncTask(function()
-			local ok, errMsg = LrTasks.pcall(function()
-				local _, err = SearchIndexAPI.initializeCatalog(prefs.dbStoragePath)
-				if err then
-					error(err)
-				end
-			end)
-			if not ok then
-				ErrorHandler.handleError(
-					"DbPathInit",
-					LOC(
-						"$$$/StyleAI/PluginInfo/DbPathInitFailed=Failed to initialize database at the selected path: ^1\n\nCheck that the folder exists and is writable.",
-						tostring(errMsg)
-					)
-				)
-			end
-		end)
-	end
+	prefs.backupRotationDays = propertyTable.backupRotationDays
 
 	if propertyTable.backendServerUrl and propertyTable.backendServerUrl:gsub("^%s*(.-)%s*$", "%1") ~= "" then
 		prefs.backendServerUrl = propertyTable.backendServerUrl:gsub("^%s*(.-)%s*$", "%1")

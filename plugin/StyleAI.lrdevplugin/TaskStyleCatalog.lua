@@ -27,7 +27,6 @@ LrTasks.startAsyncTask(function()
 
 		props.detailName = ""
 		props.detailGenre = ""
-		props.detailCamera = ""
 		props.detailProfile = ""
 		props.detailCount = ""
 		props.detailStrengthText = ""
@@ -57,7 +56,6 @@ LrTasks.startAsyncTask(function()
 			if not idx or idx < 1 or not props.styles or idx > #props.styles then
 				props.detailName = "Select a style to view details."
 				props.detailGenre = ""
-				props.detailCamera = ""
 				props.detailProfile = ""
 				props.detailCount = ""
 				props.detailStrengthText = ""
@@ -68,7 +66,6 @@ LrTasks.startAsyncTask(function()
 			local s = props.styles[idx]
 			props.detailName = s.style_name or ""
 			props.detailGenre = s.genre or ""
-			props.detailCamera = s.camera_model or ""
 			props.detailProfile = s.camera_profile or ""
 			
 			local count = tonumber(s.example_count) or 0
@@ -113,7 +110,7 @@ LrTasks.startAsyncTask(function()
 							strength = "🟡 Good"
 						end
 						
-						local label = string.format("%s • %s (%d ex)  [%s]", cleanName, profile, count, strength)
+						local label = string.format("%s • %s • %d • %s", profile, cleanName, count, strength)
 						table.insert(items, { title = label, value = i })
 					end
 					props.listItems = items
@@ -143,22 +140,24 @@ LrTasks.startAsyncTask(function()
 			props.isLoading = true
 			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Discovering=Discovering styles from training examples...")
 
-			local success, result = SearchIndexAPI.discoverStyles(nil)
-			if success then
-				local count = result.styles_created or 0
-				props.statusMessage = LOC(
-					"$$$/StyleAI/StyleCatalog/DiscoveredCount=Discovered ^1 style(s).",
-					tostring(count)
-				)
-				-- Reload the list
-				loadStyles()
-			else
-				props.statusMessage = LOC(
-					"$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1",
-					tostring(result)
-				)
-				props.isLoading = false
-			end
+			LrTasks.startAsyncTask(function()
+				local success, result = SearchIndexAPI.discoverStyles(nil)
+				if success then
+					local count = result.styles_created or 0
+					props.statusMessage = LOC(
+						"$$$/StyleAI/StyleCatalog/DiscoveredCount=Discovered ^1 style(s).",
+						tostring(count)
+					)
+					-- Reload the list
+					loadStyles()
+				else
+					props.statusMessage = LOC(
+						"$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1",
+						tostring(result)
+					)
+					props.isLoading = false
+				end
+			end)
 		end
 
 		-- Delete the selected style
@@ -188,17 +187,19 @@ LrTasks.startAsyncTask(function()
 			props.isLoading = true
 			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Deleting=Deleting style...")
 
-			local success, err = SearchIndexAPI.resetStyle(style.style_id)
-			if success then
-				props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Deleted=Style deleted.")
-				loadStyles()
-			else
-				props.statusMessage = LOC(
-					"$$$/StyleAI/StyleCatalog/DeleteError=Delete failed: ^1",
-					tostring(err)
-				)
-				props.isLoading = false
-			end
+			LrTasks.startAsyncTask(function()
+				local success, err = SearchIndexAPI.resetStyle(style.style_id)
+				if success then
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Deleted=Style deleted.")
+					loadStyles()
+				else
+					props.statusMessage = LOC(
+						"$$$/StyleAI/StyleCatalog/DeleteError=Delete failed: ^1",
+						tostring(err)
+					)
+					props.isLoading = false
+				end
+			end)
 		end
 
 		-- Rename the selected style
@@ -224,17 +225,19 @@ LrTasks.startAsyncTask(function()
 			props.isLoading = true
 			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Renaming=Renaming style...")
 
-			local success, err = SearchIndexAPI.renameStyle(style.style_id, newName)
-			if success then
-				props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Renamed=Style renamed.")
-				loadStyles()
-			else
-				props.statusMessage = LOC(
-					"$$$/StyleAI/StyleCatalog/RenameError=Rename failed: ^1",
-					tostring(err)
-				)
-				props.isLoading = false
-			end
+			LrTasks.startAsyncTask(function()
+				local success, err = SearchIndexAPI.renameStyle(style.style_id, newName)
+				if success then
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Renamed=Style renamed.")
+					loadStyles()
+				else
+					props.statusMessage = LOC(
+						"$$$/StyleAI/StyleCatalog/RenameError=Rename failed: ^1",
+						tostring(err)
+					)
+					props.isLoading = false
+				end
+			end)
 		end
 
 		-- Reset all styles
@@ -253,18 +256,19 @@ LrTasks.startAsyncTask(function()
 			props.isLoading = true
 			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ResettingAll=Resetting all styles...")
 
-			local success, err = SearchIndexAPI.resetAllStyles()
-			if success then
-				props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ResetAllDone=All styles cleared.")
-				props.styles = {}
-				props.selectedStyleIndex = 0
-			else
-				props.statusMessage = LOC(
-					"$$$/StyleAI/StyleCatalog/ResetAllError=Reset failed: ^1",
-					tostring(err)
-				)
-			end
-			props.isLoading = false
+			LrTasks.startAsyncTask(function()
+				local success, err = SearchIndexAPI.resetAllStyles()
+				if success then
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ResetAllDone=All styles cleared.")
+					loadStyles()
+				else
+					props.statusMessage = LOC(
+						"$$$/StyleAI/StyleCatalog/ResetAllError=Reset failed: ^1",
+						tostring(err)
+					)
+				end
+				props.isLoading = false
+			end)
 		end
 
 		-- Export styles to file as Presets ZIP
@@ -341,15 +345,7 @@ LrTasks.startAsyncTask(function()
 
 				-- Toolbar
 				f:row({
-					f:push_button({
-						title = LOC("$$$/StyleAI/StyleCatalog/Refresh=Refresh"),
-						action = loadStyles,
-						width = share("toolbarButton"),
-						enabled = bind({
-							key = "isLoading",
-							transform = function(v) return not v end,
-						}),
-					}),
+
 					f:push_button({
 						title = LOC("$$$/StyleAI/StyleCatalog/Discover=Discover"),
 						action = discoverStyles,
@@ -425,10 +421,7 @@ LrTasks.startAsyncTask(function()
 								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailGenre=Genre:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
 								f:static_text({ title = bind("detailGenre"), width = 250 }),
 							}),
-							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailCamera=Camera:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailCamera"), width = 250 }),
-							}),
+
 							f:row({
 								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailProfile=Profile:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
 								f:static_text({ title = bind("detailProfile"), width = 250 }),

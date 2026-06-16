@@ -8,6 +8,7 @@ and pruning orphaned records.
 
 import config
 from . import chroma as chroma_service
+from . import training as training_service
 from config import logger
 
 import os
@@ -150,6 +151,16 @@ def prune_database(valid_photo_ids: list) -> dict:
     """
     Removes photo metadata, embeddings, and face embeddings for any photo NOT in valid_photo_ids.
     """
+    if not valid_photo_ids:
+        raise ValueError("Cannot prune database with 0 valid photo IDs. Aborting to prevent accidental data loss.")
+
+    try:
+        backup_path, _ = build_backup_zip()
+        logger.info(f"Created automatic pre-prune backup at {backup_path}")
+    except Exception as e:
+        logger.error(f"Failed to create pre-prune backup: {e}")
+        raise RuntimeError("Database backup failed. Aborting prune operation.")
+
     valid_set = set(valid_photo_ids)
     all_ids = chroma_service.get_all_image_ids()
 
@@ -158,7 +169,7 @@ def prune_database(valid_photo_ids: list) -> dict:
     for pid in all_ids:
         if pid not in valid_set:
             chroma_service.delete_image(pid)
-            chroma_service.delete_faces_by_photo_uuid(pid)
+            training_service.delete_training_example(pid)
             deleted += 1
 
     logger.info(

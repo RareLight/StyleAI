@@ -389,28 +389,6 @@ local function waitForCatalogDbMigrationsDone(timeoutSeconds)
     return false
 end
 
---- Returns the stable catalog identifier for the active catalog (for backend catalog-scoped operations).
-local function getCatalogIdValue()
-    local id, err = Util.getCatalogIdentifier()
-    if not id then
-        log:warn("getCatalogId: " .. tostring(err))
-        return nil
-    end
-    return id
-end
-
-local function getCatalogId()
-    local id = getCatalogIdValue()
-    if not id then return nil end
-    ensureDbMigrationsDone()
-    -- Block until the background catalog DB migrations (including photo claiming) finish.
-    -- Prevents backend requests from failing when the catalog hasn't been fully "claimed" yet.
-    local ok = waitForCatalogDbMigrationsDone(tonumber(prefs and prefs.dbMigrationWaitTimeoutSeconds) or 600)
-    if not ok then
-        log:warn("getCatalogId: timed out or failed waiting for catalogDbMigrations to complete")
-    end
-    return id
-end
 
 local function getPhotoIdForPhoto(photo, options)
     if not photo then
@@ -1458,7 +1436,6 @@ function SearchIndexAPI.formatStats(stats)
         "Photos with title: " .. tostring(photos.with_title or 0),
         "Photos with caption: " .. tostring(photos.with_caption or 0),
         "Photos with keywords: " .. tostring(photos.with_keywords or 0),
-        "Faces total: " .. tostring(faces.total or 0),
     }, "\n")
 end
 
@@ -1467,9 +1444,6 @@ function SearchIndexAPI.getAllIndexedPhotoIds(requireEmbeddings)
     local params = {}
     if requireEmbeddings then
         params.has_embedding = "true"
-    end
-    local cid = getCatalogId()
-    if cid then
     end
     if next(params) then
         local sep = "?"
@@ -1504,9 +1478,6 @@ function SearchIndexAPI.getPhotoData(photoId)
 
     local url = getBaseUrl() .. "/get"
     local body = { photo_id = photoId }
-    local cid = getCatalogId()
-    if cid then
-    end
 
     log:trace("Retrieving photo data for photo_id: " .. photoId)
 
@@ -2901,7 +2872,7 @@ end
 -- @return table|nil Result summary on success (deleted, disassociated, checked counts), nil on error.
 -- @return string|nil Error message on failure, nil on success.
 ---
-function SearchIndexAPI.pruneDatabase(catalogId, validPhotoIds)
+function SearchIndexAPI.pruneDatabase(validPhotoIds)
     local body = {
         valid_photo_ids = validPhotoIds
     }
@@ -2986,9 +2957,6 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
             tasks = tasks,
             regenerate_metadata = taskOptions.regenerateMetadata or false
         }
-        local checkCid = getCatalogId()
-        if checkCid then
-        end
         local result, err = _request('POST', getBaseUrl() .. ENDPOINTS.CHECK_UNPROCESSED, body)
         if err then
             ErrorHandler.handleError("Failed to check unprocessed photos", err)
@@ -3441,14 +3409,14 @@ end
 
 function SearchIndexAPI.getBackendHealth()
     local url = getBaseUrl() .. "/health"
-    local response, err = SearchIndexAPI._request("GET", url)
+    local response, err = _request("GET", url)
     if err then return nil, err end
     return response, nil
 end
 
 function SearchIndexAPI.getLogs()
     local url = getBaseUrl() .. "/logs"
-    local response, err = SearchIndexAPI._request("GET", url)
+    local response, err = _request("GET", url)
     if err then return nil, err end
     return response, nil
 end
@@ -3458,7 +3426,7 @@ function SearchIndexAPI.renameStyle(styleId, newName)
         return false, "Missing style_id or new_name"
     end
     local url = getBaseUrl() .. "/styles/rename"
-    local response, err = SearchIndexAPI._request("POST", url, {
+    local response, err = _request("POST", url, {
         style_id = styleId,
         new_name = newName
     })

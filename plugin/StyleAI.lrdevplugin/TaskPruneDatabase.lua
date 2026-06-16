@@ -30,9 +30,9 @@ function TaskPruneDatabase.process()
         end
 
         local confirm = LrDialogs.confirm(
-            LOC "$$$/StyleAI/PruneDatabase/ConfirmTitle=Clean Database?",
-            LOC "$$$/StyleAI/PruneDatabase/ConfirmMessage=This will remove any AI metadata and embeddings from the backend for photos that are no longer in this Lightroom catalog. This cannot be undone.",
-            LOC "$$$/StyleAI/common/Continue=Continue",
+            LOC "$$$/StyleAI/PruneDatabase/ConfirmTitle=⚠️ Clean Database?",
+            LOC "$$$/StyleAI/PruneDatabase/ConfirmMessage=This will remove any AI metadata and embeddings from the backend for photos that are no longer in this Lightroom catalog. This cannot be undone.\n\n(A database backup will be automatically generated before pruning).",
+            LOC "$$$/StyleAI/common/Continue=⚠️ Continue",
             LOC "$$$/StyleAI/common/Cancel=Cancel"
         )
         if confirm ~= "ok" then
@@ -46,12 +46,7 @@ function TaskPruneDatabase.process()
         progressScope:setPortionComplete(0, 100)
 
         local catalog = LrApplication.activeCatalog()
-        local catalogId = SearchIndexAPI.getCatalogId()
-        if not catalogId then
-            progressScope:done()
-            LrDialogs.message("Error", "Could not determine Catalog ID.", "critical")
-            return
-        end
+
 
         progressScope:setCaption("Gathering all photo IDs from the catalog...")
         local allPhotos = catalog:getAllPhotos()
@@ -77,10 +72,20 @@ function TaskPruneDatabase.process()
             end
         end
 
+        if #validPhotoIds == 0 then
+            progressScope:done()
+            LrDialogs.message(
+                LOC "$$$/StyleAI/PruneDatabase/AbortedTitle=Aborted",
+                LOC "$$$/StyleAI/PruneDatabase/AbortedMsg=No valid photos found in catalog to retain. Aborting prune to prevent accidental data loss.",
+                "critical"
+            )
+            return
+        end
+
         progressScope:setCaption("Sending prune request to backend...")
         progressScope:setPortionComplete(50, 100)
 
-        local results, apiErr = SearchIndexAPI.pruneDatabase(catalogId, validPhotoIds)
+        local results, apiErr = SearchIndexAPI.pruneDatabase(validPhotoIds)
         progressScope:done()
 
         if apiErr then
@@ -93,9 +98,9 @@ function TaskPruneDatabase.process()
             local deleted = results.deleted or 0
             local disassociated = results.disassociated or 0
             local checked = results.checked or 0
-            msg = string.format("Database Prune Complete:\n\nChecked: %d photos\nDeleted: %d orphans\nDisassociated: %d from catalog", checked, deleted, disassociated)
+            msg = string.format("Database Prune Complete:\n\nA backup was automatically generated before pruning.\n\nChecked: %d photos\nDeleted: %d orphans\nDisassociated: %d from catalog", checked, deleted, disassociated)
         else
-            msg = "Database prune completed successfully."
+            msg = "Database prune completed successfully. A backup was automatically generated before pruning."
         end
 
         LrDialogs.message("Prune Database", msg, "info")
