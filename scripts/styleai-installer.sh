@@ -34,7 +34,7 @@ find_server_pid() {
 print_usage() {
     echo "Usage:"
     echo "  $(basename "$0") install   — Install plugin to Lightroom"
-    echo "  $(basename "$0") redeploy  — Stop server, redeploy dev plugin, and restart server in background"
+    echo "  $(basename "$0") redeploy  — Stop server and redeploy dev plugin (LrC will auto-start the server)"
     echo ""
 }
 
@@ -144,35 +144,7 @@ cmd_redeploy() {
     echo "Plugin successfully installed to:"
     echo "  $PLUGIN_DEST"
     echo ""
-
-    # 4. Restart backend server in background
-    mkdir -p "$LOG_DIR"
-    echo "Restarting backend server in background..."
-    nohup bash "${SCRIPT_DIR}/server.sh" start > "$LAUNCH_LOG" 2>&1 &
-
-    # Wait up to 5 seconds to verify it starts up on port 19819
-    NEW_PID=""
-    for i in {1..5}; do
-        sleep 1
-        NEW_PID=$(find_server_pid)
-        if [ -n "$NEW_PID" ]; then
-            break
-        fi
-    done
-
-    if [ -n "$NEW_PID" ]; then
-        echo "========================================"
-        echo "  Redeployment successful!"
-        echo "========================================"
-        echo "Backend server is running (PID: $NEW_PID)"
-        echo "Launcher log: $LAUNCH_LOG"
-    else
-        echo "WARNING: Server launched but not yet responding on port $SERVER_PORT."
-        echo "Please check launcher logs: $LAUNCH_LOG"
-    fi
-    echo ""
 }
-
 # ── Main ────────────────────────────────────────────────────────────────────
 
 if [ $# -eq 0 ]; then

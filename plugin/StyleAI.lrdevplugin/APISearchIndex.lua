@@ -2672,7 +2672,7 @@ function SearchIndexAPI.startServer(opts)
                 startServerCmd = string.format("cd /d \"%s\" && start /b \"\" uv run python src/styleai_server.py --db-path \"%s\" > \"%s\" 2>&1",
                     devServerDir, dbPath, launchLogPath)
             else
-                startServerCmd = string.format("cd '%s' && nohup taskpolicy -c UserInteractive bash -c 'PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run python src/styleai_server.py --db-path \"%s\"' > '%s' 2>&1 &",
+                startServerCmd = string.format("cd '%s' && nohup bash -c 'PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run python src/styleai_server.py --db-path \"%s\"' > '%s' 2>&1 &",
                     devServerDir, dbPath, launchLogPath)
             end
         else
@@ -2688,7 +2688,7 @@ function SearchIndexAPI.startServer(opts)
                 else
                     -- Local/Dev fallback
                     local envPrefix = "KMP_DUPLICATE_LIB_OK=TRUE "
-                    startServerCmd = "taskpolicy -c UserInteractive " .. envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
+                    startServerCmd = envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
                 end
             else
                 -- Unknown platform fallback
