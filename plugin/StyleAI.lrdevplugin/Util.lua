@@ -241,8 +241,10 @@ function Util.getPhotoExif(photo)
 		return photo:getDevelopSettings()
 	end)
 	if okDev and type(devSettings) == "table" then
-		if type(devSettings.Profile) == "string" and devSettings.Profile ~= "" then
-			exif.camera_profile = devSettings.Profile
+		if type(devSettings.Look) == "table" and devSettings.Look.Name then
+			exif.camera_profile = devSettings.Look.Name
+		elseif type(devSettings.CameraProfile) == "string" and devSettings.CameraProfile ~= "" then
+			exif.camera_profile = devSettings.CameraProfile
 		end
 		-- HDR mode dramatically changes slider physics, so treat it as a separate profile
 		if devSettings.HDREditMode == true then

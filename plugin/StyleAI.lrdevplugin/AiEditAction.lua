@@ -10,6 +10,8 @@
 require("DevelopEditManager")
 local UIFactory = require("UIFactory")
 
+local AiEditAction = {}
+
 local ENABLE_DEBUG_STYLE_OVERRIDE = true
 
 local function copyOptions(source)
@@ -156,8 +158,8 @@ local function showPhotoInstructionDialog(ctx, photo)
 	return result, props.photoContextData, props.skipFromHere
 end
 
-local function showAiEditDialog(ctx)
-	log:trace("showAiEditDialog: start")
+local function getAiEditOptions(ctx, editMode)
+	log:trace("getAiEditOptions: start, mode=" .. tostring(editMode))
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 	local share = LrView.share
@@ -180,7 +182,16 @@ local function showAiEditDialog(ctx)
 	props.faceBlurSensitivity = prefs.faceBlurSensitivity or "balanced"
 	props.temperature = prefs.aiEditTemperature or prefs.temperature or 0.1
 	props.language = prefs.aiEditLanguage or prefs.generateLanguage or "English"
-	props.styleStrength = prefs.aiEditStyleStrength or Defaults.defaultEditStyleStrength or 0.5
+	local function getValidStyleStrength(val)
+		if type(val) ~= "number" then return Defaults.defaultEditStyleStrength or 0.75 end
+		for _, item in ipairs(Defaults.editStyleStrengths or {}) do
+			if math.abs(item.value - val) < 0.01 then
+				return item.value
+			end
+		end
+		return Defaults.defaultEditStyleStrength or 0.75
+	end
+	props.styleStrength = getValidStyleStrength(prefs.aiEditStyleStrength)
 	props.editIntentPresetItems = buildEditIntentPresetItems()
 	props.customEditIntentText = prefs.aiEditIntentCustomText or prefs.aiEditIntent or Defaults.defaultEditIntent
 	if type(props.customEditIntentText) ~= "string" or props.customEditIntentText == "" then
@@ -222,8 +233,8 @@ local function showAiEditDialog(ctx)
 	props.showPhotoContextDialog = prefs.aiEditShowPhotoContextDialog ~= false
 	props.useTrainingStyle = prefs.aiEditUseTrainingStyle ~= false
 	
-	props.editingStyle = prefs.aiEditEditingStyle or "trained"
-	props.styleStrength = prefs.aiEditStyleStrength or Defaults.defaultEditStyleStrength or 0.5
+	props.editingStyle = editMode or "trained"
+	props.styleStrength = getValidStyleStrength(prefs.aiEditStyleStrength)
 	props.showLlmOptions = (props.editingStyle == "creative")
 	
 	props.promptTitles = {}
@@ -296,7 +307,7 @@ local function showAiEditDialog(ctx)
 	end)
 
 	local modelItems = buildModelItems()
-	log:trace("showAiEditDialog: modelItems count=" .. tostring(#modelItems))
+	log:trace("getAiEditOptions: modelItems count=" .. tostring(#modelItems))
 	if #modelItems == 0 then
 		table.insert(modelItems, { title = LOC("$$$/StyleAI/TaskAiEditPhotos/NoModels=No AI models available"), value = "none" })
 	end
@@ -325,341 +336,285 @@ local function showAiEditDialog(ctx)
 		value = bind("prompt"),
 	})
 
-	local contents = f:column({
-		bind_to_object = props,
-		spacing = f:control_spacing(),
-		f:group_box({
-			title = LOC("$$$/StyleAI/TaskAiEditPhotos/Workflow=Workflow"),
-			fill_horizontal = 1,
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/TaskAiEditPhotos/EditingStyle=Editing Style:"),
-					width = share("labelWidth"),
+	local function createPredictiveContent()
+		return f:column({
+			bind_to_object = props,
+			spacing = f:control_spacing(),
+			f:group_box({
+				title = LOC("$$$/StyleAI/TaskAiEditPhotos/Workflow=Workflow"),
+				fill_horizontal = 1,
+				f:row({
+					f:static_text({
+						title = LOC("$$$/StyleAI/TaskAiEditPhotos/TrainedStyleStrength=Trained Style Strength:"),
+						width = share("labelWidth"),
+					}),
+					f:popup_menu({
+						value = bind("styleStrength"),
+						items = Defaults.editStyleStrengths,
+						width = 200,
+					}),
 				}),
-				f:popup_menu({
-					value = bind("editingStyle"),
-					width = 300,
-					items = {
-						{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleTrained=Predictive ML Edit (Fast & Local)"), value = "trained" },
-						{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/StyleCreative=Generative AI Edit (Zero-Shot / Creative)"), value = "creative" },
-					},
+				f:row({
+					visible = bind({
+						key = "editingStyle",
+						transform = function(v) return ENABLE_DEBUG_STYLE_OVERRIDE and v == "trained" end
+					}),
+					f:checkbox({
+						title = LOC("$$$/StyleAI/TaskAiEditPhotos/OverrideStyle=Override style (One-time test)"),
+						value = bind("overrideStyleEnabled"),
+					}),
+					f:popup_menu({
+						value = bind("overrideStyleId"),
+						items = styleItems,
+						visible = bind("overrideStyleEnabled"),
+						width = 200,
+					}),
 				}),
 			}),
-			f:row({
-				visible = bind({
-					key = "editingStyle",
-					transform = function(v) return v == "trained" end
+			f:group_box({
+				title = LOC("$$$/StyleAI/common/Scope=Scope"),
+				fill_horizontal = 1,
+				f:row({
+					f:static_text({
+						title = LOC("$$$/StyleAI/common/ApplyTo=Apply to:"),
+						width = share("labelWidth"),
+					}),
+					f:popup_menu({
+						value = bind("scope"),
+						width = 300,
+						items = {
+							{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
+							{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
+							{ title = LOC("$$$/StyleAI/common/ScopeAll=All photos in catalog"), value = "all" },
+						},
+					}),
 				}),
-				f:static_text({
-					title = LOC("$$$/StyleAI/TaskAiEditPhotos/TrainedStyleStrength=Trained Style Strength:"),
-					width = share("labelWidth"),
+			}),
+		})
+	end
+
+	local function createCreativeContent()
+		return f:column({
+			bind_to_object = props,
+			spacing = f:control_spacing(),
+			f:group_box({
+				title = LOC("$$$/StyleAI/common/Scope=Scope"),
+				fill_horizontal = 1,
+				f:row({
+					f:static_text({
+						title = LOC("$$$/StyleAI/common/ApplyTo=Apply to:"),
+						width = share("labelWidth"),
+					}),
+					f:popup_menu({
+						value = bind("scope"),
+						width = 300,
+						items = {
+							{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
+							{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
+							{ title = LOC("$$$/StyleAI/common/ScopeAll=All photos in catalog"), value = "all" },
+						},
+					}),
 				}),
-				f:column({
-					f:row({
-						f:slider({
-							value = bind("styleStrength"),
-							min = 0.0,
-							max = 1.0,
-							integral = false,
+			}),
+			f:group_box({
+				title = LOC("$$$/StyleAI/common/AiSettings=AI Settings"),
+				fill_horizontal = 1,
+				f:row({
+					f:static_text({
+						title = LOC("$$$/StyleAI/common/AiModel=AI model:"),
+						width = share("labelWidth"),
+					}),
+					f:column({
+						f:popup_menu({
+							value = bind("modelKey"),
+							items = modelItems,
 							width = 300,
 						}),
-						f:static_text({
-							title = bind("styleStrength"),
-							width = 40,
-						}),
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/common/Reset=Reset"),
-						width = 60,
-						action = function()
-							props.styleStrength = Defaults.defaultEditStyleStrength or 0.5
-						end,
-					}),
-				}),
-			}),
-			f:row({
-				visible = bind({
-					key = "editingStyle",
-					transform = function(v) return ENABLE_DEBUG_STYLE_OVERRIDE and v == "trained" end
-				}),
-				f:checkbox({
-					title = LOC("$$$/StyleAI/TaskAiEditPhotos/OverrideStyle=Override style (One-time test)"),
-					value = bind("overrideStyleEnabled"),
-				}),
-				f:popup_menu({
-					value = bind("overrideStyleId"),
-					items = styleItems,
-					visible = bind("overrideStyleEnabled"),
-					width = 200,
-				}),
-			}),
-		}),
-		f:group_box({
-			title = LOC("$$$/StyleAI/common/Scope=Scope"),
-			fill_horizontal = 1,
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/common/ApplyTo=Apply to:"),
-					width = share("labelWidth"),
-				}),
-				f:popup_menu({
-					value = bind("scope"),
-					width = 300,
-					items = {
-						{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
-						{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
-						{ title = LOC("$$$/StyleAI/common/ScopeAll=All photos in catalog"), value = "all" },
-					},
-				}),
-			}),
-		}),
-		f:group_box({
-			title = LOC("$$$/StyleAI/common/AiSettings=AI Settings"),
-			fill_horizontal = 1,
-			visible = bind("showLlmOptions"),
-			fill_horizontal = 1,
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/common/AiModel=AI model:"),
-					width = share("labelWidth"),
-				}),
-				f:column({
-					f:popup_menu({
-						value = bind("modelKey"),
-						items = modelItems,
-						width = 300,
-					}),
-					f:static_text {
-						title = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudWarning=⚠️ Images will be sent to the internet.",
-						-- visible = bind 'isCloudModel', -- disabled for testing
-						text_color = LrColor(0.8, 0.5, 0),
-						tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudTooltip=Enterprise APIs typically do not use data for training, but privacy cannot be fully guaranteed. See our Wiki for details.",
-					},
-				}),
-			}),
-		}),
-		UIFactory.SettingsGroup(f, {
-			title = LOC "$$$/StyleAI/UI/PrivacySettings=Privacy & Anonymization",
-			fill_horizontal = 1,
-			visible = bind("showLlmOptions"),
-			f:column({
-				spacing = f:control_spacing(),
-					f:checkbox({
-						title = LOC("$$$/StyleAI/AnalyzeAndIndex/BlurFaces=Blur faces before sending to cloud APIs (Privacy)"),
-						value = bind("blurFacesForCloud"),
-					}),
-					f:row({
-						margin_left = 20,
-						f:checkbox({
-							title = LOC("$$$/StyleAI/TaskAiEditPhotos/PreviewBlur=Preview blurred images before sending"),
-							value = bind("previewBlurredFaces"),
-							visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
-						}),
-					}),
-					f:row({
-						margin_left = 20,
-						f:static_text({ 
-							title = "Blur Sensitivity:", 
-							width = 100,
-							visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
-						}),
-						f:popup_menu({
-							value = bind("faceBlurSensitivity"),
-							items = {
-								{ title = "High (Catch more faces)", value = "high" },
-								{ title = "Balanced", value = "balanced" },
-								{ title = "Low (Fewer false positives)", value = "low" },
-							},
-							width = 200,
-							visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
-						}),
+						f:static_text {
+							title = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudWarning=⚠️ Images will be sent to the internet.",
+							text_color = LrColor(0.8, 0.5, 0),
+							tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudTooltip=Enterprise APIs typically do not use data for training, but privacy cannot be fully guaranteed. See our Wiki for details.",
+						},
 					}),
 				}),
 			}),
 			UIFactory.SettingsGroup(f, {
-				title = LOC("$$$/StyleAI/TaskAiEditPhotos/ModelSettings=Model Settings"),
+				title = LOC "$$$/StyleAI/UI/PrivacySettings=Privacy & Anonymization",
 				fill_horizontal = 1,
-				visible = bind("showLlmOptions"),
 				f:column({
 					spacing = f:control_spacing(),
-					f:row({
-						f:static_text({
-							title = LOC("$$$/StyleAI/common/Temperature=Temperature:"),
-							width = share("labelWidth"),
+						f:checkbox({
+							title = LOC("$$$/StyleAI/AnalyzeAndIndex/BlurFaces=Blur faces before sending to cloud APIs (Privacy)"),
+							value = bind("blurFacesForCloud"),
 						}),
-						f:column({
-							f:row({
-								f:slider({
-									value = bind("temperature"),
-									min = 0.0,
-									max = 0.5,
-									integral = false,
-									width = 300,
-								}),
-								f:static_text({
-									title = bind("temperature"),
-									width = 40,
-								}),
+						f:row({
+							margin_left = 20,
+							f:checkbox({
+								title = LOC("$$$/StyleAI/TaskAiEditPhotos/PreviewBlur=Preview blurred images before sending"),
+								value = bind("previewBlurredFaces"),
+								visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
 							}),
-							f:push_button({
-								title = LOC("$$$/StyleAI/common/Reset=Reset"),
-								width = 60,
-								action = function()
-									props.temperature = Defaults.defaultTemperature or 0.1
-								end,
+						}),
+						f:row({
+							margin_left = 20,
+							f:static_text({ 
+								title = "Blur Sensitivity:", 
+								width = 100,
+								visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
+							}),
+							f:popup_menu({
+								value = bind("faceBlurSensitivity"),
+								items = {
+									{ title = "High (Catch more faces)", value = "high" },
+									{ title = "Balanced", value = "balanced" },
+									{ title = "Low (Fewer false positives)", value = "low" },
+								},
+								width = 200,
+								visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
 							}),
 						}),
 					}),
-					f:row({
-				f:static_text({
-					width = share("labelWidth"),
-					title = LOC("$$$/StyleAI/common/Prompt=Prompt:"),
 				}),
-				props.promptTitleMenu,
-				f:push_button({
-					title = LOC("$$$/StyleAI/common/Add=Add"),
-					action = function()
-						local ok, err = LrTasks.pcall(function()
-							PromptConfigProvider.addPrompt(props)
-						end)
-						if not ok then
-							log:error("AI Edit prompt add failed: " .. tostring(err))
-							LrDialogs.showError(
-								LOC("$$$/StyleAI/PromptConfig/AddFailed=Adding prompt failed: ^1"),
-								tostring(err)
-							)
-						end
-					end,
+				UIFactory.SettingsGroup(f, {
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/ModelSettings=Model Settings"),
+					fill_horizontal = 1,
+					f:column({
+						spacing = f:control_spacing(),
+						f:row({
+							f:static_text({
+								title = LOC("$$$/StyleAI/common/Temperature=Temperature:"),
+								width = share("labelWidth"),
+							}),
+							f:column({
+								f:row({
+									f:slider({
+										value = bind("temperature"),
+										min = 0.0,
+										max = 0.5,
+										integral = false,
+										width = 300,
+									}),
+									f:static_text({
+										title = bind("temperature"),
+										width = 40,
+									}),
+								}),
+								f:push_button({
+									title = LOC("$$$/StyleAI/common/Reset=Reset"),
+									width = 60,
+									action = function()
+										props.temperature = Defaults.defaultTemperature or 0.1
+									end,
+								}),
+							}),
+						}),
+						f:row({
+					f:static_text({
+						width = share("labelWidth"),
+						title = LOC("$$$/StyleAI/common/Prompt=Prompt:"),
+					}),
+					props.promptTitleMenu,
+					f:push_button({
+						title = LOC("$$$/StyleAI/common/Add=Add"),
+						action = function()
+							local ok, err = LrTasks.pcall(function()
+								PromptConfigProvider.addPrompt(props)
+							end)
+							if not ok then
+								log:error("AI Edit prompt add failed: " .. tostring(err))
+								LrDialogs.showError(
+									LOC("$$$/StyleAI/PromptConfig/AddFailed=Adding prompt failed: ^1"),
+									tostring(err)
+								)
+							end
+						end,
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/common/Delete=Delete"),
+						action = function()
+							local ok, err = LrTasks.pcall(function()
+								PromptConfigProvider.deletePrompt(props)
+							end)
+							if not ok then
+								log:error("AI Edit prompt delete failed: " .. tostring(err))
+								LrDialogs.showError(
+									LOC("$$$/StyleAI/PromptConfig/DeleteFailed=Deleting prompt failed: ^1"),
+									tostring(err)
+								)
+							end
+						end,
+					}),
 				}),
-				f:push_button({
-					title = LOC("$$$/StyleAI/common/Delete=Delete"),
-					action = function()
-						local ok, err = LrTasks.pcall(function()
-							PromptConfigProvider.deletePrompt(props)
-						end)
-						if not ok then
-							log:error("AI Edit prompt delete failed: " .. tostring(err))
-							LrDialogs.showError(
-								LOC("$$$/StyleAI/PromptConfig/DeleteFailed=Deleting prompt failed: ^1"),
-								tostring(err)
-							)
-						end
-					end,
+				f:row({
+					f:static_text({
+						width = share("labelWidth"),
+						title = LOC("$$$/StyleAI/common/SystemInstruction=System instruction:"),
+					}),
+					f:edit_field({
+						value = bind("selectedPrompt"),
+						width_in_chars = 50,
+						height_in_lines = 4,
+						allow_newlines = true,
+					}),
+				}),
+				f:row({
+					f:static_text({
+						title = LOC("$$$/StyleAI/common/SummaryLanguage=Summary language:"),
+						width = share("labelWidth"),
+					}),
+					f:combo_box({
+						value = bind("language"),
+						items = Defaults.generateLanguages,
+					}),
 				}),
 			}),
-			f:row({
-				f:static_text({
-					width = share("labelWidth"),
-					title = LOC("$$$/StyleAI/common/SystemInstruction=System instruction:"),
-				}),
-				f:edit_field({
-					value = bind("selectedPrompt"),
-					width_in_chars = 50,
-					height_in_lines = 4,
-					allow_newlines = true,
-				}),
 			}),
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/common/SummaryLanguage=Summary language:"),
-					width = share("labelWidth"),
+			f:group_box({
+				title = LOC("$$$/StyleAI/TaskAiEditPhotos/EditInstructions=Edit Instructions"),
+				fill_horizontal = 1,
+				f:row({
+					f:static_text({
+						title = LOC("$$$/StyleAI/TaskAiEditPhotos/OverallLook=Overall look:"),
+						width = share("labelWidth"),
+					}),
+					f:popup_menu({
+						value = bind("editIntentPreset"),
+						items = bind("editIntentPresetItems"),
+						width = 300,
+					}),
 				}),
-				f:combo_box({
-					value = bind("language"),
-					items = Defaults.generateLanguages,
+				f:row({
+					f:static_text({
+						title = LOC("$$$/StyleAI/TaskAiEditPhotos/CustomIntent=Custom intent:"),
+						width = share("labelWidth"),
+					}),
+					f:edit_field({
+						value = bind("editIntent"),
+						width_in_chars = 50,
+						enabled = bind("isCustomEditIntent"),
+					}),
 				}),
-			}),
-		}),
-		}),
-		f:group_box({
-			title = LOC("$$$/StyleAI/TaskAiEditPhotos/EditInstructions=Edit Instructions"),
-			fill_horizontal = 1,
-			visible = bind("showLlmOptions"),
-			fill_horizontal = 1,
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/TaskAiEditPhotos/OverallLook=Overall look:"),
-					width = share("labelWidth"),
-				}),
-				f:popup_menu({
-					value = bind("editIntentPreset"),
-					items = bind("editIntentPresetItems"),
-					width = 300,
-				}),
-			}),
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/TaskAiEditPhotos/CustomIntent=Custom intent:"),
-					width = share("labelWidth"),
-				}),
-				f:edit_field({
-					value = bind("editIntent"),
-					width_in_chars = 50,
-					enabled = bind("isCustomEditIntent"),
-				}),
-			}),
 
-			f:row({
-				f:checkbox({
-					value = bind("reviewBeforeApply"),
-				}),
-				f:static_text({
-					title = LOC(
-						"$$$/StyleAI/TaskAiEditPhotos/ReviewProposed=Review each proposed edit before applying it"
-					),
-				}),
-			}),
-			f:row({
-				f:checkbox({
-					value = bind("applyMasks"),
-				}),
-				f:static_text({
-					title = LOC("$$$/StyleAI/TaskAiEditPhotos/AskMasks=Ask the AI for subject/sky/background masks"),
-				}),
-			}),
-			f:row({
-				f:checkbox({
-					value = bind("showPhotoContextDialog"),
-				}),
-				f:static_text({
-					title = LOC(
-						"$$$/StyleAI/TaskAiEditPhotos/AllowPerPhoto=Allow per-photo edit instructions before generation"
-					),
-				}),
-			}),
-		}),
-		f:group_box({
-			title = LOC("$$$/StyleAI/common/Context=Context"),
-			fill_horizontal = 1,
-			visible = bind("showLlmOptions"),
-			fill_horizontal = 1,
-			f:row({
-				f:column({
-					spacing = f:control_spacing(),
-					f:row({
-						f:checkbox({
-							value = bind("submitKeywords"),
-						}),
-						f:static_text({
-							title = LOC(
-								"$$$/StyleAI/TaskAiEditPhotos/SendKeywords=Send existing Lightroom keywords"
-							),
-						}),
+				f:row({
+					f:checkbox({
+						value = bind("reviewBeforeApply"),
 					}),
-				}),
-				f:column({
-					spacing = f:control_spacing(),
-					f:row({
-						f:checkbox({
-							value = bind("submitFolderName"),
-						}),
-						f:static_text({
-							title = LOC("$$$/StyleAI/TaskAiEditPhotos/SendFolders=Send folder names"),
-						}),
+					f:static_text({
+						title = LOC(
+							"$$$/StyleAI/TaskAiEditPhotos/ReviewProposed=Review each proposed edit before applying it"
+						),
 					}),
 				}),
 			}),
-		}),
+		})
+	end
+
+	local innerContents = editMode == "creative" and createCreativeContent() or createPredictiveContent()
+	
+	local contents = f:column({
+		bind_to_object = props,
+		spacing = f:control_spacing(),
+		innerContents,
 		f:row({
 			f:push_button({
 				title = LOC("$$$/StyleAI/common/ResetAllDefaults=Reset to Defaults"),
@@ -669,7 +624,7 @@ local function showAiEditDialog(ctx)
 						LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmMessage=Are you sure you want to reset all options in this dialog to their default values?")
 					)
 					if confirm == "ok" then
-						props.editingStyle = "trained" 
+						props.editingStyle = editMode or "trained" 
 						props.scope = "selected"
 						props.modelKey = (modelItems and modelItems[1]) and modelItems[1].value or "none"
 						props.temperature = 0.1
@@ -679,7 +634,7 @@ local function showAiEditDialog(ctx)
 						props.editIntentPreset = "natural_pro"
 						props.customEditIntentText = Defaults.defaultEditIntent
 						props.editIntent = "Natural professional Lightroom edit with balanced contrast, realistic color, and clean detail."
-						props.styleStrength = 0.5
+						props.styleStrength = 0.75
 						props.createVirtualCopies = true
 						props.reviewBeforeApply = true
 						props.applyMasks = true
@@ -695,12 +650,16 @@ local function showAiEditDialog(ctx)
 		}),
 	})
 
+	local dialogTitle = editMode == "trained"
+		and LOC("$$$/StyleAI/TaskAiEditPhotos/DialogTitleML=ML Edit Photos in Lightroom")
+		or LOC("$$$/StyleAI/TaskAiEditPhotos/DialogTitle=AI Edit Photos in Lightroom")
+
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/StyleAI/TaskAiEditPhotos/DialogTitle=AI Edit Photos in Lightroom"),
+		title = dialogTitle,
 		contents = contents,
 		actionVerb = LOC("$$$/StyleAI/TaskAiEditPhotos/GenerateEdits=Generate edits"),
 	})
-	log:trace("showAiEditDialog: dialog result=" .. tostring(result))
+	log:trace("getAiEditOptions: dialog result=" .. tostring(result))
 
 	if result ~= "ok" then
 		return nil
@@ -843,8 +802,9 @@ local function enrichPhotoOptions(photo, baseOptions, userContext)
 	return photoOptions
 end
 
-LrTasks.startAsyncTask(function()
-	LrFunctionContext.callWithContext("AiEditPhotosTask", function(ctx)
+function AiEditAction.run(editMode)
+	LrTasks.startAsyncTask(function()
+		LrFunctionContext.callWithContext("AiEditPhotosTask", function(ctx)
 		LrDialogs.attachErrorDialogToFunctionContext(ctx)
 		log:info("AI Edit task started")
 
@@ -864,7 +824,7 @@ LrTasks.startAsyncTask(function()
 			return
 		end
 
-		local options = showAiEditDialog(ctx)
+		local options = getAiEditOptions(ctx, editMode)
 		if not options then
 			log:info("AI Edit task canceled by user in options dialog")
 			return
@@ -919,8 +879,20 @@ LrTasks.startAsyncTask(function()
 			return
 		end
 
+		local progressTitle = editMode == "trained"
+			and LOC("$$$/StyleAI/TaskAiEditPhotos/ProgressTitleML=Applying ML Edits...")
+			or LOC("$$$/StyleAI/TaskAiEditPhotos/ProgressTitle=Generating AI Lightroom edits...")
+			
+		local completionTitle = editMode == "trained"
+			and LOC("$$$/StyleAI/TaskAiEditPhotos/CompletionTitleML=ML Edit Completed")
+			or LOC("$$$/StyleAI/TaskAiEditPhotos/CompletionTitle=AI Edit Completed")
+			
+		local successTitle = editMode == "trained"
+			and LOC("$$$/StyleAI/TaskAiEditPhotos/SuccessTitleML=ML Lightroom Edit")
+			or LOC("$$$/StyleAI/TaskAiEditPhotos/SuccessTitle=AI Lightroom Edit")
+
 		local progressScope = LrProgressScope({
-			title = LOC("$$$/StyleAI/TaskAiEditPhotos/ProgressTitle=Generating AI Lightroom edits..."),
+			title = progressTitle,
 			functionContext = ctx,
 		})
 
@@ -940,7 +912,7 @@ LrTasks.startAsyncTask(function()
 			end
 		end
 
-		progressScope:setCaption(LOC("$$$/StyleAI/TaskAiEditPhotos/ProgressTitle=Generating AI Lightroom edits..."))
+		progressScope:setCaption(progressTitle)
 		progressScope:setPortionComplete(0, #photos)
 
 		local successCount = 0
@@ -948,6 +920,7 @@ LrTasks.startAsyncTask(function()
 		local errorCount = 0
 		local errorMessages = {}
 		local backendWarnings = {}
+		local runLog = {}
 
 		-- Queue state
 		local userContexts = {}
@@ -1006,17 +979,20 @@ LrTasks.startAsyncTask(function()
 						resultObj.errorMsg = fileName .. ": " .. tostring(photoIdErr)
 						resultObj.continueProcessing = false
 					else
-						local photoOptions = enrichPhotoOptions(photo, options, userContext)
+						local photoOptions = nil
 						local okSettings, currentSettings = LrTasks.pcall(function()
 							local settings = nil
-							catalog:withReadAccessDo("getDevelopSettings", function()
+							photo.catalog:withReadAccessDo("getDevelopSettings", function()
 								settings = photo:getDevelopSettings()
+								photoOptions = enrichPhotoOptions(photo, options, userContext)
 							end)
 							return settings
 						end)
+						if not photoOptions then
+							photoOptions = enrichPhotoOptions(photo, options, userContext)
+						end
 						if okSettings and currentSettings then
 							photoOptions.current_settings = currentSettings
-
 						end
 						local base_path, dark_path, bright_path = SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
 						if not base_path then
@@ -1050,24 +1026,34 @@ LrTasks.startAsyncTask(function()
 								resultObj.errorMsg = fileName .. ": exception thrown: " .. tostring(apiOk)
 								resultObj.continueProcessing = false
 							else
-								if apiOk and type(apiResponse) == "table" and apiResponse.status == "error" and apiResponse.error == "profile_mismatch" then
-									-- Default button is "Cancel" so it is highlighted
+								if apiOk and type(apiResponse) == "table" and apiResponse.status == "error" and (apiResponse.error == "profile_mismatch" or apiResponse.error == "low_confidence") then
+									local title = apiResponse.error == "profile_mismatch" 
+										and LOC("$$$/StyleAI/TaskAiEditPhotos/ProfileMismatchTitle=Camera Profile Mismatch")
+										or LOC("$$$/StyleAI/TaskAiEditPhotos/LowConfidenceTitle=Low Match Confidence")
+									
+									local message = apiResponse.error == "profile_mismatch"
+										and LOC("$$$/StyleAI/TaskAiEditPhotos/ProfileMismatchMessage=No training examples exist for the camera profile used by ^1. Do you want to proceed with a 100% LLM-based edit?", fileName)
+										or LOC("$$$/StyleAI/TaskAiEditPhotos/LowConfidenceMessage=StyleAI could not find a confident match for ^1 based on your training examples. Do you want to proceed with a 100% LLM-based edit?", fileName)
+
 									local action = LrDialogs.confirm(
-										LOC("$$$/StyleAI/TaskAiEditPhotos/ProfileMismatchTitle=Camera Profile Mismatch"),
-										LOC("$$$/StyleAI/TaskAiEditPhotos/ProfileMismatchMessage=No training examples exist for the camera profile used by ^1. Do you want to proceed with a 100% LLM-based edit?", fileName),
-										LOC("$$$/StyleAI/TaskAiEditPhotos/Cancel=Cancel"),
-										LOC("$$$/StyleAI/TaskAiEditPhotos/ProceedWithLLM=Proceed with LLM")
+										title,
+										message,
+										LOC("$$$/StyleAI/TaskAiEditPhotos/ProceedWithLLM=Proceed with LLM"),
+										LOC("$$$/StyleAI/TaskAiEditPhotos/CancelBatch=Cancel Batch"),
+										LOC("$$$/StyleAI/TaskAiEditPhotos/SkipPhoto=Skip Photo")
 									)
-									if action == "cancel" then -- They clicked the secondary "Proceed with LLM" button
+									if action == "ok" then 
 										local llmOk, llmApiOk, llmResponse = LrTasks.pcall(function()
 											photoOptions.use_training_style = false
 											return SearchIndexAPI.generateEditRecipePhoto(photoId, base_path, photoOptions)
 										end)
-										ok = llmOk
 										apiOk = llmApiOk
 										apiResponse = llmResponse
+									elseif action == "other" then
+										apiResponse = { status = "error", error = "Skipped by user" }
 									else
-										apiResponse = { status = "error", error = "Cancelled due to profile mismatch" }
+										apiResponse = { status = "error", error = "Batch cancelled by user" }
+										progressScope:cancel()
 									end
 								end
 
@@ -1193,6 +1179,26 @@ LrTasks.startAsyncTask(function()
 						local applied, warnings = DevelopEditManager.applyRecipe(photo, response, applyOptions)
 						if applied then
 							successCount = successCount + 1
+							local styleInfo = "LLM Edit"
+							if response.engine and response.engine ~= "llm" and response.engine ~= "none" then
+								local conf = response.confidence and math.floor(response.confidence * 100) or 0
+								local styleName = (response.matched_filenames and response.matched_filenames[1]) or "Unknown Style"
+								local tier = response.engine
+								local examples = response.matched_examples or 0
+								
+								local tierLabel = "🔴 Undertrained"
+								if tier == "ml_direct" then
+									tierLabel = "⭐️ ML Predictive (Best)"
+								elseif tier == "ml_pca" then
+									tierLabel = "🌟 ML Predictive (Good)"
+								elseif examples >= 10 then
+									tierLabel = "🟢 Strong"
+								elseif examples >= 5 then
+									tierLabel = "🟡 Good"
+								end
+								styleInfo = string.format("%s: %s (%d%% confidence)", tierLabel, styleName, conf)
+							end
+							table.insert(runLog, string.format("- %s: %s", fileName, styleInfo))
 						else
 							errorCount = errorCount + 1
 							table.insert(errorMessages, fileName .. ": failed to apply recipe")
@@ -1265,26 +1271,70 @@ LrTasks.startAsyncTask(function()
 
 			if errorCount > 0 then
 				ErrorHandler.handleError(
-					LOC("$$$/StyleAI/TaskAiEditPhotos/CompletionTitle=AI Edit Completed"),
+					completionTitle,
 					combinedReport
 				)
 			else
 				LrDialogs.message(
-					LOC("$$$/StyleAI/TaskAiEditPhotos/CompletionTitle=AI Edit Completed"),
+					completionTitle,
 					combinedReport,
 					"warning"
 				)
 			end
 		else
-			LrDialogs.message(
-				LOC("$$$/StyleAI/TaskAiEditPhotos/SuccessTitle=AI Lightroom Edit"),
-				LOC(
-					"$$$/StyleAI/TaskAiEditPhotos/SuccessSummary=Applied edits to ^1 photo(s).\nSkipped: ^2",
-					tostring(successCount),
-					tostring(skippedCount)
-				),
-				"info"
-			)
+			if editMode == "trained" and #runLog > 0 then
+				local f = LrView.osFactory()
+				local dialogContent = f:column({
+					spacing = f:control_spacing(),
+					f:static_text({
+						title = LOC(
+							"$$$/StyleAI/TaskAiEditPhotos/SuccessSummary=Applied edits to ^1 photo(s).\nSkipped: ^2",
+							tostring(successCount),
+							tostring(skippedCount)
+						),
+						font = "<system/bold>",
+					}),
+					f:static_text({
+						title = "You can export a detailed log of the ML styles and confidence metrics applied to these photos.",
+						size = "small"
+					})
+				})
+				
+				local res = LrDialogs.presentModalDialog({
+					title = successTitle,
+					contents = dialogContent,
+					actionVerb = LOC("$$$/StyleAI/common/OK=OK"),
+					cancelVerb = "Export Log",
+				})
+				
+				if res == "cancel" then
+					local savePath = LrDialogs.runSavePanel({
+						title = "Save ML Edit Log",
+						requiredFileType = "txt",
+					})
+					if savePath then
+						local file = io.open(savePath, "w")
+						if file then
+							file:write("StyleAI ML Edit Log\n")
+							file:write("===================\n\n")
+							for _, line in ipairs(runLog) do
+								file:write(line .. "\n")
+							end
+							file:close()
+						end
+					end
+				end
+			else
+				LrDialogs.message(
+					successTitle,
+					LOC(
+						"$$$/StyleAI/TaskAiEditPhotos/SuccessSummary=Applied edits to ^1 photo(s).\nSkipped: ^2",
+						tostring(successCount),
+						tostring(skippedCount)
+					),
+					"info"
+				)
+			end
 		end
 		log:info(
 			"AI Edit task completed. success="
@@ -1296,3 +1346,6 @@ LrTasks.startAsyncTask(function()
 		)
 	end)
 end)
+end
+
+return AiEditAction

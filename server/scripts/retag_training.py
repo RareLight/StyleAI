@@ -4,10 +4,10 @@ import os
 import json
 import logging
 
-os.environ["STYLEAI_IDLE_SHUTDOWN_SECONDS"] = "0"
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import config
+
+config.args.idle_shutdown_seconds = 0
 
 config.DB_PATH = (
     "/Users/anna/Pictures/Lightroom Classic/Rare Light Photography/styleai.db"

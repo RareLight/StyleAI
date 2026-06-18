@@ -600,7 +600,7 @@ def _finalize_recipe(
     style_strength: float | None,
 ) -> dict[str, Any]:
     """Apply style strength scaling and auto white balance overrides."""
-    if style_strength is not None and style_strength < 1.0:
+    if style_strength is not None and style_strength != 1.0:
         # Use Lightroom absolute defaults as the baseline for interpolation
         # so the slider is stateless and works predictably even if the photo is already edited.
         lr_defaults = {

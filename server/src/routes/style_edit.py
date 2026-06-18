@@ -146,6 +146,18 @@ def _run_single_style_edit(
             "message": result.warning or "Style engine could not produce a result.",
         }
 
+    # Style engine has low confidence and LLM fallback is disabled
+    if result.confidence < CONFIDENCE_LOW and not use_llm_fallback:
+        return {
+            "status": "error",
+            "engine": "none",
+            "photo_id": photo_id,
+            "confidence": round(result.confidence, 3),
+            "matched_examples": result.matched_count,
+            "error": "low_confidence",
+            "message": "Confidence is too low to apply edit safely.",
+        }
+
     # Successful style engine result
     if not result.recipe:
         return {

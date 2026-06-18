@@ -23,19 +23,23 @@ return {
 
 	LrLibraryMenuItems = {
 		{
-			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
-			file = "TaskAiEditPhotos.lua",
-		},
-		{
-			title = LOC("$$$/StyleAI/Training/MenuItem=Learn My Styles..."),
+			title = LOC("$$$/StyleAI/Training/MenuLearnMyStyles=Learn My Styles"),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=AI Styles Index..."),
+			title = LOC("$$$/StyleAI/Info/MenuApplyMyStyleEdits=Apply My Style Edits"),
+			file = "TaskAiEditPredictive.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=My Styles Index"),
 			file = "TaskStyleCatalog.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index & Auto-Tag Photos..."),
+			title = LOC("$$$/StyleAI/Info/MenuApplyLLMEdits=Apply LLM Edits"),
+			file = "TaskAiEditCreative.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuAutoTagger=Auto-Tagger (optional)"),
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
@@ -46,19 +50,23 @@ return {
 
 	LrExportMenuItems = {
 		{
-			title = LOC("$$$/StyleAI/Info/AiEditPhotosTitle=AI Edit Photos..."),
-			file = "TaskAiEditPhotos.lua",
-		},
-		{
-			title = LOC("$$$/StyleAI/Training/MenuItem=Learn My Styles..."),
+			title = LOC("$$$/StyleAI/Training/MenuLearnMyStyles=Learn My Styles"),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/StyleCatalog/MenuItem=AI Styles Index..."),
+			title = LOC("$$$/StyleAI/Info/MenuApplyMyStyleEdits=Apply My Style Edits"),
+			file = "TaskAiEditPredictive.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=My Styles Index"),
 			file = "TaskStyleCatalog.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuItem=AI Index & Auto-Tag Photos..."),
+			title = LOC("$$$/StyleAI/Info/MenuApplyLLMEdits=Apply LLM Edits"),
+			file = "TaskAiEditCreative.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuAutoTagger=Auto-Tagger (optional)"),
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 	},

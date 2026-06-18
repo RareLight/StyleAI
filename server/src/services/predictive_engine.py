@@ -3,7 +3,7 @@ import json
 import numpy as np
 import joblib
 
-from config import logger, DATA_DIR
+from config import logger, DB_PATH
 from . import training as training_service
 from . import style_catalog as catalog_service
 
@@ -11,8 +11,12 @@ from sklearn.pipeline import Pipeline
 from sklearn.linear_model import Ridge
 from sklearn.decomposition import PCA
 
-MODEL_DIR = os.path.join(DATA_DIR, "predictive_models")
-os.makedirs(MODEL_DIR, exist_ok=True)
+if DB_PATH:
+    MODEL_DIR = os.path.join(DB_PATH, "predictive_models")
+    os.makedirs(MODEL_DIR, exist_ok=True)
+else:
+    MODEL_DIR = None
+
 
 # Minimum examples required to train a PCA + Ridge pipeline
 MIN_PCA_EXAMPLES = 20

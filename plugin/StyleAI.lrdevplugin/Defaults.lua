@@ -132,7 +132,14 @@ Defaults.editIntentPresets = {
 	},
 	{ title = LOC("$$$/StyleAI/Defaults/EditIntent/Custom=Custom"), value = "custom", instruction = "" },
 }
-Defaults.defaultEditStyleStrength = 0.5
+Defaults.editStyleStrengths = {
+	{ title = LOC("$$$/StyleAI/Defaults/Strength/Min=Min"), value = 0.25 },
+	{ title = LOC("$$$/StyleAI/Defaults/Strength/Low=Low"), value = 0.50 },
+	{ title = LOC("$$$/StyleAI/Defaults/Strength/Normal=Normal"), value = 0.75 },
+	{ title = LOC("$$$/StyleAI/Defaults/Strength/High=High"), value = 1.0 },
+	{ title = LOC("$$$/StyleAI/Defaults/Strength/Max=Max"), value = 1.25 },
+}
+Defaults.defaultEditStyleStrength = 0.75
 Defaults.defaultCompositionMode = "subtle"
 Defaults.compositionModes = {
 	{ title = LOC("$$$/StyleAI/Defaults/CompositionMode/None=No crop"), value = "none" },

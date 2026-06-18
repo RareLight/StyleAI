@@ -2228,11 +2228,23 @@ end
 function SearchIndexAPI.downloadDatabaseBackup()
     local url = getBaseUrl() .. ENDPOINTS.DB_BACKUP
     log:info("downloadDatabaseBackup: start, url=" .. tostring(url))
+    local catalog = LrApplication.activeCatalog()
+    local catalogPath = catalog:getPath()
+    local catalogDir = LrPathUtils.parent(catalogPath)
+    local defaultBackupDir = LrPathUtils.child(catalogDir, "Backups")
+    if not LrFileUtils.exists(defaultBackupDir) then
+        defaultBackupDir = catalogDir
+    end
+
+    local initialFilename = "styleai-backup-" .. os.date("%Y%m%d-%H%M%S") .. ".zip"
+
     local outputPath = LrDialogs.runSavePanel({
         title = LOC("$$$/StyleAI/common/SaveDatabaseBackup=Save database backup"),
         prompt = "Save Backup",
         canCreateDirectories = true,
         requiredFileType = "zip",
+        initialDirectory = defaultBackupDir,
+        initialFilename = initialFilename,
     })
     log:info("downloadDatabaseBackup: save panel returned type=" ..
         tostring(type(outputPath)) .. " value=" .. tostring(outputPath))
@@ -2252,75 +2264,25 @@ function SearchIndexAPI.downloadDatabaseBackup()
         outputPath = outputPath .. ".zip"
     end
 
-    log:info("Downloading database backup from " .. url .. " to " .. outputPath)
+    log:info("Requesting backend to write database backup to " .. outputPath)
 
-    -- _request mit leerer Tabelle als body, kein Timeout (vermeidet SDK-Crash), raw=true für Binär-Zip
-    local responseBody, hdrs = _request('GET', url, {}, nil, { raw = true })
-    if responseBody == nil then
-        local err = hdrs or "Backup download failed"
-        log:error("downloadDatabaseBackup: " .. tostring(err))
+    local payload = {
+        output_path = outputPath
+    }
+
+    local results, err = _request('POST', url, payload, 300) -- give it 5 minutes just in case
+    if not results then
+        log:error("downloadDatabaseBackup failed: " .. tostring(err))
         return false, err
     end
-    local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
-    log:info(
-        "downloadDatabaseBackup: HTTP finished, status=" .. tostring(status) ..
-        ", hdrsType=" .. tostring(type(hdrs)) ..
-        ", bodyType=" .. tostring(type(responseBody)) ..
-        ", bodyLen=" .. tostring(type(responseBody) == "string" and #responseBody or "n/a")
-    )
-    if status == nil or status < 200 or status >= 300 then
-        local err = "Backup download failed. HTTP status: " .. tostring(status or "unknown")
-        if type(responseBody) == "string" and #responseBody > 0 then
-            local ok, decoded = LrTasks.pcall(function()
-                return JSON:decode(responseBody)
-            end)
-            log:info("downloadDatabaseBackup: error response JSON decode ok=" ..
-                tostring(ok) .. ", decodedType=" .. tostring(type(decoded)))
-            if ok and type(decoded) == "table" and decoded.error then
-                err = err .. " - " .. tostring(decoded.error)
-            end
-        elseif responseBody ~= nil then
-            err = err .. " - rawBody(" .. tostring(type(responseBody)) .. "): " .. tostring(responseBody)
-        end
-        log:error(err)
-        return false, err
-    end
-
-    local file, openErr = io.open(outputPath, "wb")
-    if not file then
-        local err = "Could not create backup file: " .. tostring(openErr)
-        log:error(err)
-        return false, err
-    end
-
-    local dataToWrite = responseBody
-    if dataToWrite == nil then
-        dataToWrite = ""
-    elseif type(dataToWrite) ~= "string" then
-        log:warn("downloadDatabaseBackup: responseBody is not a string, converting via tostring. type=" ..
-            tostring(type(dataToWrite)))
-        dataToWrite = tostring(dataToWrite)
-    end
-
-    local writeOk, writeErr = LrTasks.pcall(function()
-        file:write(dataToWrite)
-    end)
-    if not writeOk then
-        file:close()
-        local err = "Could not write backup file: " .. tostring(writeErr)
-        log:error("downloadDatabaseBackup: " .. err)
-        return false, err
-    end
-    file:close()
 
     if not LrFileUtils.exists(outputPath) then
-        local err = "Backup file was not created."
-        log:error(err)
-        return false, err
+        local existErr = "Backend reported success, but backup file was not found at " .. outputPath
+        log:error(existErr)
+        return false, existErr
     end
 
-    log:info("Database backup downloaded successfully: " ..
-        outputPath .. " (writtenBytes=" .. tostring(#dataToWrite) .. ")")
+    log:info("Database backup created successfully by backend at: " .. outputPath)
     return true, outputPath
 end
 
