@@ -1196,7 +1196,8 @@ function AiEditAction.run(editMode)
 								elseif examples >= 5 then
 									tierLabel = "🟡 Good"
 								end
-								styleInfo = string.format("%s: %s (%d%% confidence)", tierLabel, styleName, conf)
+								local strength = options.style_strength or "normal"
+								styleInfo = string.format("%s: %s (%d%% confidence, %s strength)", tierLabel, styleName, conf, strength)
 							end
 							table.insert(runLog, string.format("- %s: %s", fileName, styleInfo))
 						else
@@ -1308,11 +1309,19 @@ function AiEditAction.run(editMode)
 				})
 				
 				if res == "cancel" then
-					local savePath = LrDialogs.runSavePanel({
-						title = "Save ML Edit Log",
-						requiredFileType = "txt",
+					local exportDir = LrDialogs.runOpenPanel({
+						title = "Choose Export Folder for ML Edit Log",
+						canChooseFiles = false,
+						canChooseDirectories = true,
+						canCreateDirectories = true,
+						allowsMultipleSelection = false,
 					})
-					if savePath then
+					if exportDir and exportDir[1] then
+						local LrPathUtils = import("LrPathUtils")
+						local timestamp = os.date("%Y%m%d_%H%M%S")
+						local fileName = "StyleAI_Edit_Log_" .. timestamp .. ".txt"
+						local savePath = LrPathUtils.child(exportDir[1], fileName)
+						
 						local file = io.open(savePath, "w")
 						if file then
 							file:write("StyleAI ML Edit Log\n")
