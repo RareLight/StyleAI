@@ -50,6 +50,10 @@ def perform_code_update(manifest: dict, plugin_path: str) -> tuple[bool, str]:
                 plugin_path,
                 str(backend_root),
             ]
+            import sys as _sys
+
+            # Forward the original server arguments (e.g. --db-path, --port)
+            cmd.extend(_sys.argv[1:])
             creationflags = (
                 subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             )

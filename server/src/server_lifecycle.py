@@ -35,7 +35,7 @@ IDLE_UNLOAD_SECONDS = 10 * 60  # 10 minutes
 
 # Server idle-shutdown: if no HTTP request arrives in this many seconds, the whole
 # server process exits gracefully.  Overridable via env var.
-IDLE_SHUTDOWN_SECONDS = int(os.environ.get("STYLEAI_IDLE_SHUTDOWN_SECONDS", "600"))
+IDLE_SHUTDOWN_SECONDS = config.args.idle_shutdown_seconds
 
 _last_used = None
 _last_request_time = time.time()  # track last HTTP request for server idle shutdown

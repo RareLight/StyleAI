@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 from datetime import datetime
 from typing import Any
 
@@ -37,7 +38,9 @@ from services import training as training_service
 # ---------------------------------------------------------------------------
 
 _db_path: str | None = None
-_connection: sqlite3.Connection | None = None
+_local = threading.local()
+_schema_init_lock = threading.Lock()
+_schema_initialized = False
 
 
 def _get_db_file() -> str:
@@ -50,31 +53,38 @@ def _get_db_file() -> str:
 
 
 def _ensure_initialized() -> sqlite3.Connection:
-    """Lazy-init the SQLite connection + schema."""
-    global _db_path, _connection
+    """Lazy-init the SQLite connection + schema per thread."""
+    global _db_path, _schema_initialized
 
     db_file = _get_db_file()
-    if _connection is not None and _db_path == db_file:
-        return _connection
+    
+    conn = getattr(_local, "connection", None)
+    if conn is not None and _db_path == db_file:
+        return conn
 
-    logger.info("Initialising style catalog SQLite at %s", db_file)
-    os.makedirs(os.path.dirname(db_file), exist_ok=True)
+    # Only run migrations once across all threads, or if db path changes (e.g. in tests)
+    with _schema_init_lock:
+        if not _schema_initialized or _db_path != db_file:
+            logger.info("Initialising style catalog SQLite at %s", db_file)
+            os.makedirs(os.path.dirname(db_file), exist_ok=True)
 
-    from core.migrations import run_migrations
+            from core.migrations import run_migrations
 
-    try:
-        run_migrations(os.path.dirname(db_file))
-    except Exception as e:
-        logger.error(f"Failed to run migrations for style catalog: {e}")
-        # Continue to connect anyway, maybe it's just the version check failing
+            try:
+                run_migrations(os.path.dirname(db_file))
+            except Exception as e:
+                logger.error(f"Failed to run migrations for style catalog: {e}")
+            
+            _db_path = db_file
+            _schema_initialized = True
 
+    # Open a new connection for this thread
     conn = sqlite3.connect(db_file, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA busy_timeout=5000;")
     conn.row_factory = sqlite3.Row
-    _connection = conn
-    _db_path = db_file
+    _local.connection = conn
     return conn
 
 
@@ -419,11 +429,13 @@ def find_matching_styles(
     """Find the best-matching style(s) for a target photo.
 
     Scoring:
-        camera_exact  = 1.0 if exact match, 0.5 if same make, 0.0 otherwise
-        profile_exact = 1.0 if exact profile match, 0.7 if same model different profile
+        profile_exact = 1.0 if exact profile match, 0.0 otherwise
         genre_exact   = 1.0 if exact, 0.7 if related
         keywords      = bonus for keyword overlap
         exposure      = 0.25 weight on exposure DNA proximity
+
+    Penalty:
+        If profile_exact == 0.0, the total score is multiplied by 0.4.
 
     Returns: [(style_dict, confidence), ...] sorted descending.
     """
@@ -487,6 +499,10 @@ def find_matching_styles(
                 mean_delta = sum(deltas) / len(deltas)
                 exp_score = max(0.0, 1.0 - mean_delta / 0.3)
         score += 0.25 * exp_score
+
+        # Apply profile mismatch penalty
+        if profile_score == 0.0:
+            score *= 0.4
 
         scored.append((style, round(score, 3)))
 

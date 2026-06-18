@@ -23,6 +23,48 @@ parser.add_argument(
     action="store_true",
     help="Enable debug mode with auto-reloading and debug log level",
 )
+parser.add_argument(
+    "--host", type=str, default="127.0.0.1", help="Bind address for the server"
+)
+parser.add_argument("--port", type=int, default=19819, help="Port to run the server on")
+parser.add_argument(
+    "--force-cpu-clip", action="store_true", help="Force CPU for CLIP inference"
+)
+parser.add_argument(
+    "--idle-shutdown-seconds",
+    type=int,
+    default=600,
+    help="Inactivity timeout before unloading models",
+)
+parser.add_argument(
+    "--backup-interval",
+    type=int,
+    default=86400,
+    help="Seconds between automatic database backups",
+)
+parser.add_argument(
+    "--backup-max-keep",
+    type=int,
+    default=14,
+    help="Maximum number of automated backups to retain",
+)
+parser.add_argument(
+    "--disable-backup",
+    action="store_true",
+    help="Disable automated database backups entirely",
+)
+parser.add_argument(
+    "--log-rotate-backups",
+    type=int,
+    default=3,
+    help="Maximum number of log backups to keep",
+)
+parser.add_argument(
+    "--insightface-root",
+    type=str,
+    default=os.path.expanduser("~/.insightface"),
+    help="Directory for InsightFace models",
+)
 args = parser.parse_args()
 
 # --- Constants ---
@@ -33,11 +75,7 @@ DB_PATH = args.db_path
 # Platform-specific device selection:
 # - macOS: Use Metal GPU (MPS) if available
 # - Windows: CPU-only for now to avoid VRAM issues with open_clip on CUDA and local LLMs using CUDA
-force_cpu_clip = os.environ.get("STYLEAI_FORCE_CPU_CLIP", "0").lower() in (
-    "1",
-    "true",
-    "yes",
-)
+force_cpu_clip = args.force_cpu_clip
 
 if force_cpu_clip:
     TORCH_DEVICE = "cpu"
@@ -387,7 +425,7 @@ def _file_log_handler():
         return logging.FileHandler(LOG_PATH, encoding="utf-8")
     # Local: on every start create a new log file; keep N backups (STYLEAI_LOG_ROTATE_BACKUPS).
     try:
-        backup_count = int(os.environ.get("STYLEAI_LOG_ROTATE_BACKUPS", "3"))
+        backup_count = args.log_rotate_backups
     except ValueError:
         backup_count = 3
     backup_count = max(1, min(backup_count, 20))

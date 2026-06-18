@@ -268,9 +268,18 @@ LrTasks.startAsyncTask(function()
 
 			-- Read current develop settings.
 			local developSettings
+			local exifOptions
 			local okGet, devOrErr = LrTasks.pcall(function()
-				return photo:getDevelopSettings()
+				local settings = nil
+				photo.catalog:withReadAccessDo("getDevelopSettings", function()
+					settings = photo:getDevelopSettings()
+					exifOptions = Util.getPhotoExif(photo)
+				end)
+				return settings
 			end)
+			if not exifOptions then
+				exifOptions = Util.getPhotoExif(photo)
+			end
 			if okGet and type(devOrErr) == "table" then
 				developSettings = devOrErr
 			else
@@ -285,18 +294,6 @@ LrTasks.startAsyncTask(function()
 				errorCount = errorCount + 1
 				table.insert(errorMessages, fileName .. ": " .. tostring(photoIdErr))
 			else
-				-- Collect EXIF metadata for richer style matching using standardized utility.
-				local exifOptions = Util.getPhotoExif(photo)
-
-				local actualProfile = nil
-				if developSettings then
-					if type(developSettings.Look) == "table" and developSettings.Look.Name then
-						actualProfile = developSettings.Look.Name
-					else
-						actualProfile = developSettings.CameraProfile
-					end
-				end
-
 				-- Get JPEG preview for the backend to compute exposure metrics.
 				local jpegData, jpegErr = SearchIndexAPI.getJpegThumbnailForPhoto(photo, 1024, 1024)
 				local imageBytes = nil
@@ -315,7 +312,7 @@ LrTasks.startAsyncTask(function()
 					capture_time = exifOptions.capture_time,
 					camera_make = exifOptions.camera_make,
 					camera_model = exifOptions.camera_model,
-					camera_profile = actualProfile,
+					camera_profile = exifOptions.camera_profile,
 					iso = exifOptions.iso,
 					aperture = exifOptions.aperture,
 					shutter_speed = exifOptions.shutter_speed,

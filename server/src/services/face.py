@@ -8,7 +8,7 @@ from __future__ import annotations
 import io
 from typing import Any
 
-import os
+import config
 import numpy as np
 from PIL import Image
 
@@ -40,7 +40,7 @@ def _get_face_app():
             except ImportError:
                 pass
 
-        root = os.environ.get("INSIGHTFACE_ROOT", os.path.expanduser("~/.insightface"))
+        root = config.args.insightface_root
         _face_app = FaceAnalysis(
             name="buffalo_l",
             root=root,

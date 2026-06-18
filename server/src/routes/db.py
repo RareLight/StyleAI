@@ -5,8 +5,9 @@ Provides routes for fetching database statistics, creating backup zips,
 migrating old photo IDs, and pruning orphaned records.
 """
 
-from flask import Blueprint, jsonify, send_file, after_this_request, request
+from flask import Blueprint, jsonify, request
 import os
+import shutil
 
 from config import logger
 from services import db as service_db
@@ -33,33 +34,37 @@ def database_stats():
         return jsonify({"error": str(e)}), 500
 
 
-@db_bp.route("/db/backup", methods=["GET"])
+@db_bp.route("/db/backup", methods=["POST"])
 def backup_database():
     try:
+        data = request.get_json(silent=True) or {}
+        output_path = data.get("output_path")
+        if not output_path:
+            return jsonify(
+                {"results": None, "error": "output_path is required", "warning": None}
+            ), 400
+
         zip_path, backup_name = service_db.build_backup_zip()
 
-        @after_this_request
-        def cleanup_backup(response):
+        # Copy the backup directly to the requested output_path
+        try:
+            shutil.copy2(zip_path, output_path)
+        finally:
             try:
                 os.remove(zip_path)
-            except FileNotFoundError:
+            except OSError:
                 pass
-            except Exception as e:
-                logger.warning(
-                    "Could not remove temporary backup zip %s: %s", zip_path, e
-                )
-            return response
 
-        return send_file(
-            zip_path,
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name=backup_name,
-            max_age=0,
+        return jsonify(
+            {
+                "results": {"success": True, "path": output_path},
+                "error": None,
+                "warning": None,
+            }
         )
     except Exception as e:
         logger.error("Database backup failed: %s", e, exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"results": None, "error": str(e), "warning": None}), 500
 
 
 @db_bp.route("/db/prune", methods=["POST"])

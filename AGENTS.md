@@ -50,8 +50,11 @@ StyleAI/
 ├── server/                        # Python/Flask backend source
 │   ├── pyproject.toml & uv.lock   # Dependency definitions (managed via uv)
 │   ├── Dockerfile                 # Container setup for server
+│   ├── test/                      # Pytest test suite for backend logic
+│   ├── scripts/                   # Development and maintenance utilities
 │   └── src/
 │       ├── styleai_server.py      # Server entry point
+│       ├── config.py              # Configuration and path resolution
 │       ├── server_lifecycle.py    # Process PID & OK file signalling, idle unloading
 │       ├── routes/                # Flask Blueprints (HTTP endpoints)
 │       ├── services/              # Business logic (chroma, index, search, face, style_engine)
@@ -59,6 +62,23 @@ StyleAI/
 ├── docs/wiki/                     # GitHub Wiki source pages (auto-published)
 └── .agents/rules/                 # Always-on constraint files for agents
 ```
+
+## 2.5 Key Locations & Data Stores
+
+To aid in troubleshooting, here is exactly where the application stores data and models:
+- **Databases (`styleai.db`)**: The default location for the databases is inside the user's Lightroom Catalog folder (e.g. `~/Pictures/Lightroom/styleai.db`). 
+  - `styleai.db/chroma.sqlite3`: The ChromaDB vector embeddings.
+  - `styleai.db/styles.sqlite`: The structured relational database for styles and face templates.
+  - The backend receives this path via the `--db-path` argument launched by the plugin.
+- **Downloaded Models**: SigLIP2, InsightFace, and SentenceTransformer models are cached in `~/.cache/huggingface/` or `~/.insightface/` on macOS.
+- **Log Files**: 
+  - **Lua Plugin Logs**: Found in `~/Documents/LrClassicLogs/` (or configured via Lightroom).
+  - **Python Backend Logs**: Found inside the `<catalogParent>/styleai.db/` folder alongside the database, or output directly to stdout/stderr.
+- **Python Utilities & Scripts**: All backend management scripts are located in `server/scripts/`. Examples: `server/scripts/download_models.py`, `server/scripts/lint_format.sh`.
+- **Translations**: The plugin translation files are in `plugin/StyleAI.lrdevplugin/TranslatedStrings_*.txt`. Synchronize them using the `sync_translations.py` script at the root.
+- **Tests**: 
+  - **Backend**: Python tests are in `server/test/` (run via `uv run pytest test/`).
+  - **Frontend/Plugin**: Smoke tests are run inside Lightroom via `TaskAutomatedTests.lua`.
 
 ## 3. Development Setup & Commands
 

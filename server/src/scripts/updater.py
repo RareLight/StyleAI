@@ -296,10 +296,13 @@ def download_with_retry(url: str, timeout: int = 30, retries: int = 3) -> bytes:
 
 
 class UpdaterGUI:
-    def __init__(self, manifest_path, plugin_path, backend_root):
+    def __init__(
+        self, manifest_path: str, plugin_path: str, backend_root: str, server_args: list
+    ):
         self.manifest_path = manifest_path
         self.plugin_path = plugin_path
         self.backend_root = backend_root
+        self.server_args = server_args
         # Queue used to pass events from the worker thread to the main thread.
         # Tuples: ('status', current, total, msg) | ('done',) | ('error', msg)
         self._q: queue.Queue = queue.Queue()
@@ -430,7 +433,11 @@ class UpdaterGUI:
             # Ask a still-running backend to restart itself (picks up new files).
             # Silently ignored if the backend is already down.
             try:
-                port = int(os.environ.get("STYLEAI_PORT", "19819"))
+                port = 19819
+                if "--port" in self.server_args:
+                    idx = self.server_args.index("--port")
+                    if idx + 1 < len(self.server_args):
+                        port = int(self.server_args[idx + 1])
                 requests.post(f"http://127.0.0.1:{port}/restart", timeout=5)
                 _log("Sent /restart to running backend.")
             except Exception:
@@ -448,12 +455,12 @@ class UpdaterGUI:
                 creationflags = (
                     subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
                 )
+                cmd = [sys.executable, str(entry_point)] + self.server_args
                 subprocess.Popen(
-                    [sys.executable, str(entry_point)],
+                    cmd,
                     start_new_session=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    env=os.environ.copy(),
                     cwd=str(backend_root / "src"),
                     creationflags=creationflags,
                 )
@@ -626,5 +633,5 @@ if __name__ == "__main__":
         )
         sys.exit(1)
 
-    gui = UpdaterGUI(sys.argv[1], sys.argv[2], sys.argv[3])
+    gui = UpdaterGUI(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:])
     gui.run()

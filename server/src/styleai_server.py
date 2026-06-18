@@ -50,13 +50,6 @@ app.register_blueprint(clip_bp)
 app.register_blueprint(image_processing_bp)
 
 
-def _bool_env(name: str, default: bool = False) -> bool:
-    val = os.environ.get(name, "").strip().lower()
-    if not val:
-        return default
-    return val in ("1", "true", "yes", "on")
-
-
 def _start_housekeeping_scheduler() -> None:
     """
     Periodically run housekeeping tasks such as database backups.
@@ -66,22 +59,13 @@ def _start_housekeeping_scheduler() -> None:
       STYLEAI_BACKUP_INTERVAL      (seconds; default: 86400, min 600)
       STYLEAI_BACKUP_MAX_KEEP      (int; number of backup files to keep; default: 14)
     """
-    if not _bool_env("STYLEAI_BACKUP_ENABLED", default=True):
-        logger.info("DB backup scheduler disabled (STYLEAI_BACKUP_ENABLED is false).")
+    if config.args.disable_backup:
+        logger.info("DB backup scheduler disabled (--disable-backup is set).")
         return
 
-    try:
-        interval = int(os.environ.get("STYLEAI_BACKUP_INTERVAL", "86400"))
-    except ValueError:
-        interval = 86400
-    interval = max(600, interval)
+    interval = max(600, config.args.backup_interval)
 
-    try:
-        max_keep = int(os.environ.get("STYLEAI_BACKUP_MAX_KEEP", "14"))
-    except ValueError:
-        max_keep = 14
-    if max_keep <= 0:
-        max_keep = 1
+    max_keep = max(1, config.args.backup_max_keep)
 
     def _loop() -> None:
         logger.info(
@@ -229,13 +213,13 @@ if __name__ == "__main__":
     server_lifecycle._ensure_unloader_thread()
 
     # Priority 8 Security: Strictly bind to localhost to prevent local network exposure.
-    # We only allow override via STYLEAI_HOST when running in debug mode.
+    # We only allow override via --host when running in debug mode.
     if args.debug:
-        host = os.environ.get("STYLEAI_HOST", "127.0.0.1")
+        host = config.args.host
     else:
         host = "127.0.0.1"
 
-    port = int(os.environ.get("STYLEAI_PORT", "19819"))
+    port = config.args.port
     try:
         if args.debug:
             logger.info(
