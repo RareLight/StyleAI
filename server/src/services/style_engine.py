@@ -661,6 +661,7 @@ def generate_style_edit(
     min_confidence: float = CONFIDENCE_LOW,
     current_settings: dict[str, Any] | None = None,
     style_strength: float | None = None,
+    style_override: str | None = None,
 ) -> StyleEngineResult:
     """Generate a style-matched edit recipe without an LLM.
 
@@ -713,21 +714,30 @@ def generate_style_edit(
     # -----------------------------------------------------------------------
     # Step 2: Try style catalog match first (structured style groups)
     # -----------------------------------------------------------------------
-    try:
-        from services import style_catalog as style_catalog_service
+    from services import style_catalog as style_catalog_service
 
-        style_matches = style_catalog_service.find_matching_styles(
-            camera_make=camera_make,
-            camera_model=camera_model,
-            scene_tags=query_scene_tags,
-            exposure_metrics=query_exposure,
-            camera_profile=camera_profile,
-            user_keywords=user_keywords,
-            top_k=3,
-        )
-    except Exception as exc:
-        logger.debug("Style catalog lookup failed: %s", exc)
-        style_matches = []
+    style_matches = []
+    if style_override:
+        override_style = style_catalog_service.get_style(style_override)
+        if override_style:
+            logger.info("Using explicit style_override=%s", style_override)
+            style_matches = [(override_style, 1.0)]
+        else:
+            logger.warning("Requested style_override=%s not found.", style_override)
+
+    if not style_matches:
+        try:
+            style_matches = style_catalog_service.find_matching_styles(
+                camera_make=camera_make,
+                camera_model=camera_model,
+                scene_tags=query_scene_tags,
+                exposure_metrics=query_exposure,
+                camera_profile=camera_profile,
+                user_keywords=user_keywords,
+                top_k=3,
+            )
+        except Exception as exc:
+            logger.debug("Style catalog lookup failed: %s", exc)
 
     if style_matches:
         best_style, best_confidence = style_matches[0]

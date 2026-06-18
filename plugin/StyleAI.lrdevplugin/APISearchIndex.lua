@@ -2208,9 +2208,10 @@ end
 
 
 
-function SearchIndexAPI.pingServer()
+function SearchIndexAPI.pingServer(timeoutSeconds)
+    timeoutSeconds = timeoutSeconds or 2
     local url = getBaseUrl() .. "/ping"
-    local result, hdrs = LrHttp.get(url)
+    local result, hdrs = LrHttp.get(url, nil, timeoutSeconds)
     local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
     if status == 200 and result == "pong" then
         return true
@@ -2424,6 +2425,11 @@ function SearchIndexAPI.shutdownServer(opts)
     local graceSeconds = opts.graceSeconds or 10
     local pollIntervalSeconds = opts.pollIntervalSeconds or 0.5
     local shutdownRequestTimeoutSeconds = opts.shutdownRequestTimeoutSeconds or 5
+
+    -- Cancel any active tasks so Waitress threads can process the shutdown
+    LrTasks.pcall(function()
+        SearchIndexAPI.cancelBackendTasks()
+    end)
 
     if not SearchIndexAPI.pingServer() then
         log:trace("Search index server is not running (or unreachable)")
