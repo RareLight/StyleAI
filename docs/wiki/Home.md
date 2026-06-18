@@ -6,20 +6,21 @@ Welcome to the project wiki.
 
 - [Getting Started](Getting-Started)
 - [Plugin Guide](Plugin-Guide)
-- [Server Guide](Server-Guide)
+- [Background Service Guide](Background-Service-Guide)
 - [Help: Analyze and Index](Help-Analyze-and-Index)
 - [Help: Choosing AI Model](Help-Choosing-AI-Model)
 - [Help: Ollama Setup](Help-Ollama-Setup)
 - [Help: LM Studio Setup](Help-LM-Studio-Setup)
 - [Project README](Project-README)
 - [Plugin README](Plugin-README)
-- [Server README](Server-README)
+- [Background Service README](Background-Service-README)
 - [Troubleshooting](Troubleshooting)
 - [Credits & Dependencies](Credits)
 
 ## Dev
 
-- [Developer Guide & Architecture](Developer-Guide)
+- [Architecture](Architecture)
+- [Developer Guide](Developer-Guide)
 - [Testing the Update Mechanism](Dev-Testing-Update-Mechanism)
 
 ## Important note
@@ -27,8 +28,8 @@ Welcome to the project wiki.
 The new DB backup workflow is documented in:
 
 - [Getting Started](Getting-Started)
-- [Server Guide](Server-Guide)
-- [Server README](Server-README)
+- [Background Service Guide](Background-Service-Guide)
+- [Background Service README](Background-Service-README)
 
 ## What is StyleAI?
 

@@ -34,21 +34,18 @@ StyleAI now uses a custom, lightweight Python migration engine to manage SQLite 
 1. Create a new Python file in `server/src/migrations/versions/` named `00X_description.py`.
 2. Define a single `def upgrade(conn: sqlite3.Connection):` function.
 3. Use the `conn` object to execute your `ALTER TABLE` statements.
-4. The backend will automatically apply it the next time Lightroom binds to the server.
+4. The background service will automatically apply it the next time Lightroom binds.
 
-*Example:* See `003_add_user_style_name.py` for how we added custom style renaming capabilities.
+## 4. ML vs LLM Abstraction (`providers/`)
 
-## 4. LLM Provider Abstraction (`providers/`)
+With the shift away from generative models to mathematically robust machine learning for local edits, the architecture is now strictly bifurcated:
 
-The backend is completely provider-agnostic. Whether a user connects to a local `Ollama` instance or cloud `Gemini`, the core logic never changes.
-
-- All providers inherit from `LLMProvider(ABC)`.
-- Use the `get_analysis_service(config)` factory function to obtain the active provider based on the user's settings.
-- To add a new provider (e.g. Anthropic Claude), simply subclass `LLMProvider` and implement `generate_metadata` and `test_connection`.
+- **Predictive ML (Core):** Powered by local `scikit-learn` algorithms (KNN, Ridge Regression) operating on SigLIP2 dense embeddings and raw exposure pixel metrics. This is the fast, primary method for style interpolation.
+- **Generative LLMs (Fallback/Metadata):** LLMs are now exclusively used for zero-shot "Creative" fallback edits and generating semantic metadata (auto-tagging). The backend remains provider-agnostic. All providers inherit from `LLMProvider(ABC)`. To add a new provider (e.g. Anthropic Claude), simply subclass `LLMProvider` and implement `generate_metadata` and `test_connection`.
 
 ## 5. Security & Credentials
 
-- **Backend Binding:** In production, the Flask server unconditionally binds to `127.0.0.1` to prevent network exposure.
+- **Backend Binding:** In production, the Flask background service unconditionally binds to `127.0.0.1` to prevent network exposure.
 - **Keychain Storage:** We completely purged plaintext API keys from `Preferences.agprefs`. All API keys are securely retrieved via the native `LrPasswords` module in Lua. Never log or store API keys in plaintext files.
 
 ## 6. Observability
@@ -70,4 +67,4 @@ When processing images in Python, particularly 1024px JPEGs received from Lightr
 
 ## 9. Signature Styles Export
 
-Users can now export their learned Signature Styles directly to Lightroom Classic Develop Presets. The backend aggregates the style parameters into Adobe XMP format and generates an importable `.zip` file on the fly via `preset_generator.py`.
+Users can now export their learned Signature Styles directly to Lightroom Classic Develop Presets. The background service aggregates the style parameters into Adobe XMP format and generates an importable `.zip` file on the fly via `preset_generator.py`.
