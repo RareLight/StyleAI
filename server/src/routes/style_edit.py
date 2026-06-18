@@ -80,6 +80,7 @@ def _run_single_style_edit(
         min_confidence=CONFIDENCE_LOW,
         current_settings=options.get("current_settings"),
         style_strength=options.get("style_strength"),
+        style_override=options.get("style_override"),
     )
 
     # LLM fallback when style engine couldn't produce a confident result but has some matches

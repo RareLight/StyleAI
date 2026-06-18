@@ -454,6 +454,7 @@ def clear_training_examples():
         logger.error("Failed to clear training examples: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500
 
+
 @training_bp.route("/training/all", methods=["DELETE"])
 def clear_all_data():
     try:
@@ -461,7 +462,11 @@ def clear_all_data():
         styles_removed = style_catalog.reset_all_styles()
         examples_removed = training_service.clear_all_training_examples()
         return jsonify(
-            {"status": "ok", "removed": examples_removed, "styles_removed": styles_removed}
+            {
+                "status": "ok",
+                "removed": examples_removed,
+                "styles_removed": styles_removed,
+            }
         ), 200
     except Exception as exc:
         logger.error("Failed to clear all training data: %s", exc, exc_info=True)

@@ -10,6 +10,8 @@
 require("DevelopEditManager")
 local UIFactory = require("UIFactory")
 
+local ENABLE_DEBUG_STYLE_OVERRIDE = true
+
 local function copyOptions(source)
 	local copied = {}
 	for key, value in pairs(source or {}) do
@@ -303,6 +305,21 @@ local function showAiEditDialog(ctx)
 	end
 	updateIsCloudModel(props, props.modelKey)
 
+	local styleItems = {}
+	if ENABLE_DEBUG_STYLE_OVERRIDE then
+		local okStyles, fetchedStyles = SearchIndexAPI.listStyles()
+		if okStyles and fetchedStyles then
+			for _, style in ipairs(fetchedStyles) do
+				table.insert(styleItems, { title = style.style_name or style.style_id, value = style.style_id })
+			end
+		end
+	end
+	if #styleItems == 0 then
+		table.insert(styleItems, { title = LOC("$$$/StyleAI/TaskAiEditPhotos/NoStyles=No styles available"), value = "none" })
+	end
+	props.overrideStyleEnabled = false
+	props.overrideStyleId = styleItems[1].value
+
 	props.promptTitleMenu = f:popup_menu({
 		items = bind("promptTitles"),
 		value = bind("prompt"),
@@ -358,6 +375,22 @@ local function showAiEditDialog(ctx)
 							props.styleStrength = Defaults.defaultEditStyleStrength or 0.5
 						end,
 					}),
+				}),
+			}),
+			f:row({
+				visible = bind({
+					key = "editingStyle",
+					transform = function(v) return ENABLE_DEBUG_STYLE_OVERRIDE and v == "trained" end
+				}),
+				f:checkbox({
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/OverrideStyle=Override style (One-time test)"),
+					value = bind("overrideStyleEnabled"),
+				}),
+				f:popup_menu({
+					value = bind("overrideStyleId"),
+					items = styleItems,
+					visible = bind("overrideStyleEnabled"),
+					width = 200,
 				}),
 			}),
 		}),
@@ -739,6 +772,10 @@ local function showAiEditDialog(ctx)
 		previewBlurredFaces = props.previewBlurredFaces,
 		faceBlurSensitivity = props.faceBlurSensitivity,
 	}
+
+	if props.overrideStyleEnabled and props.overrideStyleId then
+		options.style_override = props.overrideStyleId
+	end
 
 	if providerFromKey == "chatgpt" then
 		if prefs then
