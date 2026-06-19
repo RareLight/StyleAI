@@ -981,12 +981,8 @@ function AiEditAction.run(editMode)
 					else
 						local photoOptions = nil
 						local okSettings, currentSettings = LrTasks.pcall(function()
-							local settings = nil
-							photo.catalog:withReadAccessDo("getDevelopSettings", function()
-								settings = photo:getDevelopSettings()
-								photoOptions = enrichPhotoOptions(photo, options, userContext)
-							end)
-							return settings
+							photoOptions = enrichPhotoOptions(photo, options, userContext)
+							return photo:getDevelopSettings()
 						end)
 						if not photoOptions then
 							photoOptions = enrichPhotoOptions(photo, options, userContext)
@@ -1146,6 +1142,9 @@ function AiEditAction.run(editMode)
 			if not res.continueProcessing then
 				if res.errorMsg then
 					table.insert(errorMessages, res.errorMsg)
+					table.insert(runLog, string.format("- %s: ❌ ERROR: %s", fileName, res.errorMsg))
+				else
+					table.insert(runLog, string.format("- %s: ❌ ERROR: Unknown error", fileName))
 				end
 				errorCount = errorCount + 1
 			else
@@ -1187,17 +1186,25 @@ function AiEditAction.run(editMode)
 								local examples = response.matched_examples or 0
 								
 								local tierLabel = "🔴 Undertrained"
-								if tier == "ml_direct" then
-									tierLabel = "⭐️ ML Predictive (Best)"
-								elseif tier == "ml_pca" then
-									tierLabel = "🌟 ML Predictive (Good)"
+								if examples >= 50 then
+									tierLabel = "🌟 ML Predictive (Best)"
+								elseif examples >= 20 then
+									tierLabel = "⭐️ ML Predictive (Good)"
 								elseif examples >= 10 then
 									tierLabel = "🟢 Strong"
 								elseif examples >= 5 then
 									tierLabel = "🟡 Good"
 								end
+								
+								local execution = "Basic Model Fallback"
+								if tier == "ml_direct" then
+									execution = "ML Direct Predicted"
+								elseif tier == "ml_pca" then
+									execution = "ML PCA Predicted"
+								end
+
 								local strength = options.style_strength or "normal"
-								styleInfo = string.format("%s: %s (%d%% confidence, %s strength)", tierLabel, styleName, conf, strength)
+								styleInfo = string.format("%s: %s [%s] (%d%% conf, %s strength)", tierLabel, styleName, execution, conf, strength)
 							end
 							table.insert(runLog, string.format("- %s: %s", fileName, styleInfo))
 						else

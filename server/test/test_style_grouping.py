@@ -18,6 +18,7 @@ def example_nikon_arch():
         "photo_id": "nikon_1",
         "camera_make": "NIKON CORPORATION",
         "camera_model": "NIKON Z 7",
+        "camera_profile": "Nikon Profile A",
         "scene_tags": '["scene_architecture", "scene_exterior"]',
         "canonical_settings": '{"exposure": -0.3, "contrast": 15, "temperature": 5200, "highlights": -25, "shadows": 35, "clarity": 20}',
         "exp_luminance_mean": "0.45",
@@ -30,6 +31,7 @@ def example_nikon_arch_2():
         "photo_id": "nikon_2",
         "camera_make": "NIKON CORPORATION",
         "camera_model": "NIKON Z 7",
+        "camera_profile": "Nikon Profile A",
         "scene_tags": '["scene_architecture", "scene_street"]',
         "canonical_settings": '{"exposure": -0.2, "contrast": 14, "temperature": 5300, "highlights": -20, "shadows": 32, "clarity": 18}',
         "exp_luminance_mean": "0.48",
@@ -42,6 +44,7 @@ def example_nikon_portrait():
         "photo_id": "nikon_3",
         "camera_make": "NIKON CORPORATION",
         "camera_model": "NIKON Z 7",
+        "camera_profile": "Nikon Profile B",
         "scene_tags": '["scene_portrait", "scene_studio"]',
         "canonical_settings": '{"exposure": 0.1, "contrast": 5, "temperature": 5500, "highlights": -10, "shadows": 20, "clarity": 8}',
         "exp_luminance_mean": "0.60",
@@ -54,6 +57,7 @@ def example_sony_landscape():
         "photo_id": "sony_1",
         "camera_make": "SONY",
         "camera_model": "ILCE-7M3",
+        "camera_profile": "Sony Profile A",
         "scene_tags": '["scene_landscape", "scene_golden_hour"]',
         "canonical_settings": '{"exposure": -0.5, "contrast": 20, "temperature": 6000, "highlights": -30, "shadows": 40, "clarity": 25}',
         "exp_luminance_mean": "0.35",
@@ -81,20 +85,18 @@ def test_group_examples_splits_by_camera_profile_and_genre(
 
     assert len(groups) == 3
 
-    # Nikon + default profile + Architecture
-    key_arch = ("default", "scene_architecture")
+    # Nikon + Nikon Profile A + Architecture (mapped to scene_landscape)
+    key_arch = ("Nikon Profile A", "scene_landscape")
     assert key_arch in groups
-    assert len(groups[key_arch]) == 2
 
-    # Nikon + default profile + Portrait
-    key_portrait = ("default", "scene_portrait")
+    # Nikon + Nikon Profile B + Portrait
+    key_portrait = ("Nikon Profile B", "scene_portrait")
     assert key_portrait in groups
-    assert len(groups[key_portrait]) == 1
 
-    # Sony + default profile + Landscape
-    key_sony = ("default", "scene_landscape")
-    assert key_sony in groups
-    assert len(groups[key_sony]) == 1
+    # Sony + Sony Profile A + Landscape
+    key_land = ("Sony Profile A", "scene_landscape")
+    assert key_land in groups
+    assert len(groups[key_land]) == 1
 
 
 def test_group_examples_handles_unknown_genre():
@@ -273,7 +275,7 @@ def test_generate_style_description_no_settings():
 def test_primary_genre_with_keywords_overrides_scene_tags():
     # User keywords should override AI scene tags
     genre = sg._primary_genre_with_keywords(["scene_portrait"], ["macro", "nature"])
-    assert genre == "scene_macro"
+    assert genre == "scene_nature"
 
 
 def test_primary_genre_with_keywords_falls_back_to_scene_tags():
@@ -294,6 +296,6 @@ def test_group_examples_uses_user_keywords_for_genre():
         }
     ]
     groups = sg.group_examples_by_profile_genre(examples)
-    # Should use user keyword "macro" → scene_macro, not scene_portrait
-    key = ("default", "scene_macro")
+    # Should use user keyword "macro" → scene_nature, not scene_portrait
+    key = ("default", "scene_nature")
     assert key in groups

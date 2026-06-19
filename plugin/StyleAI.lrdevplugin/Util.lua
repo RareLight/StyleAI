@@ -212,11 +212,7 @@ function Util.getPhotoExif(photo)
 		exif.camera_model = model
 	end
 
-	-- Camera Profile
-	local profile = safeGetRawMetadata(photo, "cameraProfile") or safeGetFormattedMetadata(photo, "cameraProfile")
-	if type(profile) == "string" and profile ~= "" then
-		exif.camera_profile = profile
-	end
+
 
 	-- ISO
 	local iso = safeGetRawMetadata(photo, "isoSpeedRating")

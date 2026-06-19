@@ -40,7 +40,7 @@ def sample_style():
         "camera_make": "NIKON CORPORATION",
         "camera_model": "NIKON Z 7",
         "camera_profile": "Nikon Z7 Linear",
-        "genre": "scene_architecture",
+        "genre": "scene_landscape",
         "subgenre": None,
         "description": "Test description",
         "example_count": 2,
@@ -353,9 +353,9 @@ def test_user_keywords_override_genre_in_update(monkeypatch):
     )
 
     styles = sc.list_styles()
-    # Should create a scene_macro style, not scene_portrait
+    # Should create a scene_nature style, not scene_portrait
     genres = [s["genre"] for s in styles]
-    assert "scene_macro" in genres
+    assert "scene_nature" in genres
 
 
 def test_update_style_for_example_incremental_update(monkeypatch, sample_style):

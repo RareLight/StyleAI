@@ -62,14 +62,20 @@ def _extract_features(embedding: list[float], metadata: dict) -> np.ndarray:
 
 def train_style_models():
     """Iterates through styles and trains regression models for those with enough data."""
+    import time
+
     logger.info("Starting background training of predictive models...")
 
     styles = catalog_service.list_styles()
+    success_count = 0
+    start_time = time.time()
+
     for style in styles:
         style_id = style["style_id"]
         example_ids = style.get("example_photo_ids", [])
+        n_examples = len(example_ids)
 
-        if len(example_ids) < MIN_PCA_EXAMPLES:
+        if n_examples < MIN_PCA_EXAMPLES:
             # Not enough data for ML, skip or delete old model
             model_path = _get_model_path(style_id)
             if os.path.exists(model_path):
@@ -77,11 +83,22 @@ def train_style_models():
                     os.remove(model_path)
                     os.remove(_get_metadata_path(style_id))
                     logger.info(
-                        f"Removed outdated model for style {style_id} (not enough examples)."
+                        f"Removed outdated model for style {style_id} (only {n_examples} examples)."
                     )
                 except OSError:
                     pass
             continue
+
+        logger.info(
+            f"Initiating training for style {style_id} with {n_examples} examples."
+        )
+        _train_single_style(style_id, example_ids)
+        success_count += 1
+
+    duration = time.time() - start_time
+    logger.info(
+        f"Background training complete. Trained {success_count} models in {duration:.1f}s."
+    )
 
 
 def flatten_canonical_settings(canonical: dict) -> dict[str, float]:

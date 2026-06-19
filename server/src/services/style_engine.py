@@ -583,6 +583,7 @@ class StyleEngineResult:
         matched_count: int,
         engine: str = "style",
         warning: str | None = None,
+        error: str | None = None,
         matched_filenames: list[str] | None = None,
     ) -> None:
         self.recipe = recipe
@@ -590,6 +591,7 @@ class StyleEngineResult:
         self.matched_count = matched_count
         self.engine = engine
         self.warning = warning
+        self.error = error
         self.matched_filenames = matched_filenames or []
 
 
@@ -599,42 +601,73 @@ def _finalize_recipe(
     current_settings: dict[str, Any] | None,
     style_strength: float | None,
 ) -> dict[str, Any]:
-    """Apply style strength scaling and auto white balance overrides."""
-    if style_strength is not None and style_strength != 1.0:
-        # Use Lightroom absolute defaults as the baseline for interpolation
-        # so the slider is stateless and works predictably even if the photo is already edited.
-        lr_defaults = {
-            "exposure": 0.0,
-            "contrast": 0.0,
-            "highlights": 0.0,
-            "shadows": 0.0,
-            "whites": 0.0,
-            "blacks": 0.0,
-            "texture": 0.0,
-            "clarity": 0.0,
-            "dehaze": 0.0,
-            "vibrance": 0.0,
-            "saturation": 0.0,
-            "sharpening": 40.0,
-            "noise_reduction": 0.0,
-            "color_noise_reduction": 25.0,
-            "vignette": 0.0,
-            "grain": 0.0,
-        }
+    """Apply style strength scaling and auto white balance overrides additively."""
+    # Use Lightroom absolute defaults as the baseline for computing the style's delta
+    # so the slider is stateless and works predictably even if the photo is already edited.
+    lr_defaults = {
+        "exposure": 0.0,
+        "contrast": 0.0,
+        "highlights": 0.0,
+        "shadows": 0.0,
+        "whites": 0.0,
+        "blacks": 0.0,
+        "texture": 0.0,
+        "clarity": 0.0,
+        "dehaze": 0.0,
+        "vibrance": 0.0,
+        "saturation": 0.0,
+        "sharpening": 40.0,
+        "noise_reduction": 0.0,
+        "color_noise_reduction": 25.0,
+        "vignette": 0.0,
+        "grain": 0.0,
+    }
 
-        global_settings = recipe.get("global", {})
-        for key, target_val in list(global_settings.items()):
-            if isinstance(target_val, (int, float)) and not isinstance(
-                target_val, bool
-            ):
-                try:
-                    baseline = lr_defaults.get(key, 0.0)
-                    interpolated = (
-                        baseline + (float(target_val) - baseline) * style_strength
-                    )
-                    global_settings[key] = round(interpolated, 2)
-                except (ValueError, TypeError):
-                    pass
+    # Map Lightroom SDK keys to our canonical schema to extract current slider positions
+    lr_to_canonical = {
+        "Exposure2012": "exposure",
+        "Contrast2012": "contrast",
+        "Highlights2012": "highlights",
+        "Shadows2012": "shadows",
+        "Whites2012": "whites",
+        "Blacks2012": "blacks",
+        "Texture": "texture",
+        "Clarity2012": "clarity",
+        "Dehaze": "dehaze",
+        "Vibrance": "vibrance",
+        "Saturation": "saturation",
+        "Sharpness": "sharpening",
+        "LuminanceSmoothing": "noise_reduction",
+        "ColorNoiseReduction": "color_noise_reduction",
+        "PostCropVignetteAmount": "vignette",
+        "GrainAmount": "grain",
+    }
+    canonical_current = {}
+    if current_settings:
+        for lr_key, canon_key in lr_to_canonical.items():
+            if lr_key in current_settings:
+                canonical_current[canon_key] = current_settings[lr_key]
+
+    global_settings = recipe.get("global", {})
+    for key, target_val in list(global_settings.items()):
+        if isinstance(target_val, (int, float)) and not isinstance(target_val, bool):
+            try:
+                # The style targets are absolute values relative to LR's default zero points.
+                baseline = lr_defaults.get(key, 0.0)
+                style_delta = float(target_val) - baseline
+
+                # Scale the intended delta by the user's strength preference
+                scaled_delta = style_delta * (
+                    style_strength if style_strength is not None else 1.0
+                )
+
+                # Additively apply the delta to the photo's actual current setting
+                current_val = float(canonical_current.get(key, baseline))
+                interpolated = current_val + scaled_delta
+
+                global_settings[key] = round(interpolated, 2)
+            except (ValueError, TypeError):
+                pass
 
     warmth_proxy = query_exposure.get("exp_warmth_proxy", 0.5)
     if warmth_proxy < 0.2 or warmth_proxy > 0.8:
@@ -781,6 +814,20 @@ def generate_style_edit(
                     matched_filenames=[best_style.get("style_name", "")],
                 )
             else:
+                # Check if we should have had a predictive model
+                example_count = best_style.get("example_count", 0)
+                if example_count >= predictive_engine.MIN_PCA_EXAMPLES:
+                    err_msg = f"Predictive ML engine failed to run for style '{best_style.get('style_name', 'Unknown')}' despite having {example_count} training examples (model file missing or inference error)."
+                    logger.error(err_msg)
+                    return StyleEngineResult(
+                        recipe={},
+                        confidence=round(best_confidence, 3),
+                        matched_count=example_count,
+                        engine="error",
+                        matched_filenames=[best_style.get("style_name", "")],
+                        error=err_msg,
+                    )
+
                 # High confidence: use style recipe directly (fallback to KNN averaging)
                 recipe_settings = style_catalog_service.get_style_recipe(
                     best_style["style_id"]
