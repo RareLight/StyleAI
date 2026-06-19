@@ -792,7 +792,7 @@ def generate_style_edit(
             if ml_prediction:
                 ml_tier = ml_prediction.pop("_ml_tier", "unknown")
                 summary = (
-                    f"Style: {best_style.get('style_name', 'Unknown')} "
+                    f"Style: {best_style.get('camera_profile', 'default')} • {best_style.get('style_name', 'Unknown')} "
                     f"[{ml_tier.upper()}] (confidence {best_confidence:.0%})"
                 )
                 recipe = _canonical_to_edit_recipe(ml_prediction, summary=summary)
@@ -834,7 +834,7 @@ def generate_style_edit(
                 )
                 if recipe_settings:
                     summary = (
-                        f"Style: {best_style.get('style_name', 'Unknown')} "
+                        f"Style: {best_style.get('camera_profile', 'default')} • {best_style.get('style_name', 'Unknown')} "
                         f"(confidence {best_confidence:.0%})"
                     )
                     recipe = _canonical_to_edit_recipe(recipe_settings, summary=summary)
@@ -872,8 +872,8 @@ def generate_style_edit(
                         v2 = recipe2.get(key, 0.0)
                         blended[key] = round(w1 * v1 + w2 * v2, 4)
                     summary = (
-                        f"Blend: {style1.get('style_name', '?')} + "
-                        f"{style2.get('style_name', '?')} (confidence {best_confidence:.0%})"
+                        f"Blend: {style1.get('camera_profile', 'default')} • {style1.get('style_name', '?')} + "
+                        f"{style2.get('camera_profile', 'default')} • {style2.get('style_name', '?')} (confidence {best_confidence:.0%})"
                     )
                     recipe = _canonical_to_edit_recipe(blended, summary=summary)
                     recipe = _finalize_recipe(

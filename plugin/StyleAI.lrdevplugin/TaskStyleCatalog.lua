@@ -97,6 +97,9 @@ LrTasks.startAsyncTask(function()
 				local success, result = SearchIndexAPI.listStyles()
 				if success then
 					props.styles = result or {}
+					table.sort(props.styles, function(a, b)
+						return (a.example_count or 0) > (b.example_count or 0)
+					end)
 					
 					-- Build list items
 					local items = {}

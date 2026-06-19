@@ -72,7 +72,10 @@ def train_style_models():
 
     for style in styles:
         style_id = style["style_id"]
-        example_ids = style.get("example_photo_ids", [])
+        style_full = catalog_service.get_style(style_id)
+        if not style_full:
+            continue
+        example_ids = style_full.get("example_photo_ids", [])
         n_examples = len(example_ids)
 
         if n_examples < MIN_PCA_EXAMPLES:
