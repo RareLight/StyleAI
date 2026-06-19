@@ -270,12 +270,8 @@ LrTasks.startAsyncTask(function()
 			local developSettings
 			local exifOptions
 			local okGet, devOrErr = LrTasks.pcall(function()
-				local settings = nil
-				photo.catalog:withReadAccessDo("getDevelopSettings", function()
-					settings = photo:getDevelopSettings()
-					exifOptions = Util.getPhotoExif(photo)
-				end)
-				return settings
+				exifOptions = Util.getPhotoExif(photo)
+				return photo:getDevelopSettings()
 			end)
 			if not exifOptions then
 				exifOptions = Util.getPhotoExif(photo)

@@ -57,7 +57,7 @@ def _ensure_initialized() -> sqlite3.Connection:
     global _db_path, _schema_initialized
 
     db_file = _get_db_file()
-    
+
     conn = getattr(_local, "connection", None)
     if conn is not None and _db_path == db_file:
         return conn
@@ -74,7 +74,7 @@ def _ensure_initialized() -> sqlite3.Connection:
                 run_migrations(os.path.dirname(db_file))
             except Exception as e:
                 logger.error(f"Failed to run migrations for style catalog: {e}")
-            
+
             _db_path = db_file
             _schema_initialized = True
 
@@ -328,7 +328,7 @@ def discover_styles_from_examples(
 
         profile = camera_profile
         clean_genre = grouping.generate_style_name(genre, None)
-        style_name = f"{profile} • {clean_genre}"
+        style_name = clean_genre
         style_id = _slugify(f"{profile}_{genre}")
 
         style = {

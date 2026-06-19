@@ -66,6 +66,46 @@ def _run_single_style_edit(
 ) -> dict[str, Any]:
     """Run the style engine for a single photo. Returns a result dict."""
     clip_embedding = _get_clip_embedding(photo_id)
+    if clip_embedding is None:
+        logger.info(
+            f"CLIP embedding not found in database for photo_id={photo_id}. Generating dynamically via GPU..."
+        )
+        from services.metadata import get_analysis_service
+        import server_lifecycle
+        import io
+        from PIL import Image
+
+        clip_model = server_lifecycle.get_model()
+        clip_processor = server_lifecycle.get_processor()
+        if clip_model and clip_processor:
+            try:
+                img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+                analysis_service = get_analysis_service()
+                batch_embeddings = analysis_service._generate_image_embeddings(
+                    [img], clip_model, clip_processor
+                )
+                if batch_embeddings and batch_embeddings[0] is not None:
+                    clip_embedding = batch_embeddings[0]
+                    logger.info(
+                        f"Successfully generated dynamic CLIP embedding for photo_id={photo_id}."
+                    )
+                else:
+                    logger.warning(
+                        f"Failed to generate dynamic CLIP embedding for photo_id={photo_id}."
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Error generating dynamic CLIP embedding for photo_id={photo_id}: {e}",
+                    exc_info=True,
+                )
+        else:
+            logger.warning(
+                "CLIP model or processor not available. Cannot generate dynamic embedding."
+            )
+    else:
+        logger.info(
+            f"Successfully loaded existing CLIP embedding from database for photo_id={photo_id}."
+        )
 
     result = style_engine.generate_style_edit(
         photo_id=photo_id,
@@ -133,6 +173,19 @@ def _run_single_style_edit(
         payload["input_tokens"] = llm_response.input_tokens
         payload["output_tokens"] = llm_response.output_tokens
         return payload
+
+    # Style engine had an explicit error (e.g. predictive ML model failure)
+    if result.engine == "error":
+        return {
+            "status": "error",
+            "engine": "error",
+            "photo_id": photo_id,
+            "confidence": round(result.confidence, 3),
+            "matched_examples": result.matched_count,
+            "matched_filenames": result.matched_filenames,
+            "error": result.error or "Predictive model failure",
+            "message": result.error or "Predictive ML engine failed to run.",
+        }
 
     # Style engine had no result and fallback disabled (or engine was none) — return error
     if result.engine == "none":

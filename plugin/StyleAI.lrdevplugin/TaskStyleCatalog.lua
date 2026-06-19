@@ -109,9 +109,9 @@ LrTasks.startAsyncTask(function()
 						
 						local strength = "🔴 Undertrained"
 						if count >= 50 then
-							strength = "⭐️ ML Predictive (Best)"
+							strength = "🌟 ML Predictive (Best)"
 						elseif count >= 20 then
-							strength = "🌟 ML Predictive (Good)"
+							strength = "⭐️ ML Predictive (Good)"
 						elseif count >= 10 then
 							strength = "🟢 Strong"
 						elseif count >= 3 then

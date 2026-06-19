@@ -101,32 +101,56 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "sunrise": "scene_golden_hour",
 }
 
+_BROAD_GENRE_MAP: dict[str, str] = {
+    # People & Portraits
+    "scene_portrait": "scene_portrait",
+    "scene_group": "scene_portrait",
+    "scene_event": "scene_portrait",
+    "scene_action": "scene_portrait",
+    
+    # Landscape & Outdoor
+    "scene_landscape": "scene_landscape",
+    "scene_exterior": "scene_landscape",
+    "scene_architecture": "scene_landscape",
+    "scene_golden_hour": "scene_landscape",
+    "scene_street": "scene_landscape",
+    
+    # Nature & Detail
+    "scene_macro": "scene_nature",
+    "scene_flowers": "scene_nature",
+    "scene_wildlife": "scene_nature",
+    
+    # Studio & Controlled Light
+    "scene_studio": "scene_studio",
+    "scene_interior": "scene_studio",
+}
+
+
+def _get_broad_genre(tag: str) -> str:
+    """Map a specific scene tag to a broad bucket."""
+    return _BROAD_GENRE_MAP.get(tag, "scene_unknown")
+
 
 def _primary_genre(scene_tags: list[str]) -> str:
-    """Return the primary genre (first tag) or 'scene_unknown'."""
-    return scene_tags[0] if scene_tags else "scene_unknown"
+    """Return the primary broad genre, ignoring stylistic tags."""
+    content_tags = [t for t in scene_tags if not t.startswith("style_")]
+    if not content_tags:
+        return "scene_unknown"
+    return _get_broad_genre(content_tags[0])
 
 
 def _primary_genre_with_keywords(
     scene_tags: list[str], user_keywords: list[str]
 ) -> str:
-    """Return the primary genre, preferring user keywords over AI tags.
-
-    Args:
-        scene_tags: AI-detected scene tags (e.g. ["scene_landscape"]).
-        user_keywords: Normalized user keywords (e.g. ["macro", "nature"]).
-
-    Returns:
-        Canonical genre tag like "scene_macro" or "scene_unknown".
-    """
+    """Return the primary broad genre, preferring user keywords over AI tags."""
     # 1. Try to map user keywords to known genres
     for kw in user_keywords:
         mapped = _KEYWORD_TO_GENRE.get(kw)
         if mapped:
-            return mapped
+            return _get_broad_genre(mapped)
 
-    # 2. Fall back to AI scene tags
-    return scene_tags[0] if scene_tags else "scene_unknown"
+    # 2. Fall back to AI scene tags (ignoring style tags)
+    return _primary_genre(scene_tags)
 
 
 def _camera_id(camera_make: str | None, camera_model: str | None) -> str:
