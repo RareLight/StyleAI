@@ -89,7 +89,7 @@
 "$$$/StyleAI/AnalyzeAndIndex/ProgressCount" = "^1 Fotos zu verarbeiten"
 "$$$/StyleAI/AnalyzeAndIndex/ProgressTitle" = "Verarbeite Fotos..."
 "$$$/StyleAI/AnalyzeAndIndex/RegenerateMetadata" = "Alle Daten neu generieren (Vorhandene überschreiben)"
-"$$$/StyleAI/AnalyzeAndIndex/RegenerateWithDeltaMessage" = "Sie haben \\\\\\\\\\\\\\\\\\\\\\"Neue oder unverarbeitete Fotos\\\\\\\\\\\\\\\\\\\\\\" ausgewählt, aber \\\\\\\\\\\\\\\\\\\\\\"Alle Daten neu generieren\\\\\\\\\\\\\\\\\\\\\\" ist ebenfalls aktiviert. Alle Fotos werden verarbeitet – der Delta-Filter hat keinen Effekt. Fortfahren?"
+"$$$/StyleAI/AnalyzeAndIndex/RegenerateWithDeltaMessage" = "Sie haben \\\\\\\\\\\\\\\\\\\\\\\"Neue oder unverarbeitete Fotos\\\\\\\\\\\\\\\\\\\\\\\" ausgewählt, aber \\\\\\\\\\\\\\\\\\\\\\\"Alle Daten neu generieren\\\\\\\\\\\\\\\\\\\\\\\" ist ebenfalls aktiviert. Alle Fotos werden verarbeitet – der Delta-Filter hat keinen Effekt. Fortfahren?"
 "$$$/StyleAI/AnalyzeAndIndex/RegenerateWithDeltaTitle" = "Konflikt bei Bereichsauswahl"
 "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalog" = "Generierte Daten im Katalog speichern"
 "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalogTooltip" = "If unchecked, metadata is only stored in the backend AI database."

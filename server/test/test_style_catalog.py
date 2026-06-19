@@ -40,7 +40,7 @@ def sample_style():
         "camera_make": "NIKON CORPORATION",
         "camera_model": "NIKON Z 7",
         "camera_profile": "Nikon Z7 Linear",
-        "genre": "scene_landscape",
+        "genre": "scene_architecture",
         "subgenre": None,
         "description": "Test description",
         "example_count": 2,

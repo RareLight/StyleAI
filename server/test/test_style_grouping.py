@@ -85,8 +85,8 @@ def test_group_examples_splits_by_camera_profile_and_genre(
 
     assert len(groups) == 3
 
-    # Nikon + Nikon Profile A + Architecture (mapped to scene_landscape)
-    key_arch = ("Nikon Profile A", "scene_landscape")
+    # Nikon + Nikon Profile A + Architecture
+    key_arch = ("Nikon Profile A", "scene_architecture")
     assert key_arch in groups
 
     # Nikon + Nikon Profile B + Portrait
@@ -113,6 +113,28 @@ def test_group_examples_handles_unknown_genre():
     key = ("default", "scene_unknown")
     assert key in groups
     assert len(groups[key]) == 1
+
+
+def test_dynamic_semantic_mapping():
+    # Clear cache for isolated testing
+    sg._DYNAMIC_GENRE_CACHE.clear()
+
+    # Known explicitly mapped keyword should return instantly without semantic embedding
+    assert sg._primary_genre_with_keywords(["scene_unknown"], ["portrait"]) == "scene_portrait"
+
+    # Semantic mapping tests (these simulate unknown keywords)
+    # Astrophotography -> landscape
+    assert sg._primary_genre_with_keywords(["scene_unknown"], ["astrophotography"]) == "scene_landscape"
+    
+    # Food -> studio (commercial/products/food)
+    assert sg._primary_genre_with_keywords(["scene_unknown"], ["food"]) == "scene_studio"
+    
+    # Concert -> event
+    assert sg._primary_genre_with_keywords(["scene_unknown"], ["concert"]) == "scene_event"
+    
+    # Test caching (should be instantaneous and read from dict)
+    assert "astrophotography" in sg._DYNAMIC_GENRE_CACHE
+    assert sg._DYNAMIC_GENRE_CACHE["astrophotography"] == "scene_landscape"
 
 
 # ---------------------------------------------------------------------------
