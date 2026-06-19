@@ -412,10 +412,10 @@ LrTasks.startAsyncTask(function()
 					end
 
 					if #upgradedMLDirect > 0 then
-						upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLDirect=🎉 '^1' reached 50 examples! Upgraded to ⭐️ ML Predictive (Best).", table.concat(upgradedMLDirect, ", "))
+						upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLDirect=🎉 ^1 style(s) reached 50 examples! Upgraded to ⭐️ ML Predictive (Best).", tostring(#upgradedMLDirect))
 					end
 					if #upgradedMLPCA > 0 then
-						upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLPCA=🎉 '^1' reached 20 examples! Upgraded to 🌟 ML Predictive (Good).", table.concat(upgradedMLPCA, ", "))
+						upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLPCA=🎉 ^1 style(s) reached 20 examples! Upgraded to 🌟 ML Predictive (Good).", tostring(#upgradedMLPCA))
 					end
 
 					-- Sort styles by example count for the weakest link recommendation

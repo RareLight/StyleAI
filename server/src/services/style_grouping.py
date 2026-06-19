@@ -12,8 +12,11 @@ of 300 for Contrast (+/-100 scale) and a raw variance of 0.3 for Exposure
 from __future__ import annotations
 
 import json
+import math
 import statistics
 from typing import Any
+
+from chromadb.utils import embedding_functions
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -102,28 +105,81 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
 }
 
 _BROAD_GENRE_MAP: dict[str, str] = {
-    # People & Portraits
     "scene_portrait": "scene_portrait",
     "scene_group": "scene_portrait",
-    "scene_event": "scene_portrait",
-    "scene_action": "scene_portrait",
     
-    # Landscape & Outdoor
+    "scene_event": "scene_event",
+    "scene_action": "scene_event",
+    "scene_street": "scene_event",
+    
     "scene_landscape": "scene_landscape",
     "scene_exterior": "scene_landscape",
-    "scene_architecture": "scene_landscape",
     "scene_golden_hour": "scene_landscape",
-    "scene_street": "scene_landscape",
     
-    # Nature & Detail
+    "scene_nature": "scene_nature",
     "scene_macro": "scene_nature",
     "scene_flowers": "scene_nature",
     "scene_wildlife": "scene_nature",
     
-    # Studio & Controlled Light
+    "scene_architecture": "scene_architecture",
+    
     "scene_studio": "scene_studio",
     "scene_interior": "scene_studio",
 }
+
+
+_DYNAMIC_BUCKETS = {
+    "scene_portrait": "portrait, people, family, fashion, headshot, baby, candid",
+    "scene_event": "wedding, event, concert, sports, action, street, photojournalism, documentary, party",
+    "scene_landscape": "landscape, outdoors, travel, astrophotography, night sky, sunset, scenery, drone, aerial",
+    "scene_nature": "wildlife, animals, pets, macro, close-up, flowers, birds, insects, nature detail",
+    "scene_architecture": "architecture, real estate, interior, exterior, city, urban, buildings, property",
+    "scene_studio": "studio, product, food, commercial, controlled light, flash, still life, car, automotive"
+}
+
+_DYNAMIC_GENRE_CACHE: dict[str, str] = {}
+_ef_instance = None
+_bucket_embeddings = None
+
+
+def _dynamic_semantic_mapping(keyword: str) -> str:
+    """Use SentenceTransformer to dynamically map an unknown keyword to a broad bucket."""
+    global _ef_instance, _bucket_embeddings
+    
+    keyword_lower = keyword.strip().lower()
+    if keyword_lower in _DYNAMIC_GENRE_CACHE:
+        return _DYNAMIC_GENRE_CACHE[keyword_lower]
+
+    if _ef_instance is None:
+        _ef_instance = embedding_functions.DefaultEmbeddingFunction()
+        _bucket_embeddings = _ef_instance(list(_DYNAMIC_BUCKETS.values()))
+
+    # Embed keyword
+    kw_emb = _ef_instance([keyword_lower])[0]
+    
+    # Compute cosine distances
+    distances = []
+    for b_emb in _bucket_embeddings:
+        a = kw_emb
+        b = b_emb
+        # 1 - cosine similarity
+        dist = 1 - sum(x * y for x, y in zip(a, b)) / (
+            math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+        )
+        distances.append(dist)
+        
+    closest_idx = min(range(len(distances)), key=distances.__getitem__)
+    closest_dist = distances[closest_idx]
+    
+    # Only map if it's semantically close enough (e.g. cosine distance < 0.85)
+    # This prevents keywords like "Dave" or "Red" from overriding the AI tag
+    if closest_dist < 0.85:
+        closest_bucket = list(_DYNAMIC_BUCKETS.keys())[closest_idx]
+    else:
+        closest_bucket = None
+    
+    _DYNAMIC_GENRE_CACHE[keyword_lower] = closest_bucket
+    return closest_bucket
 
 
 def _get_broad_genre(tag: str) -> str:
@@ -143,13 +199,20 @@ def _primary_genre_with_keywords(
     scene_tags: list[str], user_keywords: list[str]
 ) -> str:
     """Return the primary broad genre, preferring user keywords over AI tags."""
-    # 1. Try to map user keywords to known genres
+    # 1. Try to map user keywords to explicitly known genres
     for kw in user_keywords:
         mapped = _KEYWORD_TO_GENRE.get(kw)
         if mapped:
             return _get_broad_genre(mapped)
 
-    # 2. Fall back to AI scene tags (ignoring style tags)
+    # 2. For unknown user keywords, dynamically semantic map them
+    for kw in user_keywords:
+        if len(kw.strip()) > 1:
+            mapped_bucket = _dynamic_semantic_mapping(kw)
+            if mapped_bucket:
+                return mapped_bucket
+
+    # 3. Fall back to AI scene tags
     return _primary_genre(scene_tags)
 
 
