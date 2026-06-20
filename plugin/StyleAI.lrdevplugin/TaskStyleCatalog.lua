@@ -21,9 +21,9 @@ LrTasks.startAsyncTask(function()
 		props.styles = {}
 		props.listItems = {}
 		props.selectedStyleIndex = 0
+		props.selectedProfileFilter = "All Profiles"
+		props.profileFilters = { { title = "All Profiles", value = "All Profiles" } }
 		props.isLoading = false
-		props.statusMessage = ""
-		props.detailStyle = nil
 
 		props.detailName = ""
 		props.detailGenre = ""
@@ -88,6 +88,41 @@ LrTasks.startAsyncTask(function()
 		props:addObserver("selectedStyleIndex", updateDetailView)
 		props:addObserver("styles", updateDetailView)
 
+		local function updateListItems()
+			local items = {}
+			local filter = props.selectedProfileFilter or "All Profiles"
+			for i, style in ipairs(props.styles or {}) do
+				local profile = style.camera_profile or "default"
+				if filter == "All Profiles" or profile == filter then
+					local name = style.style_name or style.style_id or "Unknown"
+					local count = style.example_count or 0
+					local cleanName = name
+					
+					local strength = "🔴 Undertrained"
+					if count >= 50 then
+						strength = "🌟 ML Predictive (Best)"
+					elseif count >= 20 then
+						strength = "⭐️ ML Predictive (Good)"
+					elseif count >= 10 then
+						strength = "🟢 Strong"
+					elseif count >= 3 then
+						strength = "🟡 Good"
+					end
+					
+					local label = string.format("%s • %s • %d • %s", profile, cleanName, count, strength)
+					table.insert(items, { title = label, value = i })
+				end
+			end
+			props.listItems = items
+			if #items > 0 then
+				props.selectedStyleIndex = items[1].value
+			else
+				props.selectedStyleIndex = 0
+			end
+		end
+
+		props:addObserver("selectedProfileFilter", updateListItems)
+
 		-- Load styles from backend
 		local function loadStyles()
 			props.isLoading = true
@@ -101,38 +136,45 @@ LrTasks.startAsyncTask(function()
 						return (a.example_count or 0) > (b.example_count or 0)
 					end)
 					
-					-- Build list items
-					local items = {}
+					-- Build profile filters
+					local uniqueProfiles = {}
+					local profileCounts = {}
 					for i, style in ipairs(props.styles) do
-						local name = style.style_name or style.style_id or "Unknown"
-						local count = style.example_count or 0
 						local profile = style.camera_profile or "default"
-						
-						local cleanName = name
-						
-						local strength = "🔴 Undertrained"
-						if count >= 50 then
-							strength = "🌟 ML Predictive (Best)"
-						elseif count >= 20 then
-							strength = "⭐️ ML Predictive (Good)"
-						elseif count >= 10 then
-							strength = "🟢 Strong"
-						elseif count >= 3 then
-							strength = "🟡 Good"
+						if not uniqueProfiles[profile] then
+							uniqueProfiles[profile] = true
+							profileCounts[profile] = 1
+						else
+							profileCounts[profile] = profileCounts[profile] + 1
 						end
-						
-						local label = string.format("%s • %s • %d • %s", profile, cleanName, count, strength)
-						table.insert(items, { title = label, value = i })
 					end
-					props.listItems = items
+					
+					local sortedProfiles = {}
+					for profile, count in pairs(profileCounts) do
+						table.insert(sortedProfiles, { profile = profile, count = count })
+					end
+					table.sort(sortedProfiles, function(a, b)
+						if a.count == b.count then
+							return a.profile < b.profile
+						end
+						return a.count > b.count
+					end)
+
+					local profileList = { { title = "All Profiles", value = "All Profiles" } }
+					for _, item in ipairs(sortedProfiles) do
+						table.insert(profileList, { 
+							title = string.format("%s (%d)", item.profile, item.count), 
+							value = item.profile 
+						})
+					end
+					props.profileFilters = profileList
+					
+					updateListItems()
 
 					props.statusMessage = LOC(
 						"$$$/StyleAI/StyleCatalog/LoadedCount=^1 style(s) discovered.",
 						tostring(#props.styles)
 					)
-					if #props.styles > 0 then
-						props.selectedStyleIndex = 1
-					end
 				else
 					props.statusMessage = LOC(
 						"$$$/StyleAI/StyleCatalog/LoadError=Error loading styles: ^1",
@@ -409,12 +451,30 @@ LrTasks.startAsyncTask(function()
 					title = LOC("$$$/StyleAI/StyleCatalog/StyleList=Discovered Styles"),
 					fill_horizontal = 1,
 					fill_vertical = 1,
-					f:simple_list({
-						items = bind("listItems"),
-						value = bind("selectedStyleIndex"),
-						allows_multiple_selection = false,
-						height_in_lines = 12,
+					f:column({
+						spacing = f:control_spacing(),
 						fill_horizontal = 1,
+						fill_vertical = 1,
+						f:row({
+							f:spacer({ fill_horizontal = 1 }),
+							f:column({
+								spacing = f:control_spacing(),
+								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/FilterByProfile=Filter by Profile:") }),
+								f:popup_menu({
+									items = bind("profileFilters"),
+									value = bind("selectedProfileFilter"),
+									width = 600,
+								}),
+								f:simple_list({
+									items = bind("listItems"),
+									value = bind("selectedStyleIndex"),
+									allows_multiple_selection = false,
+									height_in_lines = 12,
+									width = 600,
+								}),
+							}),
+							f:spacer({ fill_horizontal = 1 }),
+						}),
 					}),
 				}),
 
