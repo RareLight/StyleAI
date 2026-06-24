@@ -143,11 +143,25 @@ def add_training_example():
     # Compute CLIP embedding from uploaded image (best-effort).
     embedding = None
     image_bytes_data = None
+    filepath = request.form.get("filepath", "").strip() or None
+
     image_file = request.files.get("image")
     if image_file:
         filename = image_file.filename or None
         try:
             image_bytes_data = image_file.read()
+            # If filepath provided, attempt to extract unedited camera preview
+            if filepath:
+                from utils.image_processing import extract_exiftool_preview
+                try:
+                    raw_preview = extract_exiftool_preview(filepath)
+                    if raw_preview:
+                        logger.info(f"Successfully extracted unedited raw preview for {filepath}")
+                        image_bytes_data = raw_preview
+                except TimeoutError as exc:
+                    return jsonify({"error": "EXIFTOOL_TIMEOUT", "message": str(exc)}), 408
+                except PermissionError as exc:
+                    return jsonify({"error": "EXIFTOOL_PERMISSION", "message": str(exc)}), 403
             embedding = _compute_clip_embedding(image_bytes_data)
         except Exception as exc:
             warning_msg = f"Failed to read image for training embedding: {exc}"
@@ -273,10 +287,34 @@ def add_training_batch():
                 logger.warning(
                     f"Failed to decode base64 image bytes for {photo_id}: {e}"
                 )
+                
+        filepath = item.get("filepath", "").strip() or None
+        if filepath:
+            from utils.image_processing import extract_exiftool_preview
+            try:
+                raw_preview = extract_exiftool_preview(filepath)
+                if raw_preview:
+                    logger.info(f"Successfully extracted unedited raw preview for {filepath}")
+                    image_bytes_data = raw_preview
+            except TimeoutError as exc:
+                results.append({"status": "error", "photo_id": photo_id, "error": f"EXIFTOOL_TIMEOUT: {exc}"})
+                continue
+            except PermissionError as exc:
+                results.append({"status": "error", "photo_id": photo_id, "error": f"EXIFTOOL_PERMISSION: {exc}"})
+                continue
 
         try:
             embedding = None
             if image_bytes_data:
+                # Batch add doesn't usually use files, it uses base64
+                # But we can still support filepath if provided
+                filepath = item.get("filepath")
+                if filepath:
+                    from utils.image_processing import extract_exiftool_preview
+                    raw_preview = extract_exiftool_preview(filepath)
+                    if raw_preview:
+                        logger.info(f"Successfully extracted unedited raw preview for {filepath}")
+                        image_bytes_data = raw_preview
                 embedding = _compute_clip_embedding(image_bytes_data)
 
             if embedding is None:

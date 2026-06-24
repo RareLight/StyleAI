@@ -33,6 +33,15 @@ local GLOBAL_KEY_MAP = {
 	grain = "GrainAmount",
 	grain_size = "GrainSize",
 	grain_roughness = "GrainFrequency",
+	defringe_purple_amount = "DefringePurpleAmount",
+	defringe_purple_hue_lo = "DefringePurpleHueLo",
+	defringe_purple_hue_hi = "DefringePurpleHueHi",
+	defringe_green_amount = "DefringeGreenAmount",
+	defringe_green_hue_lo = "DefringeGreenHueLo",
+	defringe_green_hue_hi = "DefringeGreenHueHi",
+	manual_distortion = "LensManualDistortionAmount",
+	manual_vignette_amount = "LensManualVignetteAmount",
+	manual_vignette_midpoint = "LensManualVignetteMidpoint",
 }
 
 local MASK_KEY_CANDIDATES = {

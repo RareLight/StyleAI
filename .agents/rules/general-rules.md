@@ -45,3 +45,8 @@ These rules ensure consistency across the Lightroom plugin and the Python backen
 
 ## Database Architecture
 - **Isolation**: Keep ChromaDB collections `photos` (Semantic Search) and `training_examples` (Style Training) strictly isolated. Never merge them. This protects precious ML training data when a user bulk-deletes their search index.
+
+## Lightroom SDK UI Quirks
+- **`share()` Truncation**: When attempting to match widths between mixed UI elements (like `popup_menu` and `simple_list`), using `width = share("...")` will often aggressively collapse the layout to the width of the narrowest intrinsic element (e.g., the selected dropdown item).
+- **`width_in_chars` Failures**: `simple_list` frequently ignores the `width_in_chars` parameter and will collapse to its raw text content width, breaking column alignments.
+- **Alignment Solution**: To ensure identical element widths and perfectly center components within a dialog, avoid fluid bounds entirely. Wrap the elements in a centered column (using `fill_horizontal = 1` spacers) and assign explicit pixel widths to the components (e.g., `width = 600`).

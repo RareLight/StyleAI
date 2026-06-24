@@ -177,29 +177,60 @@ LrTasks.startAsyncTask(function()
 					table.insert(currentChunk, ex)
 
 					if #currentChunk >= chunkSize then
-						progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
-						local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain)
-
-						if ok and resp and resp.results then
-							for _, result in ipairs(resp.results) do
-								if result.status == "ok" then
-									successCount = successCount + 1
-									if result.warning then
-										if string.find(result.warning, "Already trained") then
-											log:info("Suppressed warning: " .. result.warning)
+						local retryChunk = true
+						while retryChunk and not progressScope:isCanceled() do
+							retryChunk = false
+							progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
+							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain)
+	
+							if ok and resp and resp.results then
+								local hitTimeout = false
+								for _, result in ipairs(resp.results) do
+									if result.status ~= "ok" and result.error and string.find(result.error, "EXIFTOOL_") then
+										hitTimeout = true
+									end
+								end
+								
+								if hitTimeout then
+									local LrDialogs = require("LrDialogs")
+									local userAction = LrDialogs.promptForActionWithDoNotShow({
+										message = LOC("$$$/StyleAI/Training/ExiftoolTimeout=Waiting for file access. Your NAS may be spinning up, or macOS might be prompting for file permissions in the background. Do you want to keep waiting or cancel?"),
+										actionPrefKey = "exiftoolTimeoutAction",
+										verbBtns = {
+											{ label = LOC("$$$/StyleAI/Training/Proceed=Keep Waiting"), verb = "proceed" },
+											{ label = LOC("$$$/StyleAI/Training/Cancel=Cancel Training"), verb = "cancel" }
+										}
+									})
+									if userAction == "proceed" then
+										retryChunk = true
+									else
+										progressScope:cancel()
+										break
+									end
+								end
+								
+								if not retryChunk then
+									for _, result in ipairs(resp.results) do
+										if result.status == "ok" then
+											successCount = successCount + 1
+											if result.warning then
+												if string.find(result.warning, "Already trained") then
+													log:info("Suppressed warning: " .. result.warning)
+												else
+													table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+												end
+											end
 										else
-											table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+											errorCount = errorCount + 1
+											table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
 										end
 									end
-								else
-									errorCount = errorCount + 1
-									table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
 								end
-							end
-						else
-							for _, chunkEx in ipairs(currentChunk) do
-								errorCount = errorCount + 1
-								table.insert(errorMessages, chunkEx.photo_id .. ": " .. tostring(resp or "API request failed"))
+							else
+								for _, chunkEx in ipairs(currentChunk) do
+									errorCount = errorCount + 1
+									table.insert(errorMessages, chunkEx.photo_id .. ": " .. tostring(resp or "API request failed"))
+								end
 							end
 						end
 						log:info("Batch training chunk saved. successCount=" .. tostring(successCount))
@@ -208,24 +239,55 @@ LrTasks.startAsyncTask(function()
 				elseif producerDone then
 					-- Flush any remaining items in the current chunk
 					if #currentChunk > 0 then
-						progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
-						local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain)
-						if ok and resp and resp.results then
-							for _, result in ipairs(resp.results) do
-								if result.status == "ok" then
-									successCount = successCount + 1
-									if result.warning then
-										table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+						local retryChunk = true
+						while retryChunk and not progressScope:isCanceled() do
+							retryChunk = false
+							progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
+							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain)
+							if ok and resp and resp.results then
+								local hitTimeout = false
+								for _, result in ipairs(resp.results) do
+									if result.status ~= "ok" and result.error and string.find(result.error, "EXIFTOOL_") then
+										hitTimeout = true
 									end
-								else
-									errorCount = errorCount + 1
-									table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
 								end
-							end
-						else
-							for _, chunkEx in ipairs(currentChunk) do
-								errorCount = errorCount + 1
-								table.insert(errorMessages, chunkEx.photo_id .. ": " .. tostring(resp or "API request failed"))
+								
+								if hitTimeout then
+									local LrDialogs = require("LrDialogs")
+									local userAction = LrDialogs.promptForActionWithDoNotShow({
+										message = LOC("$$$/StyleAI/Training/ExiftoolTimeout=Waiting for file access. Your NAS may be spinning up, or macOS might be prompting for file permissions in the background. Do you want to keep waiting or cancel?"),
+										actionPrefKey = "exiftoolTimeoutAction",
+										verbBtns = {
+											{ label = LOC("$$$/StyleAI/Training/Proceed=Keep Waiting"), verb = "proceed" },
+											{ label = LOC("$$$/StyleAI/Training/Cancel=Cancel Training"), verb = "cancel" }
+										}
+									})
+									if userAction == "proceed" then
+										retryChunk = true
+									else
+										progressScope:cancel()
+										break
+									end
+								end
+								
+								if not retryChunk then
+									for _, result in ipairs(resp.results) do
+										if result.status == "ok" then
+											successCount = successCount + 1
+											if result.warning then
+												table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+											end
+										else
+											errorCount = errorCount + 1
+											table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
+										end
+									end
+								end
+							else
+								for _, chunkEx in ipairs(currentChunk) do
+									errorCount = errorCount + 1
+									table.insert(errorMessages, chunkEx.photo_id .. ": " .. tostring(resp or "API request failed"))
+								end
 							end
 						end
 						log:info("Final training chunk saved. successCount=" .. tostring(successCount))
@@ -313,6 +375,7 @@ LrTasks.startAsyncTask(function()
 					aperture = exifOptions.aperture,
 					shutter_speed = exifOptions.shutter_speed,
 					image_bytes = imageBytes,
+					filepath = photo:getRawMetadata("path"),
 				}
 				if options.userKeywords and options.userKeywords ~= "" then
 					example.user_keywords = options.userKeywords

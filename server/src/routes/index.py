@@ -129,8 +129,10 @@ def index_images_batch_base64():
 
     options = _extract_options(data)
 
+    image_bytes = base64.b64decode(image.encode("ascii"))
+
     success_count, failure_count, error_messages, warnings = process_image_task(
-        [(base64.b64decode(image.encode("ascii")), photo_id, filename, None)],
+        [(image_bytes, photo_id, filename, None)],
         options=options,
     )
 
@@ -197,17 +199,18 @@ def index_images_batch_base64_v2():
             continue
 
         try:
-            image_bytes = base64.b64decode(image_base64.encode("ascii"))
-            image_triplets.append((image_bytes, photo_id, filename, lr_uuid))
-
-            if cache_images:
-                image_cache.store_image(photo_id, image_bytes)
-
             # Merge photo-specific options with global options
             merged_options = dict(global_options)
             merged_options.update(item.get("options", {}))
             photo_options = _extract_options(merged_options)
             photo_options["photo_id"] = photo_id
+            
+            image_bytes = base64.b64decode(image_base64.encode("ascii"))
+            
+            image_triplets.append((image_bytes, photo_id, filename, lr_uuid))
+
+            if cache_images:
+                image_cache.store_image(photo_id, image_bytes)
 
             per_image_options.append(photo_options)
         except Exception as e:

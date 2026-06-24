@@ -68,3 +68,10 @@ When processing images in Python, particularly 1024px JPEGs received from Lightr
 ## 9. Signature Styles Export
 
 Users can now export their learned Signature Styles directly to Lightroom Classic Develop Presets. The background service aggregates the style parameters into Adobe XMP format and generates an importable `.zip` file on the fly via `preset_generator.py`.
+
+## 10. Lightroom SDK Layout Quirks
+
+The Lightroom SDK `LrView` engine has several undocumented layout quirks, particularly when attempting to align different components like `popup_menu` and `simple_list`:
+- **`share()` Truncation:** Using `width = share("groupName")` on mixed components can cause the layout engine to collapse to the narrowest intrinsic width among the shared elements. For example, a `popup_menu` will shrink to the width of its currently selected item, aggressively truncating the contents of a `simple_list` sharing the same width group.
+- **`width_in_chars` on `simple_list`:** The `simple_list` component often completely ignores the `width_in_chars` parameter, collapsing to the natural width of its text content even if `width_in_chars` is generously set.
+- **The Solution:** To guarantee perfectly aligned widths between different UI elements (e.g., centering a dropdown directly above a list), bypass dynamic text-width logic and hardcode an explicit pixel width (`width = 600`). This ensures all components stretch symmetrically regardless of their intrinsic text contents.

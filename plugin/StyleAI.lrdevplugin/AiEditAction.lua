@@ -990,6 +990,7 @@ function AiEditAction.run(editMode)
 						if okSettings and currentSettings then
 							photoOptions.current_settings = currentSettings
 						end
+						photoOptions.raw_filepath = photo:getRawMetadata("path")
 						local base_path, dark_path, bright_path = SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
 						if not base_path then
 							log:error("Failed to export photo for AI edit generation: " .. fileName)

@@ -1154,6 +1154,9 @@ function SearchIndexAPI.generateEditRecipePhoto(photoId, filepath, options)
     if options.current_settings then
         table.insert(mimeChunks, { name = "current_settings", value = JSON:encode(options.current_settings) })
     end
+    if options.raw_filepath then
+        table.insert(mimeChunks, { name = "filepath", value = options.raw_filepath })
+    end
     if options.style_strength then
         table.insert(mimeChunks, { name = "style_strength", value = tostring(options.style_strength) })
     end
@@ -1304,6 +1307,10 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
         if prefs.auditLlmInputsPath then
             table.insert(mimeChunks, { name = "audit_llm_inputs_path", value = prefs.auditLlmInputsPath })
         end
+    end
+
+    if options.raw_filepath then
+        table.insert(mimeChunks, { name = "filepath", value = options.raw_filepath })
     end
 
     -- Add file
@@ -1811,6 +1818,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                             photoOptions.date_time_unix = LrDate.timeToPosixDate(datetime)
                         end
                         photoOptions.user_context = photo:getPropertyForPlugin(_PLUGIN, 'photoContext') or ""
+                        photoOptions.raw_filepath = photo:getRawMetadata("path")
 
                         local jpegData
                         local usePreviewThumbnails = previewRequestState.enabled and not previewRequestState.disabledForRun
@@ -3676,6 +3684,9 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
     
     if options.current_settings then
         table.insert(mimeChunks, { name = "current_settings", value = JSON:encode(options.current_settings) })
+    end
+    if options.raw_filepath then
+        table.insert(mimeChunks, { name = "filepath", value = options.raw_filepath })
     end
 
     -- Standard edit options forwarded for LLM fallback compatibility

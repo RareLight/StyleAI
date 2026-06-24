@@ -44,6 +44,15 @@ GLOBAL_FIELD_RANGES: dict[str, dict[str, float]] = {
     "grain": {"min": 0.0, "max": 100.0},
     "grain_size": {"min": 0.0, "max": 100.0},
     "grain_roughness": {"min": 0.0, "max": 100.0},
+    "defringe_purple_amount": {"min": 0.0, "max": 20.0},
+    "defringe_purple_hue_lo": {"min": 0.0, "max": 100.0},
+    "defringe_purple_hue_hi": {"min": 0.0, "max": 100.0},
+    "defringe_green_amount": {"min": 0.0, "max": 20.0},
+    "defringe_green_hue_lo": {"min": 0.0, "max": 100.0},
+    "defringe_green_hue_hi": {"min": 0.0, "max": 100.0},
+    "manual_vignette_amount": {"min": -100.0, "max": 100.0},
+    "manual_vignette_midpoint": {"min": 0.0, "max": 100.0},
+    "manual_distortion": {"min": -100.0, "max": 100.0},
 }
 
 MASK_ADJUSTMENT_RANGES: dict[str, dict[str, float]] = {
