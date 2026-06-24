@@ -10,6 +10,8 @@ from . import style_catalog as catalog_service
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import Ridge
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
 
 if DB_PATH:
     MODEL_DIR = os.path.join(DB_PATH, "predictive_models")
@@ -47,9 +49,11 @@ def _get_metadata_path(style_id: str) -> str:
     return os.path.join(MODEL_DIR, f"{style_id}_meta.json")
 
 
-def _extract_features(embedding: list[float], metadata: dict) -> np.ndarray:
-    """Combines SigLIP embedding with exposure metrics."""
-    features = list(embedding)
+def _extract_features(embedding: list[float], metadata: dict) -> list:
+    """Combines profile, SigLIP embedding, and exposure metrics into a single object list."""
+    profile = metadata.get("camera_profile") or "Default"
+    features = [profile]
+    features.extend(list(embedding))
     for key in METADATA_FEATURES:
         val = metadata.get(key, 0.5)
         # Handle string floats just in case
@@ -57,7 +61,7 @@ def _extract_features(embedding: list[float], metadata: dict) -> np.ndarray:
             features.append(float(val))
         except (ValueError, TypeError):
             features.append(0.5)
-    return np.array(features, dtype=np.float32)
+    return features
 
 
 def train_style_models():
@@ -315,7 +319,7 @@ def _train_single_style(style_id: str, example_ids: list[str]):
         Y_row = [canonical.get(k, 0.0) for k in target_keys]
         Y_list.append(Y_row)
 
-    X = np.array(X_list)
+    X = np.array(X_list, dtype=object)
     Y = np.array(Y_list)
 
     n_samples = len(X)
@@ -326,17 +330,33 @@ def _train_single_style(style_id: str, example_ids: list[str]):
         f"Training predictive model for style '{style_id}' with {n_samples} examples."
     )
 
+    # Preprocessor: OneHotEncode the camera profile (column 0), Scale the rest
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), [0]),
+            ("num", StandardScaler(), slice(1, None)),
+        ],
+        remainder="passthrough"
+    )
+
     # Select architecture based on data volume
     if n_samples >= MIN_DIRECT_EXAMPLES:
         # Enough data for direct Ridge regression over 768+ dimensions
-        model = Ridge(alpha=1.0)
+        model = Pipeline([
+            ("preprocessor", preprocessor),
+            ("ridge", Ridge(alpha=1.0))
+        ])
         tier = "ml_direct"
     else:
         # 20-50 samples: Use PCA to prevent overfitting the 768d space
         n_components = min(10, n_samples // 2)
-        model = Pipeline(
-            [("pca", PCA(n_components=n_components)), ("ridge", Ridge(alpha=1.0))]
-        )
+        
+        # We only apply PCA to the numeric features, but for simplicity, we apply it to everything after scaling
+        model = Pipeline([
+            ("preprocessor", preprocessor),
+            ("pca", PCA(n_components=n_components)),
+            ("ridge", Ridge(alpha=1.0))
+        ])
         tier = "ml_pca"
 
     try:
@@ -375,7 +395,8 @@ def predict_edits(
 
         model = joblib.load(model_path)
 
-        X = _extract_features(embedding, metadata).reshape(1, -1)
+        X_feat = _extract_features(embedding, metadata)
+        X = np.array([X_feat], dtype=object)
         Y_pred = model.predict(X)[0]
 
         # Zip with keys and round for neatness
