@@ -23,24 +23,24 @@ return {
 
 	LrLibraryMenuItems = {
 		{
-			title = LOC("$$$/StyleAI/Training/MenuLearnMyStyles=Learn My Styles"),
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuAutoTagger=Step 1: Index Photos"),
+			file = "TaskAnalyzeAndIndex.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Training/MenuLearnMyStyles=Step 2: Learn My Styles"),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Info/MenuApplyMyStyleEdits=Apply My Style Edits"),
+			title = LOC("$$$/StyleAI/Info/MenuApplyMyStyleEdits=Step 3: Apply Style Edits"),
 			file = "TaskAiEditPredictive.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=My Styles Index"),
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=Utility: Styles Index"),
 			file = "TaskStyleCatalog.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Info/MenuApplyLLMEdits=Apply LLM Edits"),
+			title = LOC("$$$/StyleAI/Info/MenuApplyLLMEdits=Utility: LLM Edit by Prompt"),
 			file = "TaskAiEditCreative.lua",
-		},
-		{
-			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuAutoTagger=Auto-Tagger (optional)"),
-			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
 			title = LOC("$$$/StyleAI/Developer/RunPerformanceBenchmark=Developer: Run Performance Benchmark..."),
@@ -50,24 +50,24 @@ return {
 
 	LrExportMenuItems = {
 		{
-			title = LOC("$$$/StyleAI/Training/MenuLearnMyStyles=Learn My Styles"),
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuAutoTagger=Step 1: Index Photos"),
+			file = "TaskAnalyzeAndIndex.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Training/MenuLearnMyStyles=Step 2: Learn My Styles"),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Info/MenuApplyMyStyleEdits=Apply My Style Edits"),
+			title = LOC("$$$/StyleAI/Info/MenuApplyMyStyleEdits=Step 3: Apply Style Edits"),
 			file = "TaskAiEditPredictive.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=My Styles Index"),
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=Utility: Styles Index"),
 			file = "TaskStyleCatalog.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Info/MenuApplyLLMEdits=Apply LLM Edits"),
+			title = LOC("$$$/StyleAI/Info/MenuApplyLLMEdits=Utility: LLM Edit by Prompt"),
 			file = "TaskAiEditCreative.lua",
-		},
-		{
-			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuAutoTagger=Auto-Tagger (optional)"),
-			file = "TaskAnalyzeAndIndex.lua",
 		},
 	},
 

@@ -2415,6 +2415,12 @@ function SearchIndexAPI.shutdownServer(opts)
         _request("POST", url, {}, shutdownRequestTimeoutSeconds)
     end)
 
+    if opts.skipWait then
+        log:trace("Skipping shutdown wait loop (skipWait enabled)")
+        cleanupServerPidAndOkFiles()
+        return true
+    end
+
     local deadline = LrDate.currentTime() + graceSeconds
     while LrDate.currentTime() < deadline do
         if not SearchIndexAPI.pingServer() then
