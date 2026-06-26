@@ -7,7 +7,8 @@ local function shutdownApp(doneFunc, progressFunc)
 				graceSeconds = 8,
 				forceWaitSeconds = 5,
 				pollIntervalSeconds = 0.5,
-				shutdownRequestTimeoutSeconds = 5,
+				shutdownRequestTimeoutSeconds = 1, -- Don't hang if backend is slow
+				skipWait = true -- Let Lightroom quit immediately
 			})
 		end)
 		doneFunc()
