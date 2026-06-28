@@ -184,6 +184,10 @@ def compute_exposure_metrics(image_bytes: bytes) -> dict[str, float]:
         else:
             contrast = 0.0
 
+        # Headroom (1st and 99th percentiles)
+        shadow_headroom = float(np.percentile(gray, 1))
+        highlight_headroom = float(np.percentile(gray, 99))
+
         return {
             "exp_luminance_mean": round(lum_mean, 4),
             "exp_luminance_std": round(lum_std, 4),
@@ -198,6 +202,8 @@ def compute_exposure_metrics(image_bytes: bytes) -> dict[str, float]:
             "zone_midtones": round(zone_midtones, 4),
             "zone_highlights": round(zone_highlights, 4),
             "zone_bright_highlights": round(zone_bright_highlights, 4),
+            "shadow_headroom": round(shadow_headroom, 4),
+            "highlight_headroom": round(highlight_headroom, 4),
         }
     except Exception as exc:
         logger.warning("compute_exposure_metrics failed: %s", exc)
@@ -215,6 +221,8 @@ def compute_exposure_metrics(image_bytes: bytes) -> dict[str, float]:
             "zone_midtones": 0.0,
             "zone_highlights": 0.0,
             "zone_bright_highlights": 0.0,
+            "shadow_headroom": 0.0,
+            "highlight_headroom": 1.0,
         }
 
 

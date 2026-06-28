@@ -120,18 +120,28 @@ def test_dynamic_semantic_mapping():
     sg._DYNAMIC_GENRE_CACHE.clear()
 
     # Known explicitly mapped keyword should return instantly without semantic embedding
-    assert sg._primary_genre_with_keywords(["scene_unknown"], ["portrait"]) == "scene_portrait"
+    assert (
+        sg._primary_genre_with_keywords(["scene_unknown"], ["portrait"])
+        == "scene_portrait"
+    )
 
     # Semantic mapping tests (these simulate unknown keywords)
     # Astrophotography -> landscape
-    assert sg._primary_genre_with_keywords(["scene_unknown"], ["astrophotography"]) == "scene_landscape"
-    
+    assert (
+        sg._primary_genre_with_keywords(["scene_unknown"], ["astrophotography"])
+        == "scene_landscape"
+    )
+
     # Food -> studio (commercial/products/food)
-    assert sg._primary_genre_with_keywords(["scene_unknown"], ["food"]) == "scene_studio"
-    
+    assert (
+        sg._primary_genre_with_keywords(["scene_unknown"], ["food"]) == "scene_studio"
+    )
+
     # Concert -> event
-    assert sg._primary_genre_with_keywords(["scene_unknown"], ["concert"]) == "scene_event"
-    
+    assert (
+        sg._primary_genre_with_keywords(["scene_unknown"], ["concert"]) == "scene_event"
+    )
+
     # Test caching (should be instantaneous and read from dict)
     assert "astrophotography" in sg._DYNAMIC_GENRE_CACHE
     assert sg._DYNAMIC_GENRE_CACHE["astrophotography"] == "scene_landscape"

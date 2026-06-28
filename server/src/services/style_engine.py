@@ -695,6 +695,7 @@ def generate_style_edit(
     current_settings: dict[str, Any] | None = None,
     style_strength: float | None = None,
     style_override: str | None = None,
+    do_not_clip: bool = True,
 ) -> StyleEngineResult:
     """Generate a style-matched edit recipe without an LLM.
 
@@ -786,7 +787,10 @@ def generate_style_edit(
             ml_prediction = None
             if clip_embedding:
                 ml_prediction = predictive_engine.predict_edits(
-                    best_style["style_id"], clip_embedding, query_metadata
+                    best_style["style_id"],
+                    clip_embedding,
+                    query_metadata,
+                    do_not_clip=do_not_clip,
                 )
 
             if ml_prediction:
