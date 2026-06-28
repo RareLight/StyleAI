@@ -243,7 +243,8 @@ function Util.getPhotoExif(photo)
 			exif.camera_profile = devSettings.CameraProfile
 		end
 		-- HDR mode dramatically changes slider physics, so treat it as a separate profile
-		if devSettings.HDREditMode == true then
+		-- Note: Lightroom returns HDREditMode as an integer (1/0) or boolean depending on the API path.
+		if devSettings.HDREditMode == 1 or devSettings.HDREditMode == true or devSettings.HDR == true then
 			exif.camera_profile = (exif.camera_profile or "Unknown Profile") .. " + HDR"
 		end
 	end
