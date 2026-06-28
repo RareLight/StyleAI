@@ -313,11 +313,30 @@ def _train_single_style(style_id: str, example_ids: list[str]):
 
     target_keys = sorted(list(all_target_keys))
 
+    low_headroom_blacks = []
+    high_headroom_whites = []
+
     for emb, meta, canonical in valid_examples:
         X_list.append(_extract_features(emb, meta))
         # For missing targets in an example, use 0.0 (or we could use mean, but 0.0 is Lightroom's typical default)
         Y_row = [canonical.get(k, 0.0) for k in target_keys]
         Y_list.append(Y_row)
+
+        is_hdr = "HDR" in str(meta.get("camera_profile", ""))
+        if not is_hdr:
+            sh = float(meta.get("shadow_headroom", 0.5))
+            hh = float(meta.get("highlight_headroom", 0.5))
+
+            if sh <= 0.05 and "blacks" in canonical:
+                low_headroom_blacks.append(canonical["blacks"])
+            if hh >= 0.95 and "whites" in canonical:
+                high_headroom_whites.append(canonical["whites"])
+
+    safety_bounds = {}
+    if low_headroom_blacks:
+        safety_bounds["blacks_min"] = min(low_headroom_blacks)
+    if high_headroom_whites:
+        safety_bounds["whites_max"] = max(high_headroom_whites)
 
     X = np.array(X_list, dtype=object)
     Y = np.array(Y_list)
@@ -336,34 +355,38 @@ def _train_single_style(style_id: str, example_ids: list[str]):
             ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), [0]),
             ("num", StandardScaler(), slice(1, None)),
         ],
-        remainder="passthrough"
+        remainder="passthrough",
     )
 
     # Select architecture based on data volume
     if n_samples >= MIN_DIRECT_EXAMPLES:
         # Enough data for direct Ridge regression over 768+ dimensions
-        model = Pipeline([
-            ("preprocessor", preprocessor),
-            ("ridge", Ridge(alpha=1.0))
-        ])
+        model = Pipeline([("preprocessor", preprocessor), ("ridge", Ridge(alpha=1.0))])
         tier = "ml_direct"
     else:
         # 20-50 samples: Use PCA to prevent overfitting the 768d space
         n_components = min(10, n_samples // 2)
-        
+
         # We only apply PCA to the numeric features, but for simplicity, we apply it to everything after scaling
-        model = Pipeline([
-            ("preprocessor", preprocessor),
-            ("pca", PCA(n_components=n_components)),
-            ("ridge", Ridge(alpha=1.0))
-        ])
+        model = Pipeline(
+            [
+                ("preprocessor", preprocessor),
+                ("pca", PCA(n_components=n_components)),
+                ("ridge", Ridge(alpha=1.0)),
+            ]
+        )
         tier = "ml_pca"
 
     try:
         model.fit(X, Y)
         joblib.dump(model, _get_model_path(style_id))
 
-        meta_info = {"tier": tier, "target_keys": target_keys, "n_samples": n_samples}
+        meta_info = {
+            "tier": tier,
+            "target_keys": target_keys,
+            "n_samples": n_samples,
+            "safety_bounds": safety_bounds,
+        }
         with open(_get_metadata_path(style_id), "w") as f:
             json.dump(meta_info, f)
 
@@ -373,7 +396,7 @@ def _train_single_style(style_id: str, example_ids: list[str]):
 
 
 def predict_edits(
-    style_id: str, embedding: list[float], metadata: dict
+    style_id: str, embedding: list[float], metadata: dict, do_not_clip: bool = True
 ) -> dict[str, float] | None:
     """
     Given a new image's embedding and metadata, predict the develop settings.
@@ -400,7 +423,26 @@ def predict_edits(
         Y_pred = model.predict(X)[0]
 
         # Zip with keys and round for neatness
-        flat_predictions = {k: round(float(v), 4) for k, v in zip(target_keys, Y_pred)}
+        flat_predictions = {k: float(v) for k, v in zip(target_keys, Y_pred)}
+
+        # Apply safety bounds if requested
+        is_hdr = "HDR" in str(metadata.get("camera_profile", ""))
+        if do_not_clip and not is_hdr:
+            bounds = meta_info.get("safety_bounds", {})
+            sh = float(metadata.get("shadow_headroom", 0.5))
+            hh = float(metadata.get("highlight_headroom", 0.5))
+
+            if sh <= 0.05 and "blacks_min" in bounds and "blacks" in flat_predictions:
+                flat_predictions["blacks"] = max(
+                    bounds["blacks_min"], flat_predictions["blacks"]
+                )
+
+            if hh >= 0.95 and "whites_max" in bounds and "whites" in flat_predictions:
+                flat_predictions["whites"] = min(
+                    bounds["whites_max"], flat_predictions["whites"]
+                )
+
+        flat_predictions = {k: round(v, 4) for k, v in flat_predictions.items()}
 
         # Unflatten back to nested Lightroom JSON structure
         predictions = unflatten_canonical_settings(flat_predictions)

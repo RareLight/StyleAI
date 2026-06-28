@@ -403,118 +403,116 @@ LrTasks.startAsyncTask(function()
 		progressScope:done()
 
 		-- Summary dialog.
-		if errorCount > 0 or #backendWarnings > 0 then
-			local uniqueErrors = {}
-			local errorList = {}
-			for _, msg in ipairs(errorMessages) do
-				if not uniqueErrors[msg] then
-					uniqueErrors[msg] = true
+		-- 1. Deduplicate errors and warnings to prevent massive string overflow
+		local uniqueErrors = {}
+		local errorList = {}
+		local errorListCount = 0
+		for _, msg in ipairs(errorMessages) do
+			if not uniqueErrors[msg] then
+				uniqueErrors[msg] = 1
+				if errorListCount < 3 then
 					table.insert(errorList, "- " .. msg)
-					if #errorList >= 5 then
-						break
+					errorListCount = errorListCount + 1
+				end
+			else
+				uniqueErrors[msg] = uniqueErrors[msg] + 1
+			end
+		end
+
+		local uniqueWarnings = {}
+		local warningList = {}
+		local warningListCount = 0
+		for _, msg in ipairs(backendWarnings) do
+			if not uniqueWarnings[msg] then
+				uniqueWarnings[msg] = 1
+				if warningListCount < 2 then
+					table.insert(warningList, "- " .. msg)
+					warningListCount = warningListCount + 1
+				end
+			else
+				uniqueWarnings[msg] = uniqueWarnings[msg] + 1
+			end
+		end
+
+		-- 2. Build upgrade and recommendation messages if we had any successes
+		local recommendationMsg = ""
+		local upgradeMsg = ""
+		if successCount > 0 then
+			local ok, styles = SearchIndexAPI.listStyles()
+			if ok and styles and #styles > 0 then
+				local upgradedMLDirect = {}
+				local upgradedMLPCA = {}
+				for _, s in ipairs(styles) do
+					local currentCount = tonumber(s.example_count) or 0
+					local preCount = preStyleCounts[s.style_id] or 0
+					local name = s.style_name or s.genre or "Unknown"
+					
+					if preCount < 50 and currentCount >= 50 then
+						table.insert(upgradedMLDirect, name)
+					elseif preCount < 20 and currentCount >= 20 and preCount < 50 and currentCount < 50 then
+						table.insert(upgradedMLPCA, name)
 					end
 				end
-			end
 
-			local combinedReport =
-				LOC("$$$/StyleAI/Training/Summary=Saved ^1 training example(s).", tostring(successCount))
-			if errorCount > 0 then
-				combinedReport = combinedReport
-					.. "\n"
-					.. LOC("$$$/StyleAI/common/Errors=Errors: ^1", tostring(errorCount))
-			end
+				if #upgradedMLDirect > 0 then
+					upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLDirect=🎉 ^1 style(s) upgraded to ⭐️ ML Predictive (Best).", tostring(#upgradedMLDirect))
+				end
+				if #upgradedMLPCA > 0 then
+					upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLPCA=🎉 ^1 style(s) upgraded to 🌟 ML Predictive (Good).", tostring(#upgradedMLPCA))
+				end
 
-			if #errorList > 0 then
-				combinedReport = combinedReport
-					.. "\n\n"
-					.. LOC("$$$/StyleAI/common/ErrorDetails=Error details:")
-					.. "\n"
-					.. table.concat(errorList, "\n")
-				if #errorMessages > 5 then
-					combinedReport = combinedReport
-						.. "\n"
-						.. LOC("$$$/StyleAI/common/MoreErrors=... and ^1 more errors", tostring(#errorMessages - 5))
+				table.sort(styles, function(a, b) return (tonumber(a.example_count) or 0) < (tonumber(b.example_count) or 0) end)
+				local weakest = styles[1]
+				local weakestCount = tonumber(weakest.example_count) or 0
+				local name = weakest.style_name or weakest.genre or "one of your styles"
+				if weakestCount < 5 then
+					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMore=Tip: Your '^1' style only has ^2 examples (🔴 Undertrained). For the best AI edit results, try to provide at least 5-10 examples for this style.", name, tostring(weakestCount))
+				elseif weakestCount < 10 then
+					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendGood=Tip: Your '^1' style has ^2 examples (🟡 Good). Adding a few more examples will make it even stronger.", name, tostring(weakestCount))
+				elseif weakestCount < 20 then
+					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendStrong=Tip: Your styles look 🟢 Strong! The AI has a robust understanding of your editing preferences.")
+				elseif weakestCount < 50 then
+					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLPCA=Tip: Your styles look 🌟 ML Predictive (Good)! The AI has trained a personalized local model for your edits.")
+				else
+					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLBest=Tip: Your styles look ⭐️ ML Predictive (Best)! The AI has trained a highly robust predictive model for your edits.")
 				end
 			end
+		end
 
-			if #backendWarnings > 0 then
-				combinedReport = combinedReport
-					.. "\n\n"
-					.. LOC("$$$/StyleAI/common/BackendWarnings=Backend Warnings:")
-					.. "\n"
-				for i = 1, math.min(5, #backendWarnings) do
-					combinedReport = combinedReport .. "- " .. backendWarnings[i] .. "\n"
-				end
-				if #backendWarnings > 5 then
-					combinedReport = combinedReport
-						.. LOC(
-							"$$$/StyleAI/common/MoreWarnings=... and ^1 more warnings",
-							tostring(#backendWarnings - 5)
-						)
-				end
+		-- 3. Construct the final report
+		local combinedReport = LOC("$$$/StyleAI/Training/Summary=Saved ^1 training example(s).", tostring(successCount))
+		
+		if errorCount > 0 then
+			combinedReport = combinedReport .. "\n" .. LOC("$$$/StyleAI/common/Errors=Errors: ^1", tostring(errorCount))
+			combinedReport = combinedReport .. "\n" .. table.concat(errorList, "\n")
+			if errorCount > 3 then
+				combinedReport = combinedReport .. "\n" .. LOC("$$$/StyleAI/common/MoreErrors=... and ^1 more errors", tostring(errorCount - 3))
 			end
+		end
 
-			local recommendationMsg = ""
-			local upgradeMsg = ""
-			if successCount > 0 then
-				local ok, styles = SearchIndexAPI.listStyles()
-				if ok and styles and #styles > 0 then
-					-- Detect tier upgrades
-					local upgradedMLDirect = {}
-					local upgradedMLPCA = {}
-					for _, s in ipairs(styles) do
-						local currentCount = tonumber(s.example_count) or 0
-						local preCount = preStyleCounts[s.style_id] or 0
-						local name = s.style_name or s.genre or "Unknown"
-						
-						if preCount < 50 and currentCount >= 50 then
-							table.insert(upgradedMLDirect, name)
-						elseif preCount < 20 and currentCount >= 20 and preCount < 50 and currentCount < 50 then
-							table.insert(upgradedMLPCA, name)
-						end
-					end
-
-					if #upgradedMLDirect > 0 then
-						upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLDirect=🎉 ^1 style(s) reached 50 examples! Upgraded to ⭐️ ML Predictive (Best).", tostring(#upgradedMLDirect))
-					end
-					if #upgradedMLPCA > 0 then
-						upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLPCA=🎉 ^1 style(s) reached 20 examples! Upgraded to 🌟 ML Predictive (Good).", tostring(#upgradedMLPCA))
-					end
-
-					-- Sort styles by example count for the weakest link recommendation
-					table.sort(styles, function(a, b) return (tonumber(a.example_count) or 0) < (tonumber(b.example_count) or 0) end)
-					local weakest = styles[1]
-					local weakestCount = tonumber(weakest.example_count) or 0
-					local name = weakest.style_name or weakest.genre or "one of your styles"
-					if weakestCount < 5 then
-						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMore=Tip: Your '^1' style only has ^2 examples (🔴 Undertrained). For the best AI edit results, try to provide at least 5-10 examples for this style.", name, tostring(weakestCount))
-					elseif weakestCount < 10 then
-						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendGood=Tip: Your '^1' style has ^2 examples (🟡 Good). Adding a few more examples will make it even stronger.", name, tostring(weakestCount))
-					elseif weakestCount < 20 then
-						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendStrong=Tip: Your styles look 🟢 Strong! The AI has a robust understanding of your editing preferences.")
-					elseif weakestCount < 50 then
-						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLPCA=Tip: Your styles look 🌟 ML Predictive (Good)! The AI has trained a personalized local model for your edits.")
-					else
-						recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLBest=Tip: Your styles look ⭐️ ML Predictive (Best)! The AI has trained a highly robust predictive model for your edits.")
-					end
-				end
+		if #backendWarnings > 0 then
+			combinedReport = combinedReport .. "\n\n" .. LOC("$$$/StyleAI/common/BackendWarnings=Warnings: ^1", tostring(#backendWarnings))
+			combinedReport = combinedReport .. "\n" .. table.concat(warningList, "\n")
+			if #backendWarnings > 2 then
+				combinedReport = combinedReport .. "\n" .. LOC("$$$/StyleAI/common/MoreWarnings=... and ^1 more warnings", tostring(#backendWarnings - 2))
 			end
+		end
 
-			combinedReport = combinedReport .. upgradeMsg .. recommendationMsg
+		combinedReport = combinedReport .. upgradeMsg .. recommendationMsg
 
-
+		-- 4. Present the appropriate dialog
+		if errorCount > 0 then
+			-- Actual failures warrant the ErrorHandler UI
 			ErrorHandler.handleError(
-				LOC("$$$/StyleAI/Training/CompletionTitle=Training Examples Saved"),
+				LOC("$$$/StyleAI/Training/CompletionTitle=Training Finished (with errors)"),
 				combinedReport
 			)
 		else
+			-- Success (even if there are warnings, use the standard LrDialogs.message)
 			LrDialogs.message(
 				LOC("$$$/StyleAI/Training/SuccessTitle=Training Examples Saved"),
-				LOC(
-					"$$$/StyleAI/Training/SuccessSummary=Successfully saved ^1 training example(s).\nAI Edit Photos will use your style when editing visually similar photos.",
-					tostring(successCount)
-				),
-				"info"
+				combinedReport,
+				#backendWarnings > 0 and "warning" or "info"
 			)
 		end
 	end)

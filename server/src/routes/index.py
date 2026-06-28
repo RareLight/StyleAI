@@ -204,9 +204,9 @@ def index_images_batch_base64_v2():
             merged_options.update(item.get("options", {}))
             photo_options = _extract_options(merged_options)
             photo_options["photo_id"] = photo_id
-            
+
             image_bytes = base64.b64decode(image_base64.encode("ascii"))
-            
+
             image_triplets.append((image_bytes, photo_id, filename, lr_uuid))
 
             if cache_images:

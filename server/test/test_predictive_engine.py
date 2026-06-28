@@ -1,13 +1,13 @@
-import pytest
 import numpy as np
 from services import predictive_engine
+
 
 def test_extract_features():
     embedding = [0.1] * 768
     metadata = {
         "camera_profile": "Nikon Z7 Linear",
         "exp_luminance_mean": 0.6,
-        "exp_contrast": 0.4
+        "exp_contrast": 0.4,
     }
     features = predictive_engine._extract_features(embedding, metadata)
     assert features[0] == "Nikon Z7 Linear"
@@ -15,23 +15,23 @@ def test_extract_features():
     # Check that it appended defaults for missing metrics
     assert len(features) == 1 + 768 + 8
 
+
 def test_pipeline_preprocessor():
     from sklearn.compose import ColumnTransformer
     from sklearn.preprocessing import StandardScaler, OneHotEncoder
-    
+
     preprocessor = ColumnTransformer(
         transformers=[
             ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), [0]),
             ("num", StandardScaler(), slice(1, None)),
         ],
-        remainder="passthrough"
+        remainder="passthrough",
     )
 
-    X = np.array([
-        ["Profile A", 0.1, 0.5],
-        ["Profile B", 0.2, 0.6],
-        ["Profile A", 0.3, 0.7]
-    ], dtype=object)
+    X = np.array(
+        [["Profile A", 0.1, 0.5], ["Profile B", 0.2, 0.6], ["Profile A", 0.3, 0.7]],
+        dtype=object,
+    )
 
     X_transformed = preprocessor.fit_transform(X)
     # 2 profile categories + 2 numerical features = 4 columns

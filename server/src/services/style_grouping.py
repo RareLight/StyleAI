@@ -107,22 +107,17 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
 _BROAD_GENRE_MAP: dict[str, str] = {
     "scene_portrait": "scene_portrait",
     "scene_group": "scene_portrait",
-    
     "scene_event": "scene_event",
     "scene_action": "scene_event",
     "scene_street": "scene_event",
-    
     "scene_landscape": "scene_landscape",
     "scene_exterior": "scene_landscape",
     "scene_golden_hour": "scene_landscape",
-    
     "scene_nature": "scene_nature",
     "scene_macro": "scene_nature",
     "scene_flowers": "scene_nature",
     "scene_wildlife": "scene_nature",
-    
     "scene_architecture": "scene_architecture",
-    
     "scene_studio": "scene_studio",
     "scene_interior": "scene_studio",
 }
@@ -134,7 +129,7 @@ _DYNAMIC_BUCKETS = {
     "scene_landscape": "landscape, outdoors, travel, astrophotography, night sky, sunset, scenery, drone, aerial",
     "scene_nature": "wildlife, animals, pets, macro, close-up, flowers, birds, insects, nature detail",
     "scene_architecture": "architecture, real estate, interior, exterior, city, urban, buildings, property",
-    "scene_studio": "studio, product, food, commercial, controlled light, flash, still life, car, automotive"
+    "scene_studio": "studio, product, food, commercial, controlled light, flash, still life, car, automotive",
 }
 
 _DYNAMIC_GENRE_CACHE: dict[str, str] = {}
@@ -145,7 +140,7 @@ _bucket_embeddings = None
 def _dynamic_semantic_mapping(keyword: str) -> str:
     """Use SentenceTransformer to dynamically map an unknown keyword to a broad bucket."""
     global _ef_instance, _bucket_embeddings
-    
+
     keyword_lower = keyword.strip().lower()
     if keyword_lower in _DYNAMIC_GENRE_CACHE:
         return _DYNAMIC_GENRE_CACHE[keyword_lower]
@@ -156,7 +151,7 @@ def _dynamic_semantic_mapping(keyword: str) -> str:
 
     # Embed keyword
     kw_emb = _ef_instance([keyword_lower])[0]
-    
+
     # Compute cosine distances
     distances = []
     for b_emb in _bucket_embeddings:
@@ -167,17 +162,17 @@ def _dynamic_semantic_mapping(keyword: str) -> str:
             math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
         )
         distances.append(dist)
-        
+
     closest_idx = min(range(len(distances)), key=distances.__getitem__)
     closest_dist = distances[closest_idx]
-    
+
     # Only map if it's semantically close enough (e.g. cosine distance < 0.85)
     # This prevents keywords like "Dave" or "Red" from overriding the AI tag
     if closest_dist < 0.85:
         closest_bucket = list(_DYNAMIC_BUCKETS.keys())[closest_idx]
     else:
         closest_bucket = None
-    
+
     _DYNAMIC_GENRE_CACHE[keyword_lower] = closest_bucket
     return closest_bucket
 

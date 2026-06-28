@@ -118,6 +118,10 @@ def add_training_example():
     camera_profile = _opt_str("camera_profile")
     shutter_speed = _opt_str("shutter_speed")
 
+    # Automatically partition HDR styles
+    if camera_profile and "HDR" in camera_profile and not label.endswith("(HDR)"):
+        label = f"{label} (HDR)"
+
     # Parse comma-separated user keywords
     user_keywords: list[str] | None = None
     kw_raw = request.form.get("user_keywords", "").strip()
@@ -153,15 +157,22 @@ def add_training_example():
             # If filepath provided, attempt to extract unedited camera preview
             if filepath:
                 from utils.image_processing import extract_exiftool_preview
+
                 try:
                     raw_preview = extract_exiftool_preview(filepath)
                     if raw_preview:
-                        logger.info(f"Successfully extracted unedited raw preview for {filepath}")
+                        logger.info(
+                            f"Successfully extracted unedited raw preview for {filepath}"
+                        )
                         image_bytes_data = raw_preview
                 except TimeoutError as exc:
-                    return jsonify({"error": "EXIFTOOL_TIMEOUT", "message": str(exc)}), 408
+                    return jsonify(
+                        {"error": "EXIFTOOL_TIMEOUT", "message": str(exc)}
+                    ), 408
                 except PermissionError as exc:
-                    return jsonify({"error": "EXIFTOOL_PERMISSION", "message": str(exc)}), 403
+                    return jsonify(
+                        {"error": "EXIFTOOL_PERMISSION", "message": str(exc)}
+                    ), 403
             embedding = _compute_clip_embedding(image_bytes_data)
         except Exception as exc:
             warning_msg = f"Failed to read image for training embedding: {exc}"
@@ -276,6 +287,10 @@ def add_training_batch():
         aperture = item.get("aperture")
         shutter_speed = item.get("shutter_speed")
 
+        # Automatically partition HDR styles
+        if camera_profile and "HDR" in str(camera_profile) and not label.endswith("(HDR)"):
+            label = f"{label} (HDR)"
+
         image_bytes_b64 = item.get("image_bytes")
         image_bytes_data = None
         if image_bytes_b64:
@@ -287,20 +302,35 @@ def add_training_batch():
                 logger.warning(
                     f"Failed to decode base64 image bytes for {photo_id}: {e}"
                 )
-                
+
         filepath = item.get("filepath", "").strip() or None
         if filepath:
             from utils.image_processing import extract_exiftool_preview
+
             try:
                 raw_preview = extract_exiftool_preview(filepath)
                 if raw_preview:
-                    logger.info(f"Successfully extracted unedited raw preview for {filepath}")
+                    logger.info(
+                        f"Successfully extracted unedited raw preview for {filepath}"
+                    )
                     image_bytes_data = raw_preview
             except TimeoutError as exc:
-                results.append({"status": "error", "photo_id": photo_id, "error": f"EXIFTOOL_TIMEOUT: {exc}"})
+                results.append(
+                    {
+                        "status": "error",
+                        "photo_id": photo_id,
+                        "error": f"EXIFTOOL_TIMEOUT: {exc}",
+                    }
+                )
                 continue
             except PermissionError as exc:
-                results.append({"status": "error", "photo_id": photo_id, "error": f"EXIFTOOL_PERMISSION: {exc}"})
+                results.append(
+                    {
+                        "status": "error",
+                        "photo_id": photo_id,
+                        "error": f"EXIFTOOL_PERMISSION: {exc}",
+                    }
+                )
                 continue
 
         try:
@@ -311,9 +341,12 @@ def add_training_batch():
                 filepath = item.get("filepath")
                 if filepath:
                     from utils.image_processing import extract_exiftool_preview
+
                     raw_preview = extract_exiftool_preview(filepath)
                     if raw_preview:
-                        logger.info(f"Successfully extracted unedited raw preview for {filepath}")
+                        logger.info(
+                            f"Successfully extracted unedited raw preview for {filepath}"
+                        )
                         image_bytes_data = raw_preview
                 embedding = _compute_clip_embedding(image_bytes_data)
 
