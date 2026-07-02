@@ -367,6 +367,12 @@ local function getAiEditOptions(ctx, editMode)
 					}),
 				}),
 				f:row({
+					f:checkbox({
+						title = LOC("$$$/StyleAI/TaskAiEditPhotos/AllowAutoCrop=Allow AI to crop and straighten images"),
+						value = bind("allowAutoCrop"),
+					}),
+				}),
+				f:row({
 					visible = bind({
 						key = "editingStyle",
 						transform = function(v) return ENABLE_DEBUG_STYLE_OVERRIDE and v == "trained" end
@@ -744,6 +750,7 @@ local function getAiEditOptions(ctx, editMode)
 		previewBlurredFaces = props.previewBlurredFaces,
 		faceBlurSensitivity = props.faceBlurSensitivity,
 		do_not_clip = props.doNotClip,
+		allow_auto_crop = props.allowAutoCrop,
 	}
 
 	if props.overrideStyleEnabled and props.overrideStyleId then

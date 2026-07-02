@@ -338,6 +338,19 @@ def _train_single_style(style_id: str, example_ids: list[str]):
     if high_headroom_whites:
         safety_bounds["whites_max"] = max(high_headroom_whites)
 
+    slider_bounds = {}
+    for k in target_keys:
+        vals = [
+            float(canonical[k])
+            for _, _, canonical in valid_examples
+            if k in canonical and isinstance(canonical[k], (int, float))
+        ]
+        if vals:
+            slider_bounds[k] = {
+                "min": min(vals),
+                "max": max(vals),
+            }
+
     X = np.array(X_list, dtype=object)
     Y = np.array(Y_list)
 
@@ -386,6 +399,7 @@ def _train_single_style(style_id: str, example_ids: list[str]):
             "target_keys": target_keys,
             "n_samples": n_samples,
             "safety_bounds": safety_bounds,
+            "slider_bounds": slider_bounds,
         }
         with open(_get_metadata_path(style_id), "w") as f:
             json.dump(meta_info, f)
@@ -425,7 +439,16 @@ def predict_edits(
         # Zip with keys and round for neatness
         flat_predictions = {k: float(v) for k, v in zip(target_keys, Y_pred)}
 
-        # Apply safety bounds if requested
+        # 1. Clamp ALL predicted sliders to their learned training boundaries to prevent linear extrapolation
+        slider_bounds = meta_info.get("slider_bounds", {})
+        for k, b in slider_bounds.items():
+            if k in flat_predictions and isinstance(b, dict):
+                min_v = b.get("min")
+                max_v = b.get("max")
+                if min_v is not None and max_v is not None:
+                    flat_predictions[k] = max(float(min_v), min(float(max_v), flat_predictions[k]))
+
+        # 2. Apply specific headroom clipping prevention if requested
         is_hdr = "HDR" in str(metadata.get("camera_profile", ""))
         if do_not_clip and not is_hdr:
             bounds = meta_info.get("safety_bounds", {})

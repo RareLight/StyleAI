@@ -10,6 +10,7 @@ from services.style_engine import (
     interpolate_recipes,
     generate_style_edit,
     StyleEngineResult,
+    _finalize_recipe,
 )
 
 
@@ -121,3 +122,27 @@ def test_generate_style_edit_not_enough_training(mock_training):
     assert result.engine == "none"
     assert "inactive" in result.warning
     assert "2" in result.warning
+
+
+def test_finalize_recipe_interpolation():
+    recipe = {
+        "global": {
+            "highlights": -60.0,
+            "shadows": 50.0,
+        }
+    }
+    # Simulate Adobe Auto already applied to photo
+    current_settings = {
+        "Highlights2012": -50.0,
+        "Shadows2012": 50.0,
+    }
+
+    # At 100% strength, final settings should match style target exactly (no double stacking to -110 or +100)
+    final_100 = _finalize_recipe(recipe, {}, current_settings, style_strength=1.0)
+    assert final_100["global"]["highlights"] == -60.0
+    assert final_100["global"]["shadows"] == 50.0
+
+    # At 50% strength, final settings should blend halfway between current (-50) and target (-60) -> -55
+    final_50 = _finalize_recipe(recipe, {}, current_settings, style_strength=0.5)
+    assert final_50["global"]["highlights"] == -55.0
+    assert final_50["global"]["shadows"] == 50.0

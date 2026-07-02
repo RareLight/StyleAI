@@ -652,18 +652,13 @@ def _finalize_recipe(
     for key, target_val in list(global_settings.items()):
         if isinstance(target_val, (int, float)) and not isinstance(target_val, bool):
             try:
-                # The style targets are absolute values relative to LR's default zero points.
+                # The style targets are absolute learned slider positions.
                 baseline = lr_defaults.get(key, 0.0)
-                style_delta = float(target_val) - baseline
+                start_val = float(canonical_current.get(key, baseline))
+                strength = style_strength if style_strength is not None else 1.0
 
-                # Scale the intended delta by the user's strength preference
-                scaled_delta = style_delta * (
-                    style_strength if style_strength is not None else 1.0
-                )
-
-                # Additively apply the delta to the photo's actual current setting
-                current_val = float(canonical_current.get(key, baseline))
-                interpolated = current_val + scaled_delta
+                # Linearly interpolate between the starting setting and the style target
+                interpolated = start_val + strength * (float(target_val) - start_val)
 
                 global_settings[key] = round(interpolated, 2)
             except (ValueError, TypeError):

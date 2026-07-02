@@ -102,6 +102,11 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "golden_hour": "scene_golden_hour",
     "sunset": "scene_golden_hour",
     "sunrise": "scene_golden_hour",
+    "astrophotography": "scene_astrophotography",
+    "nightscape": "scene_astrophotography",
+    "aurora": "scene_astrophotography",
+    "stars": "scene_astrophotography",
+    "night": "scene_night",
 }
 
 _BROAD_GENRE_MAP: dict[str, str] = {
@@ -120,16 +125,19 @@ _BROAD_GENRE_MAP: dict[str, str] = {
     "scene_architecture": "scene_architecture",
     "scene_studio": "scene_studio",
     "scene_interior": "scene_studio",
+    "scene_night": "scene_astrophotography",
+    "scene_astrophotography": "scene_astrophotography",
 }
 
 
 _DYNAMIC_BUCKETS = {
     "scene_portrait": "portrait, people, family, fashion, headshot, baby, candid",
     "scene_event": "wedding, event, concert, sports, action, street, photojournalism, documentary, party",
-    "scene_landscape": "landscape, outdoors, travel, astrophotography, night sky, sunset, scenery, drone, aerial",
+    "scene_landscape": "landscape, outdoors, travel, sunset, scenery, drone, aerial",
     "scene_nature": "wildlife, animals, pets, macro, close-up, flowers, birds, insects, nature detail",
     "scene_architecture": "architecture, real estate, interior, exterior, city, urban, buildings, property",
     "scene_studio": "studio, product, food, commercial, controlled light, flash, still life, car, automotive",
+    "scene_astrophotography": "astrophotography, nightscape, night sky, milky way, aurora borealis, stars, star trails, dark",
 }
 
 _DYNAMIC_GENRE_CACHE: dict[str, str] = {}

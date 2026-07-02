@@ -126,10 +126,10 @@ def test_dynamic_semantic_mapping():
     )
 
     # Semantic mapping tests (these simulate unknown keywords)
-    # Astrophotography -> landscape
+    # Stargazing -> astrophotography
     assert (
-        sg._primary_genre_with_keywords(["scene_unknown"], ["astrophotography"])
-        == "scene_landscape"
+        sg._primary_genre_with_keywords(["scene_unknown"], ["stargazing"])
+        == "scene_astrophotography"
     )
 
     # Food -> studio (commercial/products/food)
@@ -143,8 +143,8 @@ def test_dynamic_semantic_mapping():
     )
 
     # Test caching (should be instantaneous and read from dict)
-    assert "astrophotography" in sg._DYNAMIC_GENRE_CACHE
-    assert sg._DYNAMIC_GENRE_CACHE["astrophotography"] == "scene_landscape"
+    assert "stargazing" in sg._DYNAMIC_GENRE_CACHE
+    assert sg._DYNAMIC_GENRE_CACHE["stargazing"] == "scene_astrophotography"
 
 
 # ---------------------------------------------------------------------------
