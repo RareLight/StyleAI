@@ -705,6 +705,22 @@ def normalize_develop_settings_for_style(
             canonical["tone_curve"] = {}
         canonical["tone_curve"]["point_curve"] = point_curve
 
+    # Extract Crop Settings
+    crop = {}
+    for canon_key, lr_key in [
+        ("top", "CropTop"),
+        ("bottom", "CropBottom"),
+        ("left", "CropLeft"),
+        ("right", "CropRight"),
+        ("angle", "CropAngle"),
+    ]:
+        val = develop_settings.get(lr_key)
+        if val is not None and isinstance(val, (int, float)):
+            crop[canon_key] = round(float(val), 5)
+    
+    if crop:
+        canonical["crop"] = crop
+
     return canonical
 
 

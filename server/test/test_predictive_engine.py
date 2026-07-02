@@ -41,3 +41,30 @@ def test_pipeline_preprocessor():
     assert X_transformed[0, 1] == 0.0  # Profile B
     assert X_transformed[1, 0] == 0.0
     assert X_transformed[1, 1] == 1.0
+
+
+def test_predict_edits_universal_clamping(monkeypatch):
+    from unittest.mock import MagicMock
+
+    mock_model = MagicMock()
+    # Simulate regression predicting extreme outliers: -130 Highlights, +120 Shadows
+    mock_model.predict.return_value = np.array([[-130.0, 120.0]])
+
+    meta_info = {
+        "target_keys": ["highlights", "shadows"],
+        "tier": "ml_direct",
+        "slider_bounds": {
+            "highlights": {"min": -80.0, "max": 0.0},
+            "shadows": {"min": 0.0, "max": 60.0},
+        },
+    }
+
+    monkeypatch.setattr("os.path.exists", lambda path: True)
+    monkeypatch.setattr("joblib.load", lambda path: mock_model)
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: MagicMock())
+    monkeypatch.setattr("json.load", lambda fp: meta_info)
+
+    res = predictive_engine.predict_edits("style_test", [0.1] * 768, {})
+    assert res is not None
+    assert res["highlights"] == -80.0
+    assert res["shadows"] == 60.0
