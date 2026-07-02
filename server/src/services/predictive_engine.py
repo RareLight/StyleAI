@@ -226,20 +226,16 @@ def unflatten_canonical_settings(flat: dict[str, float]) -> dict:
             crop_width = right - left
             crop_height = bottom - top
 
-            # If the normalized crop deviates from a square by more than 2% of the image size, abandon it
-            if abs(crop_width - crop_height) > 0.02:
-                del canonical["crop"]
-            else:
-                # Force perfect aspect ratio preservation by averaging width/height
-                avg_dim = (crop_width + crop_height) / 2.0
-                center_x = (left + right) / 2.0
-                center_y = (top + bottom) / 2.0
-                crop["left"] = max(0.0, center_x - avg_dim / 2.0)
-                crop["right"] = min(1.0, center_x + avg_dim / 2.0)
-                crop["top"] = max(0.0, center_y - avg_dim / 2.0)
-                crop["bottom"] = min(1.0, center_y + avg_dim / 2.0)
-                if "angle" in crop:
-                    crop["angle"] = max(-45.0, min(45.0, crop["angle"]))
+            # Force perfect aspect ratio preservation by averaging width/height
+            avg_dim = (crop_width + crop_height) / 2.0
+            center_x = (left + right) / 2.0
+            center_y = (top + bottom) / 2.0
+            crop["left"] = max(0.0, center_x - avg_dim / 2.0)
+            crop["right"] = min(1.0, center_x + avg_dim / 2.0)
+            crop["top"] = max(0.0, center_y - avg_dim / 2.0)
+            crop["bottom"] = min(1.0, center_y + avg_dim / 2.0)
+            if "angle" in crop:
+                crop["angle"] = max(-45.0, min(45.0, crop["angle"]))
         elif "angle" in crop and not any(
             k in crop for k in ("left", "right", "top", "bottom")
         ):
@@ -261,6 +257,21 @@ def unflatten_canonical_settings(flat: dict[str, float]) -> dict:
         canonical.pop("tone_curve", None)
 
     return canonical
+
+
+def _get_default_val(key: str) -> float:
+    """Return the true Lightroom mathematical default for a missing flattened target key."""
+    if key in ("crop_right", "crop_bottom"):
+        return 1.0
+    if key == "cg_blending" or (key.startswith("cg_") and key.endswith("_blending")):
+        return 50.0
+    if key.startswith("curve_") and "_y_" in key:
+        try:
+            idx = int(key.split("_")[-1])
+            return float(np.linspace(0, 255, 16)[idx])
+        except (ValueError, IndexError):
+            return 0.0
+    return 0.0
 
 
 def _train_single_style(style_id: str, example_ids: list[str]):
@@ -318,8 +329,8 @@ def _train_single_style(style_id: str, example_ids: list[str]):
 
     for emb, meta, canonical in valid_examples:
         X_list.append(_extract_features(emb, meta))
-        # For missing targets in an example, use 0.0 (or we could use mean, but 0.0 is Lightroom's typical default)
-        Y_row = [canonical.get(k, 0.0) for k in target_keys]
+        # For missing targets in an example, use proper default (e.g. 1.0 for right/bottom crop, linear y=x for curves)
+        Y_row = [canonical.get(k, _get_default_val(k)) for k in target_keys]
         Y_list.append(Y_row)
 
         is_hdr = "HDR" in str(meta.get("camera_profile", ""))

@@ -645,13 +645,13 @@ def normalize_develop_settings_for_style(
         hue = develop_settings.get(f"HueAdjustment{color}")
         sat = develop_settings.get(f"SaturationAdjustment{color}")
         lum = develop_settings.get(f"LuminanceAdjustment{color}")
-        if hue is not None and sat is not None and lum is not None:
+        if hue is not None or sat is not None or lum is not None:
             hsl[c_lower] = {
-                "hue": round(float(hue), 2),
-                "saturation": round(float(sat), 2),
-                "luminance": round(float(lum), 2),
+                "hue": round(float(hue if hue is not None else 0.0), 2),
+                "saturation": round(float(sat if sat is not None else 0.0), 2),
+                "luminance": round(float(lum if lum is not None else 0.0), 2),
             }
-    if len(hsl) == 8:
+    if hsl:
         canonical["hsl"] = hsl
 
     # Extract Color Grading
@@ -669,10 +669,13 @@ def normalize_develop_settings_for_style(
             f"SplitToning{lr_prefix}Saturation"
         )
         l = develop_settings.get(f"ColorGrade{lr_prefix}Lum")
-        if h is not None and s is not None:
-            cg_part = {"hue": round(float(h), 2), "saturation": round(float(s), 2)}
-            if l is not None and region != "global":
-                cg_part["luminance"] = round(float(l), 2)
+        if h is not None or s is not None or l is not None:
+            cg_part = {
+                "hue": round(float(h if h is not None else 0.0), 2),
+                "saturation": round(float(s if s is not None else 0.0), 2),
+            }
+            if region != "global":
+                cg_part["luminance"] = round(float(l if l is not None else 0.0), 2)
             cg[region] = cg_part
 
     blending = (
@@ -683,7 +686,7 @@ def normalize_develop_settings_for_style(
         "SplitToningBalance"
     )
 
-    if len(cg) >= 3:  # at least shadows, midtones, highlights
+    if cg:
         cg["blending"] = round(float(blending if blending is not None else 50.0), 2)
         cg["balance"] = round(float(balance if balance is not None else 0.0), 2)
         canonical["color_grading"] = cg
@@ -700,7 +703,7 @@ def normalize_develop_settings_for_style(
         if isinstance(raw_curve, list) and len(raw_curve) >= 4:
             # Flatten or ensure it's a flat array of numbers
             point_curve[curve_key] = [float(x) for x in raw_curve]
-    if len(point_curve) == 4:
+    if point_curve:
         if "tone_curve" not in canonical:
             canonical["tone_curve"] = {}
         canonical["tone_curve"]["point_curve"] = point_curve

@@ -146,3 +146,37 @@ def test_finalize_recipe_interpolation():
     final_50 = _finalize_recipe(recipe, {}, current_settings, style_strength=0.5)
     assert final_50["global"]["highlights"] == -55.0
     assert final_50["global"]["shadows"] == 50.0
+
+
+def test_interpolate_recipes_crop_fallback():
+    # ex1 is cropped (right=0.8), ex2 is uncropped (no crop dict)
+    ex1 = {"canonical_settings": {"crop": {"left": 0.0, "right": 0.8, "top": 0.1, "bottom": 0.9, "angle": 0.0}}}
+    ex2 = {"canonical_settings": {}}
+    winners = [(ex1, 0.5), (ex2, 0.5)]
+    res = interpolate_recipes(winners)
+    assert "crop" in res
+    # Uncropped right is 1.0, so (0.8*0.5 + 1.0*0.5) = 0.9 (before aspect ratio averaging)
+    # Let's check that it did not shrink toward 0.4
+    assert res["crop"]["right"] > 0.7
+
+
+def test_interpolate_recipes_tone_curve_fallback():
+    # ex1 has a custom curve, ex2 has no curve (should default to linear)
+    ex1 = {"canonical_settings": {"tone_curve": {"point_curve": {"master": [0, 0, 128, 180, 255, 255]}}}}
+    ex2 = {"canonical_settings": {}}
+    winners = [(ex1, 0.5), (ex2, 0.5)]
+    res = interpolate_recipes(winners)
+    assert "tone_curve" in res
+    # At x=136.0 (index 8), ex1 curve is ~184.7, linear baseline is 136.0 -> average should be ~160.4
+    master_curve = res["tone_curve"]["point_curve"]["master"]
+    ys = master_curve[1::2]
+    assert 150.0 < ys[8] < 170.0
+
+
+def test_finalize_recipe_no_auto_wb():
+    # Even if warmth_proxy is extreme (0.05 or 0.95), white_balance must not be overridden to Auto
+    recipe = {"global": {"exposure": 0.5}, "white_balance": "As Shot"}
+    query_exposure = {"exp_warmth_proxy": 0.95}
+    final_recipe = _finalize_recipe(recipe, query_exposure, {}, style_strength=1.0)
+    assert final_recipe.get("white_balance") == "As Shot"
+

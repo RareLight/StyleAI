@@ -68,3 +68,33 @@ def test_predict_edits_universal_clamping(monkeypatch):
     assert res is not None
     assert res["highlights"] == -80.0
     assert res["shadows"] == 60.0
+
+
+def test_get_default_val():
+    assert predictive_engine._get_default_val("crop_right") == 1.0
+    assert predictive_engine._get_default_val("crop_bottom") == 1.0
+    assert predictive_engine._get_default_val("cg_blending") == 50.0
+    assert predictive_engine._get_default_val("exposure") == 0.0
+    assert predictive_engine._get_default_val("curve_master_y_0") == 0.0
+    assert predictive_engine._get_default_val("curve_master_y_15") == 255.0
+
+
+def test_unflatten_canonical_settings_crop_averaging():
+    # Even if aspect ratio deviates significantly, enforce width == height by averaging instead of deleting
+    flat = {
+        "exposure": 0.5,
+        "crop_left": 0.1,
+        "crop_right": 0.9,
+        "crop_top": 0.2,
+        "crop_bottom": 0.6,  # width=0.8, height=0.4
+    }
+    recipe = predictive_engine.unflatten_canonical_settings(flat)
+    assert "crop" in recipe
+    # avg_dim = (0.8 + 0.4) / 2 = 0.6
+    # center_x = 0.5 -> left=0.2, right=0.8
+    # center_y = 0.4 -> top=0.1, bottom=0.7
+    assert round(recipe["crop"]["left"], 2) == 0.2
+    assert round(recipe["crop"]["right"], 2) == 0.8
+    assert round(recipe["crop"]["top"], 2) == 0.1
+    assert round(recipe["crop"]["bottom"], 2) == 0.7
+
