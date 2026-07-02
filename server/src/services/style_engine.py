@@ -201,17 +201,26 @@ def _circular_mean(angles_and_weights: list[tuple[float, float]]) -> float:
 
 def _interpolate_point_curve(
     curves_and_weights: list[tuple[list[float], float]],
+    target_total_weight: float = 0.0,
 ) -> list[float]:
     x_eval = np.linspace(0, 255, 16)  # 16 control points
     y_sum = np.zeros_like(x_eval)
     total_w = sum(w for _, w in curves_and_weights)
     if total_w <= 0:
         return [0.0, 0.0, 255.0, 255.0]
+
+    if target_total_weight > total_w + 1e-6:
+        missing_w = target_total_weight - total_w
+        y_sum += (missing_w / target_total_weight) * x_eval
+        denom = target_total_weight
+    else:
+        denom = total_w
+
     for curve, weight in curves_and_weights:
         xs = curve[::2]
         ys = curve[1::2]
         y_eval = np.interp(x_eval, xs, ys)
-        y_sum += (weight / total_w) * y_eval
+        y_sum += (weight / denom) * y_eval
 
     # Flatten back to [x1, y1, x2, y2...]
     result = []
@@ -266,6 +275,18 @@ def _prune_neutral_tools(recipe: dict[str, Any]) -> dict[str, Any]:
             del recipe["tone_curve"]["point_curve"]
             if not recipe["tone_curve"]:
                 del recipe["tone_curve"]
+
+    # Prune crop if it's effectively uncropped
+    if "crop" in recipe:
+        c = recipe["crop"]
+        if (
+            abs(c.get("left", 0.0)) < 0.005
+            and abs(c.get("top", 0.0)) < 0.005
+            and abs(c.get("right", 1.0) - 1.0) < 0.005
+            and abs(c.get("bottom", 1.0) - 1.0) < 0.005
+            and abs(c.get("angle", 0.0)) < 0.1
+        ):
+            del recipe["crop"]
 
     return recipe
 
@@ -343,17 +364,27 @@ def interpolate_recipes(
                     if chan not in pc_fields:
                         pc_fields[chan] = []
                     pc_fields[chan].append((curve, weight))
-            elif key == "crop" and isinstance(value, dict):
-                for crop_key, crop_val in value.items():
-                    if isinstance(crop_val, (int, float)):
-                        composite_key = f"crop_{crop_key}"
-                        num_fields[composite_key] = num_fields.get(
-                            composite_key, 0.0
-                        ) + weight * float(crop_val)
             elif key == "white_balance":
                 is_custom = 1.0 if str(value).lower() != "as shot" else 0.0
                 num_fields["white_balance_is_custom"] = (
                     num_fields.get("white_balance_is_custom", 0.0) + weight * is_custom
+                )
+
+        # Handle crops with uncropped default fallback
+        crop_val_dict = canonical.get("crop")
+        if not isinstance(crop_val_dict, dict) or not crop_val_dict:
+            crop_val_dict = {
+                "left": 0.0,
+                "right": 1.0,
+                "top": 0.0,
+                "bottom": 1.0,
+                "angle": 0.0,
+            }
+        for crop_key, crop_val in crop_val_dict.items():
+            if isinstance(crop_val, (int, float)):
+                composite_key = f"crop_{crop_key}"
+                num_fields[composite_key] = (
+                    num_fields.get(composite_key, 0.0) + weight * float(crop_val)
                 )
 
     blended: dict[str, Any] = {k: round(v, 1) for k, v in num_fields.items()}
@@ -386,7 +417,7 @@ def interpolate_recipes(
         blended["tone_curve"] = {"point_curve": {}}
         for chan, curves in pc_fields.items():
             blended["tone_curve"]["point_curve"][chan] = _interpolate_point_curve(
-                curves
+                curves, target_total_weight=1.0
             )
 
     # Reconstruct crop and enforce original aspect ratio constraint
@@ -409,17 +440,16 @@ def interpolate_recipes(
             crop_width = right - left
             crop_height = bottom - top
 
-            if abs(crop_width - crop_height) <= 0.02:
-                avg_dim = (crop_width + crop_height) / 2.0
-                center_x = (left + right) / 2.0
-                center_y = (top + bottom) / 2.0
-                crop["left"] = max(0.0, center_x - avg_dim / 2.0)
-                crop["right"] = min(1.0, center_x + avg_dim / 2.0)
-                crop["top"] = max(0.0, center_y - avg_dim / 2.0)
-                crop["bottom"] = min(1.0, center_y + avg_dim / 2.0)
-                if "angle" in crop:
-                    crop["angle"] = max(-45.0, min(45.0, crop["angle"]))
-                blended["crop"] = crop
+            avg_dim = (crop_width + crop_height) / 2.0
+            center_x = (left + right) / 2.0
+            center_y = (top + bottom) / 2.0
+            crop["left"] = max(0.0, center_x - avg_dim / 2.0)
+            crop["right"] = min(1.0, center_x + avg_dim / 2.0)
+            crop["top"] = max(0.0, center_y - avg_dim / 2.0)
+            crop["bottom"] = min(1.0, center_y + avg_dim / 2.0)
+            if "angle" in crop:
+                crop["angle"] = max(-45.0, min(45.0, crop["angle"]))
+            blended["crop"] = crop
         elif "angle" in crop and not any(
             k in crop for k in ("left", "right", "top", "bottom")
         ):
@@ -663,14 +693,6 @@ def _finalize_recipe(
                 global_settings[key] = round(interpolated, 2)
             except (ValueError, TypeError):
                 pass
-
-    warmth_proxy = query_exposure.get("exp_warmth_proxy", 0.5)
-    if warmth_proxy < 0.2 or warmth_proxy > 0.8:
-        recipe["white_balance"] = "Auto"
-        logger.info(
-            "Style engine detected extreme color cast (warmth_proxy=%.3f), engaging Auto white balance",
-            warmth_proxy,
-        )
 
     return recipe
 
