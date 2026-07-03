@@ -55,7 +55,8 @@ _SCENE_PROBES: dict[str, str] = {
     "scene_interior": "an interior or indoor room photo",
     "scene_exterior": "an outdoor or exterior photo",
     "scene_golden_hour": "a photo taken at golden hour or sunset",
-    "scene_night": "a night time or astrophotography photo",
+    "scene_night": "a photo taken at night, evening, or after dark, including events, portraits, family, or street scenes",
+    "scene_astrophotography": "an astrophotography photo of the night sky, milky way, stars, or aurora borealis",
     "scene_studio": "a studio or controlled-light photo",
     "scene_action": "an action, sports, or motion photo",
     # Aesthetics and Style
