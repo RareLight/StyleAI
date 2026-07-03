@@ -125,7 +125,7 @@ _BROAD_GENRE_MAP: dict[str, str] = {
     "scene_architecture": "scene_architecture",
     "scene_studio": "scene_studio",
     "scene_interior": "scene_studio",
-    "scene_night": "scene_astrophotography",
+    "scene_night": "scene_night",
     "scene_astrophotography": "scene_astrophotography",
 }
 
@@ -137,7 +137,8 @@ _DYNAMIC_BUCKETS = {
     "scene_nature": "wildlife, animals, pets, macro, close-up, flowers, birds, insects, nature detail",
     "scene_architecture": "architecture, real estate, interior, exterior, city, urban, buildings, property",
     "scene_studio": "studio, product, food, commercial, controlled light, flash, still life, car, automotive",
-    "scene_astrophotography": "astrophotography, nightscape, night sky, milky way, aurora borealis, stars, star trails, dark",
+    "scene_night": "night time, evening, after dark, night event, night portrait, family evening, city lights, night street",
+    "scene_astrophotography": "astrophotography, nightscape, night sky, milky way, aurora borealis, stars, star trails, telescopes",
 }
 
 _DYNAMIC_GENRE_CACHE: dict[str, str] = {}
