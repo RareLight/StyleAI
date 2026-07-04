@@ -3492,6 +3492,12 @@ function SearchIndexAPI.addTrainingExample(photoId, filepath, developSettings, o
     if options.shutter_speed and options.shutter_speed ~= "" then
         table.insert(mimeChunks, { name = "shutter_speed", value = tostring(options.shutter_speed) })
     end
+    if options.rating and type(options.rating) == "number" then
+        table.insert(mimeChunks, { name = "rating", value = tostring(options.rating) })
+    end
+    if options.pick_status and type(options.pick_status) == "number" then
+        table.insert(mimeChunks, { name = "pick_status", value = tostring(options.pick_status) })
+    end
 
     if filepath and LrFileUtils.exists(filepath) then
         local filename = LrPathUtils.leafName(filepath)

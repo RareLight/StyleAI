@@ -36,11 +36,12 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
 
     def test_partial_tone_curve_preserved(self):
         # Simulate only Master tone curve exported
-        raw_settings = {
-            "ToneCurvePV2012": [0.0, 0.0, 128.0, 140.0, 255.0, 255.0]
-        }
+        raw_settings = {"ToneCurvePV2012": [0.0, 0.0, 128.0, 140.0, 255.0, 255.0]}
         canonical = normalize_develop_settings_for_style(raw_settings)
         self.assertIn("tone_curve", canonical)
         self.assertIn("point_curve", canonical["tone_curve"])
         self.assertIn("master", canonical["tone_curve"]["point_curve"])
-        self.assertEqual(canonical["tone_curve"]["point_curve"]["master"], [0.0, 0.0, 128.0, 140.0, 255.0, 255.0])
+        self.assertEqual(
+            canonical["tone_curve"]["point_curve"]["master"],
+            [0.0, 0.0, 128.0, 140.0, 255.0, 255.0],
+        )

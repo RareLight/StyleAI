@@ -376,6 +376,8 @@ LrTasks.startAsyncTask(function()
 					shutter_speed = exifOptions.shutter_speed,
 					image_bytes = imageBytes,
 					filepath = photo:getRawMetadata("path"),
+					rating = tonumber(photo:getRawMetadata("rating")) or 0,
+					pick_status = tonumber(photo:getRawMetadata("pickStatus")) or 0,
 				}
 				if options.userKeywords and options.userKeywords ~= "" then
 					example.user_keywords = options.userKeywords

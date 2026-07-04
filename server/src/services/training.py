@@ -721,7 +721,7 @@ def normalize_develop_settings_for_style(
         val = develop_settings.get(lr_key)
         if val is not None and isinstance(val, (int, float)):
             crop[canon_key] = round(float(val), 5)
-    
+
     if crop:
         canonical["crop"] = crop
 
@@ -751,6 +751,8 @@ def add_training_example(
     iso: float | None = None,
     aperture: float | None = None,
     shutter_speed: str | None = None,
+    rating: int = 0,
+    pick_status: int = 0,
     skip_discovery: bool = False,
     force_retrain: bool = True,
 ) -> None:
@@ -816,6 +818,8 @@ def add_training_example(
     # EXIF categorical fields
     metadata["focal_length_bucket"] = focal_length_bucket(focal_length)
     metadata["time_of_day_bucket"] = time_of_day_bucket(capture_unix=capture_time_unix)
+    if capture_time_unix is not None:
+        metadata["capture_time"] = float(capture_time_unix)
     if camera_make:
         metadata["camera_make"] = camera_make[:64]
     if camera_model:
@@ -828,6 +832,8 @@ def add_training_example(
         metadata["aperture"] = float(aperture)
     if shutter_speed:
         metadata["shutter_speed"] = str(shutter_speed)[:16]
+    metadata["rating"] = int(rating)
+    metadata["pick_status"] = int(pick_status)
 
     # Exposure metrics from JPEG preview
     if image_bytes:

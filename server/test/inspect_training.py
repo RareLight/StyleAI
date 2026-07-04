@@ -1,7 +1,9 @@
 import sys
 import os
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 import services.training as training_service
+
 
 def inspect():
     try:
@@ -23,9 +25,10 @@ def inspect():
         print("Unique Labels:")
         for l in labels:
             print(f"- {l}")
-            
+
     except Exception as e:
         print(f"Error: {e}")
+
 
 if __name__ == "__main__":
     inspect()

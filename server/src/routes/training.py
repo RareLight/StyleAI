@@ -144,6 +144,22 @@ def add_training_example():
     except (TypeError, ValueError):
         pass
 
+    rating: int = 0
+    try:
+        r_raw = request.form.get("rating")
+        if r_raw:
+            rating = int(r_raw)
+    except (TypeError, ValueError):
+        pass
+
+    pick_status: int = 0
+    try:
+        ps_raw = request.form.get("pick_status")
+        if ps_raw:
+            pick_status = int(ps_raw)
+    except (TypeError, ValueError):
+        pass
+
     # Compute CLIP embedding from uploaded image (best-effort).
     embedding = None
     image_bytes_data = None
@@ -196,6 +212,8 @@ def add_training_example():
             iso=iso,
             aperture=aperture,
             shutter_speed=shutter_speed,
+            rating=rating,
+            pick_status=pick_status,
         )
         count = training_service.get_training_count()
         response_data = {"status": "ok", "photo_id": photo_id, "total_count": count}
@@ -286,9 +304,15 @@ def add_training_batch():
         iso = item.get("iso")
         aperture = item.get("aperture")
         shutter_speed = item.get("shutter_speed")
+        rating = int(item.get("rating") or 0)
+        pick_status = int(item.get("pick_status") or 0)
 
         # Automatically partition HDR styles
-        if camera_profile and "HDR" in str(camera_profile) and not label.endswith("(HDR)"):
+        if (
+            camera_profile
+            and "HDR" in str(camera_profile)
+            and not label.endswith("(HDR)")
+        ):
             label = f"{label} (HDR)"
 
         image_bytes_b64 = item.get("image_bytes")
@@ -383,6 +407,8 @@ def add_training_batch():
                 iso=iso,
                 aperture=aperture,
                 shutter_speed=shutter_speed,
+                rating=rating,
+                pick_status=pick_status,
                 skip_discovery=True,
                 force_retrain=force_retrain,
             )

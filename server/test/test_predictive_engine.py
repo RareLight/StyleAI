@@ -98,3 +98,155 @@ def test_unflatten_canonical_settings_crop_averaging():
     assert round(recipe["crop"]["top"], 2) == 0.1
     assert round(recipe["crop"]["bottom"], 2) == 0.7
 
+
+def test_curate_training_cluster_burst_deduplication():
+    # Construct 4 photos in a burst (capture times within 10s, nearly identical embeddings)
+    emb_base = np.array([0.1] * 768)
+    emb_base = emb_base / np.linalg.norm(emb_base)
+
+    # Photo 1: 3 stars, not picked
+    meta1 = {"capture_time": 1000.0, "rating": 3, "pick_status": 0}
+    can1 = {"exposure": 0.5}
+
+    # Photo 2: 5 stars, not picked
+    meta2 = {"capture_time": 1002.0, "rating": 5, "pick_status": 0}
+    can2 = {"exposure": 0.6}
+
+    # Photo 3: 5 stars, picked (should win as single hero shot due to pick tie-breaker)
+    meta3 = {"capture_time": 1005.0, "rating": 5, "pick_status": 1}
+    can3 = {"exposure": 0.7}
+
+    # Photo 4: Separate scene 1 hour later (1000 + 3600), different embedding
+    emb_other = np.zeros(768)
+    emb_other[0] = 1.0
+    meta4 = {"capture_time": 4600.0, "rating": 4, "pick_status": 0}
+    can4 = {"exposure": 0.2}
+
+    valid_examples = [
+        (emb_base, meta1, can1),
+        (emb_base, meta2, can2),
+        (emb_base, meta3, can3),
+        (emb_other, meta4, can4),
+    ]
+
+    curated, weights = predictive_engine._curate_training_cluster(valid_examples)
+    assert len(curated) == 2
+    assert len(weights) == 2
+
+    # Verify the winner of the burst is Photo 3 (exposure 0.7)
+    assert curated[0][2]["exposure"] == 0.7
+    assert weights[0] == 1.0
+
+    # Verify separate scene is preserved
+    assert curated[1][2]["exposure"] == 0.2
+    assert weights[1] == 1.0
+
+
+def test_curate_training_cluster_density_weighting():
+    # When multiple photos tie on rating, pick status, and complexity, they share normalized density weight
+    emb = np.array([0.1] * 768)
+    emb = emb / np.linalg.norm(emb)
+
+    valid_examples = [
+        (
+            emb,
+            {"capture_time": 100.0, "rating": 5, "pick_status": 1},
+            {"exposure": 1.0},
+        ),
+        (
+            emb,
+            {"capture_time": 101.0, "rating": 5, "pick_status": 1},
+            {"exposure": 1.0},
+        ),
+    ]
+
+    curated, weights = predictive_engine._curate_training_cluster(valid_examples)
+    assert len(curated) == 2
+    assert weights[0] == 0.5
+    assert weights[1] == 0.5
+    assert sum(weights) == 1.0
+
+
+def test_weighted_pls_regression():
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    X = np.array([[0.0], [1.0], [2.0], [3.0]])
+    Y = np.array([[0.0], [1.0], [2.0], [3.0]])
+    weights = [1.0, 1.0, 1.0, 10.0]  # Heavily weight the last point
+
+    model = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "pls",
+                predictive_engine.WeightedPLSRegression(n_components=1, scale=False),
+            ),
+        ]
+    )
+    model.fit(X, Y, pls__sample_weight=weights)
+    pred = model.predict(np.array([[3.0]]))
+    assert pred.shape == (1, 1)
+
+
+def test_train_single_style_model_selection(monkeypatch):
+    from unittest.mock import MagicMock
+
+    mock_collection = MagicMock()
+    # Mock 20 examples (Pillar 2: 15 <= N < 50 -> WeightedPLSRegression)
+    ids_20 = [f"id_{i}" for i in range(20)]
+    metas_20 = [
+        {"canonical_settings": '{"exposure": 0.5}', "camera_profile": "Linear"}
+        for _ in range(20)
+    ]
+    embs_20 = [[0.1] * 768 for _ in range(20)]
+
+    mock_collection.get.return_value = {
+        "ids": ids_20,
+        "metadatas": metas_20,
+        "embeddings": embs_20,
+    }
+    monkeypatch.setattr(
+        predictive_engine.training_service,
+        "_training_collection",
+        mock_collection,
+    )
+
+    dumped_models = {}
+    monkeypatch.setattr(
+        "joblib.dump",
+        lambda obj, path: dumped_models.update({path: obj}),
+    )
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: MagicMock())
+
+    predictive_engine._train_single_style("style_pls", ids_20)
+    # Check that model was dumped and has 'pls' step
+    assert len(dumped_models) == 1
+    model = list(dumped_models.values())[0]
+    assert "pls" in model.named_steps
+    assert isinstance(
+        model.named_steps["pls"],
+        predictive_engine.WeightedPLSRegression,
+    )
+
+    # Now mock 55 examples (Pillar 3: N >= 50 -> ElasticNet)
+    dumped_models.clear()
+    ids_55 = [f"id_{i}" for i in range(55)]
+    metas_55 = [
+        {"canonical_settings": '{"exposure": 0.5}', "camera_profile": "Linear"}
+        for _ in range(55)
+    ]
+    embs_55 = [[0.1] * 768 for _ in range(55)]
+    mock_collection.get.return_value = {
+        "ids": ids_55,
+        "metadatas": metas_55,
+        "embeddings": embs_55,
+    }
+
+    predictive_engine._train_single_style("style_elasticnet", ids_55)
+    assert len(dumped_models) == 1
+    model_en = list(dumped_models.values())[0]
+    assert "elasticnet" in model_en.named_steps
+    from sklearn.linear_model import ElasticNet
+
+    assert isinstance(model_en.named_steps["elasticnet"], ElasticNet)

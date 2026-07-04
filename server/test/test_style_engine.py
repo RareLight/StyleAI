@@ -150,7 +150,11 @@ def test_finalize_recipe_interpolation():
 
 def test_interpolate_recipes_crop_fallback():
     # ex1 is cropped (right=0.8), ex2 is uncropped (no crop dict)
-    ex1 = {"canonical_settings": {"crop": {"left": 0.0, "right": 0.8, "top": 0.1, "bottom": 0.9, "angle": 0.0}}}
+    ex1 = {
+        "canonical_settings": {
+            "crop": {"left": 0.0, "right": 0.8, "top": 0.1, "bottom": 0.9, "angle": 0.0}
+        }
+    }
     ex2 = {"canonical_settings": {}}
     winners = [(ex1, 0.5), (ex2, 0.5)]
     res = interpolate_recipes(winners)
@@ -162,7 +166,11 @@ def test_interpolate_recipes_crop_fallback():
 
 def test_interpolate_recipes_tone_curve_fallback():
     # ex1 has a custom curve, ex2 has no curve (should default to linear)
-    ex1 = {"canonical_settings": {"tone_curve": {"point_curve": {"master": [0, 0, 128, 180, 255, 255]}}}}
+    ex1 = {
+        "canonical_settings": {
+            "tone_curve": {"point_curve": {"master": [0, 0, 128, 180, 255, 255]}}
+        }
+    }
     ex2 = {"canonical_settings": {}}
     winners = [(ex1, 0.5), (ex2, 0.5)]
     res = interpolate_recipes(winners)
@@ -179,4 +187,3 @@ def test_finalize_recipe_no_auto_wb():
     query_exposure = {"exp_warmth_proxy": 0.95}
     final_recipe = _finalize_recipe(recipe, query_exposure, {}, style_strength=1.0)
     assert final_recipe.get("white_balance") == "As Shot"
-
