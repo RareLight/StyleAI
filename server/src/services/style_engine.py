@@ -383,9 +383,9 @@ def interpolate_recipes(
         for crop_key, crop_val in crop_val_dict.items():
             if isinstance(crop_val, (int, float)):
                 composite_key = f"crop_{crop_key}"
-                num_fields[composite_key] = (
-                    num_fields.get(composite_key, 0.0) + weight * float(crop_val)
-                )
+                num_fields[composite_key] = num_fields.get(
+                    composite_key, 0.0
+                ) + weight * float(crop_val)
 
     blended: dict[str, Any] = {k: round(v, 1) for k, v in num_fields.items()}
 

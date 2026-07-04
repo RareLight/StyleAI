@@ -2,6 +2,7 @@ import sys
 from services.training import _training_collection
 from services.db import init_db
 
+
 def inspect():
     try:
         results = _training_collection.get(include=["metadatas"])
@@ -16,9 +17,10 @@ def inspect():
         print("Unique Camera Profiles:")
         for p in profiles:
             print(f"- {p}")
-            
+
     except Exception as e:
         print(f"Error: {e}")
+
 
 if __name__ == "__main__":
     inspect()

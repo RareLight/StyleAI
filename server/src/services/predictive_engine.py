@@ -8,10 +8,22 @@ from . import training as training_service
 from . import style_catalog as catalog_service
 
 from sklearn.pipeline import Pipeline
-from sklearn.linear_model import Ridge
-from sklearn.decomposition import PCA
+from sklearn.linear_model import ElasticNet
+from sklearn.cross_decomposition import PLSRegression
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
+
+
+class WeightedPLSRegression(PLSRegression):
+    """PLSRegression with sample weight support via row scaling."""
+
+    def fit(self, X, Y, sample_weight=None):
+        if sample_weight is not None:
+            sw_sqrt = np.sqrt(np.asarray(sample_weight))[:, None]
+            X = X * sw_sqrt
+            Y = Y * sw_sqrt
+        return super().fit(X, Y)
+
 
 if DB_PATH:
     MODEL_DIR = os.path.join(DB_PATH, "predictive_models")
@@ -20,9 +32,10 @@ else:
     MODEL_DIR = None
 
 
-# Minimum examples required to train a PCA + Ridge pipeline
-MIN_PCA_EXAMPLES = 20
-# Minimum examples required to train a direct Ridge pipeline
+# Minimum examples required to train a supervised PLS regression pipeline
+MIN_PCA_EXAMPLES = 15
+MIN_PLS_EXAMPLES = MIN_PCA_EXAMPLES
+# Minimum examples required to train an ElasticNet / direct Ridge pipeline
 MIN_DIRECT_EXAMPLES = 50
 
 # Features to extract from metadata
@@ -274,6 +287,138 @@ def _get_default_val(key: str) -> float:
     return 0.0
 
 
+def _curate_training_cluster(
+    valid_examples: list[tuple],
+) -> tuple[list[tuple], list[float]]:
+    """Cluster training examples into bursts and select relative hero shots with density weighting.
+
+    Returns:
+        curated_examples: List of (emb, meta, canonical) tuples.
+        sample_weights: List of float weights corresponding to each curated example.
+    """
+    if not valid_examples:
+        return [], []
+
+    n = len(valid_examples)
+    visited = [False] * n
+    clusters = []
+
+    # Extract timestamps and embeddings for clustering
+    timestamps = []
+    for _, meta, _ in valid_examples:
+        ct = meta.get("capture_time")
+        if ct is not None:
+            try:
+                timestamps.append(float(ct))
+                continue
+            except (ValueError, TypeError):
+                pass
+        # Fallback to captured_at string parsing if possible
+        cat_str = meta.get("captured_at")
+        if cat_str and isinstance(cat_str, str):
+            try:
+                from datetime import datetime
+
+                dt = datetime.strptime(cat_str[:19], "%Y-%m-%d %H:%M:%S")
+                timestamps.append(dt.timestamp())
+                continue
+            except Exception:
+                pass
+        timestamps.append(None)
+
+    for i in range(n):
+        if visited[i]:
+            continue
+        cluster_indices = [i]
+        visited[i] = True
+        emb_i = valid_examples[i][0]
+        norm_i = np.linalg.norm(emb_i)
+        t_i = timestamps[i]
+
+        for j in range(i + 1, n):
+            if visited[j]:
+                continue
+            emb_j = valid_examples[j][0]
+            norm_j = np.linalg.norm(emb_j)
+            t_j = timestamps[j]
+
+            # Check temporal window (delta <= 10 seconds) if both timestamps are present
+            time_close = False
+            if t_i is not None and t_j is not None:
+                if abs(t_i - t_j) <= 10.0:
+                    time_close = True
+            else:
+                # If timestamp is missing, rely strictly on visual similarity threshold
+                time_close = True
+
+            if not time_close:
+                continue
+
+            # Check cosine distance <= 0.05 (cosine similarity >= 0.95)
+            if norm_i > 0 and norm_j > 0:
+                cos_sim = np.dot(emb_i, emb_j) / (norm_i * norm_j)
+                cos_dist = 1.0 - cos_sim
+                if cos_dist <= 0.05:
+                    cluster_indices.append(j)
+                    visited[j] = True
+
+        clusters.append(cluster_indices)
+
+    curated_examples = []
+    sample_weights = []
+
+    for cluster_indices in clusters:
+        cluster_size = len(cluster_indices)
+        if cluster_size == 1:
+            curated_examples.append(valid_examples[cluster_indices[0]])
+            sample_weights.append(1.0)
+            continue
+
+        # Evaluate relative star ratings within the cluster
+        ratings = [
+            int(valid_examples[idx][1].get("rating", 0) or 0) for idx in cluster_indices
+        ]
+        max_rating = max(ratings)
+
+        # Filter to candidates matching the relative maximum rating
+        top_candidates = [
+            idx
+            for idx in cluster_indices
+            if int(valid_examples[idx][1].get("rating", 0) or 0) == max_rating
+        ]
+
+        if len(top_candidates) > 1:
+            # Tie-breaker 1: Pick Status == 1 (Picked/Flagged)
+            picked = [
+                idx
+                for idx in top_candidates
+                if int(valid_examples[idx][1].get("pick_status", 0) or 0) == 1
+            ]
+            if picked:
+                top_candidates = picked
+
+        if len(top_candidates) > 1:
+            # Tie-breaker 2: Develop setting variance / edit complexity
+            def _edit_complexity(idx):
+                canonical = valid_examples[idx][2]
+                return len(
+                    [
+                        k
+                        for k, v in canonical.items()
+                        if v != 0 and v != 0.0 and str(v) != ""
+                    ]
+                )
+
+            top_candidates.sort(key=lambda idx: _edit_complexity(idx), reverse=True)
+
+        weight_per_hero = 1.0 / len(top_candidates)
+        for idx in top_candidates:
+            curated_examples.append(valid_examples[idx])
+            sample_weights.append(weight_per_hero)
+
+    return curated_examples, sample_weights
+
+
 def _train_single_style(style_id: str, example_ids: list[str]):
     # Fetch embeddings and metadata from chroma
     try:
@@ -328,11 +473,6 @@ def _train_single_style(style_id: str, example_ids: list[str]):
     high_headroom_whites = []
 
     for emb, meta, canonical in valid_examples:
-        X_list.append(_extract_features(emb, meta))
-        # For missing targets in an example, use proper default (e.g. 1.0 for right/bottom crop, linear y=x for curves)
-        Y_row = [canonical.get(k, _get_default_val(k)) for k in target_keys]
-        Y_list.append(Y_row)
-
         is_hdr = "HDR" in str(meta.get("camera_profile", ""))
         if not is_hdr:
             sh = float(meta.get("shadow_headroom", 0.5))
@@ -362,15 +502,26 @@ def _train_single_style(style_id: str, example_ids: list[str]):
                 "max": max(vals),
             }
 
-    X = np.array(X_list, dtype=object)
-    Y = np.array(Y_list)
-
-    n_samples = len(X)
-    if n_samples < MIN_PCA_EXAMPLES:
+    # Apply Pillar 1: Burst Curation & Relative Hero Shot Weighting
+    curated_examples, sample_weights = _curate_training_cluster(valid_examples)
+    if not curated_examples or len(curated_examples) < MIN_PLS_EXAMPLES:
+        logger.info(
+            f"Skipping model training for style '{style_id}': only {len(curated_examples)} examples after burst curation (need {MIN_PLS_EXAMPLES})."
+        )
         return
 
+    for emb, meta, canonical in curated_examples:
+        X_list.append(_extract_features(emb, meta))
+        Y_row = [canonical.get(k, _get_default_val(k)) for k in target_keys]
+        Y_list.append(Y_row)
+
+    X = np.array(X_list, dtype=object)
+    Y = np.array(Y_list)
+    sample_weights = np.array(sample_weights, dtype=float)
+
+    n_samples = len(X)
     logger.info(
-        f"Training predictive model for style '{style_id}' with {n_samples} examples."
+        f"Training predictive model for style '{style_id}' with {n_samples} curated hero examples (from {len(valid_examples)} total)."
     )
 
     # Preprocessor: OneHotEncode the camera profile (column 0), Scale the rest
@@ -382,27 +533,31 @@ def _train_single_style(style_id: str, example_ids: list[str]):
         remainder="passthrough",
     )
 
-    # Select architecture based on data volume
+    # Select architecture based on curated data volume
     if n_samples >= MIN_DIRECT_EXAMPLES:
-        # Enough data for direct Ridge regression over 768+ dimensions
-        model = Pipeline([("preprocessor", preprocessor), ("ridge", Ridge(alpha=1.0))])
-        tier = "ml_direct"
-    else:
-        # 20-50 samples: Use PCA to prevent overfitting the 768d space
-        n_components = min(10, n_samples // 2)
-
-        # We only apply PCA to the numeric features, but for simplicity, we apply it to everything after scaling
+        # Pillar 3: N >= 50: Use ElasticNet (l1_ratio=0.2) for sparse feature selection over high-dimensional vision space
         model = Pipeline(
             [
                 ("preprocessor", preprocessor),
-                ("pca", PCA(n_components=n_components)),
-                ("ridge", Ridge(alpha=1.0)),
+                ("elasticnet", ElasticNet(alpha=0.1, l1_ratio=0.2, max_iter=2000)),
+            ]
+        )
+        tier = "ml_direct"
+        fit_params = {"elasticnet__sample_weight": sample_weights}
+    else:
+        # Pillar 2: 15 <= N < 50: Use WeightedPLSRegression to project collinear features into latent components
+        n_components = min(10, n_samples // 2)
+        model = Pipeline(
+            [
+                ("preprocessor", preprocessor),
+                ("pls", WeightedPLSRegression(n_components=n_components, scale=False)),
             ]
         )
         tier = "ml_pca"
+        fit_params = {"pls__sample_weight": sample_weights}
 
     try:
-        model.fit(X, Y)
+        model.fit(X, Y, **fit_params)
         joblib.dump(model, _get_model_path(style_id))
 
         meta_info = {
@@ -457,7 +612,9 @@ def predict_edits(
                 min_v = b.get("min")
                 max_v = b.get("max")
                 if min_v is not None and max_v is not None:
-                    flat_predictions[k] = max(float(min_v), min(float(max_v), flat_predictions[k]))
+                    flat_predictions[k] = max(
+                        float(min_v), min(float(max_v), flat_predictions[k])
+                    )
 
         # 2. Apply specific headroom clipping prevention if requested
         is_hdr = "HDR" in str(metadata.get("camera_profile", ""))

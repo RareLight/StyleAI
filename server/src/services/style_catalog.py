@@ -331,7 +331,7 @@ def discover_styles_from_examples(
         style_name = clean_genre
         if "HDR" in str(profile) and not style_name.endswith("(HDR)"):
             style_name = f"{style_name} (HDR)"
-            
+
         style_id = _slugify(f"{profile}_{genre}")
 
         style = {
