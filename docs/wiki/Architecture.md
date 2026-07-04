@@ -9,7 +9,7 @@ StyleAI leverages a split frontend/backend architecture to deliver local-first, 
 
 ### Key Architectural Shifts from Legacy Implementations
 1. **Vision Model Upgrade:** We replaced OpenCLIP with **SigLIP2** (`ViT-SO400M-16-SigLIP2-384`) for significantly better dense image understanding and zero-shot lighting classification.
-2. **Predictive ML vs. Generative LLMs:** Legacy implementations relied on LLMs to interpolate edit sliders. StyleAI shifted to mathematically robust ML logic (KNN and Ridge Regression via Scikit-Learn) for applying edits, reserving LLMs purely as a "Creative Fallback."
+2. **Predictive ML vs. Generative LLMs:** Legacy implementations relied on LLMs to interpolate edit sliders. StyleAI shifted to mathematically robust ML logic (KNN, Supervised Partial Least Squares, and Elastic Net Regression via Scikit-Learn) for applying edits, reserving LLMs purely as a "Creative Fallback."
 3. **Asynchronous Pipelining:** The Python backend uses ThreadPoolExecutors to parallelize CPU preprocessing (decoding, hashing) and GPU/Neural Engine inference, drastically speeding up bulk indexing.
 4. **Catalog Isolation:** A single StyleAI backend can serve multiple `.lrcat` files using soft-state `catalog_ids` tags in ChromaDB.
 
@@ -28,20 +28,23 @@ Builds the foundational search index and metadata repository.
 4. **Storage:** Vectors are pushed to the `photos` and `faces` collections in ChromaDB.
 
 ### B. Style Training Pipeline
-Allows the system to mathematically learn your personal grading style.
+Allows the system to mathematically learn your personal grading style without distortion from burst shooting or missing metadata.
 
-1. **Lightroom (Client):** Evaluates a completed photo edit, extracts the Lightroom Develop settings (Recipe), and sends it to the backend along with the JPEG proxy.
-2. **Exposure Analysis:** The backend uses SigLIP2 to categorize the lighting and extracts raw pixel metrics (`zone_deep_shadows`, `histogram_signature`). 
-3. **Isolated Storage:** The embedding, exposure metrics, and recipe are saved to the **strictly isolated** `training_examples` ChromaDB collection. *This isolation ensures you can safely purge your search index without losing your precious ML training data.*
+1. **Lightroom (Client):** Evaluates a completed photo edit, extracts the Lightroom Develop settings (Recipe) along with star rating and pick flags, and sends them to the backend along with the JPEG proxy.
+2. **Exposure Analysis:** The backend uses SigLIP2 to categorize the lighting and extracts raw pixel metrics (`zone_deep_shadows`, `histogram_signature`).
+3. **Burst Curation & Density Weighting (Pillar 1):** During training, photos captured within $\Delta t \le 10\text{s}$ with SigLIP2 cosine distance $\le 0.05$ are grouped into burst clusters. The backend selects relative hero shots matching the highest star rating within the cluster (using pick flags and edit complexity as tie-breakers). Surviving hero shots share normalized density weight ($w_i = 1.0 / |C|$).
+4. **Isolated Storage:** The embedding, exposure metrics, ratings, and recipe are saved to the **strictly isolated** `training_examples` ChromaDB collection. *This isolation ensures you can safely purge your search index without losing your precious ML training data.*
 
 ### C. AI Editing Pipeline
-Applies predictive edits to new photos.
+Applies predictive edits to new photos using dynamic regression architecture.
 
 1. **Lightroom (Client):** Renders a proxy of an *unedited* photo and POSTs to `/edit_base64`.
 2. **Evaluation:** The backend extracts the target's SigLIP2 embedding and exposure metrics.
 3. **Prediction Engine:**
-   - **High Volume (>20 examples):** Bypasses retrieval and uses Ridge Regression/PCA to infer slider values directly from the model.
-   - **Low Volume (<20 examples):** Queries `training_examples` for KNN matches based on visual and exposure distance, mathematically interpolating the resulting recipes.
+   - **High Volume ($N \ge 50$ examples - Pillar 3):** Uses **Elastic Net Regression** ($L_1$-ratio $=0.2$) with sample density weights to perform sparse feature selection over the 768d vision space and directly predict develop sliders.
+   - **Medium Volume ($15 \le N < 50$ examples - Pillar 2):** Uses supervised **Partial Least Squares (`WeightedPLSRegression`)** with row scaling by $\sqrt{w_i}$ to project collinear vision embeddings and develop recipes into latent components that maximize predictive covariance.
+   - **Low Volume ($N < 15$ examples):** Queries `training_examples` for KNN matches based on visual and exposure distance, mathematically interpolating the resulting recipes using linear interpolation ($\text{start} + \text{strength} \times (\text{target} - \text{start})$).
+   - **Universal Clamping:** All slider predictions are strictly clamped to learned training boundaries (`slider_bounds`), preventing linear extrapolation on unusual lighting.
    - **Style Override:** Users can explicitly force a specific style profile, bypassing similarity searches.
    - **Generative Fallback:** If the ML engine has zero confidence, the system falls back to an LLM (if enabled) for a zero-shot creative edit.
 

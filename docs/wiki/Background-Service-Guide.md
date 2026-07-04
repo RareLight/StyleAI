@@ -10,7 +10,7 @@ For configuration settings, dependency management, and architecture details, ref
 
 The background service is responsible for:
 - **Image Indexing:** Offloading heavy ML workloads (like SigLIP2 and InsightFace processing) away from the Lightroom UI using asynchronous background threads.
-- **Predictive AI Editing:** Using mathematical models (Ridge Regression, KNN) to locally infer Lightroom develop settings based on learned signature styles.
+- **Predictive AI Editing:** Using mathematical models (KNN, Supervised Partial Least Squares, Elastic Net Regression) to locally infer Lightroom develop settings based on burst-curated signature styles.
 - **Semantic Search:** Executing fast, vector-based similarity searches using ChromaDB.
 - **Metadata Persistence:** Keeping a high-performance secondary SQLite database for tags, face matching, style training, and other AI-generated text.
 - **Face & Person APIs:** Processing and matching facial data to build identity maps over time.

@@ -40,7 +40,7 @@ StyleAI now uses a custom, lightweight Python migration engine to manage SQLite 
 
 With the shift away from generative models to mathematically robust machine learning for local edits, the architecture is now strictly bifurcated:
 
-- **Predictive ML (Core):** Powered by local `scikit-learn` algorithms (KNN, Ridge Regression) operating on SigLIP2 dense embeddings and raw exposure pixel metrics. This is the fast, primary method for style interpolation.
+- **Predictive ML (Core):** Powered by local `scikit-learn` algorithms (KNN, Supervised Partial Least Squares, Elastic Net Regression) operating on SigLIP2 dense embeddings, burst-curated density weights, and raw exposure pixel metrics. This is the fast, primary method for style interpolation and slider prediction.
 - **Generative LLMs (Fallback/Metadata):** LLMs are now exclusively used for zero-shot "Creative" fallback edits and generating semantic metadata (auto-tagging). The backend remains provider-agnostic. All providers inherit from `LLMProvider(ABC)`. To add a new provider (e.g. Anthropic Claude), simply subclass `LLMProvider` and implement `generate_metadata` and `test_connection`.
 
 ## 5. Security & Credentials

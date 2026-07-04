@@ -134,4 +134,12 @@ Dependencies are managed exclusively by [uv](https://docs.astral.sh/uv/). Do not
   - To prevent HDR edits from corrupting SDR style predictions, the `+ HDR` suffix is automatically appended to the camera profile name for HDR photos.
   - HDR Brackets (`-2EV`, `+2EV`) are used EXCLUSIVELY by the Generative LLM fallback pipeline.
 - **White Balance**: Categorical WB ("As Shot" vs "Custom") is predicted as a scalar probability (`is_custom`). During recipe reconstruction, the engine enforces a strict threshold (0.7) to favor "As Shot" unless the AI is highly confident (70%+) that the user would apply a custom WB override in that specific lighting scenario.
-- **Crop Handling**: The ML engine predicts cropping by normalizing the aspect ratio (`width = height`) to prevent the system from predicting distorted or non-proportional crops.
+- **Crop Handling**: The ML engine predicts cropping by normalizing the aspect ratio (`width = height`) by averaging (`avg_dim = (width + height) / 2.0`) to prevent predicting distorted crops without discarding crop bounding boxes.
+- **Unified 3-Pillar Training Curation & Regression**:
+  - **Pillar 1 (Burst Curation & Weighting)**: During style training, photos with capture times $\Delta t \le 10\text{s}$ and SigLIP2 cosine distance $\le 0.05$ are automatically clustered into bursts. Hero shots are selected based on highest relative star rating within the cluster, breaking ties with Pick Flags (`pick_status == 1`) and edit complexity. Surviving hero shots share normalized cluster density weight ($w_i = 1.0 / |C|$).
+  - **Pillar 2 (Small Datasets, $15 \le N < 50$)**: Uses supervised **Partial Least Squares (`WeightedPLSRegression`)** instead of unsupervised PCA. Row scaling ($X \odot \sqrt{w}, Y \odot \sqrt{w}$) is applied prior to NIPALS decomposition to support sample weights.
+  - **Pillar 3 (Large Datasets, $N \ge 50$)**: Uses **Elastic Net (`ElasticNet`)** with $L_1$-ratio $=0.2$ and $\alpha=0.1$ for sparse feature selection over high-dimensional vision space.
+- **Tonal Math & Clamping**:
+  - All regression targets use true mathematical defaults when missing ($1.0$ for right/bottom crop boundaries, $50.0$ for color grading blending, and linear $y=x$ control points for point curves).
+  - Slider predictions are universally clamped to learned bounds (`slider_bounds`) recorded during training.
+  - Recipe blending uses true linear interpolation ($\text{start} + \text{strength} \times (\text{target} - \text{start})$) rather than additive stacking.
