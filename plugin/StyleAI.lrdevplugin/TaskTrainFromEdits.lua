@@ -467,12 +467,10 @@ LrTasks.startAsyncTask(function()
 				local weakest = styles[1]
 				local weakestCount = tonumber(weakest.example_count) or 0
 				local name = weakest.style_name or weakest.genre or "one of your styles"
-				if weakestCount < 5 then
-					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMore=Tip: Your '^1' style only has ^2 examples (🔴 Undertrained). For the best AI edit results, try to provide at least 5-10 examples for this style.", name, tostring(weakestCount))
-				elseif weakestCount < 10 then
-					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendGood=Tip: Your '^1' style has ^2 examples (🟡 Good). Adding a few more examples will make it even stronger.", name, tostring(weakestCount))
-				elseif weakestCount < 20 then
-					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendStrong=Tip: Your styles look 🟢 Strong! The AI has a robust understanding of your editing preferences.")
+				if weakestCount < 3 then
+					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMore=Tip: Your '^1' style only has ^2 examples (🔴 Undertrained). For the best AI edit results, try to provide at least 15 examples for this style to unlock Supervised PLS regression.", name, tostring(weakestCount))
+				elseif weakestCount < 15 then
+					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendGood=Tip: Your '^1' style has ^2 examples (🟡 Basic). Adding more examples will unlock Supervised PLS regression at 15 examples.", name, tostring(weakestCount))
 				elseif weakestCount < 50 then
 					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLPCA=Tip: Your styles look ⭐️ ML Predictive (Good)! The AI has trained a personalized local model for your edits.")
 				else

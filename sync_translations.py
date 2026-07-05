@@ -63,17 +63,22 @@ def sync_translations(lua_dir, target_path, base_strings=None):
 
         val = existing_strings.get(key)
         
-        # For EN, if missing, use extracted default
+        # For EN, always use extracted default as source of truth if present
         if not base_strings:
-            if not val or val == "":
+            if key in extracted_keys and extracted_keys[key]:
+                val = extracted_keys[key]
+            elif not val or val == "":
                 val = extracted_keys.get(key) or ""
         else:
-            # For non-EN, if missing, use EN value as placeholder (or empty)
-            if not val or val == "":
-                # If the DE/FR value was missing, we can see if it was in EN
-                val = base_strings.get(key) or ""
+            # For non-EN, if missing or if it's a classification/recommendation string that needs sync, use EN value
+            if not val or val == "" or "Strength" in key or "Recommend" in key or "UpgradeAssistant" in key:
+                val = base_strings.get(key) or val or ""
         
-        val = val.replace('"', '\\"')
+        if val:
+            val = re.sub(r'\\+"', '"', val)
+            val = val.replace('"', '\\"')
+        else:
+            val = ""
         new_content.append(f'"{key}" = "{val}"')
     
     output = '\n'.join(new_content)
