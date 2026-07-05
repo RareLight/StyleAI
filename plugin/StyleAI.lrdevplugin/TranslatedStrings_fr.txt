@@ -89,7 +89,7 @@
 "$$$/StyleAI/AnalyzeAndIndex/ProgressCount" = "^1 photos à traiter"
 "$$$/StyleAI/AnalyzeAndIndex/ProgressTitle" = "Traitement des photos..."
 "$$$/StyleAI/AnalyzeAndIndex/RegenerateMetadata" = "Régénérer toutes les données (écraser)"
-"$$$/StyleAI/AnalyzeAndIndex/RegenerateWithDeltaMessage" = "Vous avez sélectionné \\\\\\\\\\\\\\\\\\\\\\\\\"Photos nouvelles ou non traitées\\\\\\\\\\\\\\\\\\\\\\\\\" mais \\\\\\\\\\\\\\\\\\\\\\\\\"Régénérer toutes les données\\\\\\\\\\\\\\\\\\\\\\\\\" est également activé. Toutes les photos seront traitées — le filtre delta n'a aucun effet. Continuer ?"
+"$$$/StyleAI/AnalyzeAndIndex/RegenerateWithDeltaMessage" = "Vous avez sélectionné \\\\\\\\\\\\\\\\\\\\\\\\\\"Photos nouvelles ou non traitées\\\\\\\\\\\\\\\\\\\\\\\\\\" mais \\\\\\\\\\\\\\\\\\\\\\\\\\"Régénérer toutes les données\\\\\\\\\\\\\\\\\\\\\\\\\\" est également activé. Toutes les photos seront traitées — le filtre delta n'a aucun effet. Continuer ?"
 "$$$/StyleAI/AnalyzeAndIndex/RegenerateWithDeltaTitle" = "Conflit de sélection"
 "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalog" = "Enregistrer dans le catalogue"
 "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalogTooltip" = "If unchecked, metadata is only stored in the backend AI database."

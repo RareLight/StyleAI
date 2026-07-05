@@ -457,10 +457,10 @@ LrTasks.startAsyncTask(function()
 				end
 
 				if #upgradedMLDirect > 0 then
-					upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLDirect=🎉 ^1 style(s) upgraded to ⭐️ ML Predictive (Best).", tostring(#upgradedMLDirect))
+					upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLDirect=🎉 ^1 style(s) upgraded to 🌟 ML Predictive (Best).", tostring(#upgradedMLDirect))
 				end
 				if #upgradedMLPCA > 0 then
-					upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLPCA=🎉 ^1 style(s) upgraded to 🌟 ML Predictive (Good).", tostring(#upgradedMLPCA))
+					upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLPCA=🎉 ^1 style(s) upgraded to ⭐️ ML Predictive (Good).", tostring(#upgradedMLPCA))
 				end
 
 				table.sort(styles, function(a, b) return (tonumber(a.example_count) or 0) < (tonumber(b.example_count) or 0) end)
@@ -474,9 +474,9 @@ LrTasks.startAsyncTask(function()
 				elseif weakestCount < 20 then
 					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendStrong=Tip: Your styles look 🟢 Strong! The AI has a robust understanding of your editing preferences.")
 				elseif weakestCount < 50 then
-					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLPCA=Tip: Your styles look 🌟 ML Predictive (Good)! The AI has trained a personalized local model for your edits.")
+					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLPCA=Tip: Your styles look ⭐️ ML Predictive (Good)! The AI has trained a personalized local model for your edits.")
 				else
-					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLBest=Tip: Your styles look ⭐️ ML Predictive (Best)! The AI has trained a highly robust predictive model for your edits.")
+					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLBest=Tip: Your styles look 🌟 ML Predictive (Best)! The AI has trained a highly robust predictive model for your edits.")
 				end
 			end
 		end
