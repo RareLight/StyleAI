@@ -71,9 +71,9 @@ LrTasks.startAsyncTask(function()
 			local count = tonumber(s.example_count) or 0
 			props.detailCount = tostring(count)
 			if count >= 50 then
-				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthML=⭐️ ML Predictive (Best)")
+				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthML=🌟 ML Predictive (Best)")
 			elseif count >= 20 then
-				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthMLPCA=🌟 ML Predictive (Good)")
+				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthMLPCA=⭐️ ML Predictive (Good)")
 			elseif count >= 10 then
 				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthStrong=🟢 Strong")
 			elseif count >= 3 then
