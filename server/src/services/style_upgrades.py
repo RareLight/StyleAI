@@ -54,59 +54,64 @@ def _farthest_point_sampling(
     if not candidates or target_count <= 0:
         return []
 
-    selected_ids: list[str] = []
-    selected_embs: list[np.ndarray] = [
+    # Prepare normalized candidate matrix C_mat
+    raw_embs = [np.asarray(c[1], dtype=np.float32) for c in candidates]
+    C_mat = np.array(raw_embs, dtype=np.float32)
+    if C_mat.ndim == 1:
+        C_mat = C_mat.reshape(1, -1)
+    norms = np.linalg.norm(C_mat, axis=1, keepdims=True)
+    norms[norms == 0.0] = 1.0
+    C_mat = C_mat / norms
+
+    # Prepare hero scores
+    h_scores = np.array([_hero_score(c[2]) for c in candidates], dtype=np.float32)
+
+    # Prepare existing normalized embeddings matrix E_mat
+    valid_existing = [
         np.asarray(e, dtype=np.float32)
         for e in existing_embeddings
         if e is not None and len(e) > 0
     ]
+    if valid_existing:
+        E_mat = np.array(valid_existing, dtype=np.float32)
+        if E_mat.ndim == 1:
+            E_mat = E_mat.reshape(1, -1)
+        e_norms = np.linalg.norm(E_mat, axis=1, keepdims=True)
+        e_norms[e_norms == 0.0] = 1.0
+        E_mat = E_mat / e_norms
+        # Compute min distances from each candidate to any existing embedding
+        sims = np.dot(C_mat, E_mat.T)
+        sims = np.clip(sims, -1.0, 1.0)
+        min_dists = 1.0 - np.max(sims, axis=1)
+    else:
+        min_dists = np.ones(len(candidates), dtype=np.float32)
 
-    pool = list(candidates)
+    selected_ids: list[str] = []
+    selected_indices: set[int] = set()
 
-    while len(selected_ids) < target_count and pool:
-        best_idx = -1
-        best_score = -1e9
+    for _ in range(target_count):
+        # Combine distance with hero score
+        div_scores = min_dists + 0.05 * h_scores
+        # Mask out already selected
+        for idx in selected_indices:
+            div_scores[idx] = -1e9
 
-        for idx, (pid, emb_raw, meta) in enumerate(pool):
-            emb = np.asarray(emb_raw, dtype=np.float32)
-            if emb.size == 0 or np.allclose(emb, 0.0):
-                continue
-
-            if not selected_embs:
-                # If no existing embeddings, prioritize by hero score
-                d_min = 1.0
-            else:
-                # Calculate min distance to any selected/existing embedding
-                d_min = 1e9
-                norm_c = np.linalg.norm(emb)
-                if norm_c == 0.0:
-                    continue
-                for s_emb in selected_embs:
-                    norm_s = np.linalg.norm(s_emb)
-                    if norm_s == 0.0:
-                        continue
-                    sim = float(np.dot(emb, s_emb) / (norm_c * norm_s))
-                    sim = max(-1.0, min(1.0, sim))
-                    dist = 1.0 - sim
-                    if dist < d_min:
-                        d_min = dist
-
-            h_score = _hero_score(meta)
-            # Combine Max-Min diversity distance with hero score
-            diversity_score = d_min + 0.05 * h_score
-
-            if diversity_score > best_score:
-                best_score = diversity_score
-                best_idx = idx
-
-        if best_idx == -1:
+        best_idx = int(np.argmax(div_scores))
+        if div_scores[best_idx] <= -1e8:
             break
 
-        chosen_pid, chosen_emb, _ = pool.pop(best_idx)
-        selected_ids.append(chosen_pid)
-        chosen_arr = np.asarray(chosen_emb, dtype=np.float32)
-        if chosen_arr.size > 0 and not np.allclose(chosen_arr, 0.0):
-            selected_embs.append(chosen_arr)
+        selected_indices.add(best_idx)
+        selected_ids.append(candidates[best_idx][0])
+
+        if len(selected_ids) == target_count:
+            break
+
+        # Update min_dists with distance to the newly chosen embedding
+        chosen_vec = C_mat[best_idx]
+        new_sims = np.dot(C_mat, chosen_vec)
+        new_sims = np.clip(new_sims, -1.0, 1.0)
+        new_dists = 1.0 - new_sims
+        min_dists = np.minimum(min_dists, new_dists)
 
     return selected_ids
 
@@ -155,9 +160,15 @@ def get_style_upgrade_recommendations(
             res = chroma_service.collection.get(
                 include=["embeddings", "metadatas"], limit=50_000
             )
-            p_ids = res.get("ids") or []
-            p_embs = res.get("embeddings") or []
-            p_metas = res.get("metadatas") or []
+            p_ids = res.get("ids")
+            if p_ids is None:
+                p_ids = []
+            p_embs = res.get("embeddings")
+            if p_embs is None:
+                p_embs = []
+            p_metas = res.get("metadatas")
+            if p_metas is None:
+                p_metas = []
             for i, pid in enumerate(p_ids):
                 emb = p_embs[i] if i < len(p_embs) else None
                 meta = dict(p_metas[i]) if i < len(p_metas) and p_metas[i] else {}
@@ -168,6 +179,7 @@ def get_style_upgrade_recommendations(
                 f"Failed to pre-fetch image embeddings pool: {e}", exc_info=True
             )
 
+    pool_emb_map = {pid: emb for pid, emb, _ in all_photos_pool}
     results_list: list[dict[str, Any]] = []
 
     for style in styles:
@@ -202,14 +214,22 @@ def get_style_upgrade_recommendations(
             existing_ids = {ex["photo_id"] for ex in existing_examples}
 
             # Get embeddings for existing examples
-            existing_embeddings: list[Any] = []
-            for ex_id in existing_ids:
-                try:
-                    img_data = chroma_service.get_image(ex_id)
-                    if img_data and img_data.get("embeddings"):
-                        existing_embeddings.append(img_data["embeddings"][0])
-                except Exception:
-                    pass
+            existing_embeddings: list[Any] = [
+                pool_emb_map[ex_id] for ex_id in existing_ids if ex_id in pool_emb_map
+            ]
+            missing_ex_ids = existing_ids - set(pool_emb_map.keys())
+            if missing_ex_ids:
+                for ex_id in missing_ex_ids:
+                    try:
+                        img_data = chroma_service.get_image(ex_id)
+                        if (
+                            img_data
+                            and img_data.get("embeddings") is not None
+                            and len(img_data["embeddings"]) > 0
+                        ):
+                            existing_embeddings.append(img_data["embeddings"][0])
+                    except Exception:
+                        pass
 
             # Filter candidates from pool
             is_hdr_style = "HDR" in camera_profile
@@ -246,7 +266,8 @@ def get_style_upgrade_recommendations(
 
                 valid_candidates.append((pid, emb, meta))
 
-            # Step B: Within candidate pool, cluster bursts and pick hero shots
+            # Step B: Within candidate pool, sort by capture time and cluster bursts
+            valid_candidates.sort(key=lambda c: (c[2].get("capture_time") or 0.0, c[0]))
             surviving_heroes: list[tuple[str, Any, dict[str, Any]]] = []
             clustered_pids: set[str] = set()
 
@@ -256,7 +277,6 @@ def get_style_upgrade_recommendations(
 
                 cluster = [(pid_a, emb_a, meta_a)]
                 clustered_pids.add(pid_a)
-
                 time_a = meta_a.get("capture_time")
 
                 for j in range(i + 1, len(valid_candidates)):
@@ -264,21 +284,20 @@ def get_style_upgrade_recommendations(
                     if pid_b in clustered_pids:
                         continue
 
+                    time_b = meta_b.get("capture_time")
+                    if time_a is not None and time_b is not None:
+                        try:
+                            if float(time_b) - float(time_a) > 10.0:
+                                break
+                        except (TypeError, ValueError):
+                            pass
+                    elif j - i > 10:
+                        break
+
                     dist = chroma_service._cosine_distance(emb_a, emb_b)
                     if dist is not None and dist <= 0.05:
-                        # Check time delta if timestamps available
-                        time_b = meta_b.get("capture_time")
-                        if time_a is not None and time_b is not None:
-                            try:
-                                if abs(float(time_a) - float(time_b)) <= 10.0:
-                                    cluster.append((pid_b, emb_b, meta_b))
-                                    clustered_pids.add(pid_b)
-                            except (TypeError, ValueError):
-                                cluster.append((pid_b, emb_b, meta_b))
-                                clustered_pids.add(pid_b)
-                        else:
-                            cluster.append((pid_b, emb_b, meta_b))
-                            clustered_pids.add(pid_b)
+                        cluster.append((pid_b, emb_b, meta_b))
+                        clustered_pids.add(pid_b)
 
                 # Pick hero shot with highest hero score in cluster
                 best_hero = max(cluster, key=lambda c: _hero_score(c[2]))

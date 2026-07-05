@@ -72,8 +72,18 @@ LrTasks.startAsyncTask(function()
 			local rawIdx = props.selectedStyleIndex
 			local idx = tonumber(rawIdx)
 			if type(rawIdx) == "table" then
-				if rawIdx.value then idx = tonumber(rawIdx.value)
-				elseif rawIdx[1] ~= nil then idx = tonumber(rawIdx[1]) end
+				if rawIdx.value then
+					idx = tonumber(rawIdx.value)
+				elseif rawIdx[1] ~= nil then
+					idx = tonumber(rawIdx[1])
+				else
+					for _, item in ipairs(props.listItems or {}) do
+						if item == rawIdx or item.title == rawIdx.title then
+							idx = item.value
+							break
+						end
+					end
+				end
 			end
 			if not idx or idx < 1 or not props.styles or idx > #props.styles then
 				props.detailName = LOC("$$$/StyleAI/UpgradeAssistant/SelectPrompt=Select a style to view details.")
@@ -92,11 +102,15 @@ LrTasks.startAsyncTask(function()
 			props.detailProfile = string.format(LOC("$$$/StyleAI/UpgradeAssistant/ProfileFmt=Camera Profile: %s"), s.camera_profile or "Default")
 			
 			local current = tonumber(s.current_count) or 0
-			local tierName = "Pillar 1 (PCA Baseline)"
+			local tierName = "🔴 Undertrained / Pillar 1 (PCA Baseline)"
 			if current >= 50 then
-				tierName = "Pillar 3 (Elastic Net - Best)"
-			elseif current >= 15 then
-				tierName = "Pillar 2 (Supervised PLS - Good)"
+				tierName = "🌟 ML Predictive (Best) / Pillar 3 (Elastic Net)"
+			elseif current >= 20 then
+				tierName = "⭐️ ML Predictive (Good) / Pillar 3 (Elastic Net)"
+			elseif current >= 10 then
+				tierName = "🟢 Strong / Pillar 2 (Supervised PLS)"
+			elseif current >= 3 then
+				tierName = "🟡 Good / Pillar 1 (PCA Baseline)"
 			end
 			props.detailTier = string.format(LOC("$$$/StyleAI/UpgradeAssistant/TierFmt=Current ML Tier: %s (%d examples)"), tierName, current)
 
@@ -127,14 +141,19 @@ LrTasks.startAsyncTask(function()
 
 		local items = {}
 		for i, s in ipairs(styles) do
-			local badge = "🔴 N=" .. tostring(s.current_count or 0)
-			if (s.current_count or 0) >= 50 then
-				badge = "🌟 Best (N=" .. tostring(s.current_count) .. ")"
-			elseif (s.current_count or 0) >= 15 then
-				badge = "⭐️ Good (N=" .. tostring(s.current_count) .. ")"
+			local count = tonumber(s.current_count) or 0
+			local badge = "🔴 Undertrained"
+			if count >= 50 then
+				badge = "🌟 ML Predictive (Best)"
+			elseif count >= 20 then
+				badge = "⭐️ ML Predictive (Good)"
+			elseif count >= 10 then
+				badge = "🟢 Strong"
+			elseif count >= 3 then
+				badge = "🟡 Good"
 			end
 			local recCount = #(s.recommended_photo_ids or {})
-			local label = string.format("%s • %s [%s] (+%d recs)", s.style_name or "Unknown", s.camera_profile or "Default", badge, recCount)
+			local label = string.format("%s • %s [%s • N=%d] (+%d recs)", s.style_name or "Unknown", s.camera_profile or "Default", badge, count, recCount)
 			table.insert(items, { title = label, value = i })
 		end
 		props.listItems = items
@@ -143,9 +162,11 @@ LrTasks.startAsyncTask(function()
 		else
 			props.selectedStyleIndex = 0
 		end
+		updateDetailView()
 
 		local function buildDialog()
 			return f:column({
+				bind_to_object = props,
 				spacing = f:control_spacing(),
 				f:group_box({
 					title = LOC("$$$/StyleAI/UpgradeAssistant/DialogSubTitle=Style Upgrade Recommendations"),
@@ -161,22 +182,22 @@ LrTasks.startAsyncTask(function()
                                 value = bind("selectedStyleIndex"),
                                 allows_multiple_selection = false,
                                 height_in_lines = 12,
-                                width = 360,
+                                width = 400,
 							}),
 						}),
 						f:column({
 							spacing = f:control_spacing(),
 							f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/DetailsHeader=Upgrade Details:"), font = "<system/bold>" }),
-							f:static_text({ title = bind("detailName"), font = "<system/bold>", width = 360 }),
-							f:static_text({ title = bind("detailProfile"), width = 360 }),
-							f:static_text({ title = bind("detailTier"), width = 360 }),
-							f:static_text({ title = bind("detailNeeded"), width = 360, font = "<system/bold>" }),
-							f:static_text({ title = bind("detailExplanation"), width_in_chars = 45, height_in_lines = 5, wrap = true }),
+							f:static_text({ title = bind("detailName"), font = "<system/bold>", width = 400 }),
+							f:static_text({ title = bind("detailProfile"), width = 400 }),
+							f:static_text({ title = bind("detailTier"), width = 400 }),
+							f:static_text({ title = bind("detailNeeded"), width = 400, font = "<system/bold>" }),
+							f:static_text({ title = bind("detailExplanation"), width = 400, height_in_lines = 5, wrap = true }),
 							f:spacer({ height = 10 }),
 							f:push_button({
 								title = bind("detailButtonTitle"),
 								enabled = bind("detailButtonEnabled"),
-								width = 360,
+								width = 400,
 								action = function()
 									if not props.detailRecommendedIds or #props.detailRecommendedIds == 0 then
 										return
