@@ -202,29 +202,30 @@ LrTasks.startAsyncTask(function()
 									if not props.detailRecommendedIds or #props.detailRecommendedIds == 0 then
 										return
 									end
-									local selectProgress = LrProgressScope({
-										title = LOC("$$$/StyleAI/UpgradeAssistant/SelectingProgress=Selecting photos in Lightroom Library...")
-									})
-									selectProgress:setIndeterminate()
-									local photos = SearchIndexAPI.findPhotosByPhotoIds(props.detailRecommendedIds)
-									selectProgress:done()
+									LrTasks.startAsyncTask(function()
+										local selectProgress = LrProgressScope({
+											title = LOC("$$$/StyleAI/UpgradeAssistant/SelectingProgress=Selecting photos in Lightroom Library...")
+										})
+										local photos = SearchIndexAPI.findPhotosByPhotoIds(props.detailRecommendedIds, selectProgress)
+										selectProgress:done()
 
-									if #photos > 0 then
-										local catalog = LrApplication.activeCatalog()
-										catalog:setSelectedPhotos(photos[1], photos)
-										LrDialogs.message(
-											LOC("$$$/StyleAI/UpgradeAssistant/SelectedTitle=Photos Selected"),
-											string.format(LOC("$$$/StyleAI/UpgradeAssistant/SelectedMsg=Selected %d recommended photos in Lightroom Library. You can now review them or go to File > Plug-in Extras > Learn My Styles to train!"), #photos),
-											"info"
-										)
-										LrDialogs.stopModalWithResult(ctx, "ok")
-									else
-										LrDialogs.message(
-											LOC("$$$/StyleAI/UpgradeAssistant/NoneFound=No Photos Found"),
-											LOC("$$$/StyleAI/UpgradeAssistant/NoneFoundMsg=Could not locate the recommended photos in the active catalog. They may have been deleted or moved."),
-											"warning"
-										)
-									end
+										if #photos > 0 then
+											local catalog = LrApplication.activeCatalog()
+											catalog:setSelectedPhotos(photos[1], photos)
+											LrDialogs.message(
+												LOC("$$$/StyleAI/UpgradeAssistant/SelectedTitle=Photos Selected"),
+												string.format(LOC("$$$/StyleAI/UpgradeAssistant/SelectedMsg=Selected %d recommended photos in Lightroom Library. You can now review them or go to File > Plug-in Extras > Learn My Styles to train!"), #photos),
+												"info"
+											)
+											LrDialogs.stopModalWithResult(ctx, "ok")
+										else
+											LrDialogs.message(
+												LOC("$$$/StyleAI/UpgradeAssistant/NoneFound=No Photos Found"),
+												LOC("$$$/StyleAI/UpgradeAssistant/NoneFoundMsg=Could not locate the recommended photos in the active catalog. They may have been deleted or moved."),
+												"warning"
+											)
+										end
+									end)
 								end
 							}),
 						}),

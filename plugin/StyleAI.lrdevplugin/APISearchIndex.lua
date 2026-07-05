@@ -446,7 +446,7 @@ function SearchIndexAPI.findPhotoByPhotoId(photoId)
     return nil
 end
 
-function SearchIndexAPI.findPhotosByPhotoIds(photoIds)
+function SearchIndexAPI.findPhotosByPhotoIds(photoIds, progressScope)
     local photos = {}
     if type(photoIds) ~= "table" or #photoIds == 0 then
         return photos
@@ -472,16 +472,34 @@ function SearchIndexAPI.findPhotosByPhotoIds(photoIds)
     end
 
     local photoById = {}
+    local foundCount = 0
+    local targetCount = #photoIds
     local startedAt = LrDate.currentTime()
     local allPhotos = catalog:getAllPhotos()
     local allPhotosElapsed = math.floor((LrDate.currentTime() - startedAt) * 1000)
     log:trace("findPhotosByPhotoIds: catalog:getAllPhotos() returned " .. tostring(#allPhotos) ..
         " photos in " .. tostring(allPhotosElapsed) .. "ms")
 
-    for _, photo in ipairs(allPhotos) do
+    for i, photo in ipairs(allPhotos) do
+        if progressScope and progressScope:isCanceled() then
+            break
+        end
+        if i % 50 == 0 then
+            if progressScope then
+                progressScope:setPortionComplete(i, #allPhotos)
+                progressScope:setCaption(string.format("Scanning catalog (%d/%d found)...", foundCount, targetCount))
+            end
+            LrTasks.yield()
+            LrTasks.sleep(0.01)
+        end
+
         local cachedId = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoId")
         if cachedId and idSet[cachedId] and not photoById[cachedId] then
             photoById[cachedId] = photo
+            foundCount = foundCount + 1
+            if foundCount >= targetCount then
+                break
+            end
         end
     end
 
