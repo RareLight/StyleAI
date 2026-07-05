@@ -237,3 +237,38 @@ def test_upgrade_recommendations_sorted_by_needed_count_ascending(mocker):
 
     assert styles[2]["style_id"] == "needs-14"
     assert styles[2]["needed_count"] == 14
+
+
+def test_chromadb_numpy_array_return_handling(mocker):
+    """Verify that when ChromaDB returns numpy arrays for embeddings/metadatas/ids, no truth value ambiguity ValueError is raised."""
+    import numpy as np
+
+    mock_style = [
+        {
+            "style_id": "style-numpy",
+            "style_name": "Style Numpy",
+            "example_count": 10,  # Needs 5
+            "camera_profile": "Adobe Standard",
+        }
+    ]
+    mocker.patch("services.style_catalog.list_styles", return_value=mock_style)
+    mocker.patch("services.style_catalog.get_style_examples", return_value=[])
+    mocker.patch("services.chroma._ensure_initialized")
+
+    # Mock ChromaDB returning real numpy arrays instead of Python lists
+    mock_collection = mocker.MagicMock()
+    mock_collection.get.return_value = {
+        "ids": np.array(["photo-1", "photo-2"]),
+        "embeddings": np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32),
+        "metadatas": np.array(
+            [
+                {"camera_profile": "Adobe Standard", "rating": 4},
+                {"camera_profile": "Adobe Standard", "rating": 5},
+            ]
+        ),
+    }
+    mocker.patch("services.chroma.collection", mock_collection)
+
+    res = style_upgrades.get_style_upgrade_recommendations()
+    recs = res["styles"][0]["recommended_photo_ids"]
+    assert len(recs) == 2

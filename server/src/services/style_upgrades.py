@@ -191,9 +191,15 @@ def get_style_upgrade_recommendations(
             res = chroma_service.collection.get(
                 include=["embeddings", "metadatas"], limit=50_000
             )
-            p_ids = res.get("ids") or []
-            p_embs = res.get("embeddings") or []
-            p_metas = res.get("metadatas") or []
+            p_ids = res.get("ids")
+            if p_ids is None:
+                p_ids = []
+            p_embs = res.get("embeddings")
+            if p_embs is None:
+                p_embs = []
+            p_metas = res.get("metadatas")
+            if p_metas is None:
+                p_metas = []
             for i, pid in enumerate(p_ids):
                 emb = p_embs[i] if i < len(p_embs) else None
                 meta = dict(p_metas[i]) if i < len(p_metas) and p_metas[i] else {}

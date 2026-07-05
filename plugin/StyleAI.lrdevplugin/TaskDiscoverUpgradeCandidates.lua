@@ -208,14 +208,35 @@ LrTasks.startAsyncTask(function()
 										if #photos > 0 then
 											local catalog = LrApplication.activeCatalog()
 											local coll = Util.addPhotosToUpgradeCandidatesCollection(photos, props.detailName)
+
+											-- Switch to Library module first so setActiveSources / setSelectedPhotos are effective
+											LrTasks.pcall(function()
+												LrApplicationView.switchToModule("library")
+											end)
+											LrTasks.yield()
+											LrTasks.sleep(0.2)
+
 											if coll then
-												LrTasks.pcall(function()
+												local sourceOk = LrTasks.pcall(function()
 													catalog:setActiveSources({ coll })
 													LrTasks.sleep(0.15)
 													catalog:setSelectedPhotos(photos[1], photos)
 												end)
+												if not sourceOk then
+													-- Fallback: navigate to All Photographs, then select
+													LrTasks.pcall(function()
+														catalog:setActiveSources({ catalog.kAllPhotos })
+														LrTasks.sleep(0.15)
+														catalog:setSelectedPhotos(photos[1], photos)
+													end)
+												end
 											else
-												catalog:setSelectedPhotos(photos[1], photos)
+												-- No collection created — select directly via All Photographs
+												LrTasks.pcall(function()
+													catalog:setActiveSources({ catalog.kAllPhotos })
+													LrTasks.sleep(0.15)
+													catalog:setSelectedPhotos(photos[1], photos)
+												end)
 											end
 											LrDialogs.message(
 												LOC("$$$/StyleAI/UpgradeAssistant/SelectedTitle=Photos Selected & Added to Collection"),
