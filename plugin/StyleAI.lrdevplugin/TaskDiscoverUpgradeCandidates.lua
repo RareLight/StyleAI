@@ -105,12 +105,10 @@ LrTasks.startAsyncTask(function()
 			local tierName = "🔴 Undertrained / Pillar 1 (PCA Baseline)"
 			if current >= 50 then
 				tierName = "🌟 ML Predictive (Best) / Pillar 3 (Elastic Net)"
-			elseif current >= 20 then
-				tierName = "⭐️ ML Predictive (Good) / Pillar 3 (Elastic Net)"
-			elseif current >= 10 then
-				tierName = "🟢 Strong / Pillar 2 (Supervised PLS)"
+			elseif current >= 15 then
+				tierName = "⭐️ ML Predictive (Good) / Pillar 2 (Supervised PLS)"
 			elseif current >= 3 then
-				tierName = "🟡 Good / Pillar 1 (PCA Baseline)"
+				tierName = "🟡 Basic / Pillar 1 (PCA Baseline)"
 			end
 			props.detailTier = string.format(LOC("$$$/StyleAI/UpgradeAssistant/TierFmt=Current ML Tier: %s (%d examples)"), tierName, current)
 
@@ -145,12 +143,10 @@ LrTasks.startAsyncTask(function()
 			local badge = "🔴 Undertrained"
 			if count >= 50 then
 				badge = "🌟 ML Predictive (Best)"
-			elseif count >= 20 then
+			elseif count >= 15 then
 				badge = "⭐️ ML Predictive (Good)"
-			elseif count >= 10 then
-				badge = "🟢 Strong"
 			elseif count >= 3 then
-				badge = "🟡 Good"
+				badge = "🟡 Basic"
 			end
 			local recCount = #(s.recommended_photo_ids or {})
 			local label = string.format("%s • %s [%s • N=%d] (+%d recs)", s.style_name or "Unknown", s.camera_profile or "Default", badge, count, recCount)

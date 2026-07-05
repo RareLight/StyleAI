@@ -1210,12 +1210,10 @@ function AiEditAction.run(editMode)
 								local tierLabel = "🔴 Undertrained"
 								if examples >= 50 then
 									tierLabel = "🌟 ML Predictive (Best)"
-								elseif examples >= 20 then
+								elseif examples >= 15 then
 									tierLabel = "⭐️ ML Predictive (Good)"
-								elseif examples >= 10 then
-									tierLabel = "🟢 Strong"
-								elseif examples >= 5 then
-									tierLabel = "🟡 Good"
+								elseif examples >= 3 then
+									tierLabel = "🟡 Basic"
 								end
 								
 								local execution = "Basic Model Fallback"
