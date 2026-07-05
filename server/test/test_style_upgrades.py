@@ -42,6 +42,22 @@ def test_farthest_point_sampling_diversity():
     assert selected[1] == "ortho"  # Second farthest
 
 
+def test_farthest_point_sampling_vectorized_edge_cases():
+    """Verify vectorized farthest point sampling handles zero vectors and single candidates without errors."""
+    import numpy as np
+
+    existing = [np.array([1.0, 0.0, 0.0], dtype=np.float32)]
+    candidates = [
+        ("zero_vec", np.zeros(3, dtype=np.float32), {"rating": 5}),
+        ("normal_vec", np.array([0.0, 1.0, 0.0], dtype=np.float32), {"rating": 3}),
+    ]
+    selected = style_upgrades._farthest_point_sampling(
+        candidates, existing, target_count=5
+    )
+    assert len(selected) == 2
+    assert "normal_vec" in selected
+
+
 def test_tier_and_needed_count_calculations(mocker):
     """Verify tier assignment and needed count logic for N=14, N=46, and N=58."""
     mock_styles = [
