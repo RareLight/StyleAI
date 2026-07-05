@@ -1,6 +1,14 @@
 """Tests for the Active Style Upgrade Assistant service."""
 
+import pytest
 from services import style_upgrades
+
+
+@pytest.fixture(autouse=True)
+def clear_upgrade_recs_cache():
+    style_upgrades.invalidate_upgrade_recommendations_cache()
+    yield
+    style_upgrades.invalidate_upgrade_recommendations_cache()
 
 
 def test_hero_score():

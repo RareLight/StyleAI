@@ -959,6 +959,12 @@ def delete_training_example(photo_id: str) -> bool:
         return False
     _training_collection.delete(ids=[photo_id])
     logger.info("Deleted training example photo_id=%s", photo_id)
+    try:
+        from services import style_upgrades
+
+        style_upgrades.invalidate_upgrade_recommendations_cache()
+    except Exception:
+        pass
     return True
 
 
@@ -1230,6 +1236,12 @@ def clear_all_training_examples() -> int:
         return 0
     _training_collection.delete(ids=ids)
     logger.info("Cleared all %d training examples.", len(ids))
+    try:
+        from services import style_upgrades
+
+        style_upgrades.invalidate_upgrade_recommendations_cache()
+    except Exception:
+        pass
     return len(ids)
 
 

@@ -1611,6 +1611,7 @@ function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOpt
 	local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=Upgrade: %s"), styleName or "Style")
 
 	local collectionSet, collection
+	local done = false
 
 	local function findSetAndCollection()
 		local children = catalog:getChildCollections()
@@ -1646,7 +1647,13 @@ function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOpt
 		if collection then
 			collection:addPhotos(photos)
 		end
+		done = true
 	end, writeOptions)
+
+	local startTime = LrDate.currentTime()
+	while not done and (LrDate.currentTime() - startTime) < 10.0 do
+		LrTasks.sleep(0.05)
+	end
 
 	return collection
 end
