@@ -137,16 +137,17 @@ def get_style_upgrade_recommendations(
         )
         return {"styles": []}
 
-    # Sort styles: prioritize styles that are closest to upgrading to the next tier!
-    # E.g., N=14 (needs 1 for PLS) or N=48 (needs 2 for Elastic Net) come first.
-    def sort_key(s: dict[str, Any]) -> tuple[int, int]:
+    # Filter out fully upgraded styles (N >= 50) since they don't need upgrades
+    styles = [s for s in styles if int(s.get("example_count", 0)) < 50]
+
+    # Sort styles in ascending order by how many photos are needed to reach the next level!
+    # E.g., N=14 (needs 1) or N=48 (needs 2) come first before N=5 (needs 10) or N=20 (needs 30).
+    def sort_key(s: dict[str, Any]) -> int:
         count = int(s.get("example_count", 0))
         if count < 15:
-            return (0, 15 - count)  # Closest to 15 first
-        elif count < 50:
-            return (1, 50 - count)  # Closest to 50 second
+            return 15 - count
         else:
-            return (2, 0)  # Already at highest tier last
+            return 50 - count
 
     styles.sort(key=sort_key)
     if top_styles_limit > 0:

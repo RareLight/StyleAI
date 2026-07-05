@@ -1595,4 +1595,60 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 	end, writeOptions)
 end
 
+-- Adds a list of photos to an "Upgrade: <styleName>" collection (under set "StyleAI").
+-- Finds or creates the set and collection by name, then adds the photos.
+-- @param photos table of LrPhoto objects
+-- @param styleName string
+-- @param writeOptions optional; e.g. Defaults.catalogWriteAccessOptions
+-- @return LrCollection or nil
+function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOptions)
+	if type(photos) ~= "table" or #photos == 0 then
+		return nil
+	end
+	writeOptions = writeOptions or { timeout = 60 }
+	local catalog = LrApplication.activeCatalog()
+	local setName = LOC("$$$/StyleAI/UpgradeAssistant/CollectionSetName=StyleAI")
+	local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=Upgrade: %s"), styleName or "Style")
+
+	local collectionSet, collection
+
+	local function findSetAndCollection()
+		local children = catalog:getChildCollections()
+		if children then
+			for _, child in ipairs(children) do
+				if child:type() == "LrCollectionSet" and child:getName() == setName then
+					collectionSet = child
+					break
+				end
+			end
+		end
+		if not collectionSet then
+			collectionSet = catalog:createCollectionSet(setName, nil, true)
+		end
+		if collectionSet then
+			local collChildren = collectionSet:getChildCollections()
+			if collChildren then
+				for _, c in ipairs(collChildren) do
+					if c:type() == "LrCollection" and c:getName() == collName then
+						collection = c
+						break
+					end
+				end
+			end
+			if not collection then
+				collection = catalog:createCollection(collName, collectionSet, false)
+			end
+		end
+	end
+
+	catalog:withWriteAccessDo(string.format(LOC("$$$/StyleAI/UpgradeAssistant/AddToCollectionFmt=Add to %s"), collName), function()
+		findSetAndCollection()
+		if collection then
+			collection:addPhotos(photos)
+		end
+	end, writeOptions)
+
+	return collection
+end
+
 return Util

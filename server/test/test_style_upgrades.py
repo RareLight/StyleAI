@@ -91,23 +91,19 @@ def test_tier_and_needed_count_calculations(mocker):
 
     res = style_upgrades.get_style_upgrade_recommendations()
     styles = res["styles"]
-    assert len(styles) == 3
+    # Style C (N=58) should be filtered out because it is fully upgraded!
+    assert len(styles) == 2
 
-    # Sorted by closest to upgrading: Style A (needs 1 to 15), Style B (needs 4 to 50), Style C (0 needed)
-    s_a = next(s for s in styles if s["style_id"] == "style-a")
-    assert s_a["needed_count"] == 1
-    assert "Supervised PLS" in s_a["target_tier"]
-    assert not s_a["is_highest_tier"]
+    # Sorted by ascending needed count: Style A (needs 1 to 15), then Style B (needs 4 to 50)
+    assert styles[0]["style_id"] == "style-a"
+    assert styles[0]["needed_count"] == 1
+    assert "Supervised PLS" in styles[0]["target_tier"]
+    assert not styles[0]["is_highest_tier"]
 
-    s_b = next(s for s in styles if s["style_id"] == "style-b")
-    assert s_b["needed_count"] == 4
-    assert "Elastic Net" in s_b["target_tier"]
-    assert not s_b["is_highest_tier"]
-
-    s_c = next(s for s in styles if s["style_id"] == "style-c")
-    assert s_c["needed_count"] == 0
-    assert s_c["is_highest_tier"]
-    assert s_c["recommended_photo_ids"] == []
+    assert styles[1]["style_id"] == "style-b"
+    assert styles[1]["needed_count"] == 4
+    assert "Elastic Net" in styles[1]["target_tier"]
+    assert not styles[1]["is_highest_tier"]
 
 
 def test_edited_vs_unedited_priority(mocker):
@@ -182,3 +178,54 @@ def test_upgrade_recommendations_not_truncated_for_good_tier(mocker):
     assert len(styles) == 25
     good_returned = [s for s in styles if 15 <= s["current_count"] < 50]
     assert len(good_returned) == 5
+
+
+def test_upgrade_recommendations_sorted_by_needed_count_ascending(mocker):
+    """Verify styles are sorted strictly by needed_count in ascending order, ignoring priority tier buckets."""
+    mock_styles = [
+        {
+            "style_id": "needs-10",
+            "style_name": "Basic needing 10",
+            "example_count": 5,  # 15 - 5 = 10 needed
+            "camera_profile": "Adobe Standard",
+        },
+        {
+            "style_id": "needs-2",
+            "style_name": "Good needing 2",
+            "example_count": 48,  # 50 - 48 = 2 needed
+            "camera_profile": "Adobe Standard",
+        },
+        {
+            "style_id": "needs-14",
+            "style_name": "Basic needing 14",
+            "example_count": 1,  # 15 - 1 = 14 needed
+            "camera_profile": "Adobe Standard",
+        },
+        {
+            "style_id": "fully-upgraded",
+            "style_name": "Already Best",
+            "example_count": 55,  # 0 needed -> filtered out!
+            "camera_profile": "Adobe Standard",
+        },
+    ]
+
+    mocker.patch("services.style_catalog.list_styles", return_value=mock_styles)
+    mocker.patch("services.style_catalog.get_style_examples", return_value=[])
+    mocker.patch("services.chroma._ensure_initialized")
+    mocker.patch("services.chroma.collection", None)
+
+    res = style_upgrades.get_style_upgrade_recommendations()
+    styles = res["styles"]
+
+    # The fully upgraded style should be filtered out
+    assert len(styles) == 3
+
+    # Order should be strictly ascending by needed_count: 2, 10, 14
+    assert styles[0]["style_id"] == "needs-2"
+    assert styles[0]["needed_count"] == 2
+
+    assert styles[1]["style_id"] == "needs-10"
+    assert styles[1]["needed_count"] == 10
+
+    assert styles[2]["style_id"] == "needs-14"
+    assert styles[2]["needed_count"] == 14

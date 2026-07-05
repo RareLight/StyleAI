@@ -43,8 +43,8 @@ LrTasks.startAsyncTask(function()
 		local styles = (results and results.styles) or {}
 		if #styles == 0 then
 			LrDialogs.message(
-				LOC("$$$/StyleAI/UpgradeAssistant/NoStylesTitle=No Styles Found"),
-				LOC("$$$/StyleAI/UpgradeAssistant/NoStylesMsg=No signature styles were found in your database. Use 'Learn My Styles' to create your first style!"),
+				LOC("$$$/StyleAI/UpgradeAssistant/NoStylesTitle=No Styles Needing Upgrades"),
+				LOC("$$$/StyleAI/UpgradeAssistant/NoStylesMsg=All signature styles in your database are already fully upgraded (50+ examples), or no styles were found yet. Great job!"),
 				"info"
 			)
 			return
@@ -207,10 +207,17 @@ LrTasks.startAsyncTask(function()
 
 										if #photos > 0 then
 											local catalog = LrApplication.activeCatalog()
+											local coll = Util.addPhotosToUpgradeCandidatesCollection(photos, props.detailName)
+											if coll then
+												LrTasks.pcall(function()
+													catalog:setActiveSources({ coll })
+													LrTasks.sleep(0.1)
+												end)
+											end
 											catalog:setSelectedPhotos(photos[1], photos)
 											LrDialogs.message(
-												LOC("$$$/StyleAI/UpgradeAssistant/SelectedTitle=Photos Selected"),
-												string.format(LOC("$$$/StyleAI/UpgradeAssistant/SelectedMsg=Selected %d recommended photos in Lightroom Library. You can now review them or go to File > Plug-in Extras > Learn My Styles to train!"), #photos),
+												LOC("$$$/StyleAI/UpgradeAssistant/SelectedTitle=Photos Selected & Added to Collection"),
+												string.format(LOC("$$$/StyleAI/UpgradeAssistant/SelectedMsg=Added %d recommended candidate photos to collection 'Upgrade: %s' (under set 'StyleAI') and selected them in Library. You can now easily review them or train!"), #photos, props.detailName or "Style"),
 												"info"
 											)
 											LrDialogs.stopModalWithResult(ctx, "ok")
