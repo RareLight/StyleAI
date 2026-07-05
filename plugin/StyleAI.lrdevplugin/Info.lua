@@ -39,6 +39,10 @@ return {
 			file = "TaskStyleCatalog.lua",
 		},
 		{
+			title = LOC("$$$/StyleAI/UpgradeAssistant/MenuDiscoverCandidates=Utility: Style Upgrade Assistant"),
+			file = "TaskDiscoverUpgradeCandidates.lua",
+		},
+		{
 			title = LOC("$$$/StyleAI/Info/MenuApplyLLMEdits=Utility: LLM Edit by Prompt"),
 			file = "TaskAiEditCreative.lua",
 		},
@@ -64,6 +68,10 @@ return {
 		{
 			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=Utility: Styles Index"),
 			file = "TaskStyleCatalog.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/UpgradeAssistant/MenuDiscoverCandidates=Utility: Style Upgrade Assistant"),
+			file = "TaskDiscoverUpgradeCandidates.lua",
 		},
 		{
 			title = LOC("$$$/StyleAI/Info/MenuApplyLLMEdits=Utility: LLM Edit by Prompt"),
