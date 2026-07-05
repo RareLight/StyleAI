@@ -1556,44 +1556,54 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 	local setName = LOC("$$$/StyleAI/Rejected/CollectionSetName=StyleAI")
 	local collName = LOC("$$$/StyleAI/Rejected/CollectionName=Rejected AI Descriptions")
 
-	local collectionSet, collection
-
-	local function findSetAndCollection()
-		local children = catalog:getChildCollections()
-		if children then
-			for _, child in ipairs(children) do
-				if child:type() == "LrCollectionSet" and child:getName() == setName then
-					collectionSet = child
-					break
-				end
-			end
-		end
-		if not collectionSet then
-			collectionSet = catalog:createCollectionSet(setName, nil, true)
-		end
-		if collectionSet then
-			local collChildren = collectionSet:getChildCollections()
-			if collChildren then
-				for _, c in ipairs(collChildren) do
-					if c:type() == "LrCollection" and c:getName() == collName then
-						collection = c
-						break
-					end
-				end
-			end
-			if not collection then
-				collection = catalog:createCollection(collName, collectionSet, false)
+	-- Step 1: Read — look for existing set (no write access needed)
+	local collectionSet
+	local children = catalog:getChildCollections()
+	if children then
+		for _, child in ipairs(children) do
+			if child:type() == "LrCollectionSet" and child:getName() == setName then
+				collectionSet = child
+				break
 			end
 		end
 	end
 
-	catalog:withWriteAccessDo(LOC("$$$/StyleAI/Rejected/CreateCollection=Create Rejected AI Descriptions"), function()
-		findSetAndCollection()
-	end, writeOptions)
-
-	if collection then
+	-- Step 2: Write — create set if it doesn't exist
+	if not collectionSet then
+		catalog:withWriteAccessDo(LOC("$$$/StyleAI/Rejected/CreateCollection=Create Rejected AI Descriptions"), function()
+			collectionSet = catalog:createCollectionSet(setName, nil, true)
+		end, writeOptions)
 		LrTasks.yield()
 		LrTasks.sleep(0.05)
+	end
+
+	if not collectionSet then
+		return
+	end
+
+	-- Step 3: Read — look for existing collection inside the set
+	local collection
+	local collChildren = collectionSet:getChildCollections()
+	if collChildren then
+		for _, c in ipairs(collChildren) do
+			if c:type() == "LrCollection" and c:getName() == collName then
+				collection = c
+				break
+			end
+		end
+	end
+
+	-- Step 4: Write — create collection if it doesn't exist
+	if not collection then
+		catalog:withWriteAccessDo(LOC("$$$/StyleAI/Rejected/CreateCollection=Create Rejected AI Descriptions"), function()
+			collection = catalog:createCollection(collName, collectionSet, false)
+		end, writeOptions)
+		LrTasks.yield()
+		LrTasks.sleep(0.05)
+	end
+
+	-- Step 5: Write — add the photo
+	if collection then
 		catalog:withWriteAccessDo(LOC("$$$/StyleAI/Rejected/AddToCollection=Add to Rejected AI Descriptions"), function()
 			collection:addPhotos({ photo })
 		end, writeOptions)
@@ -1602,6 +1612,8 @@ end
 
 -- Adds a list of photos to an "Upgrade: <styleName>" collection (under set "StyleAI").
 -- Finds or creates the set and collection by name, then adds the photos.
+-- Each create* call runs in its own withWriteAccessDo transaction to avoid the
+-- SDK "Can't get collection information after creating collection" error.
 -- @param photos table of LrPhoto objects
 -- @param styleName string
 -- @param writeOptions optional; e.g. Defaults.catalogWriteAccessOptions
@@ -1615,45 +1627,55 @@ function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOpt
 	local setName = LOC("$$$/StyleAI/UpgradeAssistant/CollectionSetName=StyleAI")
 	local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=Upgrade: %s"), styleName or "Style")
 
-	local collectionSet, collection
-	local done = false
-
-	local function findSetAndCollection()
-		local children = catalog:getChildCollections()
-		if children then
-			for _, child in ipairs(children) do
-				if child:type() == "LrCollectionSet" and child:getName() == setName then
-					collectionSet = child
-					break
-				end
-			end
-		end
-		if not collectionSet then
-			collectionSet = catalog:createCollectionSet(setName, nil, true)
-		end
-		if collectionSet then
-			local collChildren = collectionSet:getChildCollections()
-			if collChildren then
-				for _, c in ipairs(collChildren) do
-					if c:type() == "LrCollection" and c:getName() == collName then
-						collection = c
-						break
-					end
-				end
-			end
-			if not collection then
-				collection = catalog:createCollection(collName, collectionSet, false)
+	-- Step 1: Read — look for existing set
+	local collectionSet
+	local children = catalog:getChildCollections()
+	if children then
+		for _, child in ipairs(children) do
+			if child:type() == "LrCollectionSet" and child:getName() == setName then
+				collectionSet = child
+				break
 			end
 		end
 	end
 
-	catalog:withWriteAccessDo(string.format(LOC("$$$/StyleAI/UpgradeAssistant/CreateCollectionFmt=Create %s"), collName), function()
-		findSetAndCollection()
-	end, writeOptions)
-
-	if collection then
+	-- Step 2: Write — create set if it doesn't exist
+	if not collectionSet then
+		catalog:withWriteAccessDo(string.format(LOC("$$$/StyleAI/UpgradeAssistant/CreateCollectionFmt=Create %s"), collName), function()
+			collectionSet = catalog:createCollectionSet(setName, nil, true)
+		end, writeOptions)
 		LrTasks.yield()
 		LrTasks.sleep(0.05)
+	end
+
+	if not collectionSet then
+		return nil
+	end
+
+	-- Step 3: Read — look for existing collection inside the set
+	local collection
+	local collChildren = collectionSet:getChildCollections()
+	if collChildren then
+		for _, c in ipairs(collChildren) do
+			if c:type() == "LrCollection" and c:getName() == collName then
+				collection = c
+				break
+			end
+		end
+	end
+
+	-- Step 4: Write — create collection if it doesn't exist
+	if not collection then
+		catalog:withWriteAccessDo(string.format(LOC("$$$/StyleAI/UpgradeAssistant/CreateCollectionFmt=Create %s"), collName), function()
+			collection = catalog:createCollection(collName, collectionSet, false)
+		end, writeOptions)
+		LrTasks.yield()
+		LrTasks.sleep(0.05)
+	end
+
+	-- Step 5: Write — add photos to the collection
+	local done = false
+	if collection then
 		catalog:withWriteAccessDo(string.format(LOC("$$$/StyleAI/UpgradeAssistant/AddToCollectionFmt=Add to %s"), collName), function()
 			collection:addPhotos(photos)
 			done = true
