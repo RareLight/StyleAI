@@ -172,6 +172,12 @@ def upsert_style(style: dict[str, Any]) -> None:
     logger.info(
         "Upserted style %s with %d examples", style_id, style.get("example_count", 0)
     )
+    try:
+        from services import style_upgrades
+
+        style_upgrades.invalidate_upgrade_recommendations_cache()
+    except Exception:
+        pass
 
 
 def delete_style(style_id: str) -> bool:
@@ -183,6 +189,12 @@ def delete_style(style_id: str) -> bool:
     deleted = cur.rowcount > 0
     if deleted:
         logger.info("Deleted style %s", style_id)
+        try:
+            from services import style_upgrades
+
+            style_upgrades.invalidate_upgrade_recommendations_cache()
+        except Exception:
+            pass
     return deleted
 
 

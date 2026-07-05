@@ -7,6 +7,8 @@ Farthest Point Sampling (Max-Min Diversity), and user-aligned Hero Quality Scori
 """
 
 import logging
+import threading
+import time
 from typing import Any
 
 import numpy as np
@@ -14,6 +16,20 @@ from services import chroma as chroma_service
 from services import style_catalog
 
 logger = logging.getLogger("styleai")
+
+_recs_cache: dict[str, Any] = {}
+_recs_cache_timestamp: float = 0.0
+_recs_cache_lock = threading.Lock()
+_CACHE_TTL_SECONDS = 300.0  # 5 minutes safety fallback
+
+
+def invalidate_upgrade_recommendations_cache() -> None:
+    """Invalidate cached style upgrade recommendations."""
+    global _recs_cache, _recs_cache_timestamp
+    with _recs_cache_lock:
+        _recs_cache.clear()
+        _recs_cache_timestamp = 0.0
+    logger.debug("Style upgrade recommendations cache invalidated.")
 
 
 def _hero_score(meta: dict[str, Any]) -> float:
@@ -59,9 +75,6 @@ def _farthest_point_sampling(
     C_mat = np.array(raw_embs, dtype=np.float32)
     if C_mat.ndim == 1:
         C_mat = C_mat.reshape(1, -1)
-    norms = np.linalg.norm(C_mat, axis=1, keepdims=True)
-    norms[norms == 0.0] = 1.0
-    C_mat = C_mat / norms
 
     # Prepare hero scores
     h_scores = np.array([_hero_score(c[2]) for c in candidates], dtype=np.float32)
@@ -76,9 +89,6 @@ def _farthest_point_sampling(
         E_mat = np.array(valid_existing, dtype=np.float32)
         if E_mat.ndim == 1:
             E_mat = E_mat.reshape(1, -1)
-        e_norms = np.linalg.norm(E_mat, axis=1, keepdims=True)
-        e_norms[e_norms == 0.0] = 1.0
-        E_mat = E_mat / e_norms
         # Compute min distances from each candidate to any existing embedding
         sims = np.dot(C_mat, E_mat.T)
         sims = np.clip(sims, -1.0, 1.0)
@@ -126,6 +136,17 @@ def get_style_upgrade_recommendations(
         A dict containing a list of styles with their current tiers, needed counts,
         and recommended candidate photo_ids.
     """
+    global _recs_cache, _recs_cache_timestamp
+    cache_key = f"{catalog_ids}:{top_styles_limit}"
+    with _recs_cache_lock:
+        if (
+            _recs_cache_timestamp > 0
+            and (time.time() - _recs_cache_timestamp) < _CACHE_TTL_SECONDS
+        ):
+            if cache_key in _recs_cache:
+                logger.debug("Returning cached style upgrade recommendations.")
+                return _recs_cache[cache_key]
+
     logger.info(
         "Generating style upgrade recommendations (limit=%d)...", top_styles_limit
     )
@@ -141,7 +162,6 @@ def get_style_upgrade_recommendations(
     styles = [s for s in styles if int(s.get("example_count", 0)) < 50]
 
     # Sort styles in ascending order by how many photos are needed to reach the next level!
-    # E.g., N=14 (needs 1) or N=48 (needs 2) come first before N=5 (needs 10) or N=20 (needs 30).
     def sort_key(s: dict[str, Any]) -> int:
         count = int(s.get("example_count", 0))
         if count < 15:
@@ -153,6 +173,16 @@ def get_style_upgrade_recommendations(
     if top_styles_limit > 0:
         styles = styles[:top_styles_limit]
 
+    # Batch pre-fetch all style examples once outside the loop
+    all_style_examples_map: dict[str, set[str]] = {}
+    try:
+        conn = style_catalog._ensure_initialized()
+        rows = conn.execute("SELECT style_id, photo_id FROM style_examples").fetchall()
+        for r in rows:
+            all_style_examples_map.setdefault(r["style_id"], set()).add(r["photo_id"])
+    except Exception as e:
+        logger.warning(f"Failed to batch pre-fetch style examples: {e}", exc_info=True)
+
     # Pre-fetch all photos from ChromaDB image_embeddings once to avoid repeated DB calls
     chroma_service._ensure_initialized()
     all_photos_pool: list[tuple[str, Any, dict[str, Any]]] = []
@@ -161,20 +191,18 @@ def get_style_upgrade_recommendations(
             res = chroma_service.collection.get(
                 include=["embeddings", "metadatas"], limit=50_000
             )
-            p_ids = res.get("ids")
-            if p_ids is None:
-                p_ids = []
-            p_embs = res.get("embeddings")
-            if p_embs is None:
-                p_embs = []
-            p_metas = res.get("metadatas")
-            if p_metas is None:
-                p_metas = []
+            p_ids = res.get("ids") or []
+            p_embs = res.get("embeddings") or []
+            p_metas = res.get("metadatas") or []
             for i, pid in enumerate(p_ids):
                 emb = p_embs[i] if i < len(p_embs) else None
                 meta = dict(p_metas[i]) if i < len(p_metas) and p_metas[i] else {}
                 if meta.get("has_embedding", True) and emb is not None:
-                    all_photos_pool.append((pid, emb, meta))
+                    arr = np.asarray(emb, dtype=np.float32)
+                    norm = float(np.linalg.norm(arr))
+                    if norm > 0:
+                        arr = arr / norm
+                    all_photos_pool.append((pid, arr, meta))
         except Exception as e:
             logger.warning(
                 f"Failed to pre-fetch image embeddings pool: {e}", exc_info=True
@@ -210,9 +238,8 @@ def get_style_upgrade_recommendations(
             # Buffer pool size = 2 * needed_count (capped at 100)
             target_recs = min(100, 2 * needed_count)
 
-            # Get existing training examples for this style
-            existing_examples = style_catalog.get_style_examples(style_id)
-            existing_ids = {ex["photo_id"] for ex in existing_examples}
+            # Get existing training examples for this style from pre-fetched map
+            existing_ids = all_style_examples_map.get(style_id, set())
 
             # Get embeddings for existing examples
             existing_embeddings: list[Any] = [
@@ -228,9 +255,21 @@ def get_style_upgrade_recommendations(
                             and img_data.get("embeddings") is not None
                             and len(img_data["embeddings"]) > 0
                         ):
-                            existing_embeddings.append(img_data["embeddings"][0])
+                            arr = np.asarray(
+                                img_data["embeddings"][0], dtype=np.float32
+                            )
+                            norm = float(np.linalg.norm(arr))
+                            if norm > 0:
+                                arr = arr / norm
+                            existing_embeddings.append(arr)
                     except Exception:
                         pass
+
+            E_mat = None
+            if existing_embeddings:
+                E_mat = np.array(existing_embeddings, dtype=np.float32)
+                if E_mat.ndim == 1:
+                    E_mat = E_mat.reshape(1, -1)
 
             # Filter candidates from pool
             is_hdr_style = "HDR" in camera_profile
@@ -244,26 +283,21 @@ def get_style_upgrade_recommendations(
                 photo_model = (meta.get("camera_model") or "").strip()
 
                 if photo_profile:
-                    # Strict profile matching when available
                     if photo_profile != camera_profile:
                         continue
                 else:
-                    # Legacy fallback: check model and HDR compatibility
                     if camera_profile != "Default" and photo_model and camera_model:
                         if photo_model != camera_model:
                             continue
                     if is_hdr_style:
                         continue
 
-                # Step A: Burst deduplication against existing training examples
-                is_burst_dup = False
-                for ex_emb in existing_embeddings:
-                    dist = chroma_service._cosine_distance(emb, ex_emb)
-                    if dist is not None and dist <= 0.05:
-                        is_burst_dup = True
-                        break
-                if is_burst_dup:
-                    continue
+                # Step A: Burst deduplication against existing training examples via BLAS dot product
+                if E_mat is not None and len(E_mat) > 0:
+                    sims = np.dot(E_mat, emb)
+                    max_sim = float(np.max(sims))
+                    if (1.0 - max_sim) <= 0.05:
+                        continue
 
                 valid_candidates.append((pid, emb, meta))
 
@@ -295,8 +329,8 @@ def get_style_upgrade_recommendations(
                     elif j - i > 10:
                         break
 
-                    dist = chroma_service._cosine_distance(emb_a, emb_b)
-                    if dist is not None and dist <= 0.05:
+                    sim = float(np.dot(emb_a, emb_b))
+                    if (1.0 - sim) <= 0.05:
                         cluster.append((pid_b, emb_b, meta_b))
                         clustered_pids.add(pid_b)
 
@@ -341,4 +375,8 @@ def get_style_upgrade_recommendations(
             }
         )
 
-    return {"styles": results_list}
+    res = {"styles": results_list}
+    with _recs_cache_lock:
+        _recs_cache[cache_key] = res
+        _recs_cache_timestamp = time.time()
+    return res

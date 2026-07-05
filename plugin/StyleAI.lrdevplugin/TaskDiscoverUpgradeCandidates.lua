@@ -211,10 +211,12 @@ LrTasks.startAsyncTask(function()
 											if coll then
 												LrTasks.pcall(function()
 													catalog:setActiveSources({ coll })
-													LrTasks.sleep(0.1)
+													LrTasks.sleep(0.15)
+													catalog:setSelectedPhotos(photos[1], photos)
 												end)
+											else
+												catalog:setSelectedPhotos(photos[1], photos)
 											end
-											catalog:setSelectedPhotos(photos[1], photos)
 											LrDialogs.message(
 												LOC("$$$/StyleAI/UpgradeAssistant/SelectedTitle=Photos Selected & Added to Collection"),
 												string.format(LOC("$$$/StyleAI/UpgradeAssistant/SelectedMsg=Added %d recommended candidate photos to collection 'Upgrade: %s' (under set 'StyleAI') and selected them in Library. You can now easily review them or train!"), #photos, props.detailName or "Style"),
