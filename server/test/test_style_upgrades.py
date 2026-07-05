@@ -146,3 +146,39 @@ def test_edited_vs_unedited_priority(mocker):
     assert len(recs) == 2
     # Even though unedited-1 has a higher star rating (5 stars), edited-1 MUST be selected first!
     assert recs[0] == "edited-1"
+
+
+def test_upgrade_recommendations_not_truncated_for_good_tier(mocker):
+    """Verify that when >15 basic styles exist, styles with 15 <= N < 50 are still returned with default limit=100."""
+    mock_styles = []
+    # 20 basic styles (N < 15)
+    for i in range(20):
+        mock_styles.append(
+            {
+                "style_id": f"basic-{i}",
+                "style_name": f"Basic Style {i}",
+                "example_count": 5,
+                "camera_profile": "Adobe Standard",
+            }
+        )
+    # 5 good styles (15 <= N < 50)
+    for i in range(5):
+        mock_styles.append(
+            {
+                "style_id": f"good-{i}",
+                "style_name": f"Good Style {i}",
+                "example_count": 25,
+                "camera_profile": "Adobe Standard",
+            }
+        )
+
+    mocker.patch("services.style_catalog.list_styles", return_value=mock_styles)
+    mocker.patch("services.style_catalog.get_style_examples", return_value=[])
+    mocker.patch("services.chroma._ensure_initialized")
+    mocker.patch("services.chroma.collection", None)
+
+    res = style_upgrades.get_style_upgrade_recommendations()
+    styles = res["styles"]
+    assert len(styles) == 25
+    good_returned = [s for s in styles if 15 <= s["current_count"] < 50]
+    assert len(good_returned) == 5
