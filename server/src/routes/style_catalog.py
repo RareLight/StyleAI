@@ -19,6 +19,7 @@ from flask import Blueprint, jsonify, request
 
 from config import logger
 from services import style_catalog as catalog_service
+from services import style_upgrades
 
 style_catalog_bp = Blueprint("style_catalog", __name__)
 
@@ -36,6 +37,30 @@ def list_styles():
     except Exception as exc:
         logger.error("Failed to list styles: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# GET / POST /styles/upgrades/recommendations
+# ---------------------------------------------------------------------------
+
+
+@style_catalog_bp.route("/styles/upgrades/recommendations", methods=["GET", "POST"])
+def get_upgrade_recommendations():
+    try:
+        limit = request.args.get("limit", 15, type=int)
+        if request.is_json and request.json:
+            limit = request.json.get("limit", limit)
+        results = style_upgrades.get_style_upgrade_recommendations(
+            top_styles_limit=limit
+        )
+        return jsonify(
+            {"status": "ok", "results": results, "error": None, "warning": None}
+        ), 200
+    except Exception as exc:
+        logger.error(
+            "Failed to get style upgrade recommendations: %s", exc, exc_info=True
+        )
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 500
 
 
 # ---------------------------------------------------------------------------

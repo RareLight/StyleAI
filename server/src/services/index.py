@@ -539,6 +539,25 @@ def process_image_task(
                 if capture_time is not None:
                     main_metadata["capture_time"] = capture_time
 
+                if opt.get("camera_profile"):
+                    main_metadata["camera_profile"] = str(opt["camera_profile"])[:128]
+                if opt.get("camera_model"):
+                    main_metadata["camera_model"] = str(opt["camera_model"])[:64]
+                if opt.get("camera_make"):
+                    main_metadata["camera_make"] = str(opt["camera_make"])[:64]
+                if opt.get("rating") is not None:
+                    try:
+                        main_metadata["rating"] = int(opt["rating"])
+                    except (TypeError, ValueError):
+                        main_metadata["rating"] = 0
+                if opt.get("pick_status") is not None:
+                    try:
+                        main_metadata["pick_status"] = int(opt["pick_status"])
+                    except (TypeError, ValueError):
+                        main_metadata["pick_status"] = 0
+                if opt.get("is_edited") is not None:
+                    main_metadata["is_edited"] = bool(opt["is_edited"])
+
                 # Update metadata fields if newly generated
                 if metadata_data and metadata_data.success:
                     if metadata_data.title:

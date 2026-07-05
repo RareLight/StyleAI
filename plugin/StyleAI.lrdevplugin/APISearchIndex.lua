@@ -63,6 +63,7 @@ local ENDPOINTS = {
     STYLE_EDIT = "/style_edit",
     STYLE_LIST = "/styles",
     STYLE_DISCOVER = "/styles/discover",
+    STYLE_UPGRADES_RECOMMENDATIONS = "/styles/upgrades/recommendations",
     STYLE_RESET = "/styles/%s/reset",
     STYLE_RESET_ALL = "/styles/reset-all",
     STYLE_EXPORT = "/styles/export",
@@ -1819,6 +1820,29 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                         end
                         photoOptions.user_context = photo:getPropertyForPlugin(_PLUGIN, 'photoContext') or ""
                         photoOptions.raw_filepath = photo:getRawMetadata("path")
+
+                        local exifInfo = Util.getPhotoExif(photo)
+                        if exifInfo then
+                            photoOptions.camera_profile = exifInfo.camera_profile
+                            photoOptions.camera_make = exifInfo.camera_make
+                            photoOptions.camera_model = exifInfo.camera_model
+                        end
+                        photoOptions.rating = tonumber(photo:getRawMetadata("rating")) or 0
+                        photoOptions.pick_status = tonumber(photo:getRawMetadata("pickStatus")) or 0
+
+                        local okDev, devSettings = LrTasks.pcall(function()
+                            return photo:getDevelopSettings()
+                        end)
+                        if okDev and type(devSettings) == "table" then
+                            local isEdited = false
+                            for k, v in pairs(devSettings) do
+                                if (k == "Exposure" and v ~= 0) or (k == "Contrast" and v ~= 0) or (k == "Highlights" and v ~= 0) or (k == "Shadows" and v ~= 0) or (k == "ParametricDarks" and v ~= 0) or (k == "ParametricLights" and v ~= 0) or (k == "ParametricShadows" and v ~= 0) or (k == "ParametricHighlights" and v ~= 0) or (k == "Saturation" and v ~= 0) or (k == "Vibrance" and v ~= 0) then
+                                    isEdited = true
+                                    break
+                                end
+                            end
+                            photoOptions.is_edited = isEdited
+                        end
 
                         local jpegData
                         local usePreviewThumbnails = previewRequestState.enabled and not previewRequestState.disabledForRun
@@ -3884,6 +3908,21 @@ function SearchIndexAPI.importStyles(data)
     end
     if response.status == "ok" then
         return true, nil
+    end
+    return false, response.error or "Unexpected response"
+end
+
+function SearchIndexAPI.getUpgradeRecommendations(limit)
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_UPGRADES_RECOMMENDATIONS
+    if limit and tonumber(limit) then
+        url = url .. "?limit=" .. tostring(limit)
+    end
+    local response, err = _request('GET', url, {}, 60)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" and response.results then
+        return true, response.results
     end
     return false, response.error or "Unexpected response"
 end
