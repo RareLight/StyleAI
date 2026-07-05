@@ -1587,12 +1587,17 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 		end
 	end
 
-	catalog:withWriteAccessDo(LOC("$$$/StyleAI/Rejected/AddToCollection=Add to Rejected AI Descriptions"), function()
+	catalog:withWriteAccessDo(LOC("$$$/StyleAI/Rejected/CreateCollection=Create Rejected AI Descriptions"), function()
 		findSetAndCollection()
-		if collection then
-			collection:addPhotos({ photo })
-		end
 	end, writeOptions)
+
+	if collection then
+		LrTasks.yield()
+		LrTasks.sleep(0.05)
+		catalog:withWriteAccessDo(LOC("$$$/StyleAI/Rejected/AddToCollection=Add to Rejected AI Descriptions"), function()
+			collection:addPhotos({ photo })
+		end, writeOptions)
+	end
 end
 
 -- Adds a list of photos to an "Upgrade: <styleName>" collection (under set "StyleAI").
@@ -1642,13 +1647,20 @@ function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOpt
 		end
 	end
 
-	catalog:withWriteAccessDo(string.format(LOC("$$$/StyleAI/UpgradeAssistant/AddToCollectionFmt=Add to %s"), collName), function()
+	catalog:withWriteAccessDo(string.format(LOC("$$$/StyleAI/UpgradeAssistant/CreateCollectionFmt=Create %s"), collName), function()
 		findSetAndCollection()
-		if collection then
-			collection:addPhotos(photos)
-		end
-		done = true
 	end, writeOptions)
+
+	if collection then
+		LrTasks.yield()
+		LrTasks.sleep(0.05)
+		catalog:withWriteAccessDo(string.format(LOC("$$$/StyleAI/UpgradeAssistant/AddToCollectionFmt=Add to %s"), collName), function()
+			collection:addPhotos(photos)
+			done = true
+		end, writeOptions)
+	else
+		done = true
+	end
 
 	local startTime = LrDate.currentTime()
 	while not done and (LrDate.currentTime() - startTime) < 10.0 do
