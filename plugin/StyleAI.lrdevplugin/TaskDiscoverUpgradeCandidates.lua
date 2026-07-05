@@ -32,7 +32,7 @@ LrTasks.startAsyncTask(function()
 		})
 		progressScope:setIndeterminate()
 
-		local success, results = SearchIndexAPI.getUpgradeRecommendations(15)
+		local success, results = SearchIndexAPI.getUpgradeRecommendations(100)
 		progressScope:done()
 
 		if not success then

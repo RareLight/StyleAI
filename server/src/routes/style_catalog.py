@@ -47,7 +47,7 @@ def list_styles():
 @style_catalog_bp.route("/styles/upgrades/recommendations", methods=["GET", "POST"])
 def get_upgrade_recommendations():
     try:
-        limit = request.args.get("limit", 15, type=int)
+        limit = request.args.get("limit", 100, type=int)
         if request.is_json and request.json:
             limit = request.json.get("limit", limit)
         results = style_upgrades.get_style_upgrade_recommendations(

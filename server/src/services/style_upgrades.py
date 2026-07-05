@@ -118,7 +118,7 @@ def _farthest_point_sampling(
 
 def get_style_upgrade_recommendations(
     catalog_ids: list[str] | None = None,
-    top_styles_limit: int = 50,
+    top_styles_limit: int = 100,
 ) -> dict[str, Any]:
     """Generate candidate photo recommendations to upgrade styles to higher ML tiers.
 
