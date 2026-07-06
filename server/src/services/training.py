@@ -804,6 +804,45 @@ def add_training_example(
         "captured_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "has_embedding": embedding is not None,
     }
+    if not user_keywords or not filename:
+        try:
+            from services import chroma as chroma_service
+
+            chroma_service._ensure_initialized()
+            if chroma_service.collection is not None:
+                res = chroma_service.collection.get(
+                    ids=[photo_id], include=["metadatas"]
+                )
+                if res and res.get("metadatas") and res["metadatas"][0]:
+                    mm = res["metadatas"][0]
+                    if not user_keywords or user_keywords in (
+                        "",
+                        "[]",
+                        "null",
+                        "None",
+                    ):
+                        for k in ("user_keywords", "keywords", "flattened_keywords"):
+                            kw_val = mm.get(k)
+                            if kw_val and kw_val not in ("", "[]", "null", "None"):
+                                if isinstance(kw_val, str):
+                                    try:
+                                        user_keywords = json.loads(kw_val)
+                                    except Exception:
+                                        user_keywords = [
+                                            s.strip()
+                                            for s in kw_val.split(",")
+                                            if s.strip()
+                                        ]
+                                elif isinstance(kw_val, (list, tuple, set)):
+                                    user_keywords = [str(s) for s in kw_val]
+                                break
+                    if not filename and mm.get("filename"):
+                        filename = mm.get("filename")
+        except Exception as exc:
+            logger.debug(
+                "Could not enrich new training example from main index: %s", exc
+            )
+
     if filename:
         metadata["filename"] = filename
     if summary:
@@ -856,7 +895,6 @@ def add_training_example(
     if not label or label == "Uncategorized" or label.strip() == "":
         if scene_tags:
             top_tag = scene_tags[0]
-            # Convert "scene_landscape" -> "Landscape", "style_vintage" -> "Vintage"
             auto_label = (
                 top_tag.replace("scene_", "")
                 .replace("style_", "")
@@ -898,17 +936,18 @@ def add_training_example(
                 camera_model=camera_model,
                 camera_profile=camera_profile,
                 scene_tags=scene_tags,
-                exposure_metrics=metadata if image_bytes else None,
-                user_keywords=user_keywords or [],
+                exposure_metrics=(exp_metrics if image_bytes else {}),
+                user_keywords=user_keywords,
             )
+            # Re-discover styles to update aggregate stats (mean DNA, counts)
+            style_catalog_service.discover_styles_from_examples()
         except Exception as exc:
-            logger.warning("Style catalog update failed for %s: %s", photo_id, exc)
+            logger.warning("Style discovery trigger failed: %s", exc)
 
 
 def update_training_example_labels(
     photo_ids: list[str], label: str, summary: str | None = None
 ) -> None:
-    """Update the label and summary for a list of training examples."""
     _ensure_initialized()
     if _training_collection is None or not photo_ids:
         return
@@ -942,34 +981,31 @@ def update_training_example_labels(
 
 
 def delete_training_example(photo_id: str) -> bool:
-    """Remove a training example.
-
-    Returns True when the item existed and was deleted, False otherwise.
-    """
+    """Delete a training example by photo_id."""
     _ensure_initialized()
     if _training_collection is None:
         return False
-    if not photo_id:
-        return False
     try:
         existing = _training_collection.get(ids=[photo_id], include=[])
+        if not existing or not existing.get("ids"):
+            return False
     except _ChromaInternalError:
-        return False
-    if not existing or not existing.get("ids"):
         return False
     _training_collection.delete(ids=[photo_id])
     logger.info("Deleted training example photo_id=%s", photo_id)
-    try:
-        from services import style_upgrades
 
-        style_upgrades.invalidate_upgrade_recommendations_cache()
-    except Exception:
-        pass
+    # Re-discover styles to remove orphaned styles / update counts
+    try:
+        from services import style_catalog as style_catalog_service
+
+        style_catalog_service.discover_styles_from_examples()
+    except Exception as exc:
+        logger.warning("Style discovery after deletion failed: %s", exc)
     return True
 
 
 def get_training_count() -> int:
-    """Return the number of stored training examples."""
+    """Return the total number of stored training examples."""
     _ensure_initialized()
     if _training_collection is None:
         return 0
@@ -978,6 +1014,105 @@ def get_training_count() -> int:
     except _ChromaInternalError:
         return 0
     return len(result.get("ids") or [])
+
+
+def _enrich_and_sync_metadatas_from_main_index(
+    ids: list[str], metadatas: list[Any]
+) -> None:
+    """Check if training example metadata dicts are missing keywords, tags, or filename.
+
+    If so, look them up in the main searchable index (image_embeddings collection)
+    and backfill them into both the in-memory dicts and the edit_training collection.
+    """
+    if not ids or not metadatas:
+        return
+    missing_ids = []
+    for i, m in enumerate(metadatas):
+        if not m:
+            continue
+        meta = dict(m) if not isinstance(m, dict) else m
+        kws = (
+            meta.get("user_keywords")
+            or meta.get("keywords")
+            or meta.get("flattened_keywords")
+        )
+        tags = meta.get("scene_tags") or meta.get("tags")
+        if (not kws or kws in ("", "[]", "null", "None")) and (
+            not tags or tags in ("", "[]", "null", "None")
+        ):
+            if i < len(ids):
+                missing_ids.append(ids[i])
+
+    if not missing_ids:
+        return
+
+    try:
+        from services import chroma as chroma_service
+
+        chroma_service._ensure_initialized()
+        if chroma_service.collection is None:
+            return
+        main_res = chroma_service.collection.get(ids=missing_ids, include=["metadatas"])
+        main_ids = main_res.get("ids") or []
+        main_metas = main_res.get("metadatas") or []
+        main_map = {
+            main_ids[j]: main_metas[j]
+            for j in range(len(main_ids))
+            if j < len(main_metas) and main_metas[j]
+        }
+
+        updated_ids = []
+        updated_metas = []
+        for i, pid in enumerate(ids):
+            if pid in main_map and i < len(metadatas) and metadatas[i]:
+                mm = main_map[pid]
+                meta = (
+                    dict(metadatas[i])
+                    if not isinstance(metadatas[i], dict)
+                    else metadatas[i]
+                )
+                changed = False
+                if not meta.get("filename") and mm.get("filename"):
+                    meta["filename"] = mm["filename"]
+                    changed = True
+                kws_cur = (
+                    meta.get("user_keywords")
+                    or meta.get("keywords")
+                    or meta.get("flattened_keywords")
+                )
+                if not kws_cur or kws_cur in ("", "[]", "null", "None"):
+                    for k in ("user_keywords", "keywords", "flattened_keywords"):
+                        val = mm.get(k)
+                        if val and val not in ("", "[]", "null", "None"):
+                            meta["user_keywords"] = val
+                            changed = True
+                            break
+                tags_cur = meta.get("scene_tags") or meta.get("tags")
+                if not tags_cur or tags_cur in ("", "[]", "null", "None"):
+                    for k in ("scene_tags", "tags"):
+                        val = mm.get(k)
+                        if val and val not in ("", "[]", "null", "None"):
+                            meta["scene_tags"] = val
+                            changed = True
+                            break
+                if changed:
+                    metadatas[i] = meta
+                    updated_ids.append(pid)
+                    updated_metas.append(meta)
+
+        if updated_ids and _training_collection is not None:
+            try:
+                _training_collection.update(ids=updated_ids, metadatas=updated_metas)
+                logger.info(
+                    "Enriched and synced %d training examples with metadata from main search index.",
+                    len(updated_ids),
+                )
+            except Exception as exc:
+                logger.debug("Failed to sync enriched metadata to ChromaDB: %s", exc)
+    except Exception as exc:
+        logger.debug(
+            "Could not enrich missing training keywords from main index: %s", exc
+        )
 
 
 def list_training_examples() -> list[dict[str, Any]]:
@@ -991,21 +1126,25 @@ def list_training_examples() -> list[dict[str, Any]]:
         return []
     ids = result.get("ids") or []
     metadatas = result.get("metadatas") or []
+    _enrich_and_sync_metadatas_from_main_index(ids, metadatas)
     examples = []
     for i, pid in enumerate(ids):
         meta = dict(metadatas[i]) if i < len(metadatas) else {}
         examples.append(
             {
                 "photo_id": pid,
-                "filename": meta.get("filename", ""),
+                "filename": meta.get("filename", "") or "",
                 "label": meta.get("label", ""),
                 "summary": meta.get("summary", ""),
                 "captured_at": meta.get("captured_at", ""),
                 "has_embedding": bool(meta.get("has_embedding", False)),
                 "focal_length_bucket": meta.get("focal_length_bucket", "unknown"),
                 "time_of_day_bucket": meta.get("time_of_day_bucket", "unknown"),
-                "scene_tags": meta.get("scene_tags", "[]"),
-                "user_keywords": meta.get("user_keywords", "[]"),
+                "scene_tags": meta.get("scene_tags") or meta.get("tags") or "[]",
+                "user_keywords": meta.get("user_keywords")
+                or meta.get("keywords")
+                or meta.get("flattened_keywords")
+                or "[]",
                 "camera_make": meta.get("camera_make", ""),
                 "camera_model": meta.get("camera_model", ""),
                 "camera_profile": meta.get("camera_profile", ""),
