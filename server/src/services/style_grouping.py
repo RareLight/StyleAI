@@ -107,6 +107,28 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "aurora": "scene_astrophotography",
     "stars": "scene_astrophotography",
     "night": "scene_night",
+    "pet": "scene_wildlife",
+    "pets": "scene_wildlife",
+    "pet portrait": "scene_wildlife",
+    "pet photography": "scene_wildlife",
+    "dog": "scene_wildlife",
+    "dogs": "scene_wildlife",
+    "cat": "scene_wildlife",
+    "cats": "scene_wildlife",
+    "puppy": "scene_wildlife",
+    "kitten": "scene_wildlife",
+    "still life": "scene_studio",
+    "still_life": "scene_studio",
+    "product": "scene_studio",
+    "product photography": "scene_studio",
+    "product shot": "scene_studio",
+    "food": "scene_studio",
+    "food photography": "scene_studio",
+    "toy": "scene_studio",
+    "toy photography": "scene_studio",
+    "lego": "scene_studio",
+    "advertisement": "scene_studio",
+    "vintage advertisement": "scene_studio",
 }
 
 _BROAD_GENRE_MAP: dict[str, str] = {
@@ -191,33 +213,62 @@ def _get_broad_genre(tag: str) -> str:
     return _BROAD_GENRE_MAP.get(tag, "scene_unknown")
 
 
-def _primary_genre(scene_tags: list[str]) -> str:
+def _extract_keyword_strings(val: Any) -> list[str]:
+    """Extract individual keyword strings from string, list, dict, or JSON-string representations."""
+    if val is None:
+        return []
+    if isinstance(val, str):
+        parsed = _safe_json_loads(val, None)
+        if parsed is not None and not isinstance(parsed, str):
+            val = parsed
+        else:
+            return [w.strip() for w in val.split(",") if w.strip()]
+
+    words: list[str] = []
+    if isinstance(val, dict):
+        for k, v in val.items():
+            if isinstance(v, list):
+                for item in v:
+                    if isinstance(item, str) and item.strip():
+                        words.append(item.strip())
+            elif isinstance(v, str) and v.strip():
+                words.append(v.strip())
+    elif isinstance(val, (list, tuple, set)):
+        for item in val:
+            if isinstance(item, str) and item.strip():
+                words.append(item.strip())
+    return words
+
+
+def _primary_genre(scene_tags: Any) -> str:
     """Return the primary broad genre, ignoring stylistic tags."""
-    content_tags = [t for t in scene_tags if not t.startswith("style_")]
+    tag_list = _extract_keyword_strings(scene_tags)
+    content_tags = [t for t in tag_list if not t.startswith("style_")]
     if not content_tags:
         return "scene_unknown"
     return _get_broad_genre(content_tags[0])
 
 
-def _primary_genre_with_keywords(
-    scene_tags: list[str], user_keywords: list[str]
-) -> str:
+def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
     """Return the primary broad genre, preferring user keywords over AI tags."""
+    kw_list = _extract_keyword_strings(user_keywords)
+    tag_list = _extract_keyword_strings(scene_tags)
+
     # 1. Try to map user keywords to explicitly known genres
-    for kw in user_keywords:
-        mapped = _KEYWORD_TO_GENRE.get(kw)
+    for kw in kw_list:
+        mapped = _KEYWORD_TO_GENRE.get(kw.lower())
         if mapped:
             return _get_broad_genre(mapped)
 
     # 2. For unknown user keywords, dynamically semantic map them
-    for kw in user_keywords:
+    for kw in kw_list:
         if len(kw.strip()) > 1:
             mapped_bucket = _dynamic_semantic_mapping(kw)
             if mapped_bucket:
                 return mapped_bucket
 
     # 3. Fall back to AI scene tags
-    return _primary_genre(scene_tags)
+    return _primary_genre(tag_list)
 
 
 def _camera_id(camera_make: str | None, camera_model: str | None) -> str:
@@ -644,8 +695,12 @@ def group_examples_by_profile_genre(
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for ex in examples:
         profile = _profile_name(ex.get("camera_profile"))
-        scene_tags = _safe_json_loads(ex.get("scene_tags"), [])
-        user_keywords = _safe_json_loads(ex.get("user_keywords"), [])
+        scene_tags = ex.get("scene_tags") or ex.get("tags")
+        user_keywords = (
+            ex.get("user_keywords")
+            or ex.get("keywords")
+            or ex.get("flattened_keywords")
+        )
         genre = _primary_genre_with_keywords(scene_tags, user_keywords)
         key = (profile, genre)
         groups.setdefault(key, []).append(ex)
