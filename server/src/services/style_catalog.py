@@ -384,6 +384,21 @@ def discover_styles_from_examples(
 
         created_styles.append(style)
 
+    if photo_ids is None:
+        active_style_ids = {s["style_id"] for s in created_styles}
+        for old_s in list_styles():
+            if old_s["style_id"] not in active_style_ids and (
+                old_s.get("genre") == "scene_unknown"
+                or old_s.get("example_count", 0) == 0
+                or "_scene_" in str(old_s.get("style_id", ""))
+            ):
+                logger.info(
+                    "Removing outdated/orphaned style %s (genre: %s)",
+                    old_s["style_id"],
+                    old_s.get("genre"),
+                )
+                delete_style(old_s["style_id"])
+
     logger.info(
         "Discovered %d styles from %d examples", len(created_styles), len(examples)
     )
@@ -394,7 +409,7 @@ def discover_styles_from_examples(
 
         style_summary.summarize_catalog_styles()
     except Exception as exc:
-        logger.warning(f"Failed to trigger signature style summarization: {exc}")
+        logger.warning(f"Failed to generate catalog style summaries: {exc}")
 
     # Train predictive ML models
     try:
@@ -419,6 +434,7 @@ def _fetch_rich_examples(photo_ids: list[str]) -> list[dict[str, Any]]:
 
     ids = result.get("ids") or []
     metadatas = result.get("metadatas") or []
+    training_service._enrich_and_sync_metadatas_from_main_index(ids, metadatas)
     examples = []
     for i, pid in enumerate(ids):
         meta = dict(metadatas[i]) if i < len(metadatas) else {}
