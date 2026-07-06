@@ -7,6 +7,7 @@ Farthest Point Sampling (Max-Min Diversity), and user-aligned Hero Quality Scori
 """
 
 import logging
+import math
 import threading
 import time
 from typing import Any
@@ -237,8 +238,8 @@ def get_style_upgrade_recommendations(
         recommended_ids: list[str] = []
 
         if needed_count > 0 and all_photos_pool:
-            # Buffer pool size = 2 * needed_count (capped at 100)
-            target_recs = min(100, 2 * needed_count)
+            # Buffer pool size = 1.5 * needed_count rounded up (capped at 100)
+            target_recs = min(100, math.ceil(1.5 * needed_count))
 
             # Get existing training examples for this style from pre-fetched map
             existing_ids = all_style_examples_map.get(style_id, set())

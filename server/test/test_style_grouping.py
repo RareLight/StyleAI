@@ -331,3 +331,30 @@ def test_group_examples_uses_user_keywords_for_genre():
     # Should use user keyword "macro" → scene_nature, not scene_portrait
     key = ("default", "scene_nature")
     assert key in groups
+
+
+def test_primary_genre_with_dict_keywords_and_case_insensitivity():
+    # When user keywords are stored as JSON dict (e.g. from LLM tagging), should extract values and match case-insensitively
+    dict_keywords = {
+        "Activities": ["Looking Up"],
+        "Animals": ["English Springer Spaniel", "Dog"],
+        "Genre": ["Pet Photography", "Portrait"],
+    }
+    genre = sg._primary_genre_with_keywords([], dict_keywords)
+    # Pet Photography / Dog -> scene_wildlife -> scene_nature
+    assert genre == "scene_nature"
+
+
+def test_group_examples_uses_fallback_keyword_keys():
+    examples = [
+        {
+            "photo_id": "test_lego",
+            "camera_profile": "Nikon Z7",
+            "scene_tags": None,
+            "flattened_keywords": '["Lego", "Toy Photography", "Product Shot"]',
+            "canonical_settings": "{}",
+        }
+    ]
+    groups = sg.group_examples_by_profile_genre(examples)
+    key = ("Nikon Z7", "scene_studio")
+    assert key in groups
