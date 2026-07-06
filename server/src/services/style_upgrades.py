@@ -216,6 +216,7 @@ def get_style_upgrade_recommendations(
 
     pool_emb_map = {pid: emb for pid, emb, _ in all_photos_pool}
     results_list: list[dict[str, Any]] = []
+    already_recommended_pids: set[str] = set()
 
     for style in styles:
         style_id = style.get("style_id", "")
@@ -282,7 +283,7 @@ def get_style_upgrade_recommendations(
             valid_candidates: list[tuple[str, Any, dict[str, Any]]] = []
 
             for pid, emb, meta in all_photos_pool:
-                if pid in existing_ids:
+                if pid in existing_ids or pid in already_recommended_pids:
                     continue
 
                 photo_profile = (meta.get("camera_profile") or "").strip()
@@ -298,11 +299,15 @@ def get_style_upgrade_recommendations(
                     if is_hdr_style:
                         continue
 
-                # Step A: Burst deduplication against existing training examples via BLAS dot product
+                # Step A: Burst deduplication and minimum similarity check against existing training examples
                 if E_mat is not None and len(E_mat) > 0:
                     sims = np.dot(E_mat, emb)
                     max_sim = float(np.max(sims))
+                    # Reject exact duplicates / burst shots
                     if (1.0 - max_sim) <= 0.05:
+                        continue
+                    # Reject candidate if it is visually/semantically unrelated to the style (e.g. documents, charts, unrelated genres)
+                    if max_sim < 0.40:
                         continue
 
                 valid_candidates.append((pid, emb, meta))
@@ -366,6 +371,8 @@ def get_style_upgrade_recommendations(
                     unedited_pool, updated_existing_embs, remaining_slots
                 )
                 recommended_ids.extend(selected_unedited)
+
+            already_recommended_pids.update(recommended_ids)
 
         results_list.append(
             {
