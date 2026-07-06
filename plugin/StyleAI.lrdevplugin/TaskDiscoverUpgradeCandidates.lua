@@ -98,7 +98,13 @@ LrTasks.startAsyncTask(function()
 			end
 
 			local s = props.styles[idx]
-			props.detailName = s.style_name or "Unknown Style"
+			local sName = s.style_name or "Unknown Style"
+			local sProf = s.camera_profile or ""
+			local fullName = sName
+			if sProf ~= "" and sProf ~= "Default" and not string.find(string.lower(sName), string.lower(sProf), 1, true) then
+				fullName = string.format("%s (%s)", sName, sProf)
+			end
+			props.detailName = fullName
 			props.detailProfile = string.format(LOC("$$$/StyleAI/UpgradeAssistant/ProfileFmt=Camera Profile: %s"), s.camera_profile or "Default")
 			
 			local current = tonumber(s.current_count) or 0
