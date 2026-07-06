@@ -61,69 +61,64 @@ def _hero_score(meta: dict[str, Any]) -> float:
     return score
 
 
-def _farthest_point_sampling(
+def _select_style_recommendations(
     candidates: list[tuple[str, Any, dict[str, Any]]],
     existing_embeddings: list[Any],
     target_count: int,
 ) -> list[str]:
-    """Select up to target_count candidates using Farthest Point Sampling (Max-Min Diversity)."""
+    """Select up to target_count candidate photos that most closely match the visual domain of the style while maintaining high hero quality and avoiding near-duplicates."""
     if not candidates or target_count <= 0:
         return []
 
-    # Prepare normalized candidate matrix C_mat
-    raw_embs = [np.asarray(c[1], dtype=np.float32) for c in candidates]
-    C_mat = np.array(raw_embs, dtype=np.float32)
-    if C_mat.ndim == 1:
-        C_mat = C_mat.reshape(1, -1)
-
-    # Prepare hero scores
-    h_scores = np.array([_hero_score(c[2]) for c in candidates], dtype=np.float32)
-
-    # Prepare existing normalized embeddings matrix E_mat
     valid_existing = [
         np.asarray(e, dtype=np.float32)
         for e in existing_embeddings
         if e is not None and len(e) > 0
     ]
+
+    scored_candidates: list[tuple[float, str, np.ndarray, dict[str, Any]]] = []
+
     if valid_existing:
         E_mat = np.array(valid_existing, dtype=np.float32)
         if E_mat.ndim == 1:
             E_mat = E_mat.reshape(1, -1)
-        # Compute min distances from each candidate to any existing embedding
-        sims = np.dot(C_mat, E_mat.T)
-        sims = np.clip(sims, -1.0, 1.0)
-        min_dists = 1.0 - np.max(sims, axis=1)
+
+        for pid, emb, meta in candidates:
+            sims = np.dot(E_mat, emb)
+            max_sim = float(np.max(sims))
+            # Require minimum similarity floor to prevent outliers (rocks, daytime photos in night style, etc.)
+            if max_sim < 0.60:
+                continue
+            h_score = _hero_score(meta)
+            score = max_sim + 0.05 * h_score
+            scored_candidates.append((score, pid, emb, meta))
     else:
-        min_dists = np.ones(len(candidates), dtype=np.float32)
+        for pid, emb, meta in candidates:
+            h_score = _hero_score(meta)
+            scored_candidates.append((h_score, pid, emb, meta))
+
+    scored_candidates.sort(key=lambda x: x[0], reverse=True)
 
     selected_ids: list[str] = []
-    selected_indices: set[int] = set()
+    selected_embs: list[np.ndarray] = []
 
-    for _ in range(target_count):
-        # Combine distance with hero score
-        div_scores = min_dists + 0.05 * h_scores
-        # Mask out already selected
-        for idx in selected_indices:
-            div_scores[idx] = -1e9
-
-        best_idx = int(np.argmax(div_scores))
-        if div_scores[best_idx] <= -1e8:
+    for _, pid, emb, _ in scored_candidates:
+        if len(selected_ids) >= target_count:
             break
-
-        selected_indices.add(best_idx)
-        selected_ids.append(candidates[best_idx][0])
-
-        if len(selected_ids) == target_count:
-            break
-
-        # Update min_dists with distance to the newly chosen embedding
-        chosen_vec = C_mat[best_idx]
-        new_sims = np.dot(C_mat, chosen_vec)
-        new_sims = np.clip(new_sims, -1.0, 1.0)
-        new_dists = 1.0 - new_sims
-        min_dists = np.minimum(min_dists, new_dists)
+        # Ensure we don't select two near-duplicate frames (similarity > 0.90) among newly recommended photos
+        is_dup = False
+        if selected_embs:
+            sims_to_selected = np.dot(selected_embs, emb)
+            if np.max(sims_to_selected) > 0.90:
+                is_dup = True
+        if not is_dup:
+            selected_ids.append(pid)
+            selected_embs.append(emb)
 
     return selected_ids
+
+
+_farthest_point_sampling = _select_style_recommendations
 
 
 def get_style_upgrade_recommendations(
@@ -307,7 +302,7 @@ def get_style_upgrade_recommendations(
                     if (1.0 - max_sim) <= 0.05:
                         continue
                     # Reject candidate if it is visually/semantically unrelated to the style (e.g. documents, charts, unrelated genres)
-                    if max_sim < 0.40:
+                    if max_sim < 0.60:
                         continue
 
                 valid_candidates.append((pid, emb, meta))
@@ -349,13 +344,13 @@ def get_style_upgrade_recommendations(
                 best_hero = max(cluster, key=lambda c: _hero_score(c[2]))
                 surviving_heroes.append(best_hero)
 
-            # Step C: Separate edited vs unedited and run Farthest Point Sampling
+            # Step C: Separate edited vs unedited and select recommendations by visual similarity and hero quality
             edited_pool = [c for c in surviving_heroes if c[2].get("is_edited", False)]
             unedited_pool = [
                 c for c in surviving_heroes if not c[2].get("is_edited", False)
             ]
 
-            selected_edited = _farthest_point_sampling(
+            selected_edited = _select_style_recommendations(
                 edited_pool, existing_embeddings, target_recs
             )
             recommended_ids.extend(selected_edited)
@@ -367,7 +362,7 @@ def get_style_upgrade_recommendations(
                 for pid, emb, _ in edited_pool:
                     if pid in selected_edited:
                         updated_existing_embs.append(emb)
-                selected_unedited = _farthest_point_sampling(
+                selected_unedited = _select_style_recommendations(
                     unedited_pool, updated_existing_embs, remaining_slots
                 )
                 recommended_ids.extend(selected_unedited)
