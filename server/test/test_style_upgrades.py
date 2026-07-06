@@ -27,42 +27,44 @@ def test_hero_score():
     )
 
 
-def test_farthest_point_sampling_diversity():
-    """Verify Farthest Point Sampling maximizes minimum distance (Max-Min diversity)."""
+def test_style_recommendations_similarity_filtering():
+    """Verify recommendation sampling prioritizes visual similarity to existing style examples over outliers."""
     # Suppose existing embedding is along x-axis [1, 0, 0]
     existing = [[1.0, 0.0, 0.0]]
 
     # Candidates:
-    # cand1 is close to existing [0.99, 0.1, 0]
-    # cand2 is orthogonal [0, 1, 0] -> farthest!
-    # cand3 is opposite [-1, 0, 0] -> even farther!
+    # cand1 is close to existing [0.99, 0.1, 0] -> sim ~0.99, selected first
+    # cand2 is somewhat close [0.8, 0.6, 0] -> sim ~0.80, selected second
+    # cand3 is orthogonal [0.0, 1.0, 0.0] -> sim 0.0 < 0.60, filtered out!
+    # cand4 is opposite [-1.0, 0.0, 0.0] -> sim -1.0 < 0.60, filtered out!
     candidates = [
-        ("close", [0.99, 0.1, 0.0], {"rating": 0}),
+        ("very_close", [0.99, 0.1, 0.0], {"rating": 0}),
+        ("somewhat_close", [0.8, 0.6, 0.0], {"rating": 0}),
         ("ortho", [0.0, 1.0, 0.0], {"rating": 0}),
         ("opposite", [-1.0, 0.0, 0.0], {"rating": 0}),
     ]
 
-    selected = style_upgrades._farthest_point_sampling(
-        candidates, existing, target_count=2
+    selected = style_upgrades._select_style_recommendations(
+        candidates, existing, target_count=4
     )
     assert len(selected) == 2
-    assert selected[0] == "opposite"  # Farthest first
-    assert selected[1] == "ortho"  # Second farthest
+    assert selected[0] == "very_close"
+    assert selected[1] == "somewhat_close"
 
 
-def test_farthest_point_sampling_vectorized_edge_cases():
-    """Verify vectorized farthest point sampling handles zero vectors and single candidates without errors."""
+def test_style_recommendations_vectorized_edge_cases():
+    """Verify vectorized recommendation sampling handles zero vectors and single candidates without errors."""
     import numpy as np
 
     existing = [np.array([1.0, 0.0, 0.0], dtype=np.float32)]
     candidates = [
         ("zero_vec", np.zeros(3, dtype=np.float32), {"rating": 5}),
-        ("normal_vec", np.array([0.0, 1.0, 0.0], dtype=np.float32), {"rating": 3}),
+        ("normal_vec", np.array([0.8, 0.6, 0.0], dtype=np.float32), {"rating": 3}),
     ]
-    selected = style_upgrades._farthest_point_sampling(
+    selected = style_upgrades._select_style_recommendations(
         candidates, existing, target_count=5
     )
-    assert len(selected) == 2
+    assert len(selected) == 1
     assert "normal_vec" in selected
 
 
@@ -133,9 +135,9 @@ def test_edited_vs_unedited_priority(mocker):
     mock_collection.get.return_value = {
         "ids": ["unedited-1", "edited-1", "unedited-2"],
         "embeddings": [
+            [0.8, 0.6, 0.0],
             [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
+            [0.7, 0.0, 0.71414],
         ],
         "metadatas": [
             {"camera_profile": "Adobe Standard", "is_edited": False, "rating": 5},
