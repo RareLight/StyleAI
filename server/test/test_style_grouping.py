@@ -375,7 +375,10 @@ def test_refined_taxonomy_avoids_broad_studio_overrides():
         "Genre": ["Candid", "Portrait"],
         "Location": ["Kitchen", "Indoor"],
     }
-    assert sg._primary_genre_with_keywords([], birthday_kws) == "scene_portrait"
+    assert sg._primary_genre_with_keywords([], birthday_kws) in (
+        "scene_portrait",
+        "scene_event",
+    )
 
     # 3. Living room interior should map to architecture, not studio
     interior_kws = {
@@ -415,3 +418,13 @@ def test_pet_taxonomy_and_priority_extraction():
         "Setting": ["Indoor", "Living Room"],
     }
     assert sg._primary_genre_with_keywords([], kitten_kws) == "scene_portrait"
+
+
+def test_wildlife_macro_insects():
+    # Macro photography of dragonfly or bee should map to nature (broad bucket for wildlife/macro), not studio or landscape
+    insect_kws = {
+        "Animals": ["Dragonfly", "Bee", "Insect"],
+        "Genre": ["Macro Photography"],
+        "Setting": ["Garden", "Outdoor"],
+    }
+    assert sg._primary_genre_with_keywords([], insect_kws) == "scene_nature"

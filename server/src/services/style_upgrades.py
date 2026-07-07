@@ -321,13 +321,6 @@ def get_style_upgrade_recommendations(
                 if pid in existing_ids or pid in already_recommended_pids:
                     continue
 
-                # Only enforce rigid text tag gating if the style has ZERO training examples!
-                # When existing examples exist (E_mat is not None and len(E_mat) > 0), lead with visual embedding similarity!
-                if E_mat is None or len(E_mat) == 0:
-                    if genre and genre != "scene_unknown":
-                        if p_genre and p_genre != "scene_unknown" and p_genre != genre:
-                            continue
-
                 photo_profile = (meta.get("camera_profile") or "").strip()
                 photo_model = (meta.get("camera_model") or "").strip()
 
@@ -341,6 +334,14 @@ def get_style_upgrade_recommendations(
                     if is_hdr_style:
                         continue
 
+                genre_mismatch = (
+                    genre
+                    and genre != "scene_unknown"
+                    and p_genre
+                    and p_genre != "scene_unknown"
+                    and p_genre != genre
+                )
+
                 # Step A: Burst deduplication and minimum similarity check against existing training examples
                 if E_mat is not None and len(E_mat) > 0:
                     sims = np.dot(E_mat, emb)
@@ -348,8 +349,15 @@ def get_style_upgrade_recommendations(
                     # Reject exact duplicates / burst shots
                     if (1.0 - max_sim) <= 0.05:
                         continue
-                    # Reject candidate if it is visually/semantically unrelated to the style (e.g. documents, charts, unrelated genres)
+                    # Reject candidate if it is visually/semantically unrelated to the style
                     if max_sim < 0.60:
+                        continue
+                    # Dual-gated screening: if text genres diverge, require high visual similarity (>= 0.80) to avoid cross-talk
+                    if genre_mismatch and max_sim < 0.80:
+                        continue
+                else:
+                    # When no embeddings are available, enforce strict text genre compatibility
+                    if genre_mismatch:
                         continue
 
                 valid_candidates.append((pid, emb, meta))

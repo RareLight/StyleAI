@@ -319,3 +319,46 @@ def test_embedding_first_recommendations_over_text_divergence(mocker):
     recs = res["styles"][0]["recommended_photo_ids"]
     # Because embedding similarity is high, photo-cand is recommended despite tag divergence!
     assert "photo-cand" in recs
+
+
+def test_dual_gated_screening_rejects_moderate_similarity_cross_talk(mocker):
+    """Verify that candidate photos with moderate visual similarity (< 0.80) are rejected if LLM text tags diverge."""
+    mock_style = [
+        {
+            "style_id": "style-dual",
+            "style_name": "Style Dual",
+            "example_count": 5,
+            "camera_profile": "Adobe Standard",
+            "genre": "scene_landscape",
+        }
+    ]
+    mocker.patch("services.style_catalog.list_styles", return_value=mock_style)
+    mock_conn = mocker.MagicMock()
+    mock_conn.execute.return_value.fetchall.return_value = [
+        {"style_id": "style-dual", "photo_id": "photo-ex"}
+    ]
+    mocker.patch("services.style_catalog._ensure_initialized", return_value=mock_conn)
+    mocker.patch("services.chroma._ensure_initialized")
+
+    mock_collection = mocker.MagicMock()
+    # photo-ex is [1.0, 0.0, 0.0]
+    # photo-cand has moderate similarity [0.70, 0.71, 0.0] (sim ~0.70, which is >= 0.60 but < 0.80)
+    # and conflicting text tag 'scene_studio'
+    mock_collection.get.return_value = {
+        "ids": ["photo-ex", "photo-cand"],
+        "embeddings": [[1.0, 0.0, 0.0], [0.70, 0.71, 0.0]],
+        "metadatas": [
+            {"camera_profile": "Adobe Standard", "scene_tags": '["scene_landscape"]'},
+            {
+                "camera_profile": "Adobe Standard",
+                "scene_tags": '["scene_studio"]',
+                "rating": 5,
+            },
+        ],
+    }
+    mocker.patch("services.chroma.collection", mock_collection)
+
+    res = style_upgrades.get_style_upgrade_recommendations()
+    recs = res["styles"][0]["recommended_photo_ids"]
+    # Because similarity is < 0.80 and genres diverge, photo-cand is rejected by dual-gated screening!
+    assert "photo-cand" not in recs
