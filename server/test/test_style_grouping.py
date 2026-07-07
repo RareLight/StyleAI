@@ -358,3 +358,36 @@ def test_group_examples_uses_fallback_keyword_keys():
     groups = sg.group_examples_by_profile_genre(examples)
     key = ("Nikon Z7", "scene_studio")
     assert key in groups
+
+
+def test_refined_taxonomy_avoids_broad_studio_overrides():
+    # 1. Still life winter landscape should map to landscape/nature, not studio
+    winter_kws = {
+        "Genre": ["Still Life", "Nature"],
+        "Sceneries": ["Winter Landscape"],
+        "Weather": ["Snowy"],
+    }
+    assert sg._primary_genre_with_keywords([], winter_kws) == "scene_landscape"
+
+    # 2. Kitchen birthday party candid should map to portrait/event, not studio
+    birthday_kws = {
+        "Activities": ["Celebrating", "Blowing Candles"],
+        "Genre": ["Candid", "Portrait"],
+        "Location": ["Kitchen", "Indoor"],
+    }
+    assert sg._primary_genre_with_keywords([], birthday_kws) == "scene_portrait"
+
+    # 3. Living room interior should map to architecture, not studio
+    interior_kws = {
+        "Genre": ["Interior Photography"],
+        "Location": ["Living Room", "Home"],
+    }
+    assert sg._primary_genre_with_keywords([], interior_kws) == "scene_architecture"
+
+    # 4. LEGO toy product shot should remain studio
+    lego_kws = {
+        "Activities": ["Building"],
+        "Genre": ["Product Photography", "Toy Photography"],
+        "Objects": ["Lego Bricks"],
+    }
+    assert sg._primary_genre_with_keywords([], lego_kws) == "scene_studio"

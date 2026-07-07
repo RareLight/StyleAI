@@ -117,6 +117,25 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "sunrise": "scene_golden_hour",
     "exterior": "scene_exterior",
     "outdoor": "scene_exterior",
+    "waterfall": "scene_landscape",
+    "mountain": "scene_landscape",
+    "mountains": "scene_landscape",
+    "forest": "scene_landscape",
+    "desert": "scene_landscape",
+    "beach": "scene_landscape",
+    "ocean": "scene_landscape",
+    "river": "scene_landscape",
+    "lake": "scene_landscape",
+    "canyon": "scene_landscape",
+    "valley": "scene_landscape",
+    "glacier": "scene_landscape",
+    "cliff": "scene_landscape",
+    "dune": "scene_landscape",
+    "dunes": "scene_landscape",
+    "sand dunes": "scene_landscape",
+    "winter landscape": "scene_landscape",
+    "snowy": "scene_landscape",
+    "vista": "scene_landscape",
     # Nature & Wildlife & Macro
     "wildlife": "scene_wildlife",
     "bird": "scene_wildlife",
@@ -129,7 +148,7 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "botanical": "scene_flowers",
     "flora": "scene_flowers",
     "fauna": "scene_wildlife",
-    # Architecture & Real Estate & Property
+    # Architecture & Real Estate & Property & Interiors
     "architecture": "scene_architecture",
     "building": "scene_architecture",
     "buildings": "scene_architecture",
@@ -141,26 +160,22 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "bridge": "scene_architecture",
     "staircase": "scene_architecture",
     "facade": "scene_architecture",
-    "interior": "scene_interior",
-    "indoor": "scene_interior",
-    # Studio & Product & Still Life & Food & Automotive
+    "interior": "scene_architecture",
+    "indoor": "scene_architecture",
+    "room": "scene_architecture",
+    "living room": "scene_architecture",
+    "bedroom": "scene_architecture",
+    "dining room": "scene_architecture",
+    "home": "scene_architecture",
+    "hallway": "scene_architecture",
+    # Studio & Product & Toy & Commercial & Automotive
     "studio": "scene_studio",
-    "still life": "scene_studio",
-    "still_life": "scene_studio",
     "product": "scene_studio",
     "product photography": "scene_studio",
     "product shot": "scene_studio",
-    "food": "scene_studio",
     "food photography": "scene_studio",
     "culinary": "scene_studio",
     "beverage": "scene_studio",
-    "drink": "scene_studio",
-    "cocktail": "scene_studio",
-    "restaurant": "scene_studio",
-    "dish": "scene_studio",
-    "baking": "scene_studio",
-    "cooking": "scene_studio",
-    "kitchen": "scene_studio",
     "toy": "scene_studio",
     "toy photography": "scene_studio",
     "lego": "scene_studio",
@@ -233,7 +248,7 @@ _BROAD_GENRE_MAP: dict[str, str] = {
     "scene_wildlife": "scene_nature",
     "scene_architecture": "scene_architecture",
     "scene_studio": "scene_studio",
-    "scene_interior": "scene_studio",
+    "scene_interior": "scene_architecture",
     "scene_night": "scene_night",
     "scene_astrophotography": "scene_astrophotography",
 }
@@ -315,7 +330,19 @@ def _extract_keyword_strings(val: Any) -> list[str]:
 
     words: list[str] = []
     if isinstance(val, dict):
-        priority_keys = ("genre", "category", "subject", "scene", "animals", "people")
+        priority_keys = (
+            "sceneries",
+            "scenery",
+            "genre",
+            "category",
+            "subject",
+            "scene",
+            "animals",
+            "people",
+            "location",
+            "setting",
+            "environment",
+        )
         for pk in priority_keys:
             for k, v in val.items():
                 if k.lower() == pk:
