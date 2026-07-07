@@ -1611,12 +1611,16 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 end
 
 -- Adds a list of photos to an "Upgrade: <styleName>" collection (under set "StyleAI").
--- Finds or creates the set and collection by name, then adds the photos.
--- Each create* call runs in its own withWriteAccessDo transaction to avoid the
--- SDK "Can't get collection information after creating collection" error.
--- @param photos table of LrPhoto objects
--- @param styleName string
--- @param writeOptions optional; e.g. Defaults.catalogWriteAccessOptions
+-- Adds a list of photos to a "<styleName>" collection (under set "StyleAI").
+--
+-- This function looks for an existing collection set named "StyleAI" and an existing
+-- collection inside it named after styleName (e.g. "Landscape • Nikon Z7 AgX").
+-- If either does not exist, it creates them. It then adds all photos in the provided
+-- table to that collection and returns the LrCollection object.
+--
+-- @param photos table List of LrPhoto objects to add to the collection
+-- @param styleName string Name of the style (e.g. "Landscape • Nikon Z7 AgX")
+-- @param writeOptions table Optional table passed to withWriteAccessDo (e.g. { timeout = 60 })
 -- @return LrCollection or nil
 function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOptions)
 	if type(photos) ~= "table" or #photos == 0 then
@@ -1625,7 +1629,7 @@ function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOpt
 	writeOptions = writeOptions or { timeout = 60 }
 	local catalog = LrApplication.activeCatalog()
 	local setName = LOC("$$$/StyleAI/UpgradeAssistant/CollectionSetName=StyleAI")
-	local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=Upgrade: %s"), styleName or "Style")
+	local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName or "Style")
 
 	-- Step 1: Read — look for existing set
 	local collectionSet

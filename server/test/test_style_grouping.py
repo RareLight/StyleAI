@@ -391,3 +391,27 @@ def test_refined_taxonomy_avoids_broad_studio_overrides():
         "Objects": ["Lego Bricks"],
     }
     assert sg._primary_genre_with_keywords([], lego_kws) == "scene_studio"
+
+
+def test_pet_taxonomy_and_priority_extraction():
+    # 1. Cat pet portrait with conflicting outdoor/nature scenery tags should map to portrait due to animals priority
+    cat_kws = {
+        "Animals": ["Cat", "Tabby", "Feline"],
+        "Sceneries": ["Outdoor", "Garden", "Nature"],
+        "Genre": ["Pet Portrait"],
+    }
+    assert sg._primary_genre_with_keywords([], cat_kws) == "scene_portrait"
+
+    # 2. Dog breed (Golden Retriever) playing in grass should map to portrait
+    dog_kws = {
+        "Animals": ["Golden Retriever", "Dog", "Canine"],
+        "Location": ["Park", "Field"],
+    }
+    assert sg._primary_genre_with_keywords([], dog_kws) == "scene_portrait"
+
+    # 3. Kitten indoors should map to portrait without leaking into studio/architecture
+    kitten_kws = {
+        "Animals": ["Kitten"],
+        "Setting": ["Indoor", "Living Room"],
+    }
+    assert sg._primary_genre_with_keywords([], kitten_kws) == "scene_portrait"

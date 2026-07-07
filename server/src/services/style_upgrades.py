@@ -43,8 +43,8 @@ def _hero_score(meta: dict[str, Any]) -> float:
         rating = 0
 
     if rating > 0:
-        # Give 0.4 to 2.0 points for 1 to 5 stars
-        score += (rating / 5.0) * 2.0
+        # Give 0.6 to 3.0 points for 1 to 5 stars
+        score += (rating / 5.0) * 3.0
     else:
         # Fall back to pick status and edit complexity
         try:
@@ -53,12 +53,12 @@ def _hero_score(meta: dict[str, Any]) -> float:
             pick = 0
 
         if pick == 1:
-            score += 1.0  # Picked flag gets 1 point
+            score += 1.5  # Picked flag gets 1.5 points
         elif pick == -1:
-            score -= 2.0  # Rejected flag gets penalty
+            score -= 3.0  # Rejected flag gets strong penalty
 
-    if meta.get("is_edited", False):
-        score += 0.5
+    if meta.get("is_edited", False) or meta.get("has_develop_settings", False):
+        score += 1.0
 
     return score
 
@@ -67,6 +67,7 @@ def _select_style_recommendations(
     candidates: list[tuple[str, Any, dict[str, Any]]],
     existing_embeddings: list[Any],
     target_count: int,
+    genre_centroid: np.ndarray | None = None,
 ) -> list[str]:
     """Select up to target_count candidate photos that most closely match the visual domain of the style while maintaining high hero quality and avoiding near-duplicates."""
     if not candidates or target_count <= 0:
@@ -85,19 +86,39 @@ def _select_style_recommendations(
         if E_mat.ndim == 1:
             E_mat = E_mat.reshape(1, -1)
 
+        # Adaptive similarity gating (outlier prevention)
+        if len(E_mat) >= 3:
+            centroid = np.mean(E_mat, axis=0)
+            norm = float(np.linalg.norm(centroid))
+            if norm > 0:
+                centroid = centroid / norm
+            internal_sims = np.dot(E_mat, centroid)
+            mu_sim = float(np.mean(internal_sims))
+            sigma_sim = float(np.std(internal_sims))
+            sim_floor = max(0.60, mu_sim - 2.5 * sigma_sim)
+        else:
+            sim_floor = 0.65
+
         for pid, emb, meta in candidates:
             sims = np.dot(E_mat, emb)
             max_sim = float(np.max(sims))
-            # Require minimum similarity floor to prevent outliers (rocks, daytime photos in night style, etc.)
-            if max_sim < 0.60:
+            # Require minimum adaptive similarity floor to prevent visual outliers
+            if max_sim < sim_floor:
                 continue
             h_score = _hero_score(meta)
-            score = max_sim + 0.05 * h_score
+            score = max_sim + 0.10 * h_score
             scored_candidates.append((score, pid, emb, meta))
     else:
         for pid, emb, meta in candidates:
             h_score = _hero_score(meta)
-            scored_candidates.append((h_score, pid, emb, meta))
+            if genre_centroid is not None and len(genre_centroid) > 0:
+                sim = float(np.dot(genre_centroid, emb))
+                if sim < 0.60:
+                    continue
+                score = sim + 0.10 * h_score
+            else:
+                score = h_score
+            scored_candidates.append((score, pid, emb, meta))
 
     scored_candidates.sort(key=lambda x: x[0], reverse=True)
 
@@ -218,6 +239,17 @@ def get_style_upgrade_recommendations(
             )
 
     pool_emb_map = {pid: emb for pid, emb, *_ in all_photos_pool}
+    genre_centroids: dict[str, np.ndarray] = {}
+    genre_emb_lists: dict[str, list[np.ndarray]] = {}
+    for pid, emb, meta, p_genre in all_photos_pool:
+        if p_genre and p_genre != "scene_unknown":
+            genre_emb_lists.setdefault(p_genre, []).append(emb)
+    for g, embs in genre_emb_lists.items():
+        c = np.mean(embs, axis=0)
+        norm = float(np.linalg.norm(c))
+        if norm > 0:
+            genre_centroids[g] = c / norm
+
     results_list: list[dict[str, Any]] = []
     already_recommended_pids: set[str] = set()
 
@@ -289,9 +321,12 @@ def get_style_upgrade_recommendations(
                 if pid in existing_ids or pid in already_recommended_pids:
                     continue
 
-                if genre and genre != "scene_unknown":
-                    if p_genre and p_genre != "scene_unknown" and p_genre != genre:
-                        continue
+                # Only enforce rigid text tag gating if the style has ZERO training examples!
+                # When existing examples exist (E_mat is not None and len(E_mat) > 0), lead with visual embedding similarity!
+                if E_mat is None or len(E_mat) == 0:
+                    if genre and genre != "scene_unknown":
+                        if p_genre and p_genre != "scene_unknown" and p_genre != genre:
+                            continue
 
                 photo_profile = (meta.get("camera_profile") or "").strip()
                 photo_model = (meta.get("camera_model") or "").strip()
@@ -363,7 +398,10 @@ def get_style_upgrade_recommendations(
             ]
 
             selected_edited = _select_style_recommendations(
-                edited_pool, existing_embeddings, target_recs
+                edited_pool,
+                existing_embeddings,
+                target_recs,
+                genre_centroid=genre_centroids.get(genre),
             )
             recommended_ids.extend(selected_edited)
 
@@ -375,7 +413,10 @@ def get_style_upgrade_recommendations(
                     if pid in selected_edited:
                         updated_existing_embs.append(emb)
                 selected_unedited = _select_style_recommendations(
-                    unedited_pool, updated_existing_embs, remaining_slots
+                    unedited_pool,
+                    updated_existing_embs,
+                    remaining_slots,
+                    genre_centroid=genre_centroids.get(genre),
                 )
                 recommended_ids.extend(selected_unedited)
 

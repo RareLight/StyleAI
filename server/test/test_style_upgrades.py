@@ -13,14 +13,16 @@ def clear_upgrade_recs_cache():
 
 def test_hero_score():
     """Verify hero shot scoring with rating and fallback metrics."""
-    # 5 stars + edited = 2.0 + 0.5 = 2.5
-    assert style_upgrades._hero_score({"rating": 5, "is_edited": True}) == 2.5
-    # 3 stars unedited = 1.2
-    assert style_upgrades._hero_score({"rating": 3, "is_edited": False}) == 1.2
-    # No rating, picked flag + edited = 1.0 + 0.5 = 1.5
-    assert style_upgrades._hero_score({"pick_status": 1, "is_edited": True}) == 1.5
-    # Rejected flag unedited = -2.0
-    assert style_upgrades._hero_score({"pick_status": -1, "is_edited": False}) == -2.0
+    # 5 stars + edited = 3.0 + 1.0 = 4.0
+    assert style_upgrades._hero_score({"rating": 5, "is_edited": True}) == 4.0
+    # 3 stars unedited = 1.8
+    assert style_upgrades._hero_score(
+        {"rating": 3, "is_edited": False}
+    ) == pytest.approx(1.8)
+    # No rating, picked flag + edited = 1.5 + 1.0 = 2.5
+    assert style_upgrades._hero_score({"pick_status": 1, "is_edited": True}) == 2.5
+    # Rejected flag unedited = -3.0
+    assert style_upgrades._hero_score({"pick_status": -1, "is_edited": False}) == -3.0
     # Empty / invalid string values
     assert (
         style_upgrades._hero_score({"rating": "invalid", "pick_status": "none"}) == 0.0
@@ -274,3 +276,46 @@ def test_chromadb_numpy_array_return_handling(mocker):
     res = style_upgrades.get_style_upgrade_recommendations()
     recs = res["styles"][0]["recommended_photo_ids"]
     assert len(recs) == 2
+
+
+def test_embedding_first_recommendations_over_text_divergence(mocker):
+    """Verify that candidate photos with high visual similarity are admitted even if LLM text tags diverge."""
+    mock_style = [
+        {
+            "style_id": "style-embed",
+            "style_name": "Style Embed",
+            "example_count": 5,  # Has existing examples -> N >= 1
+            "camera_profile": "Adobe Standard",
+            "genre": "scene_landscape",
+        }
+    ]
+    mocker.patch("services.style_catalog.list_styles", return_value=mock_style)
+    # Existing training example in DB has photo-ex
+    mock_conn = mocker.MagicMock()
+    mock_conn.execute.return_value.fetchall.return_value = [
+        {"style_id": "style-embed", "photo_id": "photo-ex"}
+    ]
+    mocker.patch("services.style_catalog._ensure_initialized", return_value=mock_conn)
+    mocker.patch("services.chroma._ensure_initialized")
+
+    mock_collection = mocker.MagicMock()
+    # photo-ex is the training example [1.0, 0.0, 0.0]
+    # photo-cand has high similarity [0.95, 0.31, 0.0] but conflicting LLM text tag 'scene_studio'!
+    mock_collection.get.return_value = {
+        "ids": ["photo-ex", "photo-cand"],
+        "embeddings": [[1.0, 0.0, 0.0], [0.85, 0.5, 0.0]],
+        "metadatas": [
+            {"camera_profile": "Adobe Standard", "scene_tags": '["scene_landscape"]'},
+            {
+                "camera_profile": "Adobe Standard",
+                "scene_tags": '["scene_studio"]',
+                "rating": 5,
+            },
+        ],
+    }
+    mocker.patch("services.chroma.collection", mock_collection)
+
+    res = style_upgrades.get_style_upgrade_recommendations()
+    recs = res["styles"][0]["recommended_photo_ids"]
+    # Because embedding similarity is high, photo-cand is recommended despite tag divergence!
+    assert "photo-cand" in recs
