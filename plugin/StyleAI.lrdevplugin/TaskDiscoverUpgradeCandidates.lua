@@ -67,6 +67,7 @@ LrTasks.startAsyncTask(function()
 		props.detailButtonTitle = ""
 		props.detailButtonEnabled = false
 		props.detailRecommendedIds = {}
+		props.findAllEnabled = false
 
 		local function updateDetailView()
 			local rawIdx = props.selectedStyleIndex
@@ -138,6 +139,15 @@ LrTasks.startAsyncTask(function()
 					props.detailButtonEnabled = false
 				end
 			end
+
+			local hasAnyRecs = false
+			for _, st in ipairs(props.styles or {}) do
+				if #(st.recommended_photo_ids or {}) > 0 then
+					hasAnyRecs = true
+					break
+				end
+			end
+			props.findAllEnabled = hasAnyRecs
 		end
 
 		props:addObserver("selectedStyleIndex", updateDetailView)
@@ -246,7 +256,7 @@ LrTasks.startAsyncTask(function()
 											end
 											LrDialogs.message(
 												LOC("$$$/StyleAI/UpgradeAssistant/SelectedTitle=Photos Selected & Added to Collection"),
-												string.format(LOC("$$$/StyleAI/UpgradeAssistant/SelectedMsg=Added %d recommended candidate photos to collection 'Upgrade: %s' (under set 'StyleAI') and selected them in Library. You can now easily review them or train!"), #photos, props.detailName or "Style"),
+												string.format(LOC("$$$/StyleAI/UpgradeAssistant/SelectedMsg=Added %d recommended candidate photos to collection '%s' (under set 'StyleAI') and selected them in Library. You can now easily review them or train!"), #photos, props.detailName or "Style"),
 												"info"
 											)
 											LrDialogs.stopModalWithResult(ctx, "ok")
@@ -261,6 +271,55 @@ LrTasks.startAsyncTask(function()
 								end
 							}),
 						}),
+					}),
+					f:spacer({ height = 10 }),
+					f:push_button({
+						title = LOC("$$$/StyleAI/UpgradeAssistant/BtnFindAll=Find All & Create Collections for All Styles"),
+						enabled = bind("findAllEnabled"),
+						fill_horizontal = 1,
+						action = function()
+							LrTasks.startAsyncTask(function()
+								local totalPhotosAdded = 0
+								local stylesProcessed = 0
+								local findAllProgress = LrProgressScope({
+									title = LOC("$$$/StyleAI/UpgradeAssistant/FindAllProgress=Creating upgrade collections for all styles...")
+								})
+								for _, s in ipairs(props.styles or {}) do
+									local recIds = s.recommended_photo_ids or {}
+									if #recIds > 0 then
+										local sName = s.style_name or "Unknown Style"
+										local sProf = s.camera_profile or ""
+										local fullName = sName
+										if sProf ~= "" and sProf ~= "Default" and not string.find(string.lower(sName), string.lower(sProf), 1, true) then
+											fullName = string.format("%s (%s)", sName, sProf)
+										end
+										local photos = SearchIndexAPI.findPhotosByPhotoIds(recIds, findAllProgress)
+										if #photos > 0 then
+											Util.addPhotosToUpgradeCandidatesCollection(photos, fullName)
+											totalPhotosAdded = totalPhotosAdded + #photos
+											stylesProcessed = stylesProcessed + 1
+											LrTasks.yield()
+											LrTasks.sleep(0.05)
+										end
+									end
+								end
+								findAllProgress:done()
+								if stylesProcessed > 0 then
+									LrDialogs.message(
+										LOC("$$$/StyleAI/UpgradeAssistant/FindAllSuccessTitle=Upgrade Collections Created"),
+										string.format(LOC("$$$/StyleAI/UpgradeAssistant/FindAllSuccessMsg=Successfully created collections for %d styles (added %d total candidate photos) under set 'StyleAI'. You can now review them in Lightroom Library!"), stylesProcessed, totalPhotosAdded),
+										"info"
+									)
+									LrDialogs.stopModalWithResult(ctx, "ok")
+								else
+									LrDialogs.message(
+										LOC("$$$/StyleAI/UpgradeAssistant/NoneFound=No Photos Found"),
+										LOC("$$$/StyleAI/UpgradeAssistant/FindAllNoneMsg=Could not locate any recommended candidate photos in the active catalog."),
+										"warning"
+									)
+								end
+							end)
+						end,
 					}),
 				}),
 			})
