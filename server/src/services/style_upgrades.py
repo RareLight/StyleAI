@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 from services import chroma as chroma_service
 from services import style_catalog
+from services import style_grouping
 
 logger = logging.getLogger("styleai")
 
@@ -204,13 +205,19 @@ def get_style_upgrade_recommendations(
                     norm = float(np.linalg.norm(arr))
                     if norm > 0:
                         arr = arr / norm
-                    all_photos_pool.append((pid, arr, meta))
+                    p_genre = style_grouping._primary_genre_with_keywords(
+                        meta.get("scene_tags") or meta.get("tags"),
+                        meta.get("user_keywords")
+                        or meta.get("keywords")
+                        or meta.get("flattened_keywords"),
+                    )
+                    all_photos_pool.append((pid, arr, meta, p_genre))
         except Exception as e:
             logger.warning(
                 f"Failed to pre-fetch image embeddings pool: {e}", exc_info=True
             )
 
-    pool_emb_map = {pid: emb for pid, emb, _ in all_photos_pool}
+    pool_emb_map = {pid: emb for pid, emb, *_ in all_photos_pool}
     results_list: list[dict[str, Any]] = []
     already_recommended_pids: set[str] = set()
 
@@ -278,9 +285,13 @@ def get_style_upgrade_recommendations(
             is_hdr_style = "HDR" in camera_profile
             valid_candidates: list[tuple[str, Any, dict[str, Any]]] = []
 
-            for pid, emb, meta in all_photos_pool:
+            for pid, emb, meta, p_genre in all_photos_pool:
                 if pid in existing_ids or pid in already_recommended_pids:
                     continue
+
+                if genre and genre != "scene_unknown":
+                    if p_genre and p_genre != "scene_unknown" and p_genre != genre:
+                        continue
 
                 photo_profile = (meta.get("camera_profile") or "").strip()
                 photo_model = (meta.get("camera_model") or "").strip()
