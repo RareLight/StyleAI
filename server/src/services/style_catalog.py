@@ -343,7 +343,7 @@ def discover_styles_from_examples(
         style_name = clean_genre
         if profile and str(profile) != "Default" and str(profile) not in style_name:
             style_name = f"{style_name} • {profile}"
-        if "HDR" in str(profile) and not style_name.endswith("(HDR)"):
+        if "HDR" in str(profile) and "HDR" not in style_name:
             style_name = f"{style_name} (HDR)"
 
         style_id = _slugify(f"{profile}_{genre}")

@@ -838,15 +838,10 @@ def generate_style_edit(
                 # Check if we should have had a predictive model
                 example_count = best_style.get("example_count", 0)
                 if example_count >= predictive_engine.MIN_PCA_EXAMPLES:
-                    err_msg = f"Predictive ML engine failed to run for style '{best_style.get('style_name', 'Unknown')}' despite having {example_count} training examples (model file missing or inference error)."
-                    logger.error(err_msg)
-                    return StyleEngineResult(
-                        recipe={},
-                        confidence=round(best_confidence, 3),
-                        matched_count=example_count,
-                        engine="error",
-                        matched_filenames=[best_style.get("style_name", "")],
-                        error=err_msg,
+                    logger.warning(
+                        "Predictive ML model missing or inference failed for style '%s' (N=%d). Falling back to k-NN interpolation baseline.",
+                        best_style.get("style_name", "Unknown"),
+                        example_count,
                     )
 
                 # High confidence: use style recipe directly (fallback to KNN averaging)

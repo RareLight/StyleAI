@@ -45,3 +45,15 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
             canonical["tone_curve"]["point_curve"]["master"],
             [0.0, 0.0, 128.0, 140.0, 255.0, 255.0],
         )
+
+    def test_compute_scene_tags_none(self):
+        from services.training import compute_scene_tags
+
+        self.assertEqual(compute_scene_tags(None), [])
+
+    def test_compute_scene_tags_no_model(self):
+        from unittest.mock import patch
+        from services.training import compute_scene_tags
+
+        with patch("server_lifecycle.get_model", return_value=None):
+            self.assertEqual(compute_scene_tags([0.1] * 512), [])

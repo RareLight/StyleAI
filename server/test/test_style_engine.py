@@ -187,3 +187,36 @@ def test_finalize_recipe_no_auto_wb():
     query_exposure = {"exp_warmth_proxy": 0.95}
     final_recipe = _finalize_recipe(recipe, query_exposure, {}, style_strength=1.0)
     assert final_recipe.get("white_balance") == "As Shot"
+
+
+@patch("services.style_engine.training_service")
+@patch("services.style_catalog.find_matching_styles")
+@patch("services.predictive_engine.predict_edits")
+@patch("services.style_catalog.get_style_recipe")
+def test_generate_style_edit_ml_fallback_to_knn(
+    mock_get_recipe, mock_predict, mock_find, mock_training
+):
+    mock_training.get_training_count.return_value = 20
+    mock_training.compute_exposure_metrics.return_value = {"exp_luminance_mean": 0.5}
+    mock_training.compute_scene_tags.return_value = ["scene_portrait"]
+    mock_training.time_of_day_bucket.return_value = "afternoon"
+    mock_training.focal_length_bucket.return_value = "normal"
+
+    mock_find.return_value = [
+        (
+            {
+                "style_id": "style-15-examples",
+                "style_name": "Pro Portrait Style",
+                "camera_profile": "Adobe Standard",
+                "example_count": 20,
+            },
+            0.85,
+        )
+    ]
+    mock_predict.return_value = None
+    mock_get_recipe.return_value = {"exposure": 0.4, "contrast": 10}
+
+    res = generate_style_edit("photo_test", b"fake_bytes", style_strength=1.0)
+    assert res.engine != "error"
+    assert res.error is None
+    assert "exposure" in res.recipe.get("global", {})

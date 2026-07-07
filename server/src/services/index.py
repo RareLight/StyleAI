@@ -16,6 +16,7 @@ from .metadata import get_analysis_service
 import server_lifecycle as server_lifecycle
 from . import face as face_service
 from . import exif as exif_service
+from . import training as training_service
 import gc
 import json
 from datetime import datetime as time
@@ -582,6 +583,17 @@ def process_image_task(
                 # Update embedding status
                 if embedding is not None:
                     main_metadata["has_embedding"] = True
+                    try:
+                        scene_tags = training_service.compute_scene_tags(embedding)
+                        if scene_tags:
+                            main_metadata["scene_tags"] = json.dumps(
+                                scene_tags, ensure_ascii=False
+                            )
+                    except Exception as exc:
+                        logger.debug(
+                            "Failed to compute zero-shot scene tags during indexing: %s",
+                            exc,
+                        )
                 elif existing and existing.get("has_embedding", False):
                     # Preserve existing embedding - we didn't generate a new one (e.g. only faces)
                     main_metadata["has_embedding"] = True
