@@ -76,7 +76,6 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "people": "scene_portrait",
     "person": "scene_portrait",
     "headshot": "scene_portrait",
-    "candid": "scene_portrait",
     "fashion": "scene_portrait",
     "newborn": "scene_portrait",
     "maternity": "scene_portrait",
@@ -163,8 +162,6 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "golden_hour": "scene_golden_hour",
     "sunset": "scene_golden_hour",
     "sunrise": "scene_golden_hour",
-    "exterior": "scene_exterior",
-    "outdoor": "scene_exterior",
     "waterfall": "scene_landscape",
     "mountain": "scene_landscape",
     "mountains": "scene_landscape",
@@ -196,7 +193,15 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "botanical": "scene_flowers",
     "flora": "scene_flowers",
     "fauna": "scene_wildlife",
-    # Architecture & Real Estate & Property & Interiors
+    "insect": "scene_wildlife",
+    "insects": "scene_wildlife",
+    "bug": "scene_wildlife",
+    "bugs": "scene_wildlife",
+    "beetle": "scene_wildlife",
+    "butterfly": "scene_wildlife",
+    "bee": "scene_wildlife",
+    "spider": "scene_wildlife",
+    # Architecture & Real Estate & Property
     "architecture": "scene_architecture",
     "building": "scene_architecture",
     "buildings": "scene_architecture",
@@ -208,22 +213,19 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "bridge": "scene_architecture",
     "staircase": "scene_architecture",
     "facade": "scene_architecture",
-    "interior": "scene_architecture",
-    "indoor": "scene_architecture",
-    "room": "scene_architecture",
-    "living room": "scene_architecture",
-    "bedroom": "scene_architecture",
-    "dining room": "scene_architecture",
-    "home": "scene_architecture",
-    "hallway": "scene_architecture",
     # Studio & Product & Toy & Commercial & Automotive
     "studio": "scene_studio",
     "product": "scene_studio",
     "product photography": "scene_studio",
     "product shot": "scene_studio",
+    "food": "scene_studio",
     "food photography": "scene_studio",
     "culinary": "scene_studio",
     "beverage": "scene_studio",
+    "drink": "scene_studio",
+    "drinks": "scene_studio",
+    "cocktail": "scene_studio",
+    "meal": "scene_studio",
     "toy": "scene_studio",
     "toy photography": "scene_studio",
     "lego": "scene_studio",
@@ -246,6 +248,10 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "gala": "scene_event",
     "conference": "scene_event",
     "banquet": "scene_event",
+    "candid": "scene_event",
+    "candid event": "scene_event",
+    "gathering": "scene_event",
+    "group": "scene_event",
     # Street & Urban & Documentary
     "street": "scene_street",
     "urban": "scene_street",
@@ -256,6 +262,8 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "candid street": "scene_street",
     "graffiti": "scene_street",
     "alley": "scene_street",
+    "ferris wheel": "scene_street",
+    "amusement park": "scene_street",
     # Action & Sports & Athletics
     "sports": "scene_action",
     "action": "scene_action",
@@ -283,7 +291,7 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
 
 _BROAD_GENRE_MAP: dict[str, str] = {
     "scene_portrait": "scene_portrait",
-    "scene_group": "scene_portrait",
+    "scene_group": "scene_event",
     "scene_event": "scene_event",
     "scene_action": "scene_action",
     "scene_street": "scene_street",
@@ -303,15 +311,15 @@ _BROAD_GENRE_MAP: dict[str, str] = {
 
 
 _DYNAMIC_BUCKETS = {
-    "scene_portrait": "portrait, people, family, fashion, headshot, baby, newborn, maternity, candid, pet, pets, dog, cat, animal, puppy, kitten",
-    "scene_event": "wedding, event, concert, ceremony, reception, party, conference, gala, banquet, festival",
+    "scene_portrait": "portrait, people, family, fashion, headshot, baby, newborn, maternity, pet, pets, dog, cat, animal, puppy, kitten",
+    "scene_event": "wedding, event, concert, ceremony, reception, party, conference, gala, banquet, festival, candid, group, gathering",
     "scene_landscape": "landscape, outdoors, travel, sunset, sunrise, scenery, vista, mountains, ocean, seascape, drone, aerial",
     "scene_nature": "wildlife, macro, close-up, flowers, plants, birds, insects, fauna, flora, botanical, nature detail",
-    "scene_architecture": "architecture, real estate, interior design, exterior, building, house, property, monument, bridge, structure, room",
+    "scene_architecture": "architecture, real estate, interior design, building, house, property, monument, bridge, structure",
     "scene_studio": "studio, product, food, culinary, commercial, controlled light, flash, still life, toy photography, lego, car, automotive",
     "scene_street": "street photography, urban life, documentary, photojournalism, city street, candid street, alley, graffiti, urban environment",
     "scene_action": "sports, action, athletics, runner, surfing, motorsport, fast motion, dynamic movement, extreme sports",
-    "scene_night": "night time, evening, after dark, night event, night portrait, city lights at night, dark ambiance",
+    "scene_night": "night time, evening, after dark, city lights at night, dark ambiance",
     "scene_astrophotography": "astrophotography, nightscape, night sky, milky way, aurora borealis, northern lights, stars, star trails, telescope, deep sky",
 }
 
@@ -351,7 +359,7 @@ def _dynamic_semantic_mapping(keyword: str) -> str:
 
     # Only map if it's semantically close enough (e.g. cosine distance < 0.85)
     # This prevents keywords like "Dave" or "Red" from overriding the AI tag
-    if closest_dist < 0.85:
+    if closest_dist < 0.75:
         closest_bucket = list(_DYNAMIC_BUCKETS.keys())[closest_idx]
     else:
         closest_bucket = None
@@ -417,41 +425,127 @@ def _extract_keyword_strings(val: Any) -> list[str]:
 
 def _primary_genre(scene_tags: Any) -> str:
     """Return the primary broad genre, ignoring stylistic tags."""
-    tag_list = _extract_keyword_strings(scene_tags)
-    content_tags = [t for t in tag_list if not t.startswith("style_")]
-    if not content_tags:
-        return "scene_unknown"
-    return _get_broad_genre(content_tags[0])
+    return _primary_genre_with_keywords(scene_tags, None)
 
 
 def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
-    """Return the primary broad genre, preferring user keywords over AI tags."""
+    """Return the primary broad genre using hierarchical domain evaluation."""
     kw_list = _extract_keyword_strings(user_keywords)
     tag_list = _extract_keyword_strings(scene_tags)
+    content_tags = [t for t in tag_list if not t.startswith("style_")]
 
-    # 1. Try to map user keywords to explicitly known genres
-    for kw in kw_list:
-        kw_lower = kw.lower()
-        mapped = _KEYWORD_TO_GENRE.get(kw_lower)
-        if mapped:
-            return _get_broad_genre(mapped)
-        for k, genre_val in _KEYWORD_TO_GENRE.items():
-            if len(k) >= 3 and (
-                f" {k} " in f" {kw_lower} "
-                or kw_lower.startswith(f"{k} ")
-                or kw_lower.endswith(f" {k}")
-            ):
-                return _get_broad_genre(genre_val)
+    if kw_list:
+        tier_order = [
+            "scene_studio",
+            "scene_event",
+            "scene_portrait",
+            "scene_nature",
+            "scene_street",
+            "scene_architecture",
+            "scene_astrophotography",
+            "scene_night",
+            "scene_action",
+            "scene_landscape",
+        ]
 
-    # 2. For unknown user keywords, dynamically semantic map them
-    for kw in kw_list:
-        if len(kw.strip()) > 1:
-            mapped_bucket = _dynamic_semantic_mapping(kw)
-            if mapped_bucket:
-                return mapped_bucket
+        for target_genre in tier_order:
+            for t in kw_list:
+                t_lower = t.lower()
+                if (
+                    _BROAD_GENRE_MAP.get(t_lower) == target_genre
+                    or _BROAD_GENRE_MAP.get(t) == target_genre
+                ):
+                    return target_genre
+                mapped = _KEYWORD_TO_GENRE.get(t_lower)
+                if mapped and _get_broad_genre(mapped) == target_genre:
+                    return target_genre
+                for k, genre_val in _KEYWORD_TO_GENRE.items():
+                    if _get_broad_genre(genre_val) == target_genre and len(k) >= 3:
+                        if (
+                            f" {k} " in f" {t_lower} "
+                            or t_lower.startswith(f"{k} ")
+                            or t_lower.endswith(f" {k}")
+                        ):
+                            return target_genre
 
-    # 3. Fall back to AI scene tags
-    return _primary_genre(tag_list)
+        # Setting fallback: if no subject/domain matched in tiers, check setting keywords
+        setting_arch_words = {
+            "indoor",
+            "interior",
+            "room",
+            "living room",
+            "bedroom",
+            "dining room",
+            "home",
+            "hallway",
+            "house",
+            "structure",
+            "building",
+            "real estate",
+        }
+        setting_land_words = {
+            "outdoor",
+            "exterior",
+            "outdoors",
+            "outside",
+            "scenery",
+            "vista",
+        }
+        for t in kw_list:
+            t_lower = t.lower()
+            if any(w in t_lower for w in setting_arch_words):
+                return "scene_architecture"
+            if any(w in t_lower for w in setting_land_words):
+                return "scene_landscape"
+
+        # For unknown user keywords, dynamically semantic map them
+        for kw in kw_list:
+            if len(kw.strip()) > 1:
+                mapped_bucket = _dynamic_semantic_mapping(kw)
+                if mapped_bucket:
+                    return mapped_bucket
+
+        # Fall back to first available tag mapped in kw_list
+        for t in kw_list:
+            mapped = _get_broad_genre(t)
+            if mapped != "scene_unknown":
+                return mapped
+
+    if content_tags:
+        primary_mapped = _get_broad_genre(content_tags[0])
+        subject_tiers = {
+            "scene_studio",
+            "scene_event",
+            "scene_portrait",
+            "scene_nature",
+            "scene_action",
+        }
+        if primary_mapped in subject_tiers:
+            return primary_mapped
+
+        # If primary AI tag is a background setting, check if any AI tag indicates an animate subject / studio / event
+        tier_order_subjects = [
+            "scene_studio",
+            "scene_event",
+            "scene_portrait",
+            "scene_nature",
+            "scene_action",
+        ]
+        for target_genre in tier_order_subjects:
+            for t in content_tags:
+                t_lower = t.lower()
+                if (
+                    _BROAD_GENRE_MAP.get(t_lower) == target_genre
+                    or _BROAD_GENRE_MAP.get(t) == target_genre
+                ):
+                    return target_genre
+                mapped = _KEYWORD_TO_GENRE.get(t_lower)
+                if mapped and _get_broad_genre(mapped) == target_genre:
+                    return target_genre
+
+        return primary_mapped
+
+    return "scene_unknown"
 
 
 def _camera_id(camera_make: str | None, camera_model: str | None) -> str:
