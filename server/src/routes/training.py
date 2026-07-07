@@ -119,7 +119,7 @@ def add_training_example():
     shutter_speed = _opt_str("shutter_speed")
 
     # Automatically partition HDR styles
-    if camera_profile and "HDR" in camera_profile and not label.endswith("(HDR)"):
+    if camera_profile and "HDR" in camera_profile and "HDR" not in label:
         label = f"{label} (HDR)"
 
     # Parse comma-separated user keywords
@@ -308,11 +308,7 @@ def add_training_batch():
         pick_status = int(item.get("pick_status") or 0)
 
         # Automatically partition HDR styles
-        if (
-            camera_profile
-            and "HDR" in str(camera_profile)
-            and not label.endswith("(HDR)")
-        ):
+        if camera_profile and "HDR" in str(camera_profile) and "HDR" not in label:
             label = f"{label} (HDR)"
 
         image_bytes_b64 = item.get("image_bytes")

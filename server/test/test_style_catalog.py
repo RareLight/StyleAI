@@ -394,3 +394,37 @@ def test_update_style_for_example_incremental_update(monkeypatch, sample_style):
 
     styles = sc.list_styles()
     assert len(styles) >= 1
+
+
+def test_discover_styles_no_duplicate_hdr_suffix(monkeypatch):
+    sc._ensure_initialized()
+    examples = [
+        {
+            "photo_id": "photo_hdr_1",
+            "camera_make": "NIKON",
+            "camera_model": "Z8",
+            "camera_profile": "Adobe Standard + HDR",
+            "scene_tags": '["scene_landscape"]',
+            "canonical_settings": '{"exposure": 0.0}',
+        },
+        {
+            "photo_id": "photo_hdr_2",
+            "camera_make": "NIKON",
+            "camera_model": "Z8",
+            "camera_profile": "Adobe Standard + HDR",
+            "scene_tags": '["scene_landscape"]',
+            "canonical_settings": '{"exposure": 0.0}',
+        },
+    ]
+    monkeypatch.setattr(training_service, "list_training_examples", lambda: examples)
+    monkeypatch.setattr(sc, "_fetch_rich_examples", lambda pids: examples)
+
+    sc.discover_styles_from_examples()
+    styles = sc.list_styles()
+    hdr_styles = [
+        s for s in styles if "Adobe Standard + HDR" in s.get("style_name", "")
+    ]
+    assert len(hdr_styles) >= 1
+    for s in hdr_styles:
+        assert "(HDR) (HDR)" not in s["style_name"]
+        assert "+ HDR (HDR)" not in s["style_name"]
