@@ -71,52 +71,80 @@ def _safe_json_loads(value: str | None, default: Any = None) -> Any:
 # Mapping from common user keywords to canonical scene tags.
 # When a user keyword matches, it overrides the AI-detected scene tag.
 _KEYWORD_TO_GENRE: dict[str, str] = {
+    # Portraits & People & Pets
     "portrait": "scene_portrait",
     "people": "scene_portrait",
     "person": "scene_portrait",
     "headshot": "scene_portrait",
+    "candid": "scene_portrait",
+    "fashion": "scene_portrait",
+    "newborn": "scene_portrait",
+    "maternity": "scene_portrait",
+    "baby": "scene_portrait",
+    "baby portrait": "scene_portrait",
+    "infant": "scene_portrait",
+    "toddler": "scene_portrait",
+    "family": "scene_portrait",
+    "family portrait": "scene_portrait",
+    "couple": "scene_portrait",
+    "bridal": "scene_portrait",
+    "pet": "scene_portrait",
+    "pets": "scene_portrait",
+    "pet portrait": "scene_portrait",
+    "pet photography": "scene_portrait",
+    "dog": "scene_portrait",
+    "dogs": "scene_portrait",
+    "cat": "scene_portrait",
+    "cats": "scene_portrait",
+    "puppy": "scene_portrait",
+    "kitten": "scene_portrait",
+    "animal": "scene_portrait",
+    "animals": "scene_portrait",
+    "tabby": "scene_portrait",
+    "shorthair": "scene_portrait",
+    "spaniel": "scene_portrait",
+    "feline": "scene_portrait",
+    "canine": "scene_portrait",
+    # Landscapes & Scenery
     "landscape": "scene_landscape",
     "nature": "scene_landscape",
     "scenery": "scene_landscape",
-    "architecture": "scene_architecture",
-    "building": "scene_architecture",
-    "interior": "scene_interior",
-    "indoor": "scene_interior",
-    "exterior": "scene_exterior",
-    "outdoor": "scene_exterior",
-    "wildlife": "scene_wildlife",
-    "animal": "scene_wildlife",
-    "bird": "scene_wildlife",
-    "macro": "scene_macro",
-    "close_up": "scene_macro",
-    "detail": "scene_macro",
-    "street": "scene_street",
-    "urban": "scene_street",
-    "city": "scene_street",
-    "event": "scene_event",
-    "wedding": "scene_event",
-    "party": "scene_event",
-    "sports": "scene_action",
-    "action": "scene_action",
-    "studio": "scene_studio",
+    "seascape": "scene_landscape",
+    "drone": "scene_landscape",
+    "aerial": "scene_landscape",
     "golden_hour": "scene_golden_hour",
     "sunset": "scene_golden_hour",
     "sunrise": "scene_golden_hour",
-    "astrophotography": "scene_astrophotography",
-    "nightscape": "scene_astrophotography",
-    "aurora": "scene_astrophotography",
-    "stars": "scene_astrophotography",
-    "night": "scene_night",
-    "pet": "scene_wildlife",
-    "pets": "scene_wildlife",
-    "pet portrait": "scene_wildlife",
-    "pet photography": "scene_wildlife",
-    "dog": "scene_wildlife",
-    "dogs": "scene_wildlife",
-    "cat": "scene_wildlife",
-    "cats": "scene_wildlife",
-    "puppy": "scene_wildlife",
-    "kitten": "scene_wildlife",
+    "exterior": "scene_exterior",
+    "outdoor": "scene_exterior",
+    # Nature & Wildlife & Macro
+    "wildlife": "scene_wildlife",
+    "bird": "scene_wildlife",
+    "birds": "scene_wildlife",
+    "macro": "scene_macro",
+    "close_up": "scene_macro",
+    "detail": "scene_macro",
+    "flower": "scene_flowers",
+    "flowers": "scene_flowers",
+    "botanical": "scene_flowers",
+    "flora": "scene_flowers",
+    "fauna": "scene_wildlife",
+    # Architecture & Real Estate & Property
+    "architecture": "scene_architecture",
+    "building": "scene_architecture",
+    "buildings": "scene_architecture",
+    "real estate": "scene_architecture",
+    "property": "scene_architecture",
+    "realtor": "scene_architecture",
+    "interior design": "scene_architecture",
+    "monument": "scene_architecture",
+    "bridge": "scene_architecture",
+    "staircase": "scene_architecture",
+    "facade": "scene_architecture",
+    "interior": "scene_interior",
+    "indoor": "scene_interior",
+    # Studio & Product & Still Life & Food & Automotive
+    "studio": "scene_studio",
     "still life": "scene_studio",
     "still_life": "scene_studio",
     "product": "scene_studio",
@@ -124,19 +152,78 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "product shot": "scene_studio",
     "food": "scene_studio",
     "food photography": "scene_studio",
+    "culinary": "scene_studio",
+    "beverage": "scene_studio",
+    "drink": "scene_studio",
+    "cocktail": "scene_studio",
+    "restaurant": "scene_studio",
+    "dish": "scene_studio",
+    "baking": "scene_studio",
+    "cooking": "scene_studio",
+    "kitchen": "scene_studio",
     "toy": "scene_studio",
     "toy photography": "scene_studio",
     "lego": "scene_studio",
     "advertisement": "scene_studio",
     "vintage advertisement": "scene_studio",
+    "automotive": "scene_studio",
+    "car": "scene_studio",
+    "car photography": "scene_studio",
+    "motorcycle": "scene_studio",
+    "vehicle": "scene_studio",
+    "supercar": "scene_studio",
+    # Events & Weddings & Concerts
+    "event": "scene_event",
+    "wedding": "scene_event",
+    "party": "scene_event",
+    "concert": "scene_event",
+    "festival": "scene_event",
+    "reception": "scene_event",
+    "ceremony": "scene_event",
+    "gala": "scene_event",
+    "conference": "scene_event",
+    "banquet": "scene_event",
+    # Street & Urban & Documentary
+    "street": "scene_street",
+    "urban": "scene_street",
+    "city": "scene_street",
+    "street photography": "scene_street",
+    "documentary": "scene_street",
+    "photojournalism": "scene_street",
+    "candid street": "scene_street",
+    "graffiti": "scene_street",
+    "alley": "scene_street",
+    # Action & Sports & Athletics
+    "sports": "scene_action",
+    "action": "scene_action",
+    "athletics": "scene_action",
+    "runner": "scene_action",
+    "running": "scene_action",
+    "surfing": "scene_action",
+    "motorsport": "scene_action",
+    "race": "scene_action",
+    # Night & Astrophotography
+    "night": "scene_night",
+    "astrophotography": "scene_astrophotography",
+    "nightscape": "scene_astrophotography",
+    "aurora": "scene_astrophotography",
+    "aurora borealis": "scene_astrophotography",
+    "northern lights": "scene_astrophotography",
+    "stars": "scene_astrophotography",
+    "star trails": "scene_astrophotography",
+    "milky way": "scene_astrophotography",
+    "deep sky": "scene_astrophotography",
+    "nebula": "scene_astrophotography",
+    "eclipse": "scene_astrophotography",
+    "lunar": "scene_astrophotography",
 }
 
 _BROAD_GENRE_MAP: dict[str, str] = {
     "scene_portrait": "scene_portrait",
     "scene_group": "scene_portrait",
     "scene_event": "scene_event",
-    "scene_action": "scene_event",
-    "scene_street": "scene_event",
+    "scene_action": "scene_action",
+    "scene_street": "scene_street",
     "scene_landscape": "scene_landscape",
     "scene_exterior": "scene_landscape",
     "scene_golden_hour": "scene_landscape",
@@ -153,14 +240,16 @@ _BROAD_GENRE_MAP: dict[str, str] = {
 
 
 _DYNAMIC_BUCKETS = {
-    "scene_portrait": "portrait, people, family, fashion, headshot, baby, candid",
-    "scene_event": "wedding, event, concert, sports, action, street, photojournalism, documentary, party",
-    "scene_landscape": "landscape, outdoors, travel, sunset, scenery, drone, aerial",
-    "scene_nature": "wildlife, animals, pets, macro, close-up, flowers, birds, insects, nature detail",
-    "scene_architecture": "architecture, real estate, interior, exterior, city, urban, buildings, property",
-    "scene_studio": "studio, product, food, commercial, controlled light, flash, still life, car, automotive",
-    "scene_night": "night time, evening, after dark, night event, night portrait, family evening, city lights, night street",
-    "scene_astrophotography": "astrophotography, nightscape, night sky, milky way, aurora borealis, stars, star trails, telescopes",
+    "scene_portrait": "portrait, people, family, fashion, headshot, baby, newborn, maternity, candid, pet, pets, dog, cat, animal, puppy, kitten",
+    "scene_event": "wedding, event, concert, ceremony, reception, party, conference, gala, banquet, festival",
+    "scene_landscape": "landscape, outdoors, travel, sunset, sunrise, scenery, vista, mountains, ocean, seascape, drone, aerial",
+    "scene_nature": "wildlife, macro, close-up, flowers, plants, birds, insects, fauna, flora, botanical, nature detail",
+    "scene_architecture": "architecture, real estate, interior design, exterior, building, house, property, monument, bridge, structure, room",
+    "scene_studio": "studio, product, food, culinary, commercial, controlled light, flash, still life, toy photography, lego, car, automotive",
+    "scene_street": "street photography, urban life, documentary, photojournalism, city street, candid street, alley, graffiti, urban environment",
+    "scene_action": "sports, action, athletics, runner, surfing, motorsport, fast motion, dynamic movement, extreme sports",
+    "scene_night": "night time, evening, after dark, night event, night portrait, city lights at night, dark ambiance",
+    "scene_astrophotography": "astrophotography, nightscape, night sky, milky way, aurora borealis, northern lights, stars, star trails, telescope, deep sky",
 }
 
 _DYNAMIC_GENRE_CACHE: dict[str, str] = {}
@@ -226,13 +315,24 @@ def _extract_keyword_strings(val: Any) -> list[str]:
 
     words: list[str] = []
     if isinstance(val, dict):
+        priority_keys = ("genre", "category", "subject", "scene", "animals", "people")
+        for pk in priority_keys:
+            for k, v in val.items():
+                if k.lower() == pk:
+                    if isinstance(v, list):
+                        for item in v:
+                            if isinstance(item, str) and item.strip():
+                                words.append(item.strip())
+                    elif isinstance(v, str) and v.strip():
+                        words.append(v.strip())
         for k, v in val.items():
-            if isinstance(v, list):
-                for item in v:
-                    if isinstance(item, str) and item.strip():
-                        words.append(item.strip())
-            elif isinstance(v, str) and v.strip():
-                words.append(v.strip())
+            if k.lower() not in priority_keys:
+                if isinstance(v, list):
+                    for item in v:
+                        if isinstance(item, str) and item.strip():
+                            words.append(item.strip())
+                elif isinstance(v, str) and v.strip():
+                    words.append(v.strip())
     elif isinstance(val, (list, tuple, set)):
         for item in val:
             if isinstance(item, str) and item.strip():
@@ -256,9 +356,17 @@ def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
 
     # 1. Try to map user keywords to explicitly known genres
     for kw in kw_list:
-        mapped = _KEYWORD_TO_GENRE.get(kw.lower())
+        kw_lower = kw.lower()
+        mapped = _KEYWORD_TO_GENRE.get(kw_lower)
         if mapped:
             return _get_broad_genre(mapped)
+        for k, genre_val in _KEYWORD_TO_GENRE.items():
+            if len(k) >= 3 and (
+                f" {k} " in f" {kw_lower} "
+                or kw_lower.startswith(f"{k} ")
+                or kw_lower.endswith(f" {k}")
+            ):
+                return _get_broad_genre(genre_val)
 
     # 2. For unknown user keywords, dynamically semantic map them
     for kw in kw_list:

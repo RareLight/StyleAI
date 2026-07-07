@@ -312,7 +312,7 @@ def test_primary_genre_with_keywords_overrides_scene_tags():
 
 def test_primary_genre_with_keywords_falls_back_to_scene_tags():
     # When no keywords match, fall back to AI scene tags
-    genre = sg._primary_genre_with_keywords(["scene_landscape"], ["unknown_keyword"])
+    genre = sg._primary_genre_with_keywords(["scene_landscape"], ["xyz123nonsense"])
     assert genre == "scene_landscape"
 
 
@@ -341,8 +341,8 @@ def test_primary_genre_with_dict_keywords_and_case_insensitivity():
         "Genre": ["Pet Photography", "Portrait"],
     }
     genre = sg._primary_genre_with_keywords([], dict_keywords)
-    # Pet Photography / Dog -> scene_wildlife -> scene_nature
-    assert genre == "scene_nature"
+    # Pet Photography / Dog -> scene_portrait per user rule
+    assert genre == "scene_portrait"
 
 
 def test_group_examples_uses_fallback_keyword_keys():
