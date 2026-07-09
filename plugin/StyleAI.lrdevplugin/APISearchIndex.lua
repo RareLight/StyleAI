@@ -516,6 +516,92 @@ function SearchIndexAPI.findPhotosByPhotoIds(photoIds, progressScope)
 end
 
 ---
+-- Performs a single-pass catalog lookup across multiple style candidate lists simultaneously.
+-- Avoids repeated catalog:getAllPhotos() scans when creating collections for multiple styles.
+-- @param styleEntries table List of { fullName = "...", photoIds = { ... } }
+-- @param progressScope LrProgressScope Optional progress scope
+-- @return table List of { fullName = "...", photos = { LrPhoto, ... } }
+---
+function SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, progressScope)
+    local results = {}
+    if type(styleEntries) ~= "table" or #styleEntries == 0 then
+        return results
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local idSet = {}
+    local totalTargetCount = 0
+    for _, entry in ipairs(styleEntries) do
+        for _, photoId in ipairs(entry.photoIds or {}) do
+            if not idSet[photoId] then
+                idSet[photoId] = true
+                totalTargetCount = totalTargetCount + 1
+            end
+        end
+    end
+
+    local photoById = {}
+    if not shouldUseGlobalPhotoId() then
+        for photoId, _ in pairs(idSet) do
+            local photo = catalog:findPhotoByUuid(photoId)
+            if photo then
+                photoById[photoId] = photo
+            else
+                log:warn("findPhotosBatchedByStyleMap: Photo with UUID " .. tostring(photoId) .. " not found in catalog.")
+            end
+        end
+    else
+        local foundCount = 0
+        local startedAt = LrDate.currentTime()
+        local allPhotos = catalog:getAllPhotos()
+        local allPhotosElapsed = math.floor((LrDate.currentTime() - startedAt) * 1000)
+        log:trace("findPhotosBatchedByStyleMap: catalog:getAllPhotos() returned " .. tostring(#allPhotos) ..
+            " photos in " .. tostring(allPhotosElapsed) .. "ms")
+
+        for i, photo in ipairs(allPhotos) do
+            if progressScope and progressScope:isCanceled() then
+                break
+            end
+            if i % 50 == 0 then
+                if progressScope then
+                    progressScope:setPortionComplete(i, #allPhotos)
+                    progressScope:setCaption(string.format("Scanning catalog across all styles (%d/%d found)...", foundCount, totalTargetCount))
+                end
+                LrTasks.yield()
+                LrTasks.sleep(0.01)
+            end
+
+            local cachedId = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoId")
+            if cachedId and idSet[cachedId] and not photoById[cachedId] then
+                photoById[cachedId] = photo
+                foundCount = foundCount + 1
+                if foundCount >= totalTargetCount then
+                    break
+                end
+            end
+        end
+    end
+
+    for _, entry in ipairs(styleEntries) do
+        local photosForStyle = {}
+        for _, photoId in ipairs(entry.photoIds or {}) do
+            local photo = photoById[photoId]
+            if photo then
+                table.insert(photosForStyle, photo)
+            else
+                log:warn("findPhotosBatchedByStyleMap: Photo ID " .. tostring(photoId) .. " not found for style " .. tostring(entry.fullName))
+            end
+        end
+        table.insert(results, {
+            fullName = entry.fullName,
+            photos = photosForStyle
+        })
+    end
+
+    return results
+end
+
+---
 -- Exports a photo to a temporary location for processing.
 -- @param photo The Lightroom photo object to export.
 -- @return string|nil The path to the exported JPEG file, or nil on failure.
