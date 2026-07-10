@@ -209,7 +209,12 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "real estate": "scene_architecture",
     "property": "scene_architecture",
     "realtor": "scene_architecture",
-    "interior design": "scene_architecture",
+    "interior photography": "scene_architecture",
+    "interior": "scene_architecture",
+    "indoor": "scene_architecture",
+    "living room": "scene_architecture",
+    "home": "scene_architecture",
+    "house": "scene_architecture",
     "monument": "scene_architecture",
     "bridge": "scene_architecture",
     "staircase": "scene_architecture",
@@ -265,6 +270,11 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "alley": "scene_street",
     "ferris wheel": "scene_street",
     "amusement park": "scene_street",
+    "carnival": "scene_street",
+    "carnival ride": "scene_street",
+    "roller coaster": "scene_street",
+    "fairground": "scene_street",
+    "fair": "scene_street",
     # Action & Sports & Athletics
     "sports": "scene_action",
     "action": "scene_action",
@@ -540,13 +550,6 @@ def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
             "scenery",
             "vista",
         }
-        for t in kw_list:
-            t_lower = t.lower()
-            if any(w in t_lower for w in setting_arch_words):
-                return "scene_architecture"
-            if any(w in t_lower for w in setting_land_words):
-                return "scene_landscape"
-
         # For unknown user keywords, dynamically semantic map them
         for kw in kw_list:
             if len(kw.strip()) > 1:
@@ -562,24 +565,24 @@ def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
 
     if content_tags:
         primary_mapped = _get_broad_genre(content_tags[0])
-        subject_tiers = {
-            "scene_studio",
-            "scene_macro",
-            "scene_event",
-            "scene_portrait",
-            "scene_nature",
-            "scene_action",
+        background_settings = {
+            "scene_exterior",
+            "scene_interior",
+            "scene_golden_hour",
+            "scene_landscape",
+            "scene_unknown",
         }
-        if primary_mapped in subject_tiers:
+        if primary_mapped not in background_settings:
             return primary_mapped
 
-        # If primary AI tag is a background setting, check if any AI tag indicates an animate subject / studio / macro domain
+        # If primary tag is a background/setting, check if any tag indicates an animate/specialty subject
         tier_order_subjects = [
             "scene_studio",
             "scene_macro",
             "scene_event",
             "scene_portrait",
             "scene_action",
+            "scene_street",
         ]
         for target_genre in tier_order_subjects:
             for t in content_tags:
@@ -594,6 +597,37 @@ def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
                     return target_genre
 
         return primary_mapped
+
+    if kw_list:
+        # Setting fallback: if no subject/domain matched above, check setting keywords
+        setting_arch_words = {
+            "indoor",
+            "interior",
+            "room",
+            "living room",
+            "bedroom",
+            "dining room",
+            "home",
+            "hallway",
+            "house",
+            "structure",
+            "building",
+            "real estate",
+        }
+        setting_land_words = {
+            "outdoor",
+            "exterior",
+            "outdoors",
+            "outside",
+            "scenery",
+            "vista",
+        }
+        for t in kw_list:
+            t_lower = t.lower()
+            if any(w in t_lower for w in setting_arch_words):
+                return "scene_architecture"
+            if any(w in t_lower for w in setting_land_words):
+                return "scene_landscape"
 
     return "scene_unknown"
 

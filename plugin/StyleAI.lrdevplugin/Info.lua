@@ -39,7 +39,7 @@ return {
 			file = "TaskStyleCatalog.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/UpgradeAssistant/MenuDiscoverCandidates=Utility: Style Upgrade Assistant"),
+			title = LOC("$$$/StyleAI/UpgradeAssistant/MenuDiscoverCandidates=Utility: ML Style Upgrade Assistant"),
 			file = "TaskDiscoverUpgradeCandidates.lua",
 		},
 		{
@@ -70,7 +70,7 @@ return {
 			file = "TaskStyleCatalog.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/UpgradeAssistant/MenuDiscoverCandidates=Utility: Style Upgrade Assistant"),
+			title = LOC("$$$/StyleAI/UpgradeAssistant/MenuDiscoverCandidates=Utility: ML Style Upgrade Assistant"),
 			file = "TaskDiscoverUpgradeCandidates.lua",
 		},
 		{
