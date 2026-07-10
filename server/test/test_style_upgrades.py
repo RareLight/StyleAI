@@ -362,3 +362,30 @@ def test_dual_gated_screening_rejects_moderate_similarity_cross_talk(mocker):
     recs = res["styles"][0]["recommended_photo_ids"]
     # Because similarity is < 0.80 and genres diverge, photo-cand is rejected by dual-gated screening!
     assert "photo-cand" not in recs
+
+
+def test_vectorized_select_style_recommendations_near_duplicates():
+    """Verify vectorized _select_style_recommendations rejects near-duplicates (>0.90 similarity) and selects diverse candidates."""
+    import numpy as np
+
+    existing = [np.array([1.0, 0.0, 0.0], dtype=np.float32)]
+    candidates = [
+        ("c1", np.array([0.95, 0.312, 0.0], dtype=np.float32), {"rating": 5}),
+        (
+            "c1_dup",
+            np.array([0.949, 0.315, 0.0], dtype=np.float32),
+            {"rating": 4},
+        ),  # Near duplicate to c1 (> 0.90)
+        (
+            "c2",
+            np.array([0.70, 0.71, 0.0], dtype=np.float32),
+            {"rating": 4},
+        ),  # Visually diverse from c1 (sim ~0.88 <= 0.90)
+    ]
+
+    selected = style_upgrades._select_style_recommendations(
+        candidates, existing, target_count=3
+    )
+    assert "c1" in selected
+    assert "c2" in selected
+    assert "c1_dup" not in selected

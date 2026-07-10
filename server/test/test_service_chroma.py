@@ -9,11 +9,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "s
 
 import services.chroma as chroma_service
 from services.chroma import (
-    DatabaseNotReadyError,
     _normalize_photo_id,
     _ensure_photo_metadata,
     _cosine_distance,
-    AI_METADATA_KEYS,
+    _first_result_item,
 )
 
 
@@ -28,6 +27,12 @@ class TestChromaHelpers(unittest.TestCase):
         self.assertEqual(meta["photo_id"], "photo-1")
         self.assertEqual(meta["uuid"], "photo-1")
         self.assertEqual(meta["rating"], 5)
+
+    def test_first_result_item(self):
+        self.assertIsNone(_first_result_item(None))
+        self.assertEqual(_first_result_item([], default="d"), "d")
+        self.assertEqual(_first_result_item([10, 20]), 10)
+        self.assertEqual(_first_result_item(np.array([5, 10])), 5)
 
     def test_cosine_distance(self):
         emb_a = np.array([1.0, 0.0, 0.0], dtype=np.float32)
@@ -69,7 +74,9 @@ class TestChromaServiceCRUD(unittest.TestCase):
     def setUp(self):
         self.mock_collection = MagicMock()
         # Patch collection in chroma_service
-        self.collection_patch = patch.object(chroma_service, "collection", self.mock_collection)
+        self.collection_patch = patch.object(
+            chroma_service, "collection", self.mock_collection
+        )
         self.collection_patch.start()
 
     def tearDown(self):

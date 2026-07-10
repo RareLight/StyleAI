@@ -306,6 +306,19 @@ LrTasks.startAsyncTask(function()
 		-- Start the consumer in the background
 		LrTasks.startAsyncTask(consumerWorker)
 
+		local batchRawMetaMap = {}
+		if catalog and catalog.batchGetRawMetadata then
+			LrTasks.pcall(function()
+				batchRawMetaMap = catalog:batchGetRawMetadata(photos, { "path", "rating", "pickStatus" }) or {}
+			end)
+		end
+		local function getPhotoRawMeta(photo, key)
+			if batchRawMetaMap[photo] and batchRawMetaMap[photo][key] ~= nil then
+				return batchRawMetaMap[photo][key]
+			end
+			return photo:getRawMetadata(key)
+		end
+
 		for index, photo in ipairs(photos) do
 			if progressScope:isCanceled() then
 				break
@@ -375,9 +388,9 @@ LrTasks.startAsyncTask(function()
 					aperture = exifOptions.aperture,
 					shutter_speed = exifOptions.shutter_speed,
 					image_bytes = imageBytes,
-					filepath = photo:getRawMetadata("path"),
-					rating = tonumber(photo:getRawMetadata("rating")) or 0,
-					pick_status = tonumber(photo:getRawMetadata("pickStatus")) or 0,
+					filepath = getPhotoRawMeta(photo, "path"),
+					rating = tonumber(getPhotoRawMeta(photo, "rating")) or 0,
+					pick_status = tonumber(getPhotoRawMeta(photo, "pickStatus")) or 0,
 				}
 				if options.userKeywords and options.userKeywords ~= "" then
 					example.user_keywords = options.userKeywords

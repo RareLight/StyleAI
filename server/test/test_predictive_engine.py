@@ -250,3 +250,32 @@ def test_train_single_style_model_selection(monkeypatch):
     from sklearn.linear_model import ElasticNet
 
     assert isinstance(model_en.named_steps["elasticnet"], ElasticNet)
+
+
+def test_cluster_bursts_vectorized():
+    """Verify that vectorized _cluster_bursts accurately groups photos within delta_t <= 10s and cosine similarity >= 0.95."""
+    emb_a = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    emb_a_near = np.array([0.999, 0.04, 0.0], dtype=np.float32)  # High similarity to A
+    emb_b = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+
+    valid_examples = [
+        (emb_a, {"capture_time": 1000.0, "rating": 4}, {"exposure": 0.5}),
+        (
+            emb_a_near,
+            {"capture_time": 1005.0, "rating": 5},
+            {"exposure": 0.5},
+        ),  # Within 10s burst of A
+        (
+            emb_b,
+            {"capture_time": 1008.0, "rating": 3},
+            {"exposure": -0.2},
+        ),  # Within 10s but different visual
+    ]
+
+    curated, weights = predictive_engine._curate_training_cluster(valid_examples)
+    # A and A_near should cluster together; B should remain separate
+    assert len(curated) == 2
+    # The hero shot from cluster A should be the one with rating 5 (emb_a_near)
+    hero_ratings = [c[1].get("rating") for c in curated]
+    assert 5 in hero_ratings
+    assert 3 in hero_ratings

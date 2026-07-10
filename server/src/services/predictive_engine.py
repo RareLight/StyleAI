@@ -326,20 +326,25 @@ def _curate_training_cluster(
                 pass
         timestamps.append(None)
 
+    # Precompute normalized embeddings and pairwise cosine similarity matrix via BLAS
+    embs_mat = np.array([ex[0] for ex in valid_examples], dtype=np.float32)
+    if embs_mat.ndim == 1:
+        embs_mat = embs_mat.reshape(1, -1)
+    norms = np.linalg.norm(embs_mat, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    normed_embs = embs_mat / norms
+    sim_matrix = normed_embs @ normed_embs.T
+
     for i in range(n):
         if visited[i]:
             continue
         cluster_indices = [i]
         visited[i] = True
-        emb_i = valid_examples[i][0]
-        norm_i = np.linalg.norm(emb_i)
         t_i = timestamps[i]
 
         for j in range(i + 1, n):
             if visited[j]:
                 continue
-            emb_j = valid_examples[j][0]
-            norm_j = np.linalg.norm(emb_j)
             t_j = timestamps[j]
 
             # Check temporal window (delta <= 10 seconds) if both timestamps are present
@@ -355,12 +360,10 @@ def _curate_training_cluster(
                 continue
 
             # Check cosine distance <= 0.05 (cosine similarity >= 0.95)
-            if norm_i > 0 and norm_j > 0:
-                cos_sim = np.dot(emb_i, emb_j) / (norm_i * norm_j)
-                cos_dist = 1.0 - cos_sim
-                if cos_dist <= 0.05:
-                    cluster_indices.append(j)
-                    visited[j] = True
+            cos_sim = float(sim_matrix[i, j])
+            if cos_sim >= 0.95:
+                cluster_indices.append(j)
+                visited[j] = True
 
         clusters.append(cluster_indices)
 

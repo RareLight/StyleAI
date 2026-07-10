@@ -37,9 +37,7 @@ class TestFlattenKeywords(unittest.TestCase):
         kw_dict = {
             "name": "Nature",
             "synonyms": ["Wild", "Outdoors"],
-            "subcategories": [
-                {"name": "Forest", "aliases": ["Woods"]}
-            ]
+            "subcategories": [{"name": "Forest", "aliases": ["Woods"]}],
         }
         res = _flatten_keywords(kw_dict)
         self.assertIn("Nature", res)
@@ -116,10 +114,18 @@ class TestProcessImageTask(unittest.TestCase):
     @patch("server_lifecycle.get_model")
     @patch("server_lifecycle.get_processor")
     def test_process_image_task_embedding_flow(
-        self, mock_get_processor, mock_get_model, mock_exif, mock_chroma, mock_cancel_event
+        self,
+        mock_get_processor,
+        mock_get_model,
+        mock_exif,
+        mock_chroma,
+        mock_cancel_event,
     ):
         mock_cancel_event.is_set.return_value = False
-        mock_exif.extract_location_tags.return_value = {"latitude": 40.0, "longitude": -74.0}
+        mock_exif.extract_location_tags.return_value = {
+            "latitude": 40.0,
+            "longitude": -74.0,
+        }
         mock_chroma.collection.get.return_value = {"ids": []}
         mock_chroma.get_image.return_value = None
 
@@ -127,6 +133,7 @@ class TestProcessImageTask(unittest.TestCase):
         mock_model = MagicMock()
         mock_processor = MagicMock()
         import torch
+
         mock_processor.return_value = torch.zeros((3, 384, 384), dtype=torch.float32)
         mock_emb = torch.zeros((1, 1152), dtype=torch.float32)
         mock_model.encode_image.return_value = mock_emb

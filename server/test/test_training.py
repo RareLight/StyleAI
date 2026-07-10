@@ -80,7 +80,9 @@ class TestExposureMetrics(unittest.TestCase):
         bright_metrics = compute_exposure_metrics(bright_bytes)
 
         self.assertIn("exp_luminance_mean", dark_metrics)
-        self.assertLess(dark_metrics["exp_luminance_mean"], bright_metrics["exp_luminance_mean"])
+        self.assertLess(
+            dark_metrics["exp_luminance_mean"], bright_metrics["exp_luminance_mean"]
+        )
         self.assertGreater(dark_metrics["zone_deep_shadows"], 0.5)
         self.assertGreater(bright_metrics["zone_bright_highlights"], 0.5)
 
@@ -133,9 +135,21 @@ class TestBurstClusteringHeroSelection(unittest.TestCase):
 
         # Create 3 examples in a burst (timestamps within 10s, identical embedding)
         emb = [1.0] + [0.0] * 1151
-        ex1 = (emb, {"capture_time": 1000.0, "rating": 3, "pick_status": 0}, {"exposure": 0.1})
-        ex2 = (emb, {"capture_time": 1002.0, "rating": 5, "pick_status": 1}, {"exposure": 0.2})
-        ex3 = (emb, {"capture_time": 1004.0, "rating": 2, "pick_status": 0}, {"exposure": 0.3})
+        ex1 = (
+            emb,
+            {"capture_time": 1000.0, "rating": 3, "pick_status": 0},
+            {"exposure": 0.1},
+        )
+        ex2 = (
+            emb,
+            {"capture_time": 1002.0, "rating": 5, "pick_status": 1},
+            {"exposure": 0.2},
+        )
+        ex3 = (
+            emb,
+            {"capture_time": 1004.0, "rating": 2, "pick_status": 0},
+            {"exposure": 0.3},
+        )
 
         curated, weights = _curate_training_cluster([ex1, ex2, ex3])
         # Burst clustering should group all three into 1 cluster and choose ex2 as the hero
@@ -172,4 +186,3 @@ class TestColorAndHistogramFeatures(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
