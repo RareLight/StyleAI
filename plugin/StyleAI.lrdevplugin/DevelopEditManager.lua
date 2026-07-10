@@ -1505,3 +1505,5 @@ function DevelopEditManager.applyRecipe(photo, response, options)
 	)
 	return globalApplied, warnings
 end
+
+return DevelopEditManager

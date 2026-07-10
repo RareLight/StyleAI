@@ -125,3 +125,5 @@ end
 function KeywordConfigProvider.getKeywordCategories()
 	return loadKeywords()
 end
+
+return KeywordConfigProvider

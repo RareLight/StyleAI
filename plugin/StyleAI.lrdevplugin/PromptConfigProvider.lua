@@ -184,3 +184,5 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 		prefs.prompt = "Default"
 	end
 end
+
+return PromptConfigProvider

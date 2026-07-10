@@ -186,3 +186,5 @@ function UpdateCheck.checkForNewVersionInBackground()
 	end
 	return nil
 end
+
+return UpdateCheck
