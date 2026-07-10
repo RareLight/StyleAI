@@ -57,7 +57,7 @@ _SCENE_PROBES: dict[str, str] = {
     "scene_golden_hour": "a photograph taken at golden hour, sunset, or sunrise",
     "scene_night": "a photograph taken at night, evening, or after dark",
     "scene_astrophotography": "an astrophotography photograph of the night sky, milky way, stars, or aurora borealis",
-    "scene_studio": "a studio photograph of a product, tabletop still life, food dish, lego, or toy under controlled lighting",
+    "scene_studio": "a commercial studio tabletop photograph of a product, food dish, lego, or toy shot against a seamless studio backdrop under artificial studio flash lighting",
     "scene_action": "an action photograph of sports, athletics, or fast motion",
     # Aesthetics and Style
     "style_high_key": "a bright, airy, high-key photograph with soft light",
