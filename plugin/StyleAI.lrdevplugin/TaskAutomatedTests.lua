@@ -9,6 +9,7 @@ require("JSON")
 require("Util")
 require("APISearchIndex")
 local Pipeline = require("Pipeline")
+local DevelopEditManager = require("DevelopEditManager")
 
 ---
 -- Helper function to evaluate test conditions safely.
@@ -167,6 +168,39 @@ LrTasks.startAsyncTask(function()
 			assertEqual(0, summary.successCount, "Should have 0 successes")
 			assertEqual(1, summary.errorCount, "Should have 1 error")
 			assertTrue(string.find(summary.errors[1], "Simulated crash") ~= nil, "Crash message should be caught and returned")
+		end)
+
+		runTest("Util.getGlobalPhotoIdForPhoto - Stable Deterministic ID", function()
+			local mockPhoto = {
+				getRawMetadata = function(self, key)
+					local md = {
+						dateTimeOriginal = "2025-01-01T12:00:00",
+						cameraMake = "Canon",
+						cameraModel = "EOS R5",
+						shutterSpeed = 0.01,
+						aperture = 2.8,
+						isoSpeedRating = 100,
+					}
+					return md[key]
+				end,
+			}
+			local id1 = Util.getGlobalPhotoIdForPhoto(mockPhoto)
+			local id2 = Util.getGlobalPhotoIdForPhoto(mockPhoto)
+			assertTrue(id1 ~= nil and id1 ~= "", "Global photo ID should not be empty")
+			assertEqual(id1, id2, "Calling getGlobalPhotoIdForPhoto twice on same photo should return identical ID")
+		end)
+
+		runTest("DevelopEditManager.formatRecipeDetails - Safe Formatting", function()
+			local response = {
+				recipe = {
+					Exposure = 0.5,
+					Contrast = 10,
+				},
+				confidence = 0.85,
+				source = "ml_predictive",
+			}
+			local details = DevelopEditManager.formatRecipeDetails(response)
+			assertTrue(details ~= nil and details ~= "", "Formatted recipe details should not be empty")
 		end)
 
 		---------------------------------------------------------
