@@ -1897,6 +1897,19 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local preparationDone = false
     local activeSenderWorkers = 0
 
+    local batchRawMetaMap = {}
+    if catalog and catalog.batchGetRawMetadata then
+        LrTasks.pcall(function()
+            batchRawMetaMap = catalog:batchGetRawMetadata(photosToProcess, { "path", "dateTime", "rating", "pickStatus", "gps" }) or {}
+        end)
+    end
+    local function getPhotoRawMeta(photo, key)
+        if batchRawMetaMap[photo] and batchRawMetaMap[photo][key] ~= nil then
+            return batchRawMetaMap[photo][key]
+        end
+        return photo:getRawMetadata(key)
+    end
+
     local analyzeWorker = function()
         local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
         local maxQueueCapacity = maxSenderWorkers * batchSize * 2
@@ -1921,7 +1934,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                         -- Prepare analysis options with photo-specific context
                         local photoOptions = {}
                         if options.submit_gps then
-                            local gps = photo:getRawMetadata('gps')
+                            local gps = getPhotoRawMeta(photo, 'gps')
                             if gps then
                                 photoOptions.gps_coordinates = gps
                                 photoOptions.submit_gps = true
@@ -1939,20 +1952,20 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                             end
                         end
                         if options.submit_folder_names then
-                            local originalFilePath = photo:getRawMetadata("path")
+                            local originalFilePath = getPhotoRawMeta(photo, "path")
                             if originalFilePath then
                                 photoOptions.folder_names = Util.getStringsFromRelativePath(originalFilePath)
                                 photoOptions.submit_folder_names = true
                             end
                         end
                         -- Always submit catalog capture time.
-                        local datetime = photo:getRawMetadata("dateTime")
+                        local datetime = getPhotoRawMeta(photo, "dateTime")
                         if datetime ~= nil and type(datetime) == "number" then
                             photoOptions.date_time = LrDate.timeToW3CDate(datetime)
                             photoOptions.date_time_unix = LrDate.timeToPosixDate(datetime)
                         end
                         photoOptions.user_context = photo:getPropertyForPlugin(_PLUGIN, 'photoContext') or ""
-                        photoOptions.raw_filepath = photo:getRawMetadata("path")
+                        photoOptions.raw_filepath = getPhotoRawMeta(photo, "path")
 
                         local exifInfo = Util.getPhotoExif(photo)
                         if exifInfo then
@@ -1960,8 +1973,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                             photoOptions.camera_make = exifInfo.camera_make
                             photoOptions.camera_model = exifInfo.camera_model
                         end
-                        photoOptions.rating = tonumber(photo:getRawMetadata("rating")) or 0
-                        photoOptions.pick_status = tonumber(photo:getRawMetadata("pickStatus")) or 0
+                        photoOptions.rating = tonumber(getPhotoRawMeta(photo, "rating")) or 0
+                        photoOptions.pick_status = tonumber(getPhotoRawMeta(photo, "pickStatus")) or 0
 
                         local okDev, devSettings = LrTasks.pcall(function()
                             return photo:getDevelopSettings()

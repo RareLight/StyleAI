@@ -99,10 +99,14 @@ def _select_style_recommendations(
         else:
             sim_floor = 0.65
 
-        for pid, emb, meta in candidates:
-            sims = np.dot(E_mat, emb)
-            max_sim = float(np.max(sims))
-            # Require minimum adaptive similarity floor to prevent visual outliers
+        C_mat = np.array([c[1] for c in candidates], dtype=np.float32)
+        if C_mat.ndim == 1:
+            C_mat = C_mat.reshape(1, -1)
+        sim_matrix = C_mat @ E_mat.T
+        max_sims = np.max(sim_matrix, axis=1)
+
+        for i, (pid, emb, meta) in enumerate(candidates):
+            max_sim = float(max_sims[i])
             if max_sim < sim_floor:
                 continue
             h_score = _hero_score(meta)
@@ -131,8 +135,11 @@ def _select_style_recommendations(
         # Ensure we don't select two near-duplicate frames (similarity > 0.90) among newly recommended photos
         is_dup = False
         if selected_embs:
-            sims_to_selected = np.dot(selected_embs, emb)
-            if np.max(sims_to_selected) > 0.90:
+            sel_mat = np.array(selected_embs, dtype=np.float32)
+            if sel_mat.ndim == 1:
+                sel_mat = sel_mat.reshape(1, -1)
+            sims_to_selected = sel_mat @ emb
+            if float(np.max(sims_to_selected)) > 0.90:
                 is_dup = True
         if not is_dup:
             selected_ids.append(pid)
@@ -315,7 +322,7 @@ def get_style_upgrade_recommendations(
 
             # Filter candidates from pool
             is_hdr_style = "HDR" in camera_profile
-            valid_candidates: list[tuple[str, Any, dict[str, Any]]] = []
+            prelim_candidates: list[tuple[str, Any, dict[str, Any], bool]] = []
 
             for pid, emb, meta, p_genre in all_photos_pool:
                 if pid in existing_ids or pid in already_recommended_pids:
@@ -341,26 +348,33 @@ def get_style_upgrade_recommendations(
                     and p_genre != "scene_unknown"
                     and p_genre != genre
                 )
+                prelim_candidates.append((pid, emb, meta, genre_mismatch))
 
-                # Step A: Burst deduplication and minimum similarity check against existing training examples
-                if E_mat is not None and len(E_mat) > 0:
-                    sims = np.dot(E_mat, emb)
-                    max_sim = float(np.max(sims))
+            valid_candidates: list[tuple[str, Any, dict[str, Any]]] = []
+            if E_mat is not None and len(E_mat) > 0 and prelim_candidates:
+                C_mat = np.array([c[1] for c in prelim_candidates], dtype=np.float32)
+                if C_mat.ndim == 1:
+                    C_mat = C_mat.reshape(1, -1)
+                sim_matrix = C_mat @ E_mat.T
+                max_sims = np.max(sim_matrix, axis=1)
+
+                for i, (pid, emb, meta, gm) in enumerate(prelim_candidates):
+                    max_sim = float(max_sims[i])
                     # Reject exact duplicates / burst shots
                     if (1.0 - max_sim) <= 0.05:
                         continue
                     # Reject candidate if it is visually/semantically unrelated to the style
                     if max_sim < 0.60:
                         continue
-                    # Dual-gated screening: if text genres diverge, require high visual similarity (>= 0.80) to avoid cross-talk
-                    if genre_mismatch and max_sim < 0.80:
+                    # Dual-gated screening: if text genres diverge, require high visual similarity (>= 0.80)
+                    if gm and max_sim < 0.80:
                         continue
-                else:
-                    # When no embeddings are available, enforce strict text genre compatibility
-                    if genre_mismatch:
+                    valid_candidates.append((pid, emb, meta))
+            else:
+                for pid, emb, meta, gm in prelim_candidates:
+                    if gm:
                         continue
-
-                valid_candidates.append((pid, emb, meta))
+                    valid_candidates.append((pid, emb, meta))
 
             # Step B: Within candidate pool, sort by capture time and cluster bursts
             valid_candidates.sort(key=lambda c: (c[2].get("capture_time") or 0.0, c[0]))
