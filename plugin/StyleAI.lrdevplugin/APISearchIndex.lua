@@ -446,27 +446,6 @@ function SearchIndexAPI.findPhotoByPhotoId(photoId)
     return nil
 end
 
-function SearchIndexAPI.findPhotosByPhotoIds(photoIds, progressScope)
-    local photos = {}
-    if type(photoIds) ~= "table" or #photoIds == 0 then
-        return photos
-    end
-
-    local catalog = LrApplication.activeCatalog()
-    if not shouldUseGlobalPhotoId() then
-        for _, photoId in ipairs(photoIds) do
-            local photo = catalog:findPhotoByUuid(photoId)
-            if photo then
-                table.insert(photos, photo)
-            else
-                log:warn("findPhotosByPhotoIds: Photo with UUID " ..
-                    tostring(photoId) .. " not found in catalog (non-global IDs).")
-            end
-        end
-        return photos
-    end
-
-    local idSet = {}
 local function scanCatalogForGlobalPhotoIds(catalog, allPhotos, idSet, targetCount, progressScope, captionPrefix)
     local photoById = {}
     local foundCount = 0

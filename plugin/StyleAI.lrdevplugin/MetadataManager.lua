@@ -1185,3 +1185,5 @@ function MetadataManager.getPhotoKeywordHierarchy(photo)
 	-- log:trace("Photo keyword hierarchy: " .. Util.dumpTable(hierarchy))
 	return hierarchy
 end
+
+return MetadataManager

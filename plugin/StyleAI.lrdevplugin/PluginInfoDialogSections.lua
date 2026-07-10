@@ -784,3 +784,5 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 
 	propertyTable.keepChecksRunning = false -- Stop background health polling
 end
+
+return PluginInfoDialogSections
