@@ -504,13 +504,43 @@ def _extract_keyword_strings(val: Any) -> list[str]:
     return words
 
 
+def _evaluate_exif_priors(exif_metadata: dict[str, Any] | None) -> dict[str, float]:
+    """Evaluate EXIF metadata as Bayesian prior evidence weights (not hard overrides)."""
+    priors: dict[str, float] = {}
+    if not exif_metadata or not isinstance(exif_metadata, dict):
+        return priors
+
+    shutter = float(exif_metadata.get("shutter_speed") or 0.0)
+    iso = float(exif_metadata.get("iso") or 0.0)
+    focal = float(exif_metadata.get("focal_length") or 0.0)
+    lens = str(exif_metadata.get("lens") or "").lower()
+    flash = bool(exif_metadata.get("flash"))
+
+    if shutter >= 10.0 and iso >= 3200:
+        priors["scene_night"] = 0.4
+    if "macro" in lens or focal >= 90.0:
+        priors["scene_macro"] = priors.get("scene_macro", 0.0) + 0.15
+        priors["scene_portrait"] = priors.get("scene_portrait", 0.0) + 0.15
+    if 0.0 < focal <= 24.0:
+        priors["scene_landscape"] = priors.get("scene_landscape", 0.0) + 0.15
+        priors["scene_architecture"] = priors.get("scene_architecture", 0.0) + 0.15
+    if flash and 0 < iso <= 200:
+        priors["scene_studio"] = priors.get("scene_studio", 0.0) + 0.20
+
+    return priors
+
+
 def _primary_genre(scene_tags: Any) -> str:
     """Return the primary broad genre, ignoring stylistic tags."""
     return _primary_genre_with_keywords(scene_tags, None)
 
 
-def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
-    """Return the primary broad genre using hierarchical domain evaluation."""
+def _primary_genre_with_keywords(
+    scene_tags: Any,
+    user_keywords: Any,
+    exif_metadata: dict[str, Any] | None = None,
+) -> str:
+    """Return the primary editing regime using explicit user keywords, Softmax vision, and EXIF priors."""
     kw_list = _extract_keyword_strings(user_keywords)
     tag_list = _extract_keyword_strings(scene_tags)
     content_tags = [t for t in tag_list if not t.startswith("style_")]
@@ -550,37 +580,12 @@ def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
                         ):
                             return target_genre
 
-        # Setting fallback: if no subject/domain matched in tiers, check setting keywords
-        setting_arch_words = {
-            "indoor",
-            "interior",
-            "room",
-            "living room",
-            "bedroom",
-            "dining room",
-            "home",
-            "hallway",
-            "house",
-            "structure",
-            "building",
-            "real estate",
-        }
-        setting_land_words = {
-            "outdoor",
-            "exterior",
-            "outdoors",
-            "outside",
-            "scenery",
-            "vista",
-        }
-        # For unknown user keywords, dynamically semantic map them
         for kw in kw_list:
             if len(kw.strip()) > 1:
                 mapped_bucket = _dynamic_semantic_mapping(kw)
                 if mapped_bucket:
                     return mapped_bucket
 
-        # Fall back to first available tag mapped in kw_list
         for t in kw_list:
             mapped = _get_broad_genre(t)
             if mapped != "scene_unknown":
@@ -595,31 +600,46 @@ def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
             "scene_landscape",
             "scene_unknown",
         }
-        if primary_mapped not in background_settings:
-            return primary_mapped
+        if primary_mapped in background_settings:
+            tier_order_subjects = [
+                "scene_studio",
+                "scene_macro",
+                "scene_event",
+                "scene_portrait",
+                "scene_action",
+                "scene_street",
+            ]
+            for target_genre in tier_order_subjects:
+                for t in content_tags:
+                    t_lower = t.lower()
+                    if (
+                        _BROAD_GENRE_MAP.get(t_lower) == target_genre
+                        or _BROAD_GENRE_MAP.get(t) == target_genre
+                    ):
+                        return target_genre
+                    mapped = _KEYWORD_TO_GENRE.get(t_lower)
+                    if mapped and _get_broad_genre(mapped) == target_genre:
+                        return target_genre
 
-        # If primary tag is a background/setting, check if any tag indicates an animate/specialty subject
-        tier_order_subjects = [
+        canonical_regimes = {
+            "scene_portrait",
+            "scene_landscape",
+            "scene_architecture",
             "scene_studio",
             "scene_macro",
-            "scene_event",
-            "scene_portrait",
-            "scene_action",
-            "scene_street",
-        ]
-        for target_genre in tier_order_subjects:
-            for t in content_tags:
-                t_lower = t.lower()
-                if (
-                    _BROAD_GENRE_MAP.get(t_lower) == target_genre
-                    or _BROAD_GENRE_MAP.get(t) == target_genre
-                ):
-                    return target_genre
-                mapped = _KEYWORD_TO_GENRE.get(t_lower)
-                if mapped and _get_broad_genre(mapped) == target_genre:
-                    return target_genre
+            "scene_night",
+        }
+        if primary_mapped in canonical_regimes:
+            return primary_mapped
+        if content_tags[0] in canonical_regimes:
+            return content_tags[0]
 
-        return primary_mapped
+    priors = _evaluate_exif_priors(exif_metadata)
+    if priors.get("scene_night", 0.0) >= 0.4:
+        return "scene_night"
+
+    if content_tags and content_tags[0] != "scene_unknown":
+        return _get_broad_genre(content_tags[0])
 
     if kw_list:
         # Setting fallback: if no subject/domain matched above, check setting keywords

@@ -41,25 +41,16 @@ EMBEDDING_DIM = (
 # Scene-type probe texts for CLIP zero-shot classification
 # ---------------------------------------------------------------------------
 
-_SCENE_PROBES: dict[str, str] = {
-    # Subject Matter
-    "scene_portrait": "a portrait photograph of a human face, person, couple, family, or pet where the subject is clearly the main focus",
-    "scene_group": "a photograph of a group of people or crowd",
-    "scene_landscape": "a scenic landscape or nature photograph of mountains, valleys, oceans, forests, or natural terrain without people or urban structures",
-    "scene_architecture": "an architectural photograph of a building facade, house, interior room, bridge, or structural design",
-    "scene_wildlife": "a wildlife photograph of wild animals or birds in nature",
-    "scene_event": "an event photograph of a wedding, concert, ceremony, or celebration party",
-    "scene_street": "a street photography or urban scene photograph of city streets, ferris wheels, amusement parks, carnival rides, or city life",
-    "scene_macro": "an extreme close-up macro photograph of a tiny insect, bug, beetle, spider, flower stamen, or water droplet with high magnification and shallow depth of field",
-    "scene_flowers": "a botanical close-up photograph of flowers or garden plants",
-    "scene_interior": "an interior design or indoor room photograph",
-    "scene_exterior": "an outdoor architectural or exterior scene photograph",
-    "scene_golden_hour": "a photograph taken at golden hour, sunset, or sunrise",
-    "scene_night": "a photograph taken at night, evening, or after dark",
-    "scene_astrophotography": "an astrophotography photograph of the night sky, milky way, stars, or aurora borealis",
+_CANONICAL_EDITING_REGIMES: dict[str, str] = {
+    "scene_portrait": "a portrait photograph of a human face, person, couple, family, or pet where skin tones and face lighting govern the edit",
+    "scene_landscape": "a scenic landscape or outdoor nature photograph of mountains, valleys, oceans, forests, or wide natural scenery",
+    "scene_architecture": "an architectural photograph of a building facade, interior room, house, real estate property, or bridge geometry",
     "scene_studio": "a commercial studio tabletop photograph of a product, food dish, lego, or toy shot against a seamless studio backdrop under artificial studio flash lighting",
-    "scene_action": "an action photograph of sports, athletics, or fast motion",
-    # Aesthetics and Style
+    "scene_macro": "an extreme close-up macro photograph of a tiny insect, bug, beetle, spider, flower stamen, or water droplet showing high magnification detail",
+    "scene_night": "an astrophotography photograph of the night sky, milky way, stars, aurora borealis, or extreme low-light night scene",
+}
+
+_AESTHETIC_PROBES: dict[str, str] = {
     "style_high_key": "a bright, airy, high-key photograph with soft light",
     "style_low_key": "a dark, moody, low-key photograph with deep shadows",
     "style_minimalist": "a minimalist photograph with negative space",
@@ -67,6 +58,8 @@ _SCENE_PROBES: dict[str, str] = {
     "style_cinematic": "a cinematic or dramatic photograph",
     "style_neon": "a cyberpunk or neon-lit photograph",
 }
+
+_SCENE_PROBES: dict[str, str] = {**_CANONICAL_EDITING_REGIMES, **_AESTHETIC_PROBES}
 
 _SCENE_THRESHOLD = 0.15  # cosine similarity threshold for a tag to be "present"
 
@@ -475,7 +468,6 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
         )
         img_vec = F.normalize(img_vec, p=2, dim=1)
 
-        tags_with_scores: list[tuple[float, str]] = []
         tokenize_fn = (
             getattr(clip_model, "tokenize", None) or server_lifecycle.get_tokenizer()
         )
@@ -483,35 +475,42 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
             return []
 
         with torch.no_grad():
-            has_siglip = hasattr(clip_model, "logit_bias")
-            if has_siglip:
-                scale = clip_model.logit_scale.exp().item()
-                bias = clip_model.logit_bias.item()
+            canonical_names = list(_CANONICAL_EDITING_REGIMES.keys())
+            canonical_texts = list(_CANONICAL_EDITING_REGIMES.values())
 
-            for tag_name, probe_text in _SCENE_PROBES.items():
+            sims: list[float] = []
+            for probe_text in canonical_texts:
+                tokens = tokenize_fn([probe_text]).to(TORCH_DEVICE)
+                text_features = clip_model.encode_text(tokens)
+                text_vec = F.normalize(text_features, p=2, dim=1)
+                sims.append(float((img_vec * text_vec).sum().cpu()))
+
+            tau = 0.05
+            sims_tensor = torch.tensor(sims, dtype=torch.float32)
+            probs = F.softmax(sims_tensor / tau, dim=0).tolist()
+
+            ranked = sorted(
+                zip(probs, canonical_names, strict=False),
+                key=lambda x: x[0],
+                reverse=True,
+            )
+            top_prob, top_regime = ranked[0]
+            result_tags: list[str] = (
+                [top_regime] if top_prob >= 0.45 else ["scene_general"]
+            )
+
+            for style_tag, probe_text in _AESTHETIC_PROBES.items():
                 try:
                     tokens = tokenize_fn([probe_text]).to(TORCH_DEVICE)
                     text_features = clip_model.encode_text(tokens)
                     text_vec = F.normalize(text_features, p=2, dim=1)
                     sim = float((img_vec * text_vec).sum().cpu())
-
-                    if has_siglip:
-                        logit = sim * scale + bias
-                        prob = float(torch.sigmoid(torch.tensor(logit)))
-                        is_match = prob >= 0.20 or sim >= _SCENE_THRESHOLD
-                    else:
-                        is_match = sim >= _SCENE_THRESHOLD
-
-                    if is_match:
-                        tags_with_scores.append((sim, tag_name))
+                    if sim >= _SCENE_THRESHOLD:
+                        result_tags.append(style_tag)
                 except Exception:
                     pass
 
-        tags_with_scores.sort(key=lambda x: x[0], reverse=True)
-        if not tags_with_scores:
-            return []
-        top_score = tags_with_scores[0][0]
-        return [t[1] for t in tags_with_scores if top_score - t[0] <= 0.08]
+            return result_tags
 
     except Exception as exc:
         logger.debug("compute_scene_tags failed (non-critical): %s", exc)
