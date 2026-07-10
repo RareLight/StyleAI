@@ -11,6 +11,7 @@ of 300 for Contrast (+/-100 scale) and a raw variance of 0.3 for Exposure
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import math
 import statistics
@@ -330,12 +331,27 @@ _bucket_embeddings = None
 
 
 def _dynamic_semantic_mapping(keyword: str) -> str:
-    """Use SentenceTransformer to dynamically map an unknown keyword to a broad bucket."""
+    """Use SentenceTransformer to dynamically map an unknown keyword to a broad bucket, caching persistently in SQLite."""
     global _ef_instance, _bucket_embeddings
 
     keyword_lower = keyword.strip().lower()
     if keyword_lower in _DYNAMIC_GENRE_CACHE:
         return _DYNAMIC_GENRE_CACHE[keyword_lower]
+
+    try:
+        from services import style_catalog
+
+        conn = style_catalog._ensure_initialized()
+        row = conn.execute(
+            "SELECT genre FROM semantic_genre_cache WHERE keyword = ?",
+            (keyword_lower,),
+        ).fetchone()
+        if row:
+            cached_genre = row["genre"] if row["genre"] else None
+            _DYNAMIC_GENRE_CACHE[keyword_lower] = cached_genre
+            return cached_genre
+    except Exception:
+        pass
 
     if _ef_instance is None:
         _ef_instance = embedding_functions.DefaultEmbeddingFunction()
@@ -366,7 +382,38 @@ def _dynamic_semantic_mapping(keyword: str) -> str:
         closest_bucket = None
 
     _DYNAMIC_GENRE_CACHE[keyword_lower] = closest_bucket
+
+    try:
+        from services import style_catalog
+
+        conn = style_catalog._ensure_initialized()
+        conn.execute(
+            "INSERT OR REPLACE INTO semantic_genre_cache (keyword, genre, created_at) VALUES (?, ?, ?)",
+            (
+                keyword_lower,
+                closest_bucket or "",
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        conn.commit()
+    except Exception:
+        pass
+
     return closest_bucket
+
+
+def clear_semantic_genre_cache() -> None:
+    """Clear both memory and SQLite caches for dynamic semantic genre mappings."""
+    global _DYNAMIC_GENRE_CACHE
+    _DYNAMIC_GENRE_CACHE.clear()
+    try:
+        from services import style_catalog
+
+        conn = style_catalog._ensure_initialized()
+        conn.execute("DELETE FROM semantic_genre_cache")
+        conn.commit()
+    except Exception:
+        pass
 
 
 def _get_broad_genre(tag: str) -> str:

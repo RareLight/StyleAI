@@ -8,6 +8,7 @@ Farthest Point Sampling (Max-Min Diversity), and user-aligned Hero Quality Scori
 
 import logging
 import math
+import re
 import threading
 import time
 from typing import Any
@@ -61,6 +62,52 @@ def _hero_score(meta: dict[str, Any]) -> float:
         score += 1.0
 
     return score
+
+
+def _normalize_profile_for_comparison(profile: str) -> str:
+    if not profile:
+        return ""
+    # Strip + HDR or HDR token to inspect base profile name
+    p_clean = re.sub(r"(?i)\s*\+?\s*HDR\b", "", profile).strip().lower()
+    p_clean = re.sub(r"\s*\(v\d+\)", "", p_clean).strip()
+    p_clean = re.sub(r"\s+", " ", p_clean)
+    return p_clean
+
+
+def _profiles_compatible(style_profile: str, photo_profile: str) -> bool:
+    if not style_profile or not photo_profile:
+        return False
+    style_is_hdr = bool(re.search(r"(?i)\bHDR\b", style_profile))
+    photo_is_hdr = bool(re.search(r"(?i)\bHDR\b", photo_profile))
+    if style_is_hdr != photo_is_hdr:
+        return False
+    return _normalize_profile_for_comparison(
+        style_profile
+    ) == _normalize_profile_for_comparison(photo_profile)
+
+
+def _models_compatible(style_model: str, photo_model: str) -> bool:
+    if not style_model or not photo_model:
+        return False
+    m_style = re.sub(r"[^a-zA-Z0-9]", "", style_model).lower()
+    m_photo = re.sub(r"[^a-zA-Z0-9]", "", photo_model).lower()
+    return m_style == m_photo
+
+
+def _check_genre_mismatch(style_genre: str, p_genre: str, meta: dict[str, Any]) -> bool:
+    """Check if the candidate photo's primary editing genre conflicts with the style's genre.
+
+    We rely strictly on p_genre (computed via our Specialty-First hierarchy in
+    style_grouping._primary_genre_with_keywords) rather than searching loose multi-label
+    tags. Searching unranked tags would defeat Specialty-First precedence and cause
+    specialty photos (e.g. studio architectural models or macro insects) to leak into
+    broad background styles (architecture or landscape).
+    """
+    if not style_genre or style_genre == "scene_unknown":
+        return False
+    if p_genre and p_genre != "scene_unknown" and p_genre == style_genre:
+        return False
+    return True
 
 
 def _select_style_recommendations(
@@ -332,22 +379,16 @@ def get_style_upgrade_recommendations(
                 photo_model = (meta.get("camera_model") or "").strip()
 
                 if photo_profile:
-                    if photo_profile != camera_profile:
+                    if not _profiles_compatible(camera_profile, photo_profile):
                         continue
                 else:
                     if camera_profile != "Default" and photo_model and camera_model:
-                        if photo_model != camera_model:
+                        if not _models_compatible(camera_model, photo_model):
                             continue
                     if is_hdr_style:
                         continue
 
-                genre_mismatch = (
-                    genre
-                    and genre != "scene_unknown"
-                    and p_genre
-                    and p_genre != "scene_unknown"
-                    and p_genre != genre
-                )
+                genre_mismatch = _check_genre_mismatch(genre, p_genre, meta)
                 prelim_candidates.append((pid, emb, meta, genre_mismatch))
 
             valid_candidates: list[tuple[str, Any, dict[str, Any]]] = []
@@ -371,8 +412,15 @@ def get_style_upgrade_recommendations(
                         continue
                     valid_candidates.append((pid, emb, meta))
             else:
+                centroid = genre_centroids.get(genre)
                 for pid, emb, meta, gm in prelim_candidates:
-                    if gm:
+                    if centroid is not None and len(centroid) > 0:
+                        sim = float(np.dot(centroid, emb))
+                        if sim < 0.60:
+                            continue
+                        if gm and sim < 0.75:
+                            continue
+                    elif gm:
                         continue
                     valid_candidates.append((pid, emb, meta))
 

@@ -389,3 +389,36 @@ def test_vectorized_select_style_recommendations_near_duplicates():
     assert "c1" in selected
     assert "c2" in selected
     assert "c1_dup" not in selected
+
+
+def test_profiles_and_models_compatibility():
+    # Minor name variations
+    assert style_upgrades._profiles_compatible("Adobe Standard", "Adobe Standard (v2)")
+    assert style_upgrades._profiles_compatible("Nikon Profile A", "  nikon profile a ")
+    # HDR styles must remain strictly separated
+    assert not style_upgrades._profiles_compatible(
+        "Adobe Standard + HDR", "Adobe Standard"
+    )
+    assert style_upgrades._profiles_compatible(
+        "Adobe Standard + HDR", "Adobe Standard + HDR"
+    )
+
+    # Models compatibility
+    assert style_upgrades._models_compatible("Nikon Z7", "NIKON Z 7")
+    assert not style_upgrades._models_compatible("Nikon Z7", "Nikon Z8")
+
+
+def test_check_genre_mismatch():
+    # Matching scalar genre -> no mismatch
+    assert not style_upgrades._check_genre_mismatch(
+        "scene_portrait", "scene_portrait", {}
+    )
+    # Specialty-first primary genre differs -> strict mismatch even if loose multi-label tags contain the word
+    meta = {"scene_tags": ["scene_studio", "scene_architecture"]}
+    assert style_upgrades._check_genre_mismatch(
+        "scene_architecture", "scene_studio", meta
+    )
+    # Unknown style genre -> no mismatch
+    assert not style_upgrades._check_genre_mismatch(
+        "scene_unknown", "scene_portrait", meta
+    )
