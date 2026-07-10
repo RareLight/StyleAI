@@ -351,6 +351,7 @@ def get_style_upgrade_recommendations(
                         meta.get("user_keywords")
                         or meta.get("keywords")
                         or meta.get("flattened_keywords"),
+                        meta,
                     )
                     all_photos_pool.append((pid, arr, meta, p_genre))
         except Exception as e:

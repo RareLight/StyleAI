@@ -455,3 +455,26 @@ def test_clear_semantic_genre_cache():
     sg._DYNAMIC_GENRE_CACHE["dummy_kw"] = "scene_portrait"
     sg.clear_semantic_genre_cache()
     assert "dummy_kw" not in sg._DYNAMIC_GENRE_CACHE
+
+
+def test_exif_priors_and_vision_regimes():
+    # 1. Macro lens portrait evaluated by vision model -> scene_portrait (hardware is prior, vision subject rules)
+    meta_macro_lens = {"lens": "105mm f/2.8 Macro", "focal_length": 105.0}
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_portrait"], [], exif_metadata=meta_macro_lens
+        )
+        == "scene_portrait"
+    )
+
+    # 2. Extreme long exposure astrophotography EXIF deterministic fact
+    meta_astro = {"shutter_speed": 15.0, "iso": 6400}
+    assert (
+        sg._primary_genre_with_keywords(["scene_general"], [], exif_metadata=meta_astro)
+        == "scene_night"
+    )
+
+    # 3. Studio tabletop shot with flash at ISO 100
+    meta_studio = {"flash": True, "iso": 100}
+    priors = sg._evaluate_exif_priors(meta_studio)
+    assert priors.get("scene_studio", 0.0) >= 0.20
