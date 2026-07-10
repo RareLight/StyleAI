@@ -467,12 +467,84 @@ function SearchIndexAPI.findPhotosByPhotoIds(photoIds, progressScope)
     end
 
     local idSet = {}
+local function scanCatalogForGlobalPhotoIds(catalog, allPhotos, idSet, targetCount, progressScope, captionPrefix)
+    local photoById = {}
+    local foundCount = 0
+    local chunkSize = 1000
+
+    for chunkStart = 1, #allPhotos, chunkSize do
+        if progressScope and progressScope:isCanceled() then
+            break
+        end
+        local chunkEnd = math.min(chunkStart + chunkSize - 1, #allPhotos)
+        local chunkPhotos = {}
+        for i = chunkStart, chunkEnd do
+            table.insert(chunkPhotos, allPhotos[i])
+        end
+
+        if progressScope then
+            progressScope:setPortionComplete(chunkEnd, #allPhotos)
+            progressScope:setCaption(string.format("%s (%d/%d found)...", captionPrefix or "Scanning catalog", foundCount, targetCount))
+        end
+        LrTasks.yield()
+        LrTasks.sleep(0.01)
+
+        local batchProps = nil
+        if catalog.batchGetPropertyForPlugin then
+            local success, res = LrTasks.pcall(function()
+                return catalog:batchGetPropertyForPlugin(_PLUGIN, "globalPhotoId", chunkPhotos)
+            end)
+            if success and type(res) == "table" then
+                batchProps = res
+            end
+        end
+
+        for _, photo in ipairs(chunkPhotos) do
+            local cachedId
+            if batchProps then
+                cachedId = batchProps[photo]
+            else
+                cachedId = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoId")
+            end
+            if cachedId and idSet[cachedId] and not photoById[cachedId] then
+                photoById[cachedId] = photo
+                foundCount = foundCount + 1
+            end
+        end
+
+        if foundCount >= targetCount then
+            break
+        end
+    end
+
+    return photoById
+end
+
+function SearchIndexAPI.findPhotosByPhotoIds(photoIds, progressScope)
+    local photos = {}
+    if type(photoIds) ~= "table" or #photoIds == 0 then
+        return photos
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    if not shouldUseGlobalPhotoId() then
+        for _, photoId in ipairs(photoIds) do
+            local photo = catalog:findPhotoByUuid(photoId)
+            if photo then
+                table.insert(photos, photo)
+            else
+                log:warn("findPhotosByPhotoIds: Photo with UUID " ..
+                    tostring(photoId) .. " not found in catalog (non-global IDs).")
+            end
+        end
+        return photos
+    end
+
+    local idSet = {}
     for _, photoId in ipairs(photoIds) do
         idSet[photoId] = true
     end
 
-    local photoById = {}
-    local foundCount = 0
     local targetCount = #photoIds
     local startedAt = LrDate.currentTime()
     local allPhotos = catalog:getAllPhotos()
@@ -480,28 +552,7 @@ function SearchIndexAPI.findPhotosByPhotoIds(photoIds, progressScope)
     log:trace("findPhotosByPhotoIds: catalog:getAllPhotos() returned " .. tostring(#allPhotos) ..
         " photos in " .. tostring(allPhotosElapsed) .. "ms")
 
-    for i, photo in ipairs(allPhotos) do
-        if progressScope and progressScope:isCanceled() then
-            break
-        end
-        if i % 50 == 0 then
-            if progressScope then
-                progressScope:setPortionComplete(i, #allPhotos)
-                progressScope:setCaption(string.format("Scanning catalog (%d/%d found)...", foundCount, targetCount))
-            end
-            LrTasks.yield()
-            LrTasks.sleep(0.01)
-        end
-
-        local cachedId = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoId")
-        if cachedId and idSet[cachedId] and not photoById[cachedId] then
-            photoById[cachedId] = photo
-            foundCount = foundCount + 1
-            if foundCount >= targetCount then
-                break
-            end
-        end
-    end
+    local photoById = scanCatalogForGlobalPhotoIds(catalog, allPhotos, idSet, targetCount, progressScope, "Scanning catalog")
 
     for _, photoId in ipairs(photoIds) do
         local photo = photoById[photoId]
@@ -551,35 +602,13 @@ function SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, progressScope)
             end
         end
     else
-        local foundCount = 0
         local startedAt = LrDate.currentTime()
         local allPhotos = catalog:getAllPhotos()
         local allPhotosElapsed = math.floor((LrDate.currentTime() - startedAt) * 1000)
         log:trace("findPhotosBatchedByStyleMap: catalog:getAllPhotos() returned " .. tostring(#allPhotos) ..
             " photos in " .. tostring(allPhotosElapsed) .. "ms")
 
-        for i, photo in ipairs(allPhotos) do
-            if progressScope and progressScope:isCanceled() then
-                break
-            end
-            if i % 50 == 0 then
-                if progressScope then
-                    progressScope:setPortionComplete(i, #allPhotos)
-                    progressScope:setCaption(string.format("Scanning catalog across all styles (%d/%d found)...", foundCount, totalTargetCount))
-                end
-                LrTasks.yield()
-                LrTasks.sleep(0.01)
-            end
-
-            local cachedId = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoId")
-            if cachedId and idSet[cachedId] and not photoById[cachedId] then
-                photoById[cachedId] = photo
-                foundCount = foundCount + 1
-                if foundCount >= totalTargetCount then
-                    break
-                end
-            end
-        end
+        photoById = scanCatalogForGlobalPhotoIds(catalog, allPhotos, idSet, totalTargetCount, progressScope, "Scanning catalog across all styles")
     end
 
     for _, entry in ipairs(styleEntries) do
