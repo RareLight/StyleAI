@@ -31,6 +31,17 @@ _G.log = import("LrLogger")("StyleAI")
 _G.prefs.logging = true
 _G.log:enable("logfile")
 
+-- OS environment detection
+if _G.MAC_ENV == nil then
+	local ok, isMac = pcall(function()
+		return _G.LrSystemInfo.osVersion():sub(1, 3):lower() == "mac"
+	end)
+	_G.MAC_ENV = ok and isMac or false
+end
+if _G.WIN_ENV == nil then
+	_G.WIN_ENV = not _G.MAC_ENV
+end
+
 -- Load modules early
 _G.JSON = require("JSON")
 require("Util")
