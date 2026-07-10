@@ -284,6 +284,7 @@ LrTasks.startAsyncTask(function()
 								local findAllProgress = LrProgressScope({
 									title = LOC("$$$/StyleAI/UpgradeAssistant/FindAllProgress=Creating upgrade collections for all styles...")
 								})
+								local styleEntries = {}
 								for _, s in ipairs(props.styles or {}) do
 									local recIds = s.recommended_photo_ids or {}
 									if #recIds > 0 then
@@ -293,14 +294,17 @@ LrTasks.startAsyncTask(function()
 										if sProf ~= "" and sProf ~= "Default" and not string.find(string.lower(sName), string.lower(sProf), 1, true) then
 											fullName = string.format("%s (%s)", sName, sProf)
 										end
-										local photos = SearchIndexAPI.findPhotosByPhotoIds(recIds, findAllProgress)
-										if #photos > 0 then
-											Util.addPhotosToUpgradeCandidatesCollection(photos, fullName)
-											totalPhotosAdded = totalPhotosAdded + #photos
-											stylesProcessed = stylesProcessed + 1
-											LrTasks.yield()
-											LrTasks.sleep(0.05)
-										end
+										table.insert(styleEntries, { fullName = fullName, photoIds = recIds })
+									end
+								end
+								local batchedResults = SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, findAllProgress)
+								for _, entry in ipairs(batchedResults) do
+									if #(entry.photos or {}) > 0 then
+										Util.addPhotosToUpgradeCandidatesCollection(entry.photos, entry.fullName)
+										totalPhotosAdded = totalPhotosAdded + #entry.photos
+										stylesProcessed = stylesProcessed + 1
+										LrTasks.yield()
+										LrTasks.sleep(0.01)
 									end
 								end
 								findAllProgress:done()
