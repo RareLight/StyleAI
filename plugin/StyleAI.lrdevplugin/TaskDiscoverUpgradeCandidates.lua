@@ -330,7 +330,7 @@ LrTasks.startAsyncTask(function()
 		end
 
 		LrDialogs.presentModalDialog({
-			title = LOC("$$$/StyleAI/UpgradeAssistant/DialogTitle=AI Style Upgrade Assistant"),
+			title = LOC("$$$/StyleAI/UpgradeAssistant/DialogTitle=ML Style Upgrade Assistant"),
 			contents = buildDialog(),
 			actionVerb = LOC("$$$/StyleAI/common/Close=Close"),
 		})

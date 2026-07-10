@@ -43,32 +43,32 @@ EMBEDDING_DIM = (
 
 _SCENE_PROBES: dict[str, str] = {
     # Subject Matter
-    "scene_portrait": "a portrait photo of a person, couple, family, or pet",
-    "scene_group": "a photo of a group of people",
-    "scene_landscape": "a landscape, scenic vista, or travel outdoor photo",
-    "scene_architecture": "an architectural, real estate, property, or building photo",
-    "scene_wildlife": "a wildlife, bird, or fauna photo in nature",
-    "scene_event": "an event, wedding, concert, reception, or celebration photo",
-    "scene_street": "a street photography, urban life, or documentary scene photo",
-    "scene_macro": "a macro, botanical, or close-up detail photo",
-    "scene_flowers": "a photo of flowers, plants, or flora",
-    "scene_interior": "an interior design or indoor room photo",
-    "scene_exterior": "an outdoor architectural or exterior scene photo",
-    "scene_golden_hour": "a photo taken at golden hour, sunset, or sunrise",
-    "scene_night": "a photo taken at night, evening, or after dark, including events, portraits, family, or street scenes",
-    "scene_astrophotography": "an astrophotography photo of the night sky, milky way, stars, or aurora borealis",
-    "scene_studio": "a studio, product, still life, food, toy, or commercial controlled-light photo",
-    "scene_action": "an action, sports, athletics, or high-speed motion photo",
+    "scene_portrait": "a portrait photograph of a human face, person, couple, family, or pet where the subject is clearly the main focus",
+    "scene_group": "a photograph of a group of people or crowd",
+    "scene_landscape": "a scenic landscape or nature photograph of mountains, valleys, oceans, forests, or natural terrain without people or urban structures",
+    "scene_architecture": "an architectural photograph of a building facade, house, interior room, bridge, or structural design",
+    "scene_wildlife": "a wildlife photograph of wild animals or birds in nature",
+    "scene_event": "an event photograph of a wedding, concert, ceremony, or celebration party",
+    "scene_street": "a street photography or urban scene photograph of city streets, ferris wheels, amusement parks, carnival rides, or city life",
+    "scene_macro": "an extreme close-up macro photograph of a tiny insect, bug, beetle, spider, flower stamen, or water droplet with high magnification and shallow depth of field",
+    "scene_flowers": "a botanical close-up photograph of flowers or garden plants",
+    "scene_interior": "an interior design or indoor room photograph",
+    "scene_exterior": "an outdoor architectural or exterior scene photograph",
+    "scene_golden_hour": "a photograph taken at golden hour, sunset, or sunrise",
+    "scene_night": "a photograph taken at night, evening, or after dark",
+    "scene_astrophotography": "an astrophotography photograph of the night sky, milky way, stars, or aurora borealis",
+    "scene_studio": "a studio photograph of a product, tabletop still life, food dish, lego, or toy under controlled lighting",
+    "scene_action": "an action photograph of sports, athletics, or fast motion",
     # Aesthetics and Style
-    "style_high_key": "a bright, airy, high-key photo with soft light",
-    "style_low_key": "a dark, moody, low-key photo with deep shadows",
-    "style_minimalist": "a minimalist photo with negative space",
-    "style_vintage": "a vintage, retro, or film-like photo",
-    "style_cinematic": "a cinematic or dramatic photo",
-    "style_neon": "a cyberpunk or neon-lit photo",
+    "style_high_key": "a bright, airy, high-key photograph with soft light",
+    "style_low_key": "a dark, moody, low-key photograph with deep shadows",
+    "style_minimalist": "a minimalist photograph with negative space",
+    "style_vintage": "a vintage, retro, or film-like photograph",
+    "style_cinematic": "a cinematic or dramatic photograph",
+    "style_neon": "a cyberpunk or neon-lit photograph",
 }
 
-_SCENE_THRESHOLD = 0.05  # cosine similarity threshold for a tag to be "present"
+_SCENE_THRESHOLD = 0.15  # cosine similarity threshold for a tag to be "present"
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -498,7 +498,7 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
                     if has_siglip:
                         logit = sim * scale + bias
                         prob = float(torch.sigmoid(torch.tensor(logit)))
-                        is_match = prob >= 0.05 or sim >= _SCENE_THRESHOLD
+                        is_match = prob >= 0.20 or sim >= _SCENE_THRESHOLD
                     else:
                         is_match = sim >= _SCENE_THRESHOLD
 
@@ -508,7 +508,10 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
                     pass
 
         tags_with_scores.sort(key=lambda x: x[0], reverse=True)
-        return [t[1] for t in tags_with_scores]
+        if not tags_with_scores:
+            return []
+        top_score = tags_with_scores[0][0]
+        return [t[1] for t in tags_with_scores if top_score - t[0] <= 0.08]
 
     except Exception as exc:
         logger.debug("compute_scene_tags failed (non-critical): %s", exc)

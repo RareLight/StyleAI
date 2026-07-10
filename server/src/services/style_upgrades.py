@@ -116,7 +116,7 @@ def _select_style_recommendations(
     target_count: int,
     genre_centroid: np.ndarray | None = None,
 ) -> list[str]:
-    """Select up to target_count candidate photos that most closely match the visual domain of the style while maintaining high hero quality and avoiding near-duplicates."""
+    """Select up to target_count candidate photos using Burst Deduplication and Maximal Marginal Relevance (MMR) Farthest Point Sampling."""
     if not candidates or target_count <= 0:
         return []
 
@@ -126,7 +126,58 @@ def _select_style_recommendations(
         if e is not None and len(e) > 0
     ]
 
-    scored_candidates: list[tuple[float, str, np.ndarray, dict[str, Any]]] = []
+    # Step 1: Burst clustering & deduplication (Δt <= 10s and cosine similarity >= 0.95)
+    # Group candidates by burst cluster and keep only the highest hero quality shot per burst
+    burst_clusters: list[list[tuple[str, np.ndarray, dict[str, Any], float]]] = []
+    for pid, emb, meta in candidates:
+        arr = np.asarray(emb, dtype=np.float32)
+        norm = float(np.linalg.norm(arr))
+        if norm > 0:
+            arr = arr / norm
+        h_score = _hero_score(meta)
+        cap_time = 0.0
+        try:
+            raw_time = meta.get("capture_time") or meta.get("dateTimeOriginal") or 0
+            cap_time = float(raw_time)
+        except (TypeError, ValueError):
+            cap_time = 0.0
+
+        matched_cluster = False
+        for cluster in burst_clusters:
+            rep_pid, rep_emb, rep_meta, rep_h = cluster[0]
+            sim = float(np.dot(arr, rep_emb))
+            rep_time = 0.0
+            try:
+                rep_time = float(
+                    rep_meta.get("capture_time")
+                    or rep_meta.get("dateTimeOriginal")
+                    or 0
+                )
+            except (TypeError, ValueError):
+                rep_time = 0.0
+            if (
+                cap_time > 0
+                and rep_time > 0
+                and abs(cap_time - rep_time) <= 10.0
+                and sim >= 0.95
+            ):
+                cluster.append((pid, arr, meta, h_score))
+                matched_cluster = True
+                break
+            elif (cap_time == 0.0 or rep_time == 0.0) and sim >= 0.99:
+                cluster.append((pid, arr, meta, h_score))
+                matched_cluster = True
+                break
+        if not matched_cluster:
+            burst_clusters.append([(pid, arr, meta, h_score)])
+
+    deduped_candidates: list[tuple[str, np.ndarray, dict[str, Any], float]] = []
+    for cluster in burst_clusters:
+        best_item = max(cluster, key=lambda item: item[3])
+        deduped_candidates.append(best_item)
+
+    # Step 2: Compute relevance scores against existing style distribution or genre centroid
+    scored_pool: list[tuple[float, str, np.ndarray, dict[str, Any]]] = []
 
     if valid_existing:
         E_mat = np.array(valid_existing, dtype=np.float32)
@@ -142,55 +193,70 @@ def _select_style_recommendations(
             internal_sims = np.dot(E_mat, centroid)
             mu_sim = float(np.mean(internal_sims))
             sigma_sim = float(np.std(internal_sims))
-            sim_floor = max(0.60, mu_sim - 2.5 * sigma_sim)
+            sim_floor = max(0.58, mu_sim - 2.5 * sigma_sim)
         else:
-            sim_floor = 0.65
+            sim_floor = 0.60
 
-        C_mat = np.array([c[1] for c in candidates], dtype=np.float32)
+        C_mat = np.array([c[1] for c in deduped_candidates], dtype=np.float32)
         if C_mat.ndim == 1:
             C_mat = C_mat.reshape(1, -1)
         sim_matrix = C_mat @ E_mat.T
         max_sims = np.max(sim_matrix, axis=1)
 
-        for i, (pid, emb, meta) in enumerate(candidates):
+        for i, (pid, emb, meta, h_score) in enumerate(deduped_candidates):
             max_sim = float(max_sims[i])
             if max_sim < sim_floor:
                 continue
-            h_score = _hero_score(meta)
-            score = max_sim + 0.10 * h_score
-            scored_candidates.append((score, pid, emb, meta))
+            relevance = max_sim + 0.10 * h_score
+            scored_pool.append((relevance, pid, emb, meta))
     else:
-        for pid, emb, meta in candidates:
-            h_score = _hero_score(meta)
+        for pid, emb, meta, h_score in deduped_candidates:
             if genre_centroid is not None and len(genre_centroid) > 0:
                 sim = float(np.dot(genre_centroid, emb))
-                if sim < 0.60:
+                if sim < 0.58:
                     continue
-                score = sim + 0.10 * h_score
+                relevance = sim + 0.10 * h_score
             else:
-                score = h_score
-            scored_candidates.append((score, pid, emb, meta))
+                relevance = h_score
+            scored_pool.append((relevance, pid, emb, meta))
 
-    scored_candidates.sort(key=lambda x: x[0], reverse=True)
+    if not scored_pool:
+        return []
 
+    # Step 3: Maximal Marginal Relevance (MMR) Farthest Point Sampling for diversity across visual space
     selected_ids: list[str] = []
     selected_embs: list[np.ndarray] = []
+    remaining = list(scored_pool)
+    lambda_param = 0.85  # 85% relevance to signature style, 15% visual diversity
 
-    for _, pid, emb, _ in scored_candidates:
-        if len(selected_ids) >= target_count:
+    while remaining and len(selected_ids) < target_count:
+        best_idx = -1
+        best_mmr = -1e9
+
+        for i, (rel, pid, emb, meta) in enumerate(remaining):
+            if not selected_embs:
+                mmr_score = rel
+            else:
+                sel_mat = np.array(selected_embs, dtype=np.float32)
+                if sel_mat.ndim == 1:
+                    sel_mat = sel_mat.reshape(1, -1)
+                max_sim_to_selected = float(np.max(sel_mat @ emb))
+                if max_sim_to_selected > 0.90:
+                    continue
+                mmr_score = (
+                    lambda_param * rel - (1.0 - lambda_param) * max_sim_to_selected
+                )
+
+            if mmr_score > best_mmr:
+                best_mmr = mmr_score
+                best_idx = i
+
+        if best_idx == -1:
             break
-        # Ensure we don't select two near-duplicate frames (similarity > 0.90) among newly recommended photos
-        is_dup = False
-        if selected_embs:
-            sel_mat = np.array(selected_embs, dtype=np.float32)
-            if sel_mat.ndim == 1:
-                sel_mat = sel_mat.reshape(1, -1)
-            sims_to_selected = sel_mat @ emb
-            if float(np.max(sims_to_selected)) > 0.90:
-                is_dup = True
-        if not is_dup:
-            selected_ids.append(pid)
-            selected_embs.append(emb)
+
+        rel, chosen_pid, chosen_emb, _ = remaining.pop(best_idx)
+        selected_ids.append(chosen_pid)
+        selected_embs.append(chosen_emb)
 
     return selected_ids
 
