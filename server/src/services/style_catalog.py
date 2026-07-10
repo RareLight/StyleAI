@@ -308,6 +308,7 @@ def discover_styles_from_examples(
     Returns the list of newly created/updated style dicts.
     """
     _ensure_initialized()
+    grouping.clear_semantic_genre_cache()
 
     # 1. Gather examples
     all_examples = training_service.list_training_examples()

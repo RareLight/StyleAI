@@ -442,3 +442,16 @@ def test_macro_pet_lego_precedence_general_taxonomy():
         sg._primary_genre_with_keywords(["scene_landscape", "dog"], [])
         == "scene_portrait"
     )
+
+
+def test_dynamic_semantic_mapping_persists_to_sqlite(monkeypatch):
+    # Clear memory cache for test keyword
+    sg._DYNAMIC_GENRE_CACHE.pop("stargazing_test", None)
+    mapped = sg._dynamic_semantic_mapping("stargazing")
+    assert mapped == "scene_astrophotography"
+
+
+def test_clear_semantic_genre_cache():
+    sg._DYNAMIC_GENRE_CACHE["dummy_kw"] = "scene_portrait"
+    sg.clear_semantic_genre_cache()
+    assert "dummy_kw" not in sg._DYNAMIC_GENRE_CACHE
