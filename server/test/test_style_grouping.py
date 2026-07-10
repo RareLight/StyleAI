@@ -307,7 +307,7 @@ def test_generate_style_description_no_settings():
 def test_primary_genre_with_keywords_overrides_scene_tags():
     # User keywords should override AI scene tags
     genre = sg._primary_genre_with_keywords(["scene_portrait"], ["macro", "nature"])
-    assert genre == "scene_nature"
+    assert genre == "scene_macro"
 
 
 def test_primary_genre_with_keywords_falls_back_to_scene_tags():
@@ -328,8 +328,8 @@ def test_group_examples_uses_user_keywords_for_genre():
         }
     ]
     groups = sg.group_examples_by_profile_genre(examples)
-    # Should use user keyword "macro" → scene_nature, not scene_portrait
-    key = ("default", "scene_nature")
+    # Should use user keyword "macro" → scene_macro, not scene_portrait
+    key = ("default", "scene_macro")
     assert key in groups
 
 
@@ -421,10 +421,24 @@ def test_pet_taxonomy_and_priority_extraction():
 
 
 def test_wildlife_macro_insects():
-    # Macro photography of dragonfly or bee should map to nature (broad bucket for wildlife/macro), not studio or landscape
+    # Macro photography of dragonfly or bee should map to scene_macro, not studio or landscape
     insect_kws = {
         "Animals": ["Dragonfly", "Bee", "Insect"],
         "Genre": ["Macro Photography"],
         "Setting": ["Garden", "Outdoor"],
     }
-    assert sg._primary_genre_with_keywords([], insect_kws) == "scene_nature"
+    assert sg._primary_genre_with_keywords([], insect_kws) == "scene_macro"
+
+
+def test_macro_pet_lego_precedence_general_taxonomy():
+    # 1. Macro specialty ("insect portrait") routes to scene_macro rather than human portrait
+    assert sg._primary_genre_with_keywords([], ["insect portrait"]) == "scene_macro"
+    # 2. Studio / toy specialty ("lego architecture") routes to scene_studio rather than architecture
+    assert sg._primary_genre_with_keywords([], ["lego architecture"]) == "scene_studio"
+    # 3. Animate subject ("dog outdoor") routes to scene_portrait rather than background landscape
+    assert sg._primary_genre_with_keywords([], ["dog outdoor"]) == "scene_portrait"
+    # 4. AI scene tag fallback where primary tag is setting but animate subject exists
+    assert (
+        sg._primary_genre_with_keywords(["scene_landscape", "dog"], [])
+        == "scene_portrait"
+    )

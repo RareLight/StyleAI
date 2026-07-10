@@ -188,19 +188,19 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "macro": "scene_macro",
     "close_up": "scene_macro",
     "detail": "scene_macro",
-    "flower": "scene_flowers",
-    "flowers": "scene_flowers",
-    "botanical": "scene_flowers",
-    "flora": "scene_flowers",
+    "flower": "scene_macro",
+    "flowers": "scene_macro",
+    "botanical": "scene_macro",
+    "flora": "scene_macro",
     "fauna": "scene_wildlife",
-    "insect": "scene_wildlife",
-    "insects": "scene_wildlife",
-    "bug": "scene_wildlife",
-    "bugs": "scene_wildlife",
-    "beetle": "scene_wildlife",
-    "butterfly": "scene_wildlife",
-    "bee": "scene_wildlife",
-    "spider": "scene_wildlife",
+    "insect": "scene_macro",
+    "insects": "scene_macro",
+    "bug": "scene_macro",
+    "bugs": "scene_macro",
+    "beetle": "scene_macro",
+    "butterfly": "scene_macro",
+    "bee": "scene_macro",
+    "spider": "scene_macro",
     # Architecture & Real Estate & Property
     "architecture": "scene_architecture",
     "building": "scene_architecture",
@@ -299,8 +299,8 @@ _BROAD_GENRE_MAP: dict[str, str] = {
     "scene_exterior": "scene_landscape",
     "scene_golden_hour": "scene_landscape",
     "scene_nature": "scene_nature",
-    "scene_macro": "scene_nature",
-    "scene_flowers": "scene_nature",
+    "scene_macro": "scene_macro",
+    "scene_flowers": "scene_macro",
     "scene_wildlife": "scene_nature",
     "scene_architecture": "scene_architecture",
     "scene_studio": "scene_studio",
@@ -314,7 +314,8 @@ _DYNAMIC_BUCKETS = {
     "scene_portrait": "portrait, people, family, fashion, headshot, baby, newborn, maternity, pet, pets, dog, cat, animal, puppy, kitten",
     "scene_event": "wedding, event, concert, ceremony, reception, party, conference, gala, banquet, festival, candid, group, gathering",
     "scene_landscape": "landscape, outdoors, travel, sunset, sunrise, scenery, vista, mountains, ocean, seascape, drone, aerial",
-    "scene_nature": "wildlife, macro, close-up, flowers, plants, birds, insects, fauna, flora, botanical, nature detail",
+    "scene_nature": "wildlife, plants, birds, fauna, flora, trees, forest, wilderness",
+    "scene_macro": "macro, close-up, extreme detail, insect, bug, beetle, spider, butterfly, flower detail, water droplet, botanical closeup",
     "scene_architecture": "architecture, real estate, interior design, building, house, property, monument, bridge, structure",
     "scene_studio": "studio, product, food, culinary, commercial, controlled light, flash, still life, toy photography, lego, car, automotive",
     "scene_street": "street photography, urban life, documentary, photojournalism, city street, candid street, alley, graffiti, urban environment",
@@ -437,6 +438,7 @@ def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
     if kw_list:
         tier_order = [
             "scene_studio",
+            "scene_macro",
             "scene_event",
             "scene_portrait",
             "scene_nature",
@@ -515,6 +517,7 @@ def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
         primary_mapped = _get_broad_genre(content_tags[0])
         subject_tiers = {
             "scene_studio",
+            "scene_macro",
             "scene_event",
             "scene_portrait",
             "scene_nature",
@@ -523,12 +526,12 @@ def _primary_genre_with_keywords(scene_tags: Any, user_keywords: Any) -> str:
         if primary_mapped in subject_tiers:
             return primary_mapped
 
-        # If primary AI tag is a background setting, check if any AI tag indicates an animate subject / studio / event
+        # If primary AI tag is a background setting, check if any AI tag indicates an animate subject / studio / macro domain
         tier_order_subjects = [
             "scene_studio",
+            "scene_macro",
             "scene_event",
             "scene_portrait",
-            "scene_nature",
             "scene_action",
         ]
         for target_genre in tier_order_subjects:

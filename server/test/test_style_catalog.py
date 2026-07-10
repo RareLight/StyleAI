@@ -353,9 +353,9 @@ def test_user_keywords_override_genre_in_update(monkeypatch):
     )
 
     styles = sc.list_styles()
-    # Should create a scene_nature style, not scene_portrait
+    # Should create a scene_macro style, not scene_portrait
     genres = [s["genre"] for s in styles]
-    assert "scene_nature" in genres
+    assert "scene_macro" in genres
 
 
 def test_update_style_for_example_incremental_update(monkeypatch, sample_style):
