@@ -32,7 +32,7 @@
 "$$$/StyleAI/AnalyzeAndIndex/ContextOptions" = "AI Context"
 "$$$/StyleAI/AnalyzeAndIndex/CreatingSafetyBackup" = "Creating safety backup..."
 "$$$/StyleAI/AnalyzeAndIndex/DataHandling" = "Data Handling"
-"$$$/StyleAI/AnalyzeAndIndex/Disclaimer" = "Note: This tool is ONLY for Semantic Search and LLM Auto-Tagging. It is NOT required for AI Editing or Style Training, which run independently and securely via local ML."
+"$$$/StyleAI/AnalyzeAndIndex/Disclaimer" = "Note: This tool extracts fundamental AI vision metadata (SigLIP2) and is REQUIRED for Semantic Search, Auto-Tagging, and the ML Style Upgrade Assistant."
 "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks" = "Search Indexing (SigLIP2)"
 "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddings" = "Create search embeddings"
 "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddingsTooltip" = "Analyzes image content visually to enable natural language semantic search."

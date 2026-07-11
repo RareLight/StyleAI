@@ -2071,6 +2071,9 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     LrTasks.yield()
                     LrTasks.sleep(0.1)
                 end
+            elseif #preparedQueue < batchSize and not preparationDone then
+                LrTasks.yield()
+                LrTasks.sleep(0.1)
             else
                 local batchItemsToSend = {}
                 local localFailures = {}
