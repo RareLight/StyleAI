@@ -1719,23 +1719,23 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local maxAnalyzeWorkers = 8
     local calculatedBatchSize = 16
 
+    -- HardwareMax is typically the CPU core count (e.g., 8 to 12 on Apple Silicon)
     if profile == 1 then
-        maxSenderWorkers = math.max(2, math.floor(hardwareMax * 0.25))
-        maxAnalyzeWorkers = maxSenderWorkers * 4
+        maxAnalyzeWorkers = math.max(2, math.floor(hardwareMax * 0.25))
+        maxSenderWorkers = 1
         calculatedBatchSize = 16
     elseif profile == 2 then
-        maxSenderWorkers = math.max(2, math.floor(hardwareMax * 0.5))
-        maxAnalyzeWorkers = maxSenderWorkers * 4
+        maxAnalyzeWorkers = math.max(4, math.floor(hardwareMax * 0.5))
+        maxSenderWorkers = 1
         calculatedBatchSize = 32
     elseif profile == 3 then
-        maxSenderWorkers = math.max(2, math.floor(hardwareMax * 0.75))
-        maxAnalyzeWorkers = maxSenderWorkers * 6
+        maxAnalyzeWorkers = math.max(4, hardwareMax)
+        maxSenderWorkers = 2
         calculatedBatchSize = 32
     elseif profile == 4 then
-        -- Optimal max performance: cap at Waitress thread count (16) and limit batch size to 32 
-        -- to match backend pipelining chunk size.
-        maxSenderWorkers = math.min(16, math.max(4, hardwareMax))
-        maxAnalyzeWorkers = maxSenderWorkers * 8
+        -- Optimal max performance: push Lightroom hard but cap senders to prevent backend GIL thrashing
+        maxAnalyzeWorkers = math.min(24, math.floor(hardwareMax * 1.5))
+        maxSenderWorkers = 2
         calculatedBatchSize = 32
     end
 
@@ -2270,7 +2270,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end
 
     -- Start worker threads
-    -- Cap analyze workers to max 4 to prevent Lightroom export pipeline instability (E-cores at 100%)
+    -- Scale analyze workers according to the performance profile (controlled via prefs)
     for i = 1, maxAnalyzeWorkers do
         LrTasks.startAsyncTask(analyzeWorker)
         log:trace("Started analyze worker #" .. tostring(i))
