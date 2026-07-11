@@ -56,7 +56,8 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
         from services.training import compute_scene_tags
 
         with patch("server_lifecycle.get_model", return_value=None):
-            self.assertEqual(compute_scene_tags([0.1] * 512), [])
+            with patch("server_lifecycle.get_processor", return_value=None):
+                self.assertEqual(compute_scene_tags([0.1] * 512), [])
 
 
 def make_dummy_jpeg(width=100, height=100, color=(128, 128, 128)) -> bytes:
