@@ -601,14 +601,22 @@ def _primary_genre_with_keywords(
             "scene_unknown",
         }
         if primary_mapped in background_settings:
-            tier_order_subjects = [
-                "scene_studio",
-                "scene_macro",
-                "scene_event",
-                "scene_portrait",
-                "scene_action",
-                "scene_street",
-            ]
+            tier_order_subjects = (
+                [
+                    "scene_studio",
+                    "scene_macro",
+                    "scene_portrait",
+                ]
+                if primary_mapped == "scene_landscape"
+                else [
+                    "scene_studio",
+                    "scene_macro",
+                    "scene_event",
+                    "scene_portrait",
+                    "scene_action",
+                    "scene_street",
+                ]
+            )
             for target_genre in tier_order_subjects:
                 for t in content_tags:
                     t_lower = t.lower()
