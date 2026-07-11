@@ -206,7 +206,7 @@ local function showAnalyzeAndIndexDialog(ctx)
         fill_horizontal = 1,
 
         f:static_text {
-            title = LOC "$$$/StyleAI/AnalyzeAndIndex/Disclaimer=Note: This tool is ONLY for Semantic Search and LLM Auto-Tagging. It is NOT required for AI Editing or Style Training, which run independently and securely via local ML.",
+            title = LOC "$$$/StyleAI/AnalyzeAndIndex/Disclaimer=Note: This tool extracts fundamental AI vision metadata (SigLIP2) and is REQUIRED for Semantic Search, Auto-Tagging, and the ML Style Upgrade Assistant.",
             wrap = true,
             width_in_chars = 75,
             height_in_lines = 2,
