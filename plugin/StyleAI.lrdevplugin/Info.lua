@@ -43,10 +43,6 @@ return {
 			file = "TaskDiscoverUpgradeCandidates.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Info/MenuApplyLLMEdits=Utility: LLM Edit by Prompt"),
-			file = "TaskAiEditCreative.lua",
-		},
-		{
 			title = LOC("$$$/StyleAI/Developer/RunPerformanceBenchmark=Developer: Run Performance Benchmark..."),
 			file = "TaskBenchmark.lua",
 		},
@@ -72,10 +68,6 @@ return {
 		{
 			title = LOC("$$$/StyleAI/UpgradeAssistant/MenuDiscoverCandidates=Utility: ML Style Upgrade Assistant"),
 			file = "TaskDiscoverUpgradeCandidates.lua",
-		},
-		{
-			title = LOC("$$$/StyleAI/Info/MenuApplyLLMEdits=Utility: LLM Edit by Prompt"),
-			file = "TaskAiEditCreative.lua",
 		},
 	},
 

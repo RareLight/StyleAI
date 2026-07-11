@@ -68,18 +68,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     -- Build model list from server (local providers first)
     local modelItems = {}
 
-    -- Fetch all models with API keys if configured
-    -- Server will check all providers and filter to multimodal only
-    local openaiKey = nil
-    local geminiKey = nil
-    if prefs then
-        openaiKey = import("LrPasswords").retrieve("StyleAI", "chatgptApiKey")
-        geminiKey = import("LrPasswords").retrieve("StyleAI", "geminiApiKey")
-    end
-    openaiKey = Util.nilOrEmpty(openaiKey) and nil or openaiKey
-    geminiKey = Util.nilOrEmpty(geminiKey) and nil or geminiKey
-
-    local modelsResp = SearchIndexAPI.getModels(openaiKey, geminiKey)
+    local modelsResp = SearchIndexAPI.getModels()
     if modelsResp and modelsResp.models then
         for provider, list in pairs(modelsResp.models) do
             for _, model in ipairs(list) do
@@ -110,27 +99,6 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.appendMetadata = prefs.appendMetadata
     if props.appendMetadata == nil then
         props.appendMetadata = true
-    end
-    props.use16BitTiffForHdr = prefs.use16BitTiffForHdr or false
-    
-    -- Auditing
-
-
-    -- Privacy
-    if prefs.blurFacesForCloud == nil then
-        props.blurFacesForCloud = false
-    else
-        props.blurFacesForCloud = prefs.blurFacesForCloud
-    end
-
-    if prefs.previewBlurredFaces == nil then
-        props.previewBlurredFaces = false
-    else
-        props.previewBlurredFaces = prefs.previewBlurredFaces
-    end
-
-    props.faceBlurSensitivity = prefs.faceBlurSensitivity or "balanced"
-
     -- Validation
     props.enableValidation = prefs.enableValidation or false
 
@@ -410,44 +378,6 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                 }),
 
-                UIFactory.SettingsGroup(f, {
-                    title = LOC "$$$/StyleAI/UI/PrivacySettings=Privacy & Anonymization",
-                    fill_horizontal = 1,
-                    f:column {
-                        spacing = f:control_spacing(),
-                        f:checkbox {
-                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/BlurFaces=Blur faces before sending to cloud APIs (Privacy)",
-                            value = bind 'blurFacesForCloud',
-                            -- visible = bind 'isCloudModel', -- disabled for testing
-                        },
-                        f:row {
-                            margin_left = 20,
-                            f:checkbox {
-                                title = LOC "$$$/StyleAI/AnalyzeAndIndex/PreviewBlur=Preview blurred images before sending",
-                                value = bind 'previewBlurredFaces',
-                                visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
-                            },
-                        },
-                        f:row {
-                            margin_left = 20,
-                            f:static_text { 
-                                title = LOC "$$$/StyleAI/AnalyzeAndIndex/BlurSensitivity=Blur Sensitivity:", 
-                                width = 100,
-                                visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
-                            },
-                            f:popup_menu {
-                                value = bind 'faceBlurSensitivity',
-                                items = {
-                                    { title = LOC "$$$/StyleAI/AnalyzeAndIndex/SensitivityHigh=High (Catch more faces)", value = "high" },
-                                    { title = LOC "$$$/StyleAI/AnalyzeAndIndex/SensitivityBalanced=Balanced", value = "balanced" },
-                                    { title = LOC "$$$/StyleAI/AnalyzeAndIndex/SensitivityLow=Low (Fewer false positives)", value = "low" },
-                                },
-                                width = 200,
-                                visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
-                            }
-                        },
-                    }
-                }),
             },
 
             --------------------------------------------------------
@@ -554,13 +484,6 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                 },
                 f:group_box {
-                    title = "High Fidelity Rendering",
-                    fill_horizontal = 1,
-                    f:row {
-                        f:checkbox { value = bind 'use16BitTiffForHdr', title = "Use 16-bit TIFFs for HDR Previews", tooltip = "Preserves custom camera profile highlight roll-offs perfectly, but is significantly slower to export." },
-                    },
-                },
-                f:group_box {
                     title = LOC "$$$/StyleAI/AnalyzeAndIndex/MetadataHandling=Metadata Handling",
                     fill_horizontal = 1,
                     f:row {
@@ -633,11 +556,7 @@ local function showAnalyzeAndIndexDialog(ctx)
         prefs.generateCaption = props.generateCaption
         prefs.generateTitle = props.generateTitle
         prefs.generateAltText = props.generateAltText
-        -- Persist selected model key and provider for backwards compatibility
         prefs.replaceSS = props.replaceSS
-        prefs.blurFacesForCloud = props.blurFacesForCloud
-        prefs.previewBlurredFaces = props.previewBlurredFaces
-        prefs.faceBlurSensitivity = props.faceBlurSensitivity
         prefs.modelKey = props.modelKey
         if props.modelKey then
             local sep = string.find(props.modelKey, "::", 1, true)
@@ -654,7 +573,6 @@ local function showAnalyzeAndIndexDialog(ctx)
         prefs.showPhotoContextDialog = props.showPhotoContextDialog
         prefs.enableValidation = props.enableValidation
         prefs.saveDataToCatalog = props.saveDataToCatalog
-        prefs.use16BitTiffForHdr = props.use16BitTiffForHdr
         prefs.indexingPerformanceProfile = prefs.indexingPerformanceProfile or 2
         prefs.indexingBatchSize = prefs.indexingBatchSize or 32
         prefs.prompt = props.prompt
@@ -882,34 +800,8 @@ LrTasks.startAsyncTask(function()
 			prompt = props.selectedPrompt,
 			bilingual_keywords = props.bilingualKeywords,
 			keyword_secondary_language = props.keywordSecondaryLanguage,
-			blurFacesForCloud = props.blurFacesForCloud,
-			faceBlurSensitivity = props.faceBlurSensitivity,
 		}
-		-- Add API key for cloud providers if configured
-		if providerFromKey == "chatgpt" and prefs then
-			local key = import("LrPasswords").retrieve("StyleAI", "chatgptApiKey")
-			if Util.nilOrEmpty(key) then
-				LrDialogs.showError(
-					LOC(
-						"$$$/StyleAI/AnalyzeAndIndex/MissingChatGPTAPIKey=ChatGPT API key is not configured. Please set it in the plugin preferences."
-					)
-				)
-				return
-			end
-			options.api_key = key
-		elseif providerFromKey == "gemini" and prefs then
-			local key = import("LrPasswords").retrieve("StyleAI", "geminiApiKey")
-			if Util.nilOrEmpty(key) then
-				LrDialogs.showError(
-					LOC(
-						"$$$/StyleAI/AnalyzeAndIndex/MissingGeminiAPIKey=Gemini API key is not configured. Please set it in the plugin preferences."
-					)
-				)
-				return
-			end
-			log:trace("Added Gemini API key to options")
-			options.api_key = key
-		end
+
 
 		if prefs.useKeywordHierarchy then
 			if prefs.useCatalogKeywordStructure then
@@ -960,14 +852,6 @@ LrTasks.startAsyncTask(function()
 				)
 			end
 			return
-		end
-
-		local PrivacyPreview = require("PrivacyPreview")
-		if props.blurFacesForCloud and props.previewBlurredFaces then
-			if not PrivacyPreview.showPreviewFlow(photosToProcess, progressScope, props.faceBlurSensitivity) then
-				progressScope:done()
-				return
-			end
 		end
 
 		local LrPathUtils = import("LrPathUtils")

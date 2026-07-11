@@ -9,8 +9,6 @@ Defaults.defaultTopLevelKeywords = {
 	"StyleAI",
 	"Ollama",
 	"LM Studio",
-	"ChatGPT",
-	"Google Gemini",
 }
 
 Defaults.topLevelKeywordSynonym = "StyleAI Top-Level Keyword"

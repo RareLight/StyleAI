@@ -89,37 +89,15 @@ function SettingsManager.initializeDefaults()
         prefs.backendServerUrl = Defaults.defaultBackendServerUrl
     end
 
-    -- Priority 8 Security: Migrate old plaintext API keys to OS Keychain
-    if prefs.geminiApiKey ~= nil and prefs.geminiApiKey ~= "" then
-        LrPasswords.store("StyleAI", "geminiApiKey", prefs.geminiApiKey)
-        prefs.geminiApiKey = nil
-    end
-    if prefs.chatgptApiKey ~= nil and prefs.chatgptApiKey ~= "" then
-        LrPasswords.store("StyleAI", "chatgptApiKey", prefs.chatgptApiKey)
-        prefs.chatgptApiKey = nil
-    end
 end
 
 --- Get a preference
 function SettingsManager.get(key)
-    if key == "geminiApiKey" or key == "chatgptApiKey" then
-        return LrPasswords.retrieve("StyleAI", key) or ""
-    end
     return prefs[key]
 end
 
 --- Set a preference with optional validation
 function SettingsManager.set(key, value)
-    if key == "geminiApiKey" or key == "chatgptApiKey" then
-        if value and value ~= "" then
-            LrPasswords.store("StyleAI", key, value)
-        else
-            -- If cleared, LR doesn't have a direct delete, so store empty string
-            LrPasswords.store("StyleAI", key, "")
-        end
-        return true
-    end
-
     -- Add validation rules for specific keys
     if key == "semanticClusteringThreshold" then
         if type(value) ~= "number" then return false end

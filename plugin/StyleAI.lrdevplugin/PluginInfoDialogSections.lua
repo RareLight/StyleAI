@@ -6,8 +6,7 @@ PluginInfoDialogSections = {}
 function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.keepChecksRunning = true
 	propertyTable.logging = prefs.logging
-	propertyTable.geminiApiKey = SettingsManager.get("geminiApiKey")
-	propertyTable.chatgptApiKey = SettingsManager.get("chatgptApiKey")
+
 
 	propertyTable.exportSize = prefs.exportSize
 	propertyTable.exportQuality = prefs.exportQuality
@@ -44,8 +43,6 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.auditLlmInputsPath = prefs.auditLlmInputsPath or ""
 	propertyTable.backupRotationDays = prefs.backupRotationDays or "0"
 	propertyTable.usePreviewThumbnails = prefs.usePreviewThumbnails == nil and true or prefs.usePreviewThumbnails
-	propertyTable.geminiApiKey = prefs.geminiApiKey or ""
-	propertyTable.chatgptApiKey = prefs.chatgptApiKey or ""
 
 	-- Training/Style Profile stats (loaded asynchronously).
 	propertyTable.trainingCount = 0
@@ -736,8 +733,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 	}
 end
 function PluginInfoDialogSections.endDialog(propertyTable)
-	SettingsManager.set("geminiApiKey", propertyTable.geminiApiKey)
-	SettingsManager.set("chatgptApiKey", propertyTable.chatgptApiKey)
 	prefs.indexingPerformanceProfile = tonumber(propertyTable.indexingPerformanceProfile) or 2
 	prefs.indexingBatchSize = tonumber(propertyTable.indexingBatchSize) or 32
 
