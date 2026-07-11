@@ -7,18 +7,12 @@ Uses lazy loading - providers are only initialized when needed.
 from typing import Any
 from providers.base import (
     LLMProviderBase,
-    EditGenerationRequest,
-    EditGenerationResponse,
     MetadataGenerationRequest,
     MetadataGenerationResponse,
 )
 from providers.ollama import OllamaProvider
 from providers.lmstudio import LMStudioProvider
-from providers.chatgpt import ChatGPTProvider
-from providers.gemini import GeminiProvider
-from utils.edit_recipe import filter_edit_recipe_by_controls
-from config import logger, DEFAULT_METADATA_PROVIDER, DEFAULT_METADATA_LANGUAGE
-from . import training as training_service
+from config import logger, DEFAULT_METADATA_PROVIDER
 from PIL import Image
 import io
 import torch
@@ -94,40 +88,6 @@ class AnalysisService:
             self.provider_status["lmstudio"] = "failed"
             self.provider_errors["lmstudio"] = str(e)
             logger.error(f"[FAIL] Failed to initialize LM Studio provider: {e}")
-
-        # ChatGPT (cloud) - Always add to providers, API key can be provided later
-        try:
-            chatgpt = ChatGPTProvider({})
-            self.providers["chatgpt"] = chatgpt
-            if chatgpt.is_available():
-                self.provider_status["chatgpt"] = "available"
-                logger.info("[OK] ChatGPT provider initialized")
-            else:
-                self.provider_status["chatgpt"] = "registered"
-                logger.info(
-                    "[INFO] ChatGPT provider registered (API key not configured, can be provided later)"
-                )
-        except Exception as e:
-            self.provider_status["chatgpt"] = "failed"
-            self.provider_errors["chatgpt"] = str(e)
-            logger.error(f"[FAIL] Failed to initialize ChatGPT provider: {e}")
-
-        # Gemini (cloud) - Always add to providers, API key can be provided later
-        try:
-            gemini = GeminiProvider({})
-            self.providers["gemini"] = gemini
-            if gemini.is_available():
-                self.provider_status["gemini"] = "available"
-                logger.info("[OK] Gemini provider initialized")
-            else:
-                self.provider_status["gemini"] = "registered"
-                logger.info(
-                    "[INFO] Gemini provider registered (API key not configured, can be provided later)"
-                )
-        except Exception as e:
-            self.provider_status["gemini"] = "failed"
-            self.provider_errors["gemini"] = str(e)
-            logger.error(f"[FAIL] Failed to initialize Gemini provider: {e}")
 
         if not self.providers:
             logger.error(
@@ -450,7 +410,6 @@ class AnalysisService:
             uuid=uuid,
             provider=provider,
             model=options["model"],
-            api_key=options.get("api_key"),
             generate_keywords=options["generate_keywords"],
             generate_caption=options["generate_caption"],
             generate_title=options["generate_title"],
@@ -530,203 +489,8 @@ class AnalysisService:
             uuid=uuid, success=False, error="Unknown error"
         )
 
-    def generate_edit_recipe_single(
-        self, uuid: str, image_data: bytes, options: dict
-    ) -> EditGenerationResponse:
-        provider = options.get("provider") or DEFAULT_METADATA_PROVIDER
-
-        if provider not in self.providers:
-            if not self.providers:
-                return EditGenerationResponse(
-                    uuid=uuid, success=False, error="No LLM providers available"
-                )
-            provider = list(self.providers.keys())[0]
-            warning_msg = f"Requested provider '{provider}' not available, using fallback: {provider}"
-            logger.warning(warning_msg)
-
-        selected_provider = self.providers[provider]
-        logger.info(f"Generating edit recipe for {uuid} using {provider}")
-
-        try:
-            base_image = (
-                image_data[1]
-                if isinstance(image_data, list) and len(image_data) >= 3
-                else image_data
-            )
-            histogram_signature = training_service.compute_histogram_signature(
-                base_image
-            )
-            dominant_colors = training_service.compute_dominant_colors(
-                base_image, n_colors=5
-            )
-            exp_metrics = training_service.compute_exposure_metrics(base_image)
-            luminance_zones = {
-                "zone_deep_shadows": exp_metrics.get("zone_deep_shadows", 0.0),
-                "zone_shadows": exp_metrics.get("zone_shadows", 0.0),
-                "zone_midtones": exp_metrics.get("zone_midtones", 0.0),
-                "zone_highlights": exp_metrics.get("zone_highlights", 0.0),
-                "zone_bright_highlights": exp_metrics.get(
-                    "zone_bright_highlights", 0.0
-                ),
-            }
-        except Exception as e:
-            logger.warning(f"Failed to compute histogram signature or colors: {e}")
-            histogram_signature = None
-            dominant_colors = None
-            luminance_zones = None
-
-        request = EditGenerationRequest(
-            image_data=image_data,
-            uuid=uuid,
-            provider=provider,
-            model=options["model"],
-            api_key=options.get("api_key"),
-            language=options.get("language", DEFAULT_METADATA_LANGUAGE),
-            temperature=options.get("temperature", 0.2),
-            max_tokens=options.get("max_tokens"),
-            user_prompt=options.get("user_prompt"),
-            submit_keywords=options.get("submit_keywords", False),
-            submit_folder_names=options.get("submit_folder_names", False),
-            existing_keywords=options.get("existing_keywords"),
-            location_data=options.get("location_data"),
-            folder_names=options.get("folder_names"),
-            camera_profile=options.get("camera_profile"),
-            histogram_signature=histogram_signature,
-            dominant_colors=dominant_colors,
-            luminance_zones=luminance_zones,
-            user_context=options.get("user_context"),
-            system_prompt=options.get("prompt"),
-            date_time=options.get("date_time"),
-            edit_intent=options.get("edit_intent"),
-            style_strength=options.get("style_strength", 0.5),
-            include_masks=options.get("include_masks", True),
-            adjust_white_balance=options.get("adjust_white_balance", True),
-            adjust_basic_tone=options.get("adjust_basic_tone", True),
-            adjust_presence=options.get("adjust_presence", True),
-            adjust_color_mix=options.get("adjust_color_mix", True),
-            do_color_grading=options.get("do_color_grading", True),
-            use_tone_curve=options.get("use_tone_curve", True),
-            use_point_curve=options.get("use_point_curve", True),
-            adjust_detail=options.get("adjust_detail", True),
-            adjust_effects=options.get("adjust_effects", True),
-            adjust_lens_corrections=options.get("adjust_lens_corrections", True),
-            allow_auto_crop=options.get("allow_auto_crop", True),
-            composition_mode=options.get("composition_mode", "subtle"),
-            ollama_base_url=options.get("ollama_base_url"),
-            lmstudio_base_url=options.get("lmstudio_base_url"),
-        )
-
-        # Query similar training examples for few-shot style injection.
-        training_examples = None
-        use_training = options.get("use_training_style", True)
-        if use_training:
-            try:
-                # Re-use the CLIP embedding of the current photo from the main collection
-                # (best-effort: skip if not available).
-                from . import chroma as chroma_service
-
-                existing = chroma_service.get_image(uuid)
-                embedding = None
-                if (
-                    existing
-                    and existing.get("ids")
-                    and existing.get("embeddings") is not None
-                    and len(existing.get("embeddings")) > 0
-                ):
-                    raw_emb = existing["embeddings"][0]
-                    if raw_emb is not None:
-                        import numpy as np
-
-                        emb_arr = np.asarray(raw_emb, dtype=np.float32)
-                        if emb_arr.size > 0 and not np.allclose(emb_arr, 0.0):
-                            embedding = emb_arr.tolist()
-                if embedding is not None:
-                    training_examples = (
-                        training_service.query_similar_training_examples(
-                            embedding, n_results=3
-                        )
-                    )
-                    if training_examples:
-                        logger.info(
-                            "Injecting %d training example(s) for uuid=%s",
-                            len(training_examples),
-                            uuid,
-                        )
-            except Exception as exc:
-                training_warning = (
-                    f"Could not retrieve training examples for uuid={uuid}: {exc}"
-                )
-                logger.warning(training_warning)
-
-        request.training_examples = training_examples or []
-        import time
-
-        response = None
-        for attempt in range(2):
-            try:
-                response = selected_provider.generate_edit_recipe(request)
-                if response.success and isinstance(response.recipe, dict):
-                    response.recipe = filter_edit_recipe_by_controls(
-                        response.recipe,
-                        {
-                            "include_masks": request.include_masks,
-                            "adjust_white_balance": request.adjust_white_balance,
-                            "adjust_basic_tone": request.adjust_basic_tone,
-                            "adjust_presence": request.adjust_presence,
-                            "adjust_color_mix": request.adjust_color_mix,
-                            "do_color_grading": request.do_color_grading,
-                            "use_tone_curve": request.use_tone_curve,
-                            "use_point_curve": request.use_point_curve,
-                            "adjust_detail": request.adjust_detail,
-                            "adjust_effects": request.adjust_effects,
-                            "adjust_lens_corrections": request.adjust_lens_corrections,
-                            "allow_auto_crop": request.allow_auto_crop,
-                            "composition_mode": request.composition_mode,
-                        },
-                    )
-                    break
-                else:
-                    logger.warning(
-                        f"[Attempt {attempt + 1}/2] Failed to generate edit recipe for {uuid}: {response.error if response else 'Unknown'}"
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"[Attempt {attempt + 1}/2] Unexpected error during edit recipe generation for {uuid}: {e}",
-                    exc_info=(attempt == 1),
-                )
-                if attempt == 1:
-                    return EditGenerationResponse(
-                        uuid=uuid, success=False, error=str(e)
-                    )
-
-            if attempt < 1:
-                time.sleep(2)
-
-        if not response or not response.success:
-            logger.error(
-                f"[FAIL] Final failure generating edit recipe for {uuid}: {response.error if response else 'Unknown'}"
-            )
-
-        # Aggregate warnings
-        warnings = []
-        if "warning_msg" in locals():
-            warnings.append(warning_msg)
-        if "training_warning" in locals():
-            warnings.append(training_warning)
-
-        if response and warnings:
-            response.warning = " | ".join(warnings)
-
-        if not response:
-            return EditGenerationResponse(
-                uuid=uuid, success=False, error="Unknown error"
-            )
-        return response
-
     def get_available_models(
         self,
-        openai_apikey: str | None = None,
-        gemini_apikey: str | None = None,
         ollama_base_url: str | None = None,
         lmstudio_base_url: str | None = None,
     ) -> dict[str, list[str]]:
@@ -736,11 +500,6 @@ class AnalysisService:
         result: dict[str, list[str]] = {}
         for provider_name, provider_instance in self.providers.items():
             try:
-                if provider_name == "chatgpt" and openai_apikey:
-                    provider_instance.api_key = openai_apikey
-                if provider_name == "gemini" and gemini_apikey:
-                    provider_instance.api_key = gemini_apikey
-
                 if provider_name == "ollama" and ollama_base_url:
                     provider_instance = OllamaProvider({"base_url": ollama_base_url})
                 if provider_name == "lmstudio" and lmstudio_base_url:

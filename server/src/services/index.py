@@ -14,7 +14,6 @@ from . import chroma as chroma_service
 from .chroma import DatabaseNotReadyError
 from .metadata import get_analysis_service
 import server_lifecycle as server_lifecycle
-from . import face as face_service
 from . import exif as exif_service
 from . import training as training_service
 import gc
@@ -366,56 +365,7 @@ def process_image_task(
                 )
             )
 
-        # Detect faces ONLY for privacy blurring if requested
-        per_image_faces = []
-        for i, (img_bytes, uid, fname, lr_uuid) in enumerate(image_triplets):
-            opt = options[i] if isinstance(options, list) else options
-            blur_faces = opt.get("blurFacesForCloud", False)
-            faces = None
-            if blur_faces and img_bytes:
-                try:
-                    sensitivity = opt.get("faceBlurSensitivity", "balanced").lower()
-                    min_det_score = 0.5
-                    if sensitivity == "high":
-                        min_det_score = 0.3
-                    elif sensitivity == "low":
-                        min_det_score = 0.7
-
-                    faces = face_service.detect_faces(
-                        img_bytes, pil_image=pil_images[i], min_det_score=min_det_score
-                    )
-                except Exception as e:
-                    logger.error(f"Error detecting faces for blurring: {e}")
-            per_image_faces.append(faces)
-
-        # Optional: Privacy Face Blurring
-        # If blurFacesForCloud is true, blur the image before sending to LLM and Embeddings
-        blurred_image_triplets = []
-        for i, (img_bytes, uid, fname, lr_uuid) in enumerate(image_triplets):
-            opt = options[i] if isinstance(options, list) else options
-            blur_faces = opt.get("blurFacesForCloud", False)
-
-            if blur_faces and per_image_faces[i]:
-                from utils.image_processing import apply_face_blur
-
-                # Extract bounding boxes
-                bboxes = [face["bbox"] for face in per_image_faces[i]]
-
-                # Blur bytes
-                blurred_bytes = apply_face_blur(img_bytes, bboxes)
-                blurred_image_triplets.append((blurred_bytes, uid, fname, lr_uuid))
-
-                # Do NOT update pil_images list with blurred version
-                # SigLIP2 is 100% local and should embed the unblurred image for accuracy
-                # The LLM will still receive the blurred_bytes via blurred_image_triplets
-
-                # Ensure the request to the LLM also gets the flag so it can append the prompt disclaimer
-                if isinstance(options, list):
-                    options[i]["blur_faces"] = True
-                else:
-                    options["blur_faces"] = True
-            else:
-                blurred_image_triplets.append((img_bytes, uid, fname, lr_uuid))
+        blurred_image_triplets = image_triplets
 
         # Leave audit trail for indexing thumbnails if enabled
         from services.audit import log_diagnostic_image

@@ -12,8 +12,6 @@ except Exception:  # ImportError or runtime issues
 
 from .base import (
     LLMProviderBase,
-    EditGenerationRequest,
-    EditGenerationResponse,
     MetadataGenerationRequest,
     MetadataGenerationResponse,
 )
@@ -194,99 +192,6 @@ class OllamaProvider(LLMProviderBase):
                 uuid=request.uuid,
                 success=False,
                 error=str(e),
-            )
-
-    @override
-    def generate_edit_recipe(
-        self, request: EditGenerationRequest
-    ) -> EditGenerationResponse:
-        try:
-            if Client is None:
-                return EditGenerationResponse(
-                    uuid=request.uuid,
-                    success=False,
-                    error="Ollama SDK not installed. Please install the 'ollama' Python package.",
-                )
-            client = self._get_client(getattr(request, "ollama_base_url", None))
-            image_b64 = self._image_to_base64(request.image_data)
-            system_prompt = self._prepare_edit_system_prompt(request)
-            user_prompt = self._prepare_edit_user_prompt(request)
-            response_schema = self._prepare_edit_response_structure()
-
-            result = client.chat(
-                model=request.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {
-                        "role": "user",
-                        "content": user_prompt,
-                        "images": [
-                            self._image_to_base64(img) for img in request.image_data
-                        ]
-                        if isinstance(request.image_data, list)
-                        else [image_b64],
-                    },
-                ],
-                format=response_schema,
-                options={
-                    "temperature": request.temperature,
-                    "top_p": 0.9,
-                    "num_keep": -1,
-                    "num_predict": request.max_tokens or DEFAULT_MAX_TOKENS,
-                },
-                stream=False,
-            )
-
-            if isinstance(result, dict):
-                done_reason = result.get("done_reason")
-                message = result.get("message") or {}
-                content = message.get("content")
-            else:
-                done_reason = getattr(result, "done_reason", None)
-                message = getattr(result, "message", None)
-                content = (
-                    getattr(message, "content", None) if message is not None else None
-                )
-
-            if done_reason == "length":
-                _max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
-                return EditGenerationResponse(
-                    uuid=request.uuid,
-                    success=False,
-                    error=(
-                        f"Ollama stopped before finishing the response because the token "
-                        f"limit was reached (num_predict={_max_tokens}). Please raise the "
-                        f"Max Tokens setting in the plugin (General tab → AI Model section) "
-                        f"— try 4096 or higher."
-                    ),
-                )
-
-            if not content:
-                return EditGenerationResponse(
-                    uuid=request.uuid,
-                    success=False,
-                    error="Empty response content from Ollama",
-                )
-
-            recipe = self._normalize_edit_recipe(json.loads(content))
-            return EditGenerationResponse(
-                uuid=request.uuid,
-                success=True,
-                recipe=recipe,
-                input_tokens=0,
-                output_tokens=0,
-            )
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse edit JSON from Ollama response: {e}")
-            return EditGenerationResponse(
-                uuid=request.uuid, success=False, error=f"JSON parsing error: {str(e)}"
-            )
-        except Exception as e:
-            logger.error(
-                f"Error generating edit recipe with Ollama: {e}", exc_info=True
-            )
-            return EditGenerationResponse(
-                uuid=request.uuid, success=False, error=str(e)
             )
 
     @override

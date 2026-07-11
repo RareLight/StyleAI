@@ -24,7 +24,6 @@ def _request(**overrides):
         uuid="uuid-1",
         provider="test",
         model="test-model",
-        api_key=None,
         generate_keywords=True,
         generate_caption=True,
         generate_title=False,

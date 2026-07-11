@@ -9,8 +9,6 @@ from typing import Any
 import lmstudio as lms
 from .base import (
     LLMProviderBase,
-    EditGenerationRequest,
-    EditGenerationResponse,
     MetadataGenerationRequest,
     MetadataGenerationResponse,
 )
@@ -203,7 +201,7 @@ class LMStudioProvider(LLMProviderBase):
                     ):
                         if response.stats.stop_reason in ("length", "max_tokens"):
                             _max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
-                            return EditGenerationResponse(
+                            return MetadataGenerationResponse(
                                 uuid=request.uuid,
                                 success=False,
                                 error=(
@@ -288,123 +286,6 @@ class LMStudioProvider(LLMProviderBase):
                 f"Error generating metadata with LM Studio: {e}", exc_info=True
             )
             return MetadataGenerationResponse(
-                uuid=request.uuid, success=False, error=str(e)
-            )
-
-    def generate_edit_recipe(
-        self, request: EditGenerationRequest
-    ) -> EditGenerationResponse:
-        try:
-            host = getattr(request, "lmstudio_base_url", None) or self.host
-            with lms.Client(host) as client:
-                if isinstance(request.image_data, list):
-                    image_handles = [
-                        client.files.prepare_image(img) for img in request.image_data
-                    ]
-                else:
-                    image_handles = [client.files.prepare_image(request.image_data)]
-                model = client.llm.model(request.model)
-                system_prompt = self._prepare_edit_system_prompt(request)
-                user_prompt = self._prepare_edit_user_prompt(request)
-                response_schema = self._prepare_edit_response_structure()
-
-                chat = lms.Chat(system_prompt)
-                chat.add_user_message(user_prompt, images=image_handles)
-
-                response = model.respond(
-                    chat,
-                    response_format=response_schema,
-                    config={"temperature": request.temperature},
-                )
-
-            content = response.parsed
-
-            # DEBUG CACHE: Save payload, prompt, and raw response
-            self._save_debug_cache(
-                request.uuid,
-                request.image_data,
-                system_prompt,
-                user_prompt,
-                raw_response=content,
-            )
-
-            if isinstance(content, str):
-                try:
-                    # Strip out <think> blocks if any
-                    content = re.sub(
-                        r"<think>.*?</think>", "", content, flags=re.DOTALL
-                    )
-
-                    content = _extract_json_from_prose(content)
-                except Exception as parse_err:
-                    # Check if it was a max tokens issue before raising the generic error
-                    if hasattr(response, "stats") and hasattr(
-                        response.stats, "stop_reason"
-                    ):
-                        if response.stats.stop_reason in ("length", "max_tokens"):
-                            _max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
-                            return EditGenerationResponse(
-                                uuid=request.uuid,
-                                success=False,
-                                error=(
-                                    f"LM Studio stopped before finishing the response because the token "
-                                    f"limit was reached (num_predict={_max_tokens}). Please raise the "
-                                    f"Max Tokens setting in the plugin (General tab → AI Model section) "
-                                    f"— try 4096 or higher."
-                                ),
-                            )
-                    raise ValueError(
-                        f"Unexpected non-JSON response from LM Studio: {content}"
-                    ) from parse_err
-            if not isinstance(content, dict):
-                raise ValueError(
-                    f"Unexpected response type from LM Studio: {type(content)}"
-                )
-
-            recipe = self._normalize_edit_recipe(content)
-            # Token usage reporting
-            input_tokens = 0
-            output_tokens = 0
-            try:
-                stats = getattr(response, "stats", None) or getattr(
-                    response, "usage", None
-                )
-                if stats:
-                    input_tokens = getattr(stats, "prompt_tokens", 0) or getattr(
-                        stats, "input_tokens", 0
-                    )
-                    output_tokens = getattr(stats, "completion_tokens", 0) or getattr(
-                        stats, "output_tokens", 0
-                    )
-
-                if input_tokens == 0 and hasattr(model, "tokenize"):
-                    try:
-                        full_prompt = (
-                            model.apply_prompt_template(chat)
-                            if hasattr(model, "apply_prompt_template")
-                            else user_prompt
-                        )
-                        input_tokens = len(model.tokenize(full_prompt))
-                    except Exception:
-                        input_tokens = len(model.tokenize(user_prompt))
-
-                if output_tokens == 0 and hasattr(model, "tokenize"):
-                    output_tokens = len(model.tokenize(json.dumps(content)))
-            except Exception:
-                pass
-
-            return EditGenerationResponse(
-                uuid=request.uuid,
-                success=True,
-                recipe=recipe,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-            )
-        except Exception as e:
-            logger.error(
-                f"Error generating edit recipe with LM Studio: {e}", exc_info=True
-            )
-            return EditGenerationResponse(
                 uuid=request.uuid, success=False, error=str(e)
             )
 

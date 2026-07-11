@@ -169,50 +169,12 @@ function OnboardingWizard.show(manualTrigger)
 					fill_horizontal = 1,
 					f:static_text({
 						title = LOC(
-							"$$$/StyleAI/Onboarding/Step3Desc=If you want StyleAI to automatically write titles, captions, and keywords for your photos, or search your catalog using natural language, you can configure an optional AI Provider below."
+							"$$$/StyleAI/Onboarding/Step3Desc=StyleAI uses local-first LLMs (Ollama or LM Studio) to generate keywords, titles, and descriptions during indexing without sending images to the cloud."
 						),
 						width_in_chars = 60,
 						wrap = true,
 					}),
 					f:spacer({ height = 10 }),
-					f:row({
-						fill_horizontal = 1,
-						f:static_text({
-							title = LOC("$$$/StyleAI/PluginInfoDialogSections/GoogleApiKey=Google API key"),
-							alignment = "right",
-							width = share("apiKeyLabelWidth"),
-						}),
-						f:edit_field({
-							value = bind({ bind_to_object = prefs, key = "geminiApiKey" }),
-							fill_horizontal = 1,
-						}),
-						f:push_button({
-							title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
-							action = function(button)
-								LrHttp.openUrlInBrowser("https://aistudio.google.com/app/apikey")
-							end,
-							width = share("apiKeyButtonWidth"),
-						}),
-					}),
-					f:row({
-						fill_horizontal = 1,
-						f:static_text({
-							title = LOC("$$$/StyleAI/PluginInfoDialogSections/ChatGPTApiKey=ChatGPT API key"),
-							alignment = "right",
-							width = share("apiKeyLabelWidth"),
-						}),
-						f:edit_field({
-							value = bind({ bind_to_object = prefs, key = "chatgptApiKey" }),
-							fill_horizontal = 1,
-						}),
-						f:push_button({
-							title = LOC("$$$/StyleAI/PluginInfoDialogSections/GetAPIkey=Get API key"),
-							action = function(button)
-								LrHttp.openUrlInBrowser("https://platform.openai.com/api-keys")
-							end,
-							width = share("apiKeyButtonWidth"),
-						}),
-					}),
 					f:row({
 						fill_horizontal = 1,
 						f:static_text({

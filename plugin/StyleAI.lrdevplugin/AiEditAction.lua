@@ -34,16 +34,7 @@ end
 
 local function buildModelItems()
 	local items = {}
-	local openaiKey = nil
-	local geminiKey = nil
-	if prefs then
-		openaiKey = import("LrPasswords").retrieve("StyleAI", "chatgptApiKey")
-		geminiKey = import("LrPasswords").retrieve("StyleAI", "geminiApiKey")
-	end
-	openaiKey = Util.nilOrEmpty(openaiKey) and nil or openaiKey
-	geminiKey = Util.nilOrEmpty(geminiKey) and nil or geminiKey
-
-	local modelsResp = SearchIndexAPI.getModels(openaiKey, geminiKey)
+	local modelsResp = SearchIndexAPI.getModels()
 	if modelsResp and modelsResp.models then
 		for provider, modelList in pairs(modelsResp.models) do
 			for _, model in ipairs(modelList) do
@@ -167,19 +158,6 @@ local function getAiEditOptions(ctx, editMode)
 
 	props.scope = prefs.aiEditScope or "selected"
 	props.modelKey = prefs.aiEditModelKey or prefs.modelKey
-	if prefs.blurFacesForCloud == nil then
-		props.blurFacesForCloud = false
-	else
-		props.blurFacesForCloud = prefs.blurFacesForCloud
-	end
-
-	if prefs.previewBlurredFaces == nil then
-		props.previewBlurredFaces = false
-	else
-		props.previewBlurredFaces = prefs.previewBlurredFaces
-	end
-
-	props.faceBlurSensitivity = prefs.faceBlurSensitivity or "balanced"
 	props.temperature = prefs.aiEditTemperature or prefs.temperature or 0.1
 	props.language = prefs.aiEditLanguage or prefs.generateLanguage or "English"
 	local function getValidStyleStrength(val)
@@ -456,43 +434,7 @@ local function getAiEditOptions(ctx, editMode)
 					}),
 				}),
 			}),
-			UIFactory.SettingsGroup(f, {
-				title = LOC "$$$/StyleAI/UI/PrivacySettings=Privacy & Anonymization",
-				fill_horizontal = 1,
-				f:column({
-					spacing = f:control_spacing(),
-						f:checkbox({
-							title = LOC("$$$/StyleAI/AnalyzeAndIndex/BlurFaces=Blur faces before sending to cloud APIs (Privacy)"),
-							value = bind("blurFacesForCloud"),
-						}),
-						f:row({
-							margin_left = 20,
-							f:checkbox({
-								title = LOC("$$$/StyleAI/TaskAiEditPhotos/PreviewBlur=Preview blurred images before sending"),
-								value = bind("previewBlurredFaces"),
-								visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
-							}),
-						}),
-						f:row({
-							margin_left = 20,
-							f:static_text({ 
-								title = "Blur Sensitivity:", 
-								width = 100,
-								visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
-							}),
-							f:popup_menu({
-								value = bind("faceBlurSensitivity"),
-								items = {
-									{ title = "High (Catch more faces)", value = "high" },
-									{ title = "Balanced", value = "balanced" },
-									{ title = "Low (Fewer false positives)", value = "low" },
-								},
-								width = 200,
-								visible = bind { key = 'blurFacesForCloud', transform = function(v) return v == true end },
-							}),
-						}),
-					}),
-				}),
+
 				UIFactory.SettingsGroup(f, {
 					title = LOC("$$$/StyleAI/TaskAiEditPhotos/ModelSettings=Model Settings"),
 					fill_horizontal = 1,
@@ -685,9 +627,6 @@ local function getAiEditOptions(ctx, editMode)
 
 	prefs.aiEditScope = props.scope
 	prefs.aiEditModelKey = props.modelKey
-	prefs.blurFacesForCloud = props.blurFacesForCloud
-	prefs.previewBlurredFaces = props.previewBlurredFaces
-	prefs.faceBlurSensitivity = props.faceBlurSensitivity
 	prefs.aiEditTemperature = props.temperature
 	prefs.aiEditLanguage = props.language
 	prefs.aiEditStyleStrength = props.styleStrength
@@ -746,9 +685,6 @@ local function getAiEditOptions(ctx, editMode)
 		use_training_style = false,
 		enableQuickEdit = props.editingStyle == "trained",
 		quickEditStyleStrength = props.styleStrength,
-		blurFacesForCloud = props.blurFacesForCloud,
-		previewBlurredFaces = props.previewBlurredFaces,
-		faceBlurSensitivity = props.faceBlurSensitivity,
 		do_not_clip = props.doNotClip,
 		allow_auto_crop = props.allowAutoCrop,
 	}
@@ -757,35 +693,6 @@ local function getAiEditOptions(ctx, editMode)
 		options.style_override = props.overrideStyleId
 	end
 
-	if providerFromKey == "chatgpt" then
-		if prefs then
-			local key = import("LrPasswords").retrieve("StyleAI", "chatgptApiKey")
-			if not Util.nilOrEmpty(key) then
-				options.api_key = key
-			else
-				LrDialogs.showError(
-					LOC(
-						"$$$/StyleAI/AnalyzeAndIndex/MissingChatGPTAPIKey=ChatGPT API key is not configured. Please set it in the plugin preferences."
-					)
-				)
-				return nil
-			end
-		end
-	elseif providerFromKey == "gemini" then
-		if prefs then
-			local key = import("LrPasswords").retrieve("StyleAI", "geminiApiKey")
-			if not Util.nilOrEmpty(key) then
-				options.api_key = key
-			else
-				LrDialogs.showError(
-					LOC(
-						"$$$/StyleAI/AnalyzeAndIndex/MissingGeminiAPIKey=Gemini API key is not configured. Please set it in the plugin preferences."
-					)
-				)
-				return nil
-			end
-		end
-	end
 	return options
 end
 
@@ -925,14 +832,6 @@ function AiEditAction.run(editMode)
 			SearchIndexAPI.triggerBackup(prefs.backupRotationDays)
 		end
 
-		local PrivacyPreview = require("PrivacyPreview")
-		if options.blurFacesForCloud and options.previewBlurredFaces then
-			if not PrivacyPreview.showPreviewFlow(photos, progressScope, options.faceBlurSensitivity) then
-				progressScope:done()
-				return
-			end
-		end
-
 		progressScope:setCaption(progressTitle)
 		progressScope:setPortionComplete(0, #photos)
 
@@ -1011,32 +910,20 @@ function AiEditAction.run(editMode)
 						if okSettings and currentSettings then
 							photoOptions.current_settings = currentSettings
 						end
-						photoOptions.raw_filepath = photo:getRawMetadata("path")
-						local base_path, dark_path, bright_path = SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
+						local base_path = SearchIndexAPI.exportPhotoForIndexing(photo)
 						if not base_path then
 							log:error("Failed to export photo for AI edit generation: " .. fileName)
 							resultObj.errorMsg = fileName .. ": export failed"
 							resultObj.continueProcessing = false
 						else
-							photoOptions.darkPath = dark_path
-							photoOptions.brightPath = bright_path
-
 							local ok, apiOk, apiResponse = LrTasks.pcall(function()
-								photoOptions.blurFacesForCloud = options.blurFacesForCloud
-								photoOptions.faceBlurSensitivity = options.faceBlurSensitivity
 								photoOptions.isBatchProcessing = (#photos > 1)
-								if photoOptions.enableQuickEdit then
-									photoOptions.style_strength = photoOptions.quickEditStyleStrength
-									return SearchIndexAPI.styleEdit(photoId, base_path, photoOptions)
-								else
-									return SearchIndexAPI.generateEditRecipePhoto(photoId, base_path, photoOptions)
-								end
+								photoOptions.style_strength = photoOptions.quickEditStyleStrength or photoOptions.style_strength
+								return SearchIndexAPI.styleEdit(photoId, base_path, photoOptions)
 							end)
 
 							LrTasks.pcall(function()
 								if base_path and LrFileUtils.exists(base_path) then LrFileUtils.delete(base_path) end
-								if photoOptions.darkPath and LrFileUtils.exists(photoOptions.darkPath) then LrFileUtils.delete(photoOptions.darkPath) end
-								if photoOptions.brightPath and LrFileUtils.exists(photoOptions.brightPath) then LrFileUtils.delete(photoOptions.brightPath) end
 							end)
 
 							if not ok then
@@ -1050,29 +937,11 @@ function AiEditAction.run(editMode)
 										or LOC("$$$/StyleAI/TaskAiEditPhotos/LowConfidenceTitle=Low Match Confidence")
 									
 									local message = apiResponse.error == "profile_mismatch"
-										and LOC("$$$/StyleAI/TaskAiEditPhotos/ProfileMismatchMessage=No training examples exist for the camera profile used by ^1. Do you want to proceed with a 100% LLM-based edit?", fileName)
-										or LOC("$$$/StyleAI/TaskAiEditPhotos/LowConfidenceMessage=StyleAI could not find a confident match for ^1 based on your training examples. Do you want to proceed with a 100% LLM-based edit?", fileName)
+										and LOC("$$$/StyleAI/TaskAiEditPhotos/ProfileMismatchMessage=No training examples exist for the camera profile used by ^1. Please train a style model for this profile first.", fileName)
+										or LOC("$$$/StyleAI/TaskAiEditPhotos/LowConfidenceMessage=StyleAI could not find a confident match for ^1 based on your training examples.", fileName)
 
-									local action = LrDialogs.confirm(
-										title,
-										message,
-										LOC("$$$/StyleAI/TaskAiEditPhotos/ProceedWithLLM=Proceed with LLM"),
-										LOC("$$$/StyleAI/TaskAiEditPhotos/CancelBatch=Cancel Batch"),
-										LOC("$$$/StyleAI/TaskAiEditPhotos/SkipPhoto=Skip Photo")
-									)
-									if action == "ok" then 
-										local llmOk, llmApiOk, llmResponse = LrTasks.pcall(function()
-											photoOptions.use_training_style = false
-											return SearchIndexAPI.generateEditRecipePhoto(photoId, base_path, photoOptions)
-										end)
-										apiOk = llmApiOk
-										apiResponse = llmResponse
-									elseif action == "other" then
-										apiResponse = { status = "error", error = "Skipped by user" }
-									else
-										apiResponse = { status = "error", error = "Batch cancelled by user" }
-										progressScope:cancel()
-									end
+									LrDialogs.message(title, message, "info")
+									apiResponse = { status = "error", error = apiResponse.error }
 								end
 
 								resultObj.response = apiResponse

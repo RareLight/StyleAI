@@ -8,7 +8,6 @@ import io
 
 # Import prompts from config
 from config import METADATA_GENERATION_SYSTEM_PROMPT
-from utils.edit_recipe import OPENAI_EDIT_RECIPE_SCHEMA, normalize_edit_recipe
 
 
 @dataclass
@@ -21,7 +20,6 @@ class MetadataGenerationRequest:
     # Provider selection and model configuration
     provider: str
     model: str
-    api_key: str | None
 
     # Generation options (what to generate)
     generate_keywords: bool
@@ -54,20 +52,15 @@ class MetadataGenerationRequest:
     date_time: str | None = None
 
     # Keyword hierarchy for structured output
-    # Can be either a flat list of strings: ["People", "Activities"]
-    # Or a nested dict: {"People": {"Family": {}, "Friends": {}}, "Activities": {}}
     keyword_categories: list[str] | dict[str, Any] | None = None
     bilingual_keywords: bool = False
     keyword_secondary_language: str | None = None
     generate_aliases: bool = False
-    # Full catalog keyword vocabulary for encouraging reuse over invention
     catalog_keywords: list[str] | None = None
 
     # Provider-specific overrides (e.g. Ollama/LM Studio on remote host)
     ollama_base_url: str | None = None
     lmstudio_base_url: str | None = None
-
-    blur_faces: bool = False
 
 
 @dataclass
@@ -92,84 +85,14 @@ class MetadataGenerationResponse:
     warning: str | None = None
 
 
-@dataclass
-class EditGenerationRequest:
-    """Request structure for Lightroom edit recipe generation."""
-
-    image_data: bytes | list[bytes]
-    uuid: str
-
-    provider: str
-    model: str
-    api_key: str | None
-
-    language: str
-    temperature: float
-    max_tokens: int | None
-
-    system_prompt: str | None
-    user_prompt: str | None
-
-    submit_keywords: bool
-    submit_folder_names: bool
-
-    existing_keywords: list[str] | None
-    # Reverse-geocoded location data extracted from JPEG EXIF/IPTC by the backend.
-    # Keys: city, state, country, location, country_code, gps_latitude, gps_longitude
-    location_data: dict[str, Any] | None = None
-    folder_names: str | None = None
-    camera_profile: str | None = None
-    histogram_signature: dict[str, Any] | None = None
-    dominant_colors: list[str] | None = None
-    luminance_zones: dict[str, float] | None = None
-    user_context: str | None = None
-    date_time: str | None = None
-    edit_intent: str | None = None
-    style_strength: float = 0.5
-    include_masks: bool = True
-    adjust_white_balance: bool = True
-    adjust_basic_tone: bool = True
-    adjust_presence: bool = True
-    adjust_color_mix: bool = True
-    do_color_grading: bool = True
-    use_tone_curve: bool = True
-    use_point_curve: bool = True
-    adjust_detail: bool = True
-    adjust_effects: bool = True
-    adjust_lens_corrections: bool = True
-    allow_auto_crop: bool = True
-    composition_mode: str = "subtle"
-    ollama_base_url: str | None = None
-    lmstudio_base_url: str | None = None
-    training_examples: list[dict[str, Any]] | None = None
-    blur_faces: bool = False
-
-
-@dataclass
-class EditGenerationResponse:
-    """Structured Lightroom edit recipe response."""
-
-    uuid: str
-    success: bool
-    recipe: dict[str, Any] | None = None
-    input_tokens: int = 0
-    output_tokens: int = 0
-    error: str | None = None
-    warning: str | None = None
-
-
 class LLMProviderBase(ABC):
     """
-    Abstract base class for all LLM providers.
-    Each provider (Qwen, Ollama, LM Studio, ChatGPT, Gemini) implements this interface.
+    Abstract base class for local LLM providers (Ollama, LM Studio).
     """
 
     def __init__(self, config: dict[str, Any]):
         """
         Initialize provider with configuration.
-
-        Args:
-            config: Provider-specific configuration dictionary
         """
         self.config: dict[str, Any] = config
         self.provider_name: str = self.__class__.__name__
@@ -180,12 +103,6 @@ class LLMProviderBase(ABC):
     ) -> MetadataGenerationResponse:
         """
         Generate metadata for a single image.
-
-        Args:
-            request: MetadataGenerationRequest containing image and generation options
-
-        Returns:
-            MetadataGenerationResponse with generated metadata or error
         """
         pass
 
@@ -193,18 +110,6 @@ class LLMProviderBase(ABC):
     def is_available(self) -> bool:
         """
         Check if the provider is available and properly configured.
-
-        Returns:
-            True if provider can be used, False otherwise
-        """
-        pass
-
-    @abstractmethod
-    def generate_edit_recipe(
-        self, request: EditGenerationRequest
-    ) -> EditGenerationResponse:
-        """
-        Generate a Lightroom edit recipe for a single image.
         """
         pass
 
@@ -232,9 +137,6 @@ class LLMProviderBase(ABC):
         else:
             # Use default system prompt from config
             prompt = METADATA_GENERATION_SYSTEM_PROMPT
-
-        if getattr(request, "blur_faces", False):
-            prompt += "\n\nFaces are intentionally obscured for privacy. Ignore the blur. Do not describe the blurred areas or mention privacy in the generated metadata."
 
         return prompt
 
@@ -373,284 +275,6 @@ class LLMProviderBase(ABC):
         # Append context if any
         if context_additions:
             base_prompt += "\n\n" + "\n".join(context_additions)
-
-        return base_prompt
-
-    def _prepare_edit_system_prompt(self, request: EditGenerationRequest) -> str:
-        prompt = request.system_prompt or (
-            "You are a senior Lightroom Classic retoucher producing high-end, client-ready edits. "
-            "Return only a structured Lightroom edit recipe that strictly matches the provided JSON schema. "
-            "Never output prose instructions, markdown, or fields not present in the schema. "
-            "Prioritize natural color science, tonal separation, and believable micro-contrast unless an explicit stylized intent is given. "
-            "Use the minimum number of controls needed for a strong result; avoid noisy over-adjustment. "
-            "When local edits are useful, use only supported mask kinds: subject, sky, background."
-        )
-
-        if getattr(request, "blur_faces", False):
-            prompt += "\n\nFaces are intentionally obscured for privacy. Ignore the blur. Do not evaluate the blurred areas; evaluate the rest of the exposure and lighting normally."
-
-        # Inject Signature Style Summary
-        try:
-            from services.style_summary import get_signature_style_summary
-
-            sig_summary = get_signature_style_summary()
-            if sig_summary:
-                prompt += "\n\n### User's Signature Style\n"
-                prompt += "The user has established the following global editing preferences across their photo catalog:\n"
-                prompt += f'"{sig_summary}"\n'
-                prompt += "Use this signature style as a foundation to guide your aesthetic decisions, ensuring the resulting edit feels cohesive with their personal brand."
-        except Exception as e:
-            from config import logger
-
-            logger.warning(f"Failed to inject signature style summary: {e}")
-
-        return prompt
-
-    def _format_training_example(self, idx: int, example: dict[str, Any]) -> str:
-        """Serialise one training example into a compact prompt-friendly string."""
-        dev = example.get("develop_settings", {})
-        label = example.get("label") or example.get("filename") or f"Example {idx}"
-        summary = example.get("summary")
-
-        # Keep only numeric develop values to avoid cluttering the prompt.
-        CANONICAL_KEYS = {
-            "Exposure2012",
-            "Contrast2012",
-            "Highlights2012",
-            "Shadows2012",
-            "Whites2012",
-            "Blacks2012",
-            "Temp",
-            "Tint",
-            "Texture",
-            "Clarity2012",
-            "Dehaze",
-            "Vibrance",
-            "Saturation",
-            "Sharpness",
-            "LuminanceSmoothing",
-            "ColorNoiseReduction",
-            "PostCropVignetteAmount",
-            "GrainAmount",
-            "SplitToningShadowHue",
-            "SplitToningShadowSaturation",
-            "SplitToningHighlightHue",
-            "SplitToningHighlightSaturation",
-            "SplitToningBalance",
-            "ParametricHighlights",
-            "ParametricLights",
-            "ParametricDarks",
-            "ParametricShadows",
-        }
-        compact = {
-            k: round(v, 2) if isinstance(v, float) else v
-            for k, v in dev.items()
-            if k in CANONICAL_KEYS and isinstance(v, (int, float))
-        }
-        lines = [f"  [{idx}] {label}"]
-        if summary:
-            lines.append(f"      Summary: {summary}")
-
-        dom_colors = example.get("dominant_colors", "[]")
-        if isinstance(dom_colors, str) and dom_colors != "[]":
-            import json
-
-            try:
-                dc = json.loads(dom_colors)
-                if dc:
-                    lines.append(f"      Dominant Colors: {', '.join(dc)}")
-            except Exception:
-                pass
-        elif isinstance(dom_colors, list) and dom_colors:
-            lines.append(f"      Dominant Colors: {', '.join(dom_colors)}")
-
-        if "zone_deep_shadows" in example:
-            zds = float(example.get("zone_deep_shadows", 0)) * 100
-            zs = float(example.get("zone_shadows", 0)) * 100
-            zm = float(example.get("zone_midtones", 0)) * 100
-            zh = float(example.get("zone_highlights", 0)) * 100
-            zbh = float(example.get("zone_bright_highlights", 0)) * 100
-            if any([zds, zs, zm, zh, zbh]):
-                lines.append(
-                    f"      Luminance Zones: DeepShadows={zds:.0f}%, Shadows={zs:.0f}%, Midtones={zm:.0f}%, Highlights={zh:.0f}%, BrightHighlights={zbh:.0f}%"
-                )
-
-        if compact:
-            params = ", ".join(f"{k}={v}" for k, v in sorted(compact.items()))
-            lines.append(f"      Settings: {params}")
-        else:
-            lines.append("      Settings: (no numeric develop settings captured)")
-        return "\n".join(lines)
-
-    def _prepare_edit_user_prompt(self, request: EditGenerationRequest) -> str:
-        if request.user_prompt:
-            base_prompt = request.user_prompt
-        else:
-            base_prompt = (
-                "Analyze the uploaded photo and return a Lightroom edit recipe.\n"
-                "* Add a concise summary of the intended look\n"
-                "* Put broad corrections in `global`\n"
-                "* Put local corrections in `masks` only when they produce clear benefit\n"
-                "* Keep the result natural and premium unless the context explicitly asks for stylization\n"
-                "* Do not include unchanged controls"
-            )
-
-        base_prompt += (
-            "\n\nEdit recipe rules:\n"
-            "* Return only numeric Lightroom-friendly adjustments\n"
-            "* IMPORTANT: The `exposure` slider is strictly on a scale from -5.0 to +5.0. Do NOT output values outside this range. Other basic tone sliders (contrast, highlights, shadows, whites, blacks) are on a scale of -100 to +100.\n"
-            "* Build edits in this order: white balance and exposure foundation -> tonal shaping -> color refinement -> detail/effects\n"
-            '* White Balance: NEVER predict typical `temperature`/`tint` values from scenes, because white balance differs in every image. Trust the camera\'s automatic white balance. If the image context/tags imply a particularly strong color cast, engage Lightroom\'s automatic white balance by setting global `white_balance` to `"Auto"`. Otherwise, omit white balance settings entirely or use `"As Shot"`.\n'
-            "* Use global controls first; add masks only when global edits cannot solve the problem cleanly\n"
-            "* Use masks only for subject, sky, or background\n"
-            "* Keep saturation and clarity moderate; avoid brittle or crunchy output\n"
-            "* Prefer highlight recovery and shadow shaping before aggressive contrast\n"
-            "* If a curve-shaped tone response is needed (e.g. subtle S-curve, matte blacks, gentle roll-off), prefer `tone_curve.point_curve` and/or `tone_curve.extended_point_curve` over faking it with only contrast sliders\n"
-            "* When using point curves, provide valid point pairs per channel in ascending x order and keep endpoints anchored near black/white unless a deliberate fade is requested\n"
-            "* Use advanced controls (vignette sub-controls, sharpen detail/masking, noise detail, color NR detail/smoothness) only when clearly justified by image content\n"
-            "* Use `lens_corrections` and `crop` only when they clearly improve the result\n"
-            "* Add warnings when something seems uncertain or unsupported\n"
-        )
-
-        if not request.include_masks:
-            base_prompt += "* Do not return any masks; keep all edits global\n"
-        if not request.adjust_white_balance:
-            base_prompt += "* Do not adjust white balance (`temperature`, `tint`, `white_balance`)\n"
-        if not request.adjust_basic_tone:
-            base_prompt += "* Do not adjust global basic tone controls (`exposure`, `contrast`, `highlights`, `shadows`, `whites`, `blacks`)\n"
-        if not request.adjust_presence:
-            base_prompt += (
-                "* Do not adjust presence controls (`texture`, `clarity`, `dehaze`)\n"
-            )
-        if not request.adjust_color_mix:
-            base_prompt += (
-                "* Do not adjust color mix controls (`vibrance`, `saturation`, `hsl`)\n"
-            )
-        if not request.do_color_grading:
-            base_prompt += "* Do not use `color_grading`\n"
-        if not request.use_tone_curve:
-            base_prompt += (
-                "* Do not use `tone_curve` (neither parametric nor point curve)\n"
-            )
-        elif not request.use_point_curve:
-            base_prompt += "* Do not use `tone_curve.point_curve` or `tone_curve.extended_point_curve`; use only parametric tone curve sliders if needed\n"
-        if not request.adjust_detail:
-            base_prompt += (
-                "* Do not adjust detail controls (sharpening/noise reduction)\n"
-            )
-        if not request.adjust_effects:
-            base_prompt += "* Do not adjust effects controls (vignette/grain)\n"
-        if not request.adjust_lens_corrections:
-            base_prompt += "* Do not use `lens_corrections`\n"
-        if not request.allow_auto_crop:
-            base_prompt += "* Do not use `crop`\n"
-        else:
-            composition_mode = str(request.composition_mode or "subtle").lower()
-            if composition_mode == "none":
-                base_prompt += "* Do not use `crop`\n"
-            elif composition_mode == "subtle":
-                base_prompt += "* If using `crop`, keep it subtle: preserve overall framing and avoid aggressive trims\n"
-            elif composition_mode == "aggressive":
-                base_prompt += "* Crop may be assertive when composition clearly improves; keep key subjects and avoid awkward cutoffs\n"
-
-        context_additions: list[str] = []
-        if request.edit_intent:
-            context_additions.append(f"Requested editing intent: {request.edit_intent}")
-        if getattr(request, "camera_profile", None):
-            prof_name = request.camera_profile
-            prof_str = (
-                f"The active Lightroom camera profile for this image is '{prof_name}'."
-            )
-            if "Adobe" not in prof_name and "Camera " not in prof_name:
-                prof_str += " This is a custom camera profile. It heavily influences the starting baseline."
-            else:
-                prof_str += " Adjust edits accordingly, noting that this profile already provides a baseline curve and color rendition."
-            context_additions.append(prof_str)
-        if isinstance(request.image_data, list) and len(request.image_data) >= 3:
-            context_additions.append(
-                "You have been provided with 3 bracketed exposures (-2 EV, 0 EV, +2 EV) of the image. This is an approximation of the actual 14-bit RAW data. Use the dark and bright images to evaluate recoverable details in the highlights and shadows that may appear clipped in the 0 EV image."
-            )
-        if getattr(request, "dominant_colors", None):
-            context_additions.append(
-                f"Image dominant colors (HEX): {', '.join(request.dominant_colors)}"
-            )
-        if getattr(request, "luminance_zones", None):
-            lz = request.luminance_zones
-            context_additions.append(
-                f"Image luminance zones: DeepShadows={lz.get('zone_deep_shadows', 0) * 100:.0f}%, Shadows={lz.get('zone_shadows', 0) * 100:.0f}%, Midtones={lz.get('zone_midtones', 0) * 100:.0f}%, Highlights={lz.get('zone_highlights', 0) * 100:.0f}%, BrightHighlights={lz.get('zone_bright_highlights', 0) * 100:.0f}%"
-            )
-        if getattr(request, "histogram_signature", None):
-            import json
-
-            context_additions.append(
-                f"Image perceptual histogram signature (L*a*b* space, stats and bins): {json.dumps(request.histogram_signature)}"
-            )
-
-        strength = request.style_strength
-
-        try:
-            strength = float(strength)
-        except (TypeError, ValueError):
-            strength = 0.5
-        if strength < 0.0:
-            strength = 0.0
-        if strength > 1.0:
-            strength = 1.0
-        if strength <= 0.25:
-            context_additions.append(
-                "Style strength: very subtle (minimal slider movement, preserve original character)."
-            )
-        elif strength <= 0.5:
-            context_additions.append(
-                "Style strength: subtle to moderate (clean refinement, avoid strong stylization)."
-            )
-        elif strength <= 0.75:
-            context_additions.append(
-                "Style strength: moderate to strong (noticeable look while staying plausible)."
-            )
-        else:
-            context_additions.append(
-                "Style strength: strong (bold look allowed, but avoid clipping and artifacts)."
-            )
-        if request.user_context:
-            context_additions.append(f"Per-photo instructions: {request.user_context}")
-        if request.submit_keywords and request.existing_keywords:
-            keywords_str = ", ".join(
-                str(k).strip() for k in request.existing_keywords if str(k).strip()
-            )
-            if keywords_str:
-                context_additions.append(f"Existing keywords: {keywords_str}")
-        if request.submit_folder_names and request.folder_names:
-            context_additions.append(f"Folder context: {request.folder_names}")
-        if isinstance(request.location_data, dict) and request.location_data:
-            from services.exif import format_location_for_prompt
-
-            location_str = format_location_for_prompt(request.location_data)
-            if location_str:
-                context_additions.append(f"Photo taken in: {location_str}")
-        if request.date_time:
-            context_additions.append(f"Capture time: {request.date_time}")
-        if request.language:
-            context_additions.append(
-                f"Write `summary` and `warnings` in {request.language}, but keep field names exactly as specified by the schema."
-            )
-
-        if context_additions:
-            base_prompt += "\n\n" + "\n".join(context_additions)
-
-        # Inject few-shot training examples from the user's own edits.
-        examples = request.training_examples
-        if examples and isinstance(examples, list) and len(examples) > 0:
-            base_prompt += "\n\n--- YOUR PERSONAL EDIT STYLE (few-shot examples) ---\n"
-            base_prompt += (
-                "The following examples are from your own Lightroom edits on visually similar photos. "
-                "Use these as a strong foundational guide, but adapt and balance the values for the current photo's specific lighting. "
-                "Crucially, your final edit must still obey all Aesthetic Rules from your system instructions (e.g., natural colors, protected skin tones, avoiding crushed blacks). "
-                "Do not blindly copy values if they would violate those core guidelines on this specific image.\n"
-            )
-            for i, ex in enumerate(examples, start=1):
-                base_prompt += self._format_training_example(i, ex) + "\n"
-            base_prompt += "--- END OF STYLE EXAMPLES ---\n"
 
         return base_prompt
 
@@ -895,15 +519,7 @@ class LLMProviderBase(ABC):
                 normalized_dict[key] = normalized_item
             return normalized_dict
 
-        normalized_leaf = self._normalize_keyword_leaf(value)
         return normalized_leaf
-
-    def _prepare_edit_response_structure(self) -> dict[str, Any]:
-        return OPENAI_EDIT_RECIPE_SCHEMA
-
-    @final
-    def _normalize_edit_recipe(self, value: Any) -> dict[str, Any]:
-        return normalize_edit_recipe(value)
 
     @final
     def _image_to_base64(self, image_data: bytes) -> str:

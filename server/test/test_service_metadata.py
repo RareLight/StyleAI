@@ -14,12 +14,10 @@ def _jpeg_bytes(color=(120, 0, 0)):
 
 @pytest.fixture
 def stub_providers(mocker):
-    """Replace the four provider classes with mocks before AnalysisService is built."""
+    """Replace the two provider classes with mocks before AnalysisService is built."""
     for name in (
         "OllamaProvider",
         "LMStudioProvider",
-        "ChatGPTProvider",
-        "GeminiProvider",
     ):
         mock_cls = mocker.MagicMock(name=name)
         mock_instance = mock_cls.return_value
@@ -41,8 +39,8 @@ def service(stub_providers):
 
 
 def test_constructor_registers_all_providers(service):
-    assert set(service.providers.keys()) == {"ollama", "lmstudio", "chatgpt", "gemini"}
-    for name in ("ollama", "lmstudio", "chatgpt", "gemini"):
+    assert set(service.providers.keys()) == {"ollama", "lmstudio"}
+    for name in ("ollama", "lmstudio"):
         assert service.provider_status[name] == "available"
 
 
@@ -50,7 +48,7 @@ def test_constructor_marks_failing_provider_as_failed(mocker):
     mocker.patch(
         "services.metadata.OllamaProvider", side_effect=RuntimeError("ollama dead")
     )
-    for name in ("LMStudioProvider", "ChatGPTProvider", "GeminiProvider"):
+    for name in ("LMStudioProvider",):
         mock_cls = mocker.MagicMock()
         mock_cls.return_value.is_available.return_value = True
         mocker.patch(f"services.metadata.{name}", mock_cls)
@@ -62,7 +60,7 @@ def test_constructor_marks_failing_provider_as_failed(mocker):
     assert svc.provider_status["ollama"] == "failed"
     assert "ollama dead" in svc.provider_errors["ollama"]
     # Other providers still register
-    assert {"lmstudio", "chatgpt", "gemini"}.issubset(svc.providers.keys())
+    assert {"lmstudio"}.issubset(svc.providers.keys())
 
 
 def test_analyze_batch_no_op_returns_none_pair(service):
@@ -156,8 +154,6 @@ def test_generate_metadata_single_no_providers_available(mocker):
     for name in (
         "OllamaProvider",
         "LMStudioProvider",
-        "ChatGPTProvider",
-        "GeminiProvider",
     ):
         mocker.patch(f"services.metadata.{name}", side_effect=RuntimeError("nope"))
 

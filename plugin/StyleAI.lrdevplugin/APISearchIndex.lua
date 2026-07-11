@@ -25,13 +25,10 @@ end
 
 local ENDPOINTS = {
     INDEX = "/index",
-    EDIT = "/edit",
     INDEX_BY_REFERENCE = "/index_by_reference",
     INDEX_BASE64 = "/index_base64",
     INDEX_BASE64_BATCH = "/index_base64_batch",
-    PREVIEW_BLUR_BASE64 = "/preview_blur_base64",
     METADATA_GENERATE = "/metadata/generate",
-    EDIT_BASE64 = "/edit_base64",
     STATS = "/db/stats",
     MODELS = "/models",
     GET_IDS = "/get/ids",
@@ -656,131 +653,6 @@ function SearchIndexAPI.exportPhotoForIndexing(photo, overrideSettings)
     end
 end
 
-function SearchIndexAPI.exportBracketedPhotosForIndexing(photo, photoId)
-    if photo == nil then return nil, nil, nil end
-
-    local macPath = LrPathUtils.getStandardFilePath("home") .. "/Library/Application Support/StyleAI/debug_cache/"
-    local winPath = LrPathUtils.getStandardFilePath("home") .. "\\AppData\\Local\\StyleAI\\debug_cache\\"
-    local cacheDir = MAC_ENV and macPath or winPath
-    if photoId then
-        LrFileUtils.createAllDirectories(cacheDir)
-    end
-
-    local tempDir = LrPathUtils.getStandardFilePath("temp")
-    
-    local function getCachePaths()
-        if not photoId then return nil, nil, nil end
-        local cachePhotoId = photoId
-        local bCache = LrPathUtils.child(cacheDir, cachePhotoId .. "_edit_image.jpg")
-        local dCache = LrPathUtils.child(cacheDir, cachePhotoId .. "_edit_dark.jpg")
-        local brCache = LrPathUtils.child(cacheDir, cachePhotoId .. "_edit_bright.jpg")
-        return bCache, dCache, brCache
-    end
-
-    local baseCache, darkCache, brightCache = getCachePaths()
-    
-    local base_path = nil
-    local dark_path = nil
-    local bright_path = nil
-
-    local function copyFromCache(cachePath, suffix)
-        if cachePath and LrFileUtils.exists(cachePath) then
-            local tempPath = LrPathUtils.child(tempDir, (photoId or "temp") .. suffix)
-            LrFileUtils.copy(cachePath, tempPath)
-            return tempPath
-        end
-        return nil
-    end
-
-    local prefs = import 'LrPrefs'.prefsForPlugin()
-    local useTiff = prefs.use16BitTiffForHdr
-    local forceFreshPreviews = prefs.forceFreshPreviews or false
-
-    -- If all brackets exist in cache and we aren't forcing fresh previews, just load them and return
-    if not forceFreshPreviews and baseCache and darkCache and brightCache and 
-       LrFileUtils.exists(baseCache) and LrFileUtils.exists(darkCache) and LrFileUtils.exists(brightCache) then
-        base_path = copyFromCache(baseCache, "_cached.jpg")
-        dark_path = copyFromCache(darkCache, "_dark_cached.jpg")
-        bright_path = copyFromCache(brightCache, "_bright_cached.jpg")
-        if base_path and dark_path and bright_path then
-            log:trace("Using debug cache for HDR export completely: " .. tostring(baseCache))
-            return base_path, dark_path, bright_path
-        end
-    end
-    
-    local overrideSettings = nil
-    if useTiff then
-        overrideSettings = {
-            LR_format = 'TIFF',
-            LR_export_bitDepth = 16,
-            LR_export_colorSpace = 'ProPhotoRGB',
-            LR_export_colorSpaceUseName = 'ProPhoto RGB',
-            -- Still constrain size to avoid massive files!
-        }
-        log:trace("Exporting 16-bit TIFF for backend HDR bracketing...")
-    else
-        log:trace("Exporting 8-bit JPEG for backend software bracketing...")
-    end
-
-    -- 1. Export the single base image to temporary directory
-    local exported_path = SearchIndexAPI.exportPhotoForIndexing(photo, overrideSettings)
-    if not exported_path then
-        log:error("Failed to export base photo for HDR bracketing")
-        return nil, nil, nil
-    end
-
-    local url = getBaseUrl() .. "/generate_brackets"
-    local mimeChunks = {
-        { name = 'image', filePath = exported_path, fileName = LrPathUtils.leafName(exported_path), contentType = useTiff and 'image/tiff' or 'image/jpeg' }
-    }
-    
-    if prefs.auditLlmInputs then
-        table.insert(mimeChunks, { name = 'audit_llm_inputs', value = "true" })
-        if prefs.auditLlmInputsPath then
-            table.insert(mimeChunks, { name = 'audit_llm_inputs_path', value = prefs.auditLlmInputsPath })
-        end
-    end
-    
-    log:trace("Uploading " .. tostring(exported_path) .. " to " .. url .. " for bracketing")
-    local result, hdrs = LrHttp.postMultipart(url, mimeChunks, nil, 120)
-    
-    -- We can delete the exported TIFF/JPEG since we don't need it anymore
-    LrFileUtils.delete(exported_path)
-    
-    local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status) or nil
-    if status == 200 and result then
-        local response = JSON:decode(result)
-        if response and response.results then
-            local results = response.results
-            
-            -- Write base64 strings back out to the cache folder as JPEGs
-            if results.base and results.dark and results.bright then
-                local function writeB64(path, b64)
-                    local f = io.open(path, "wb")
-                    if f then
-                        f:write(LrStringUtils.decodeBase64(b64))
-                        f:close()
-                    end
-                end
-                
-                writeB64(baseCache, results.base)
-                writeB64(darkCache, results.dark)
-                writeB64(brightCache, results.bright)
-                
-                base_path = copyFromCache(baseCache, "_cached.jpg")
-                dark_path = copyFromCache(darkCache, "_dark_cached.jpg")
-                bright_path = copyFromCache(brightCache, "_bright_cached.jpg")
-                
-                log:trace("Backend successfully generated and returned HDR brackets")
-                return base_path, dark_path, bright_path
-            end
-        end
-    end
-
-    log:error("Failed to generate brackets from backend: " .. tostring(result) .. " status: " .. tostring(status))
-    return nil, nil, nil
-end
-
 function SearchIndexAPI.exportPhotosForIndexing(photos)
     if not photos or #photos == 0 then return {} end
 
@@ -986,12 +858,10 @@ function SearchIndexAPI.generateMetadataSingle(photoId, base64Image, filename, o
         tasks = options.tasks or {},
         provider = options.provider,
         model = options.model,
-        api_key = options.api_key,
         language = options.language or (prefs and prefs.generateLanguage) or "English",
         temperature = tostring(options.temperature or (prefs and prefs.temperature) or 0.2),
         replace_ss = tostring(options.replace_ss or false),
         generate_keywords = tostring(options.generate_keywords or false),
-        blurFacesForCloud = tostring(options.blurFacesForCloud or false),
         generate_caption = tostring(options.generate_caption or false),
         generate_title = tostring(options.generate_title or false),
         generate_alt_text = tostring(options.generate_alt_text or false),
@@ -1037,56 +907,6 @@ function SearchIndexAPI.generateMetadataSingle(photoId, base64Image, filename, o
 end
 
 ---
--- Fetches blurred previews for a batch of photos using base64-encoded JPEGs.
--- Uses the /preview_blur_base64 endpoint.
--- @param batch table Array of tables containing { photo_id, image, filename }
--- @return boolean success, table|string response or error.
----
-function SearchIndexAPI.previewBlurredFacesBatch(batch, sensitivity)
-    if not batch or type(batch) ~= "table" or #batch == 0 then
-        log:error("previewBlurredFacesBatch: no batch data")
-        return false, "No batch data provided"
-    end
-
-    local url = getBaseUrl() .. ENDPOINTS.PREVIEW_BLUR_BASE64
-
-    local bodyImages = {}
-    for _, item in ipairs(batch) do
-        table.insert(bodyImages, {
-            image = item.image,
-            photo_id = item.photo_id,
-            filename = item.filename
-        })
-    end
-
-    local bodyParams = {
-        images = bodyImages,
-        options = {
-            faceBlurSensitivity = sensitivity or "balanced"
-        }
-    }
-
-    log:trace("previewBlurredFacesBatch: Requesting previews for " .. tostring(#batch) .. " images")
-
-    local response, err = _request('POST', url, bodyParams, 120)
-
-    if not response then
-        log:error("previewBlurredFacesBatch failed: " .. tostring(err))
-        return false, err or "Unknown error"
-    end
-
-    if response.status == "success" then
-        return true, response
-    end
-
-    if response.error then
-        return false, response.error
-    end
-
-    return false, "Unknown response status: " .. tostring(response.status)
-end
-
----
 -- Analyzes and indexes a batch of photos using base64-encoded JPEGs.
 -- Uses the /index_base64_batch endpoint.
 -- @param batch table Array of tables containing { photo_id, image, filename, options }
@@ -1107,12 +927,10 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
         tasks = globalOptions.tasks or {},
         provider = globalOptions.provider,
         model = globalOptions.model,
-        api_key = globalOptions.api_key,
         language = globalOptions.language or (prefs and prefs.generateLanguage) or "English",
         temperature = tostring(globalOptions.temperature or (prefs and prefs.temperature) or 0.2),
         replace_ss = tostring(globalOptions.replace_ss or false),
         generate_keywords = tostring(globalOptions.generate_keywords or false),
-        blurFacesForCloud = tostring(globalOptions.blurFacesForCloud or false),
         generate_caption = tostring(globalOptions.generate_caption or false),
         generate_title = tostring(globalOptions.generate_title or false),
         generate_alt_text = tostring(globalOptions.generate_alt_text or false),
@@ -1212,119 +1030,6 @@ end
 ---
 
 
-function SearchIndexAPI.generateEditRecipePhoto(photoId, filepath, options)
-    if filepath == nil then
-        log:error("generateEditRecipePhoto: JPEG is nil")
-        return false, "No image data provided"
-    end
-    if not photoId or photoId == "" then
-        log:error("generateEditRecipePhoto: Photo ID is missing")
-        return false, "No photo ID provided"
-    end
-
-    local filename = LrPathUtils.leafName(filepath)
-    options = options or {}
-    local url = getBaseUrl() .. ENDPOINTS.EDIT
-    local mimeChunks = {}
-
-    table.insert(mimeChunks, { name = "photo_id", value = photoId })
-
-    if options.provider then
-        table.insert(mimeChunks, { name = "provider", value = options.provider })
-    end
-    if options.model then
-        table.insert(mimeChunks, { name = "model", value = options.model })
-    end
-    if options.api_key then
-        table.insert(mimeChunks, { name = "api_key", value = options.api_key })
-    end
-
-    table.insert(mimeChunks, { name = "language", value = options.language or prefs.generateLanguage or "English" })
-    table.insert(mimeChunks, { name = "temperature", value = tostring(options.temperature or prefs.temperature or 0.2) })
-    table.insert(mimeChunks, { name = "submit_gps", value = tostring(options.submit_gps or false) })
-    table.insert(mimeChunks, { name = "submit_keywords", value = tostring(options.submit_keywords or false) })
-    table.insert(mimeChunks, { name = "submit_folder_names", value = tostring(options.submit_folder_names or false) })
-    table.insert(mimeChunks, { name = "blurFacesForCloud", value = tostring(options.blurFacesForCloud or false) })
-    table.insert(mimeChunks, { name = "include_masks", value = tostring(options.include_masks ~= false) })
-    if options.user_context then
-        table.insert(mimeChunks, { name = "user_context", value = options.user_context })
-    end
-    if options.edit_intent then
-        table.insert(mimeChunks, { name = "edit_intent", value = options.edit_intent })
-    end
-    if options.gps_coordinates then
-        table.insert(mimeChunks, { name = "gps_coordinates", value = JSON:encode(options.gps_coordinates) })
-    end
-    if options.existing_keywords then
-        table.insert(mimeChunks, { name = "existing_keywords", value = JSON:encode(options.existing_keywords) })
-    end
-    if options.folder_names then
-        table.insert(mimeChunks, { name = "folder_names", value = options.folder_names })
-    end
-    if options.prompt then
-        table.insert(mimeChunks, { name = "prompt", value = options.prompt })
-    end
-    if options.current_settings then
-        table.insert(mimeChunks, { name = "current_settings", value = JSON:encode(options.current_settings) })
-    end
-    if options.raw_filepath then
-        table.insert(mimeChunks, { name = "filepath", value = options.raw_filepath })
-    end
-    if options.style_strength then
-        table.insert(mimeChunks, { name = "style_strength", value = tostring(options.style_strength) })
-    end
-    if options.date_time then
-        table.insert(mimeChunks, { name = "date_time", value = options.date_time })
-    end
-    if options.ollama_base_url or (prefs and prefs.ollamaBaseUrl) then
-        table.insert(mimeChunks, { name = "ollama_base_url", value = options.ollama_base_url or prefs.ollamaBaseUrl })
-    end
-    if options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl) then
-        table.insert(mimeChunks,
-            { name = "lmstudio_base_url", value = options.lmstudio_base_url or prefs.lmstudioBaseUrl })
-    end
-
-    table.insert(mimeChunks, {
-        name = "image",
-        fileName = filename,
-        filePath = filepath,
-        contentType = "image/jpeg"
-    })
-    if options.darkPath and LrFileUtils.exists(options.darkPath) then
-        table.insert(mimeChunks, {
-            name = "image_dark",
-            fileName = LrPathUtils.leafName(options.darkPath),
-            filePath = options.darkPath,
-            contentType = "image/jpeg"
-        })
-    end
-    if options.brightPath and LrFileUtils.exists(options.brightPath) then
-        table.insert(mimeChunks, {
-            name = "image_bright",
-            fileName = LrPathUtils.leafName(options.brightPath),
-            filePath = options.brightPath,
-            contentType = "image/jpeg"
-        })
-    end
-
-    log:trace("Generating AI edit recipe for photo: " .. filename .. " with id " .. photoId)
-    local response, err = _requestMultipart(url, mimeChunks, 720)
-    if not response then
-        log:error("Failed to generate AI edit recipe: " .. tostring(err))
-        return false, err or "Unknown error"
-    end
-    if type(response) ~= "table" then
-        log:error("AI edit recipe response has unexpected type: " ..
-            tostring(type(response)) .. " value=" .. tostring(response))
-        return false, "Invalid response type from /edit endpoint: " .. tostring(type(response))
-    end
-    if response.status == "success" then
-        return true, response
-    end
-    log:error("Unexpected response status for AI edit recipe: " .. tostring(response.status))
-    return false, response.error or "Unexpected response status"
-end
-
 function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
     if filepath == nil then
         log:error("JPEG is nil")
@@ -1355,9 +1060,7 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
     if options.model then
         table.insert(mimeChunks, { name = "model", value = options.model })
     end
-    if options.api_key then
-        table.insert(mimeChunks, { name = "api_key", value = options.api_key })
-    end
+
 
     table.insert(mimeChunks, { name = "language", value = options.language or prefs.generateLanguage or "English" })
     table.insert(mimeChunks, { name = "temperature", value = tostring(options.temperature or prefs.temperature or 0.2) })
@@ -3186,11 +2889,9 @@ end
 -- @param openaiApiKey string|nil OpenAI API key for listing ChatGPT models
 -- @param geminiApiKey string|nil Gemini API key for listing Gemini models
 -- @return table|nil Response from server with format: { models = { qwen = {...}, ollama = {...}, ... } }
-function SearchIndexAPI.getModels(openaiApiKey, geminiApiKey)
+function SearchIndexAPI.getModels()
     local url = getBaseUrl() .. ENDPOINTS.MODELS
     local body = {
-        openai_apikey = openaiApiKey,
-        gemini_apikey = import("LrPasswords").retrieve("StyleAI", "geminiApiKey"),
         ollama_base_url = (prefs and prefs.ollamaBaseUrl) or nil,
         lmstudio_base_url = (prefs and prefs.lmstudioBaseUrl) or nil,
     }
@@ -3535,8 +3236,8 @@ function SearchIndexAPI.getDetailedHealth()
     local health = {
         backend = SearchIndexAPI.pingServer() == true,
         clip = SearchIndexAPI.isClipReady() == true,
-        gemini = not Util.nilOrEmpty(import("LrPasswords").retrieve("StyleAI", "geminiApiKey")),
-        chatgpt = not Util.nilOrEmpty(import("LrPasswords").retrieve("StyleAI", "chatgptApiKey")),
+        gemini = false,
+        chatgpt = false,
         ollama = false,
         lmstudio = false,
     }
