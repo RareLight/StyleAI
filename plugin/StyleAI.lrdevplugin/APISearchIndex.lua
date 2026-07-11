@@ -1551,9 +1551,9 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     local previewRequestState = {
         enabled = (prefs and prefs.usePreviewThumbnails ~= false),
-        timeoutSeconds = tonumber(prefs and prefs.previewThumbnailTimeoutSeconds) or 12,
+        timeoutSeconds = tonumber(prefs and prefs.previewThumbnailTimeoutSeconds) or 30,
         cooldownSeconds = tonumber(prefs and prefs.previewThumbnailCooldownSeconds) or 1,
-        disableAfterConsecutiveTimeouts = tonumber(prefs and prefs.previewThumbnailDisableAfterTimeouts) or 3,
+        disableAfterConsecutiveTimeouts = tonumber(prefs and prefs.previewThumbnailDisableAfterTimeouts) or 10,
         consecutiveTimeouts = 0,
         disabledForRun = false,
     }
