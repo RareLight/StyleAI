@@ -1437,7 +1437,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         calculatedBatchSize = 32
     elseif profile == 4 then
         -- Optimal max performance: push Lightroom hard but cap senders to prevent backend GIL thrashing
-        maxAnalyzeWorkers = math.min(24, math.floor(hardwareMax * 1.5))
+        maxAnalyzeWorkers = math.min(16, math.floor(hardwareMax * 1.25))
         maxSenderWorkers = 2
         calculatedBatchSize = 32
     end

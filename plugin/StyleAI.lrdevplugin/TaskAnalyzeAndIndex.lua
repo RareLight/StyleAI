@@ -99,6 +99,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.appendMetadata = prefs.appendMetadata
     if props.appendMetadata == nil then
         props.appendMetadata = true
+    end
     -- Validation
     props.enableValidation = prefs.enableValidation or false
 
