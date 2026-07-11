@@ -43,8 +43,8 @@ EMBEDDING_DIM = (
 
 _CANONICAL_EDITING_REGIMES: dict[str, str] = {
     "scene_portrait": "a portrait photograph of a human face, person, couple, family, or pet where skin tones and face lighting govern the edit",
-    "scene_landscape": "a scenic landscape or outdoor nature photograph of mountains, valleys, oceans, forests, or wide natural scenery",
-    "scene_architecture": "an architectural photograph of a building facade, interior room, house, real estate property, or bridge geometry",
+    "scene_landscape": "a scenic landscape or outdoor nature photograph where natural environment dominates the frame, including mountains, countryside, farmland, open fields, valleys, coastlines, oceans, forests, or wide natural scenery",
+    "scene_architecture": "a dedicated architectural photograph where a building facade, interior room, house, real estate property, or bridge geometry dominates the entire frame as the primary subject",
     "scene_studio": "a commercial studio tabletop photograph of a product, food dish, lego, or toy shot against a seamless studio backdrop under artificial studio flash lighting",
     "scene_macro": "an extreme close-up macro photograph of a tiny insect, bug, beetle, spider, flower stamen, or water droplet showing high magnification detail",
     "scene_night": "an astrophotography photograph of the night sky, milky way, stars, aurora borealis, or extreme low-light night scene",
@@ -62,6 +62,20 @@ _AESTHETIC_PROBES: dict[str, str] = {
 _SCENE_PROBES: dict[str, str] = {**_CANONICAL_EDITING_REGIMES, **_AESTHETIC_PROBES}
 
 _SCENE_THRESHOLD = 0.15  # cosine similarity threshold for a tag to be "present"
+
+# Regime-specific confidence floors for Softmax regime selection.
+# More specific regimes require stronger evidence to avoid misclassifying
+# incidental elements (e.g. a distant barn triggering "architecture" in a
+# landscape).  Walk the Softmax ranking and accept the first regime whose
+# probability meets its floor; fall back to scene_general if none pass.
+_REGIME_CONFIDENCE_FLOORS: dict[str, float] = {
+    "scene_macro": 0.55,
+    "scene_studio": 0.55,
+    "scene_architecture": 0.55,
+    "scene_night": 0.50,
+    "scene_portrait": 0.45,
+    "scene_landscape": 0.40,
+}
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -494,9 +508,17 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
                 key=lambda x: x[0],
                 reverse=True,
             )
-            top_prob, top_regime = ranked[0]
+            # Walk the ranked regimes and accept the first whose probability
+            # meets its regime-specific confidence floor.
+            chosen_regime: str | None = None
+            for prob, regime in ranked:
+                floor = _REGIME_CONFIDENCE_FLOORS.get(regime, 0.45)
+                if prob >= floor:
+                    chosen_regime = regime
+                    break
+
             result_tags: list[str] = (
-                [top_regime] if top_prob >= 0.45 else ["scene_general"]
+                [chosen_regime] if chosen_regime else ["scene_general"]
             )
 
             for style_tag, probe_text in _AESTHETIC_PROBES.items():

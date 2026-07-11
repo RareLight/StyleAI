@@ -444,6 +444,19 @@ def test_macro_pet_lego_precedence_general_taxonomy():
     )
 
 
+def test_landscape_prominence_over_secondary_activity_tags():
+    # A landscape photograph with secondary action/sports tags preserves scene_landscape
+    assert (
+        sg._primary_genre_with_keywords(["scene_landscape", "sports", "action"], [])
+        == "scene_landscape"
+    )
+    # A landscape photograph with secondary street/ferris wheel tags preserves scene_landscape
+    assert (
+        sg._primary_genre_with_keywords(["scene_landscape", "street"], [])
+        == "scene_landscape"
+    )
+
+
 def test_dynamic_semantic_mapping_persists_to_sqlite(monkeypatch):
     # Clear memory cache for test keyword
     sg._DYNAMIC_GENRE_CACHE.pop("stargazing_test", None)
