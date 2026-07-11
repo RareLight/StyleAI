@@ -95,19 +95,12 @@ def _models_compatible(style_model: str, photo_model: str) -> bool:
 
 
 def _check_genre_mismatch(style_genre: str, p_genre: str, meta: dict[str, Any]) -> bool:
-    """Check if the candidate photo's primary editing genre conflicts with the style's genre.
-
-    We rely strictly on p_genre (computed via our Specialty-First hierarchy in
-    style_grouping._primary_genre_with_keywords) rather than searching loose multi-label
-    tags. Searching unranked tags would defeat Specialty-First precedence and cause
-    specialty photos (e.g. studio architectural models or macro insects) to leak into
-    broad background styles (architecture or landscape).
-    """
-    if not style_genre or style_genre == "scene_unknown":
+    """Check if the candidate photo's primary editing genre conflicts with the style's genre."""
+    if not style_genre or style_genre in ("scene_unknown", "scene_general"):
         return False
-    if p_genre and p_genre != "scene_unknown" and p_genre == style_genre:
+    if not p_genre or p_genre in ("scene_unknown", "scene_general"):
         return False
-    return True
+    return p_genre != style_genre
 
 
 def _select_style_recommendations(
@@ -467,6 +460,8 @@ def get_style_upgrade_recommendations(
                 max_sims = np.max(sim_matrix, axis=1)
 
                 for i, (pid, emb, meta, gm) in enumerate(prelim_candidates):
+                    if gm:
+                        continue
                     max_sim = float(max_sims[i])
                     # Reject exact duplicates / burst shots
                     if (1.0 - max_sim) <= 0.05:
@@ -474,21 +469,16 @@ def get_style_upgrade_recommendations(
                     # Reject candidate if it is visually/semantically unrelated to the style
                     if max_sim < 0.60:
                         continue
-                    # Dual-gated screening: if text genres diverge, require high visual similarity (>= 0.80)
-                    if gm and max_sim < 0.80:
-                        continue
                     valid_candidates.append((pid, emb, meta))
             else:
                 centroid = genre_centroids.get(genre)
                 for pid, emb, meta, gm in prelim_candidates:
+                    if gm:
+                        continue
                     if centroid is not None and len(centroid) > 0:
                         sim = float(np.dot(centroid, emb))
                         if sim < 0.60:
                             continue
-                        if gm and sim < 0.75:
-                            continue
-                    elif gm:
-                        continue
                     valid_candidates.append((pid, emb, meta))
 
             # Step B: Within candidate pool, sort by capture time and cluster bursts
