@@ -432,7 +432,7 @@ LrTasks.startAsyncTask(function()
 				end
 				
 				if #stylesData > 0 then
-					Util.addMultipleStylePhotosToCollections(stylesData)
+					Util.addMultipleStylePhotosToCollections(stylesData, nil, findAllProgress)
 				end
 				findAllProgress:done()
 
