@@ -79,7 +79,9 @@ def _run_single_style_edit(
         clip_processor = server_lifecycle.get_processor()
         if clip_model and clip_processor:
             try:
-                img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+                img = Image.open(io.BytesIO(image_bytes))
+                img.thumbnail((512, 512))
+                img = img.convert("RGB")
                 analysis_service = get_analysis_service()
                 batch_embeddings = analysis_service._generate_image_embeddings(
                     [img], clip_model, clip_processor

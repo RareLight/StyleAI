@@ -44,7 +44,9 @@ def _compute_clip_embedding(image_bytes: bytes):
         if clip_model is None or clip_processor is None:
             return None
 
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image = Image.open(io.BytesIO(image_bytes))
+        image.thumbnail((512, 512))
+        image = image.convert("RGB")
         image_tensor = clip_processor(image).unsqueeze(0).to(get_torch_device())
         with torch.no_grad():
             features = clip_model.encode_image(image_tensor)
