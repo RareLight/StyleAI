@@ -446,10 +446,10 @@ def discover_styles_from_examples(
 
 
 def _fetch_rich_examples(photo_ids: list[str]) -> list[dict[str, Any]]:
-    """Pull full metadata from the training collection for a list of photo_ids."""
+    """Pull full metadata and embeddings from the training collection for a list of photo_ids."""
     try:
         result = training_service._training_collection.get(
-            ids=photo_ids, include=["metadatas"]
+            ids=photo_ids, include=["metadatas", "embeddings"]
         )
     except Exception as exc:
         logger.warning("Failed to fetch rich training metadata: %s", exc)
@@ -457,11 +457,13 @@ def _fetch_rich_examples(photo_ids: list[str]) -> list[dict[str, Any]]:
 
     ids = result.get("ids") or []
     metadatas = result.get("metadatas") or []
+    embeddings = result.get("embeddings") or []
     training_service._enrich_and_sync_metadatas_from_main_index(ids, metadatas)
     examples = []
     for i, pid in enumerate(ids):
         meta = dict(metadatas[i]) if i < len(metadatas) else {}
         meta["photo_id"] = pid
+        meta["embedding"] = embeddings[i] if i < len(embeddings) else None
         examples.append(meta)
     return examples
 
