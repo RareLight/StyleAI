@@ -392,9 +392,30 @@ LrTasks.startAsyncTask(function()
 				local totalStyles = 0
 				local stylesData = {}
 				
+				local allRequiredPhotoIds = {}
+				local uniqueIds = {}
+				for _, style in ipairs(styles) do
+					if style.example_photo_ids then
+						for _, pid in ipairs(style.example_photo_ids) do
+							if not uniqueIds[pid] then
+								uniqueIds[pid] = true
+								table.insert(allRequiredPhotoIds, pid)
+							end
+						end
+					end
+				end
+
+				local photoMap = SearchIndexAPI.findPhotosByPhotoIdsMap(allRequiredPhotoIds, findAllProgress)
+				
 				for _, style in ipairs(styles) do
 					if style.example_photo_ids and #style.example_photo_ids > 0 then
-						local photos = SearchIndexAPI.findPhotosByPhotoIds(style.example_photo_ids, nil)
+						local photos = {}
+						for _, pid in ipairs(style.example_photo_ids) do
+							if photoMap[pid] then
+								table.insert(photos, photoMap[pid])
+							end
+						end
+
 						if #photos > 0 then
 							table.insert(stylesData, {
 								photos = photos,
