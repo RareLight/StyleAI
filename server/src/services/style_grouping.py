@@ -19,6 +19,7 @@ import statistics
 from typing import Any
 
 from chromadb.utils import embedding_functions
+import numpy as np
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -68,6 +69,44 @@ def _safe_json_loads(value: str | None, default: Any = None) -> Any:
         except json.JSONDecodeError:
             return default
     return value
+
+
+# LLM-generated compositional and descriptive phrases that should be stripped
+# so they do not hijack primary subject genre classification.
+_LLM_NOISE_VOCABULARY: set[str] = {
+    "portrait orientation",
+    "landscape orientation",
+    "action shot",
+    "street vibe",
+    "urban vibe",
+    "dramatic lighting",
+    "color graded",
+    "high contrast",
+    "low contrast",
+    "natural light",
+    "golden hour lighting",
+    "cinematic",
+    "cinematic lighting",
+    "moody",
+    "vibrant",
+    "desaturated",
+    "black and white",
+    "monochrome",
+    "depth of field",
+    "shallow depth of field",
+    "bokeh",
+}
+
+
+def _filter_llm_noise_keywords(keywords: list[str]) -> list[str]:
+    """Strip out known non-subject compositional/LLM noise vocabulary."""
+    filtered: list[str] = []
+    for kw in keywords:
+        kw_clean = kw.strip()
+        kw_lower = kw_clean.lower()
+        if kw_lower and kw_lower not in _LLM_NOISE_VOCABULARY:
+            filtered.append(kw_clean)
+    return filtered
 
 
 # Mapping from common user keywords to canonical scene tags.
@@ -408,10 +447,39 @@ def _dynamic_semantic_mapping(keyword: str) -> str:
     closest_idx = min(range(len(distances)), key=distances.__getitem__)
     closest_dist = distances[closest_idx]
 
-    # Only map if it's semantically close enough (e.g. cosine distance < 0.85)
-    # This prevents keywords like "Dave" or "Red" from overriding the AI tag
+    # Only map if it's semantically close enough (cosine distance < 0.55)
+    # This prevents ambiguous keywords from overriding explicit tags
+    nature_guard_words = {
+        "park",
+        "trail",
+        "path",
+        "rock",
+        "stone",
+        "water",
+        "stream",
+        "creek",
+        "river",
+        "lake",
+        "pond",
+        "bird",
+        "birds",
+        "wildlife",
+        "animal",
+        "nature",
+        "tree",
+        "trees",
+        "forest",
+        "hill",
+        "hills",
+        "valley",
+        "grass",
+        "leaf",
+    }
     if closest_dist < 0.75:
         closest_bucket = list(_DYNAMIC_BUCKETS.keys())[closest_idx]
+        if closest_bucket in {"scene_architecture", "scene_street", "scene_action"}:
+            if any(nw in keyword_lower for nw in nature_guard_words):
+                closest_bucket = "scene_landscape"
     else:
         closest_bucket = None
 
@@ -558,8 +626,9 @@ def _evaluate_exif_priors(exif_metadata: dict[str, Any] | None) -> dict[str, flo
 
     if shutter >= 10.0 and iso >= 3200:
         priors["scene_night"] = 0.4
-    if "macro" in lens or focal >= 90.0:
-        priors["scene_macro"] = priors.get("scene_macro", 0.0) + 0.15
+    if "macro" in lens:
+        priors["scene_macro"] = priors.get("scene_macro", 0.0) + 0.35
+    elif 85.0 <= focal <= 135.0:
         priors["scene_portrait"] = priors.get("scene_portrait", 0.0) + 0.15
     if 0.0 < focal <= 24.0:
         priors["scene_landscape"] = priors.get("scene_landscape", 0.0) + 0.15
@@ -581,8 +650,8 @@ def _primary_genre_with_keywords(
     exif_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Return the primary editing regime using explicit user keywords, Softmax vision, and EXIF priors."""
-    kw_list = _extract_keyword_strings(user_keywords)
-    tag_list = _extract_keyword_strings(scene_tags)
+    kw_list = _filter_llm_noise_keywords(_extract_keyword_strings(user_keywords))
+    tag_list = _filter_llm_noise_keywords(_extract_keyword_strings(scene_tags))
     content_tags = [t for t in tag_list if not t.startswith("style_")]
 
     if kw_list:
@@ -591,13 +660,14 @@ def _primary_genre_with_keywords(
             "scene_macro",
             "scene_event",
             "scene_portrait",
-            "scene_nature",
-            "scene_street",
-            "scene_architecture",
             "scene_astrophotography",
             "scene_night",
-            "scene_action",
             "scene_landscape",
+            "scene_nature",
+            "scene_wildlife",
+            "scene_architecture",
+            "scene_street",
+            "scene_action",
         ]
 
         for target_genre in tier_order:
@@ -607,10 +677,18 @@ def _primary_genre_with_keywords(
                     _BROAD_GENRE_MAP.get(t_lower) == target_genre
                     or _BROAD_GENRE_MAP.get(t) == target_genre
                 ):
-                    return target_genre
+                    return (
+                        "scene_landscape"
+                        if target_genre in {"scene_nature", "scene_wildlife"}
+                        else target_genre
+                    )
                 mapped = _KEYWORD_TO_GENRE.get(t_lower)
                 if mapped and _get_broad_genre(mapped) == target_genre:
-                    return target_genre
+                    return (
+                        "scene_landscape"
+                        if target_genre in {"scene_nature", "scene_wildlife"}
+                        else target_genre
+                    )
                 for k, genre_val in _KEYWORD_TO_GENRE.items():
                     if _get_broad_genre(genre_val) == target_genre and len(k) >= 3:
                         if (
@@ -618,7 +696,11 @@ def _primary_genre_with_keywords(
                             or t_lower.startswith(f"{k} ")
                             or t_lower.endswith(f" {k}")
                         ):
-                            return target_genre
+                            return (
+                                "scene_landscape"
+                                if target_genre in {"scene_nature", "scene_wildlife"}
+                                else target_genre
+                            )
 
         for kw in kw_list:
             if len(kw.strip()) > 1:
@@ -641,22 +723,11 @@ def _primary_genre_with_keywords(
             "scene_unknown",
         }
         if primary_mapped in background_settings:
-            tier_order_subjects = (
-                [
-                    "scene_studio",
-                    "scene_macro",
-                    "scene_portrait",
-                ]
-                if primary_mapped == "scene_landscape"
-                else [
-                    "scene_studio",
-                    "scene_macro",
-                    "scene_event",
-                    "scene_portrait",
-                    "scene_action",
-                    "scene_street",
-                ]
-            )
+            tier_order_subjects = [
+                "scene_studio",
+                "scene_macro",
+                "scene_portrait",
+            ]
             for target_genre in tier_order_subjects:
                 for t in content_tags:
                     t_lower = t.lower()
@@ -1151,6 +1222,88 @@ def _build_subgroup(
 # ---------------------------------------------------------------------------
 
 
+def _compute_catalog_genre_centroids(
+    examples: list[dict[str, Any]],
+    min_samples: int = 5,
+) -> dict[str, np.ndarray]:
+    """Compute normalized SigLIP2 visual centroids per genre across the catalog pool.
+
+    If a genre has fewer than min_samples (cold-start / sparse catalog), it is omitted
+    so that visual verification falls back to zero-shot Softmax vision tags.
+    """
+    genre_embs: dict[str, list[np.ndarray]] = {}
+    for ex in examples:
+        emb = ex.get("embedding")
+        if emb is None:
+            continue
+        if not isinstance(emb, np.ndarray):
+            emb = np.array(emb, dtype=np.float32)
+        if emb.size == 0:
+            continue
+        # Use initial genre assignment
+        g = _primary_genre_with_keywords(
+            ex.get("scene_tags") or ex.get("tags"),
+            ex.get("user_keywords")
+            or ex.get("keywords")
+            or ex.get("flattened_keywords"),
+            ex,
+        )
+        if g and g not in ("scene_unknown", "scene_general"):
+            genre_embs.setdefault(g, []).append(emb)
+
+    centroids: dict[str, np.ndarray] = {}
+    for g, embs in genre_embs.items():
+        if len(embs) >= min_samples:
+            stacked = np.stack(embs, axis=0)
+            mean_vec = np.mean(stacked, axis=0)
+            norm = float(np.linalg.norm(mean_vec))
+            if norm > 1e-9:
+                centroids[g] = mean_vec / norm
+    return centroids
+
+
+def verify_genre_with_visual_centroid(
+    p_genre: str,
+    embedding: Any,
+    genre_centroids: dict[str, np.ndarray],
+    similarity_threshold: float = 0.60,
+) -> str:
+    """Verify and arbitrate a photo's genre using SigLIP2 visual centroid dot-product.
+
+    If the photo's embedding has strong visual similarity (>= similarity_threshold)
+    to a genre centroid, verify or reassign the genre. If centroids are sparse or
+    missing (cold-start), retain p_genre unchanged.
+    """
+    if embedding is None or not genre_centroids:
+        return p_genre
+    emb_arr = (
+        embedding
+        if isinstance(embedding, np.ndarray)
+        else np.array(embedding, dtype=np.float32)
+    )
+    if emb_arr.size == 0:
+        return p_genre
+    norm = float(np.linalg.norm(emb_arr))
+    if norm <= 1e-9:
+        return p_genre
+    emb_norm = emb_arr / norm
+
+    # Check best matching visual centroid
+    best_genre = p_genre
+    best_sim = -1.0
+    for g, centroid in genre_centroids.items():
+        sim = float(np.dot(centroid, emb_norm))
+        if sim > best_sim:
+            best_sim = sim
+            best_genre = g
+
+    # If assigned p_genre matches the centroid or if best_sim is high confidence, verify
+    if best_sim >= similarity_threshold and best_genre != "scene_unknown":
+        return best_genre
+
+    return p_genre
+
+
 def group_examples_by_profile_genre(
     examples: list[dict[str, Any]],
 ) -> dict[tuple[str, str], list[dict[str, Any]]]:
@@ -1162,6 +1315,7 @@ def group_examples_by_profile_genre(
     Returns:
         Dict keyed by (profile, genre) → list of examples.
     """
+    genre_centroids = _compute_catalog_genre_centroids(examples, min_samples=5)
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for ex in examples:
         profile = _profile_name(ex.get("camera_profile"))
@@ -1172,6 +1326,9 @@ def group_examples_by_profile_genre(
             or ex.get("flattened_keywords")
         )
         genre = _primary_genre_with_keywords(scene_tags, user_keywords, ex)
+        genre = verify_genre_with_visual_centroid(
+            genre, ex.get("embedding"), genre_centroids
+        )
         key = (profile, genre)
         groups.setdefault(key, []).append(ex)
     return groups
