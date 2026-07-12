@@ -549,29 +549,53 @@ function SearchIndexAPI.findPhotosByPhotoIdsMap(photoIds, progressScope)
     end
 
     local catalog = LrApplication.activeCatalog()
-    if not shouldUseGlobalPhotoId() then
-        for _, photoId in ipairs(photoIds) do
-            local photo = catalog:findPhotoByUuid(photoId)
+    local missingGlobalIds = {}
+    local idSet = {}
+
+    for _, pidInfo in ipairs(photoIds) do
+        local pidStr = type(pidInfo) == "table" and pidInfo.globalPhotoId or pidInfo
+        local lrUuid = type(pidInfo) == "table" and pidInfo.lr_uuid or nil
+
+        if not shouldUseGlobalPhotoId() then
+            -- Fallback to default uuid logic
+            local photo = catalog:findPhotoByUuid(pidStr)
             if photo then
-                photoMap[photoId] = photo
+                photoMap[pidStr] = photo
+            end
+        else
+            -- O(1) fast path if lr_uuid is available
+            if lrUuid and lrUuid ~= "" then
+                local photo = catalog:findPhotoByUuid(lrUuid)
+                if photo then
+                    photoMap[pidStr] = photo
+                else
+                    table.insert(missingGlobalIds, pidStr)
+                    idSet[pidStr] = true
+                end
+            else
+                table.insert(missingGlobalIds, pidStr)
+                idSet[pidStr] = true
             end
         end
+    end
+
+    if not shouldUseGlobalPhotoId() or #missingGlobalIds == 0 then
         return photoMap
     end
 
-    local idSet = {}
-    for _, photoId in ipairs(photoIds) do
-        idSet[photoId] = true
-    end
-
-    local targetCount = #photoIds
+    local targetCount = #missingGlobalIds
     local startedAt = LrDate.currentTime()
     local allPhotos = catalog:getAllPhotos()
     local allPhotosElapsed = math.floor((LrDate.currentTime() - startedAt) * 1000)
     log:trace("findPhotosByPhotoIdsMap: catalog:getAllPhotos() returned " .. tostring(#allPhotos) ..
         " photos in " .. tostring(allPhotosElapsed) .. "ms")
 
-    return scanCatalogForGlobalPhotoIds(catalog, allPhotos, idSet, targetCount, progressScope, "Scanning catalog")
+    local scannedMap = scanCatalogForGlobalPhotoIds(catalog, allPhotos, idSet, targetCount, progressScope, "Scanning catalog")
+    for k, v in pairs(scannedMap) do
+        photoMap[k] = v
+    end
+
+    return photoMap
 end
 
 ---
@@ -589,44 +613,67 @@ function SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, progressScope)
 
     local catalog = LrApplication.activeCatalog()
     local idSet = {}
+    local missingGlobalIds = {}
     local totalTargetCount = 0
+    local photoById = {}
+
     for _, entry in ipairs(styleEntries) do
-        for _, photoId in ipairs(entry.photoIds or {}) do
-            if not idSet[photoId] then
-                idSet[photoId] = true
-                totalTargetCount = totalTargetCount + 1
+        for _, pidInfo in ipairs(entry.photoIds or {}) do
+            local pidStr = type(pidInfo) == "table" and pidInfo.globalPhotoId or pidInfo
+            local lrUuid = type(pidInfo) == "table" and pidInfo.lr_uuid or nil
+
+            if not idSet[pidStr] then
+                idSet[pidStr] = true
+                if not shouldUseGlobalPhotoId() then
+                    local photo = catalog:findPhotoByUuid(pidStr)
+                    if photo then
+                        photoById[pidStr] = photo
+                    else
+                        log:warn("findPhotosBatchedByStyleMap: Photo with UUID " .. tostring(pidStr) .. " not found in catalog.")
+                    end
+                else
+                    if lrUuid and lrUuid ~= "" then
+                        local photo = catalog:findPhotoByUuid(lrUuid)
+                        if photo then
+                            photoById[pidStr] = photo
+                        else
+                            table.insert(missingGlobalIds, pidStr)
+                            totalTargetCount = totalTargetCount + 1
+                        end
+                    else
+                        table.insert(missingGlobalIds, pidStr)
+                        totalTargetCount = totalTargetCount + 1
+                    end
+                end
             end
         end
     end
 
-    local photoById = {}
-    if not shouldUseGlobalPhotoId() then
-        for photoId, _ in pairs(idSet) do
-            local photo = catalog:findPhotoByUuid(photoId)
-            if photo then
-                photoById[photoId] = photo
-            else
-                log:warn("findPhotosBatchedByStyleMap: Photo with UUID " .. tostring(photoId) .. " not found in catalog.")
-            end
-        end
-    else
+    if shouldUseGlobalPhotoId() and totalTargetCount > 0 then
         local startedAt = LrDate.currentTime()
         local allPhotos = catalog:getAllPhotos()
         local allPhotosElapsed = math.floor((LrDate.currentTime() - startedAt) * 1000)
         log:trace("findPhotosBatchedByStyleMap: catalog:getAllPhotos() returned " .. tostring(#allPhotos) ..
             " photos in " .. tostring(allPhotosElapsed) .. "ms")
 
-        photoById = scanCatalogForGlobalPhotoIds(catalog, allPhotos, idSet, totalTargetCount, progressScope, "Scanning catalog across all styles")
+        local scanSet = {}
+        for _, pid in ipairs(missingGlobalIds) do scanSet[pid] = true end
+        
+        local scannedMap = scanCatalogForGlobalPhotoIds(catalog, allPhotos, scanSet, totalTargetCount, progressScope, "Scanning catalog across all styles")
+        for k, v in pairs(scannedMap) do
+            photoById[k] = v
+        end
     end
 
     for _, entry in ipairs(styleEntries) do
         local photosForStyle = {}
-        for _, photoId in ipairs(entry.photoIds or {}) do
-            local photo = photoById[photoId]
+        for _, pidInfo in ipairs(entry.photoIds or {}) do
+            local pidStr = type(pidInfo) == "table" and pidInfo.globalPhotoId or pidInfo
+            local photo = photoById[pidStr]
             if photo then
                 table.insert(photosForStyle, photo)
             else
-                log:warn("findPhotosBatchedByStyleMap: Photo ID " .. tostring(photoId) .. " not found for style " .. tostring(entry.fullName))
+                log:warn("findPhotosBatchedByStyleMap: Photo ID " .. tostring(pidStr) .. " not found for style " .. tostring(entry.fullName))
             end
         end
         table.insert(results, {

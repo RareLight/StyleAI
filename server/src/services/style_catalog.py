@@ -240,16 +240,23 @@ def get_all_styles_with_examples() -> list[dict[str, Any]]:
     conn = _ensure_initialized()
     rows = conn.execute("SELECT style_id, photo_id FROM style_examples").fetchall()
 
+    # Fetch uuids from training service
+    all_examples = training_service.list_training_examples()
+    uuid_map = {ex["photo_id"]: ex.get("lr_uuid", "") for ex in all_examples}
+
     # Group photo_ids by style_id
     examples_map = {}
     for r in rows:
         sid = r["style_id"]
         if sid not in examples_map:
             examples_map[sid] = []
-        examples_map[sid].append(r["photo_id"])
+        pid = r["photo_id"]
+        examples_map[sid].append(
+            {"globalPhotoId": pid, "lr_uuid": uuid_map.get(pid, "")}
+        )
 
     for s in styles:
-        s["example_photo_ids"] = examples_map.get(s["style_id"], [])
+        s["examples"] = examples_map.get(s["style_id"], [])
 
     return styles
 

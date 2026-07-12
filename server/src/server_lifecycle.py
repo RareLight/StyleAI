@@ -420,3 +420,14 @@ def get_health_status():
         status = "failed"
 
     return {"clip_model": status, "clip_error": _model_load_error}
+
+
+def preload_models_async():
+    """Asynchronously load models during server startup to prevent blocking the first request."""
+
+    def _preload_task():
+        logger.info("Preloading models in background thread...")
+        load_model()
+        logger.info("Background model preload complete.")
+
+    threading.Thread(target=_preload_task, daemon=True).start()

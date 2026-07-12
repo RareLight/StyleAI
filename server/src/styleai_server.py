@@ -208,6 +208,9 @@ if __name__ == "__main__":
     # Start idle monitor (model unload + server auto-shutdown)
     server_lifecycle._ensure_unloader_thread()
 
+    # Preload models asynchronously to prevent blocking the first request
+    server_lifecycle.preload_models_async()
+
     # Priority 8 Security: Strictly bind to localhost to prevent local network exposure.
     # We only allow override via --host when running in debug mode.
     if args.debug:

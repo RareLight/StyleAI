@@ -130,11 +130,12 @@ class AnalysisService:
         if pil_images is not None:
             images = pil_images
         else:
+
             def _load_img(d):
                 img = Image.open(io.BytesIO(d))
                 img.thumbnail((512, 512))
                 return img.convert("RGB")
-            
+
             images = [_load_img(data) for data in image_data]
 
         opt = options[0] if isinstance(options, list) else options
