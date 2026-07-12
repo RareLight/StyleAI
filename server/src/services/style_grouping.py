@@ -1224,7 +1224,7 @@ def _build_subgroup(
 
 def _compute_catalog_genre_centroids(
     examples: list[dict[str, Any]],
-    min_samples: int = 5,
+    min_samples: int = 1,
 ) -> dict[str, np.ndarray]:
     """Compute normalized SigLIP2 visual centroids per genre across the catalog pool.
 
@@ -1288,7 +1288,6 @@ def verify_genre_with_visual_centroid(
         return p_genre
     emb_norm = emb_arr / norm
 
-    # Check best matching visual centroid
     best_genre = p_genre
     best_sim = -1.0
     for g, centroid in genre_centroids.items():
@@ -1297,9 +1296,21 @@ def verify_genre_with_visual_centroid(
             best_sim = sim
             best_genre = g
 
-    # If assigned p_genre matches the centroid or if best_sim is high confidence, verify
-    if best_sim >= similarity_threshold and best_genre != "scene_unknown":
-        return best_genre
+    p_sim = 0.0
+    if p_genre in genre_centroids:
+        p_sim = float(np.dot(genre_centroids[p_genre], emb_norm))
+
+    # Only override an established subject genre if visual similarity is overwhelmingly superior
+    if p_genre in ("scene_unknown", "scene_general", ""):
+        if best_sim >= similarity_threshold and best_genre != "scene_unknown":
+            return best_genre
+    else:
+        if (
+            best_sim >= 0.75
+            and (best_sim - p_sim) > 0.20
+            and best_genre != "scene_unknown"
+        ):
+            return best_genre
 
     return p_genre
 
@@ -1315,7 +1326,7 @@ def group_examples_by_profile_genre(
     Returns:
         Dict keyed by (profile, genre) → list of examples.
     """
-    genre_centroids = _compute_catalog_genre_centroids(examples, min_samples=5)
+    genre_centroids = _compute_catalog_genre_centroids(examples, min_samples=1)
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for ex in examples:
         profile = _profile_name(ex.get("camera_profile"))
