@@ -431,6 +431,8 @@ def test_discover_styles_no_duplicate_hdr_suffix(monkeypatch):
 
 
 def test_fetch_rich_examples_includes_embeddings(monkeypatch):
+    import numpy as np
+
     class MockCollection:
         def get(self, ids, include):
             assert "embeddings" in include
@@ -438,11 +440,11 @@ def test_fetch_rich_examples_includes_embeddings(monkeypatch):
             return {
                 "ids": ["pid1"],
                 "metadatas": [{"camera_profile": "Adobe Standard"}],
-                "embeddings": [[0.1, 0.2]],
+                "embeddings": np.array([[0.1, 0.2]], dtype=np.float32),
             }
 
     monkeypatch.setattr(training_service, "_training_collection", MockCollection())
     res = sc._fetch_rich_examples(["pid1"])
     assert len(res) == 1
     assert res[0]["photo_id"] == "pid1"
-    assert res[0]["embedding"] == [0.1, 0.2]
+    assert np.allclose(res[0]["embedding"], [0.1, 0.2])
