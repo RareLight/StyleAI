@@ -455,9 +455,12 @@ def _fetch_rich_examples(photo_ids: list[str]) -> list[dict[str, Any]]:
         logger.warning("Failed to fetch rich training metadata: %s", exc)
         return []
 
-    ids = result.get("ids") or []
-    metadatas = result.get("metadatas") or []
-    embeddings = result.get("embeddings") or []
+    ids = result.get("ids")
+    ids = ids if ids is not None else []
+    metadatas = result.get("metadatas")
+    metadatas = metadatas if metadatas is not None else []
+    embeddings = result.get("embeddings")
+    embeddings = embeddings if embeddings is not None else []
     training_service._enrich_and_sync_metadatas_from_main_index(ids, metadatas)
     examples = []
     for i, pid in enumerate(ids):
