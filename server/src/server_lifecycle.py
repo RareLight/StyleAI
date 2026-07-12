@@ -10,13 +10,12 @@ to free GPU resources after a period of inactivity.
 import os
 import time
 import config
-from config import logger, IMAGE_MODEL_ID, CLIP_MODEL_NAME, TORCH_DEVICE
+from config import logger, IMAGE_MODEL_ID, CLIP_MODEL_NAME, get_torch_device
 import open_clip
 from utils.open_clip_compat import wrap_tokenizer
 import threading
 import datetime
 import gc
-import torch
 from huggingface_hub import hf_hub_download
 from services import face as service_face
 from services import chroma as service_chroma
@@ -170,11 +169,13 @@ def load_model():
                         raise FileNotFoundError("Bundled model files incomplete")
 
                     try:
-                        model_obj.to(TORCH_DEVICE)
-                        logger.info(f"Text and vision model moved to {TORCH_DEVICE}")
+                        model_obj.to(get_torch_device())
+                        logger.info(
+                            f"Text and vision model moved to {get_torch_device()}"
+                        )
                     except Exception as e:
                         logger.warning(
-                            f"Failed to move text and vision model to {TORCH_DEVICE}: {e}."
+                            f"Failed to move text and vision model to {get_torch_device()}: {e}."
                         )
 
                     model = model_obj
@@ -193,11 +194,11 @@ def load_model():
                 )
                 tok = _get_open_clip_tokenizer()
                 try:
-                    model_obj.to(TORCH_DEVICE)
-                    logger.info(f"Text and vision model moved to {TORCH_DEVICE}")
+                    model_obj.to(get_torch_device())
+                    logger.info(f"Text and vision model moved to {get_torch_device()}")
                 except Exception as move_exc:
                     logger.warning(
-                        f"Failed to move text and vision model to {TORCH_DEVICE}: {move_exc}."
+                        f"Failed to move text and vision model to {get_torch_device()}: {move_exc}."
                     )
 
                 model = model_obj
@@ -235,6 +236,8 @@ def unload_model():
 
             # Best-effort free memory for CUDA and MPS
             try:
+                import torch
+
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 elif (

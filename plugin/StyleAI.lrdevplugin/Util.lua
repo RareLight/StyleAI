@@ -1666,6 +1666,73 @@ local function getOrCreateCollection(catalog, collName, parentSet, writeOptions)
 	return collection
 end
 
+local function _getOrCreateCollectionSetNoLock(catalog, setName, parentSet)
+	local collectionSet
+	local children = parentSet and parentSet:getChildCollections() or catalog:getChildCollections()
+	if children then
+		for _, child in ipairs(children) do
+			if child:type() == "LrCollectionSet" and child:getName() == setName then
+				collectionSet = child
+				break
+			end
+		end
+	end
+	if not collectionSet then
+		collectionSet = catalog:createCollectionSet(setName, parentSet, true)
+	end
+	return collectionSet
+end
+
+local function _getOrCreateCollectionNoLock(catalog, collName, parentSet)
+	local collection
+	local collChildren = parentSet:getChildCollections()
+	if collChildren then
+		for _, c in ipairs(collChildren) do
+			if c:type() == "LrCollection" and c:getName() == collName then
+				collection = c
+				break
+			end
+		end
+	end
+	if not collection then
+		collection = catalog:createCollection(collName, parentSet, false)
+	end
+	return collection
+end
+
+function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions)
+	if type(stylesData) ~= "table" or #stylesData == 0 then
+		return false
+	end
+	writeOptions = writeOptions or { timeout = 60 }
+	local catalog = LrApplication.activeCatalog()
+
+	catalog:withWriteAccessDo("Create Style Collections", function()
+		local rootSet = _getOrCreateCollectionSetNoLock(catalog, "StyleAI", nil)
+		if not rootSet then return end
+		local trainedSet = _getOrCreateCollectionSetNoLock(catalog, "Trained Styles", rootSet)
+		if not trainedSet then return end
+
+		for _, data in ipairs(stylesData) do
+			if data.photos and #data.photos > 0 then
+				local profileName = data.profileName or "Unknown Profile"
+				local styleName = data.styleName or "Unknown Style"
+				local profileSet = _getOrCreateCollectionSetNoLock(catalog, profileName, trainedSet)
+				if profileSet then
+					local collection = _getOrCreateCollectionNoLock(catalog, styleName, profileSet)
+					if collection then
+						collection:addPhotos(data.photos)
+					end
+				end
+			end
+		end
+	end, writeOptions)
+	LrTasks.yield()
+	LrTasks.sleep(0.05)
+
+	return true
+end
+
 function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOptions)
 	if type(photos) ~= "table" or #photos == 0 then
 		return nil

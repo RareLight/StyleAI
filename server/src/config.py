@@ -2,7 +2,6 @@ import argparse
 import logging
 import sys
 import os
-import torch
 
 # In windowless environments (like pythonw.exe on Windows), sys.stdout and sys.stderr are None.
 # We redirect them to devnull to prevent crashes in libraries (logging, traceback, etc.)
@@ -76,15 +75,28 @@ DB_PATH = args.db_path
 # - Windows: CPU-only for now to avoid VRAM issues with open_clip on CUDA and local LLMs using CUDA
 force_cpu_clip = args.force_cpu_clip
 
-if force_cpu_clip:
-    TORCH_DEVICE = "cpu"
-elif sys.platform == "darwin":  # macOS
-    TORCH_DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
-elif sys.platform == "win32":  # Windows
-    TORCH_DEVICE = "cpu"
-else:
-    # Linux (e.g. Docker): CPU; set CUDA in container if needed
-    TORCH_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+_torch_device = None
+
+
+def get_torch_device():
+    global _torch_device
+    if _torch_device is not None:
+        return _torch_device
+
+    import torch
+    import sys
+
+    if force_cpu_clip:
+        _torch_device = "cpu"
+    elif sys.platform == "darwin":  # macOS
+        _torch_device = "mps" if torch.backends.mps.is_available() else "cpu"
+    elif sys.platform == "win32":  # Windows
+        _torch_device = "cpu"
+    else:
+        # Linux (e.g. Docker): CPU; set CUDA in container if needed
+        _torch_device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    return _torch_device
 
 
 CLIP_MODEL_NAME = "ViT-SO400M-16-SigLIP2-384"

@@ -17,7 +17,7 @@ from PIL import Image
 import io
 import torch
 import torch.nn.functional as F
-from config import TORCH_DEVICE
+from config import get_torch_device
 
 
 import threading
@@ -313,7 +313,7 @@ class AnalysisService:
                     # Interleave CPU preprocessing to allow other threads to use the GPU/GIL
                     # while this thread is doing CPU-bound image transformations.
                     tensors = [image_processor(img) for img in chunk_images]
-                    chunk = torch.stack(tensors).to(TORCH_DEVICE)
+                    chunk = torch.stack(tensors).to(get_torch_device())
 
                     # Acquire lock to serialize forward passes and prevent VRAM multiplier effect
                     with _inference_lock:

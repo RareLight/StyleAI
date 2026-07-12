@@ -468,7 +468,7 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
         import torch
         import torch.nn.functional as F
         import server_lifecycle
-        from config import TORCH_DEVICE
+        from config import get_torch_device
 
         clip_model = server_lifecycle.get_model()
         clip_processor = server_lifecycle.get_processor()
@@ -478,7 +478,7 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
         img_vec = (
             torch.tensor(image_embedding, dtype=torch.float32)
             .unsqueeze(0)
-            .to(TORCH_DEVICE)
+            .to(get_torch_device())
         )
         img_vec = F.normalize(img_vec, p=2, dim=1)
 
@@ -494,7 +494,7 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
 
             sims: list[float] = []
             for probe_text in canonical_texts:
-                tokens = tokenize_fn([probe_text]).to(TORCH_DEVICE)
+                tokens = tokenize_fn([probe_text]).to(get_torch_device())
                 text_features = clip_model.encode_text(tokens)
                 text_vec = F.normalize(text_features, p=2, dim=1)
                 sims.append(float((img_vec * text_vec).sum().cpu()))
@@ -523,7 +523,7 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
 
             for style_tag, probe_text in _AESTHETIC_PROBES.items():
                 try:
-                    tokens = tokenize_fn([probe_text]).to(TORCH_DEVICE)
+                    tokens = tokenize_fn([probe_text]).to(get_torch_device())
                     text_features = clip_model.encode_text(tokens)
                     text_vec = F.normalize(text_features, p=2, dim=1)
                     sim = float((img_vec * text_vec).sum().cpu())

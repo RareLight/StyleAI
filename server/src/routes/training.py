@@ -37,7 +37,7 @@ def _compute_clip_embedding(image_bytes: bytes):
         import torch
         import torch.nn.functional as F
         import server_lifecycle
-        from config import TORCH_DEVICE
+        from config import get_torch_device
 
         clip_model = server_lifecycle.get_model()
         clip_processor = server_lifecycle.get_processor()
@@ -45,7 +45,7 @@ def _compute_clip_embedding(image_bytes: bytes):
             return None
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        image_tensor = clip_processor(image).unsqueeze(0).to(TORCH_DEVICE)
+        image_tensor = clip_processor(image).unsqueeze(0).to(get_torch_device())
         with torch.no_grad():
             features = clip_model.encode_image(image_tensor)
             normalized = F.normalize(features, p=2, dim=1)
