@@ -9,7 +9,7 @@ dedicated GPU thread) exclusively handles SigLIP2 and InsightFace model inferenc
 eliminating UI blocking and massive pipeline stalls during bulk catalog indexing.
 """
 
-from config import logger, TORCH_DEVICE
+from config import logger, get_torch_device
 from . import chroma as chroma_service
 from .chroma import DatabaseNotReadyError
 from .metadata import get_analysis_service
@@ -658,7 +658,7 @@ def process_image_task(
         # Free MPS allocator cache between requests. PyTorch holds onto freed
         # blocks aggressively on Apple silicon, which combined with InsightFace
         # and ChromaDB is enough to trip macOS jetsam on smaller-RAM machines.
-        if TORCH_DEVICE == "mps":
+        if get_torch_device() == "mps":
             try:
                 torch.mps.empty_cache()
             except Exception:

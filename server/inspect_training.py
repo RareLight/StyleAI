@@ -1,6 +1,4 @@
-import sys
 from services.training import _training_collection
-from services.db import init_db
 
 
 def inspect():

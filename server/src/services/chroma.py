@@ -1,8 +1,4 @@
-import chromadb
-from chromadb.config import Settings
-from chromadb.errors import InternalError as ChromaInternalError
 import threading
-import numpy as np
 import time
 from functools import wraps
 from config import logger
@@ -75,6 +71,8 @@ def _ensure_photo_metadata(photo_id, metadata, legacy_uuid=None):
 
 def _first_result_item(values, default=None):
     """Return first item from Chroma results without truthiness checks."""
+    import numpy as np
+
     if values is None:
         return default
     if isinstance(values, np.ndarray):
@@ -98,6 +96,9 @@ def _ensure_initialized():
     if not config.DB_PATH:
         logger.debug("ChromaDB initialization skipped: DB_PATH not set yet.")
         return
+
+    import chromadb
+    from chromadb.config import Settings
 
     logger.info(f"Initializing ChromaDB client at {config.DB_PATH} (lazy)...")
     chroma_client = chromadb.PersistentClient(
@@ -195,6 +196,8 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None):
     metadata = _ensure_photo_metadata(photo_id, metadata, legacy_uuid=legacy_uuid)
     try:
         if embedding is None:
+            import numpy as np
+
             # Add metadata-only record with a dummy zero embedding
             # The collection expects 1152-dimensional embeddings (from vision model)
             dummy_embedding = np.zeros(1152, dtype=np.float32).tolist()
@@ -252,7 +255,11 @@ def get_image(photo_id, *, legacy_uuid=None):
         return {"ids": [], "metadatas": [], "embeddings": []}
     try:
         data = collection.get(ids=[photo_id], include=["metadatas", "embeddings"])
-    except ChromaInternalError as e:
+    except Exception as e:
+        if type(e).__name__ != "InternalError" or not getattr(
+            type(e), "__module__", ""
+        ).startswith("chromadb"):
+            raise
         logger.debug(
             "ChromaDB get_image: index not yet built (empty collection): %s", e
         )
@@ -313,7 +320,11 @@ def clear_image_metadata(photo_id, *, legacy_uuid=None):
     # Main collection: get current, strip AI fields, update (keep embedding)
     try:
         data = collection.get(ids=[photo_id], include=["metadatas", "embeddings"])
-    except ChromaInternalError:
+    except Exception as e:
+        if type(e).__name__ != "InternalError" or not getattr(
+            type(e), "__module__", ""
+        ).startswith("chromadb"):
+            raise
         return False
     if not data or not data.get("ids"):
         logger.debug(
@@ -432,6 +443,9 @@ def _safe_float(value, default=None):
 
 
 def _embedding_to_array(embedding):
+    """Safely convert a stored embedding to a numpy array."""
+    import numpy as np
+
     if embedding is None:
         return None
     try:
@@ -444,6 +458,9 @@ def _embedding_to_array(embedding):
 
 
 def _cosine_distance(embedding_a, embedding_b):
+    """Calculate cosine distance between two arrays. 1.0 means opposite, 0.0 means identical."""
+    import numpy as np
+
     if embedding_a is None or embedding_b is None:
         return None
     norm_a = np.linalg.norm(embedding_a)

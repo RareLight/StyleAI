@@ -390,16 +390,25 @@ LrTasks.startAsyncTask(function()
 				local findAllProgress = LrProgressScope({ title = LOC("$$$/StyleAI/StyleCatalog/FindAllProgress=Creating collections for all trained styles...") })
 				local totalPhotos = 0
 				local totalStyles = 0
+				local stylesData = {}
 				
 				for _, style in ipairs(styles) do
 					if style.example_photo_ids and #style.example_photo_ids > 0 then
 						local photos = SearchIndexAPI.findPhotosByPhotoIds(style.example_photo_ids, nil)
 						if #photos > 0 then
-							Util.addPhotosToTrainedStylesCollection(photos, style.camera_profile, style.style_name)
+							table.insert(stylesData, {
+								photos = photos,
+								profileName = style.camera_profile,
+								styleName = style.style_name
+							})
 							totalPhotos = totalPhotos + #photos
 							totalStyles = totalStyles + 1
 						end
 					end
+				end
+				
+				if #stylesData > 0 then
+					Util.addMultipleStylePhotosToCollections(stylesData)
 				end
 				findAllProgress:done()
 
