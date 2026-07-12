@@ -20,12 +20,18 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.indexingMode = prefs.indexingMode or "both"
 
 
-    -- Check if CLIP model is ready on server
-    props.clipReady = SearchIndexAPI.isClipReady()
+    -- Check if CLIP model is ready on server non-blockingly
+    props.clipReady = true
+    LrTasks.startAsyncTask(function()
+        local ready = SearchIndexAPI.isClipReady()
+        if props and props.clipReady ~= nil then
+            props.clipReady = ready
+        end
+    end)
 
     -- Tasks to perform
-    props.enableEmbeddings = (prefs.enableEmbeddings ~= false) and props.clipReady -- default true
-    props.enableMetadata = prefs.enableMetadata ~= false                           -- default true
+    props.enableEmbeddings = (prefs.enableEmbeddings ~= false) -- default true
+    props.enableMetadata = prefs.enableMetadata ~= false       -- default true
     props.regenerateMetadata = false
 
     -- Metadata generation options
@@ -717,11 +723,6 @@ end
 
 LrTasks.startAsyncTask(function()
 	LrFunctionContext.callWithContext("AnalyzeAndIndexTask", function(context)
-		-- Check server connection
-		if not Util.waitForServerDialog() then
-			return
-		end
-
 		-- Show dialog
 		local props = showAnalyzeAndIndexDialog(context)
 		if not props then
@@ -753,6 +754,11 @@ LrTasks.startAsyncTask(function()
 			if confirm ~= "ok" then
 				return
 			end
+		end
+
+		-- Now that the user has committed to processing, ensure the backend is running.
+		if not Util.waitForServerDialog({ suppressProgressDialog = false }) then
+			return
 		end
 
 		-- Build tasks array

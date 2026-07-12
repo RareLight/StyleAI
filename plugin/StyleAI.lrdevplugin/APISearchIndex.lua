@@ -3087,7 +3087,7 @@ end
 local lastClipReadyStatus = nil
 function SearchIndexAPI.isClipReady()
     local url = getBaseUrl() .. ENDPOINTS.CLIP_STATUS
-    local res, err = _request('GET', url)
+    local res, err = _request('GET', url, nil, 0.5)
     if err then
         local errStr = (type(err) == "string") and err or "unknown"
         log:error("isClipReady failed: " .. errStr)

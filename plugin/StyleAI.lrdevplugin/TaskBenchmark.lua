@@ -41,6 +41,10 @@ LrTasks.startAsyncTask(function()
 		)
 		if confirm == "cancel" then return end
 		
+		if not Util.waitForServerDialog({ suppressProgressDialog = false }) then
+			return
+		end
+		
 
 
 		local results = {}
