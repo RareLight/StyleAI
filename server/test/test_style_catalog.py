@@ -428,3 +428,21 @@ def test_discover_styles_no_duplicate_hdr_suffix(monkeypatch):
     for s in hdr_styles:
         assert "(HDR) (HDR)" not in s["style_name"]
         assert "+ HDR (HDR)" not in s["style_name"]
+
+
+def test_fetch_rich_examples_includes_embeddings(monkeypatch):
+    class MockCollection:
+        def get(self, ids, include):
+            assert "embeddings" in include
+            assert "metadatas" in include
+            return {
+                "ids": ["pid1"],
+                "metadatas": [{"camera_profile": "Adobe Standard"}],
+                "embeddings": [[0.1, 0.2]],
+            }
+
+    monkeypatch.setattr(training_service, "_training_collection", MockCollection())
+    res = sc._fetch_rich_examples(["pid1"])
+    assert len(res) == 1
+    assert res[0]["photo_id"] == "pid1"
+    assert res[0]["embedding"] == [0.1, 0.2]
