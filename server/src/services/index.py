@@ -28,6 +28,18 @@ import threading
 import queue
 
 
+from typing import Any
+
+
+def _to_bool(val: Any, default: bool = False) -> bool:
+    """Safely convert boolean or string representation to a bool."""
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() == "true"
+
+
 def _flatten_keywords(keywords):
     """
     Flatten keywords from various formats to a comma-separated string.
@@ -143,9 +155,9 @@ def get_uuids_needing_processing(
     If search_by_lr_uuid is True, treats uuids as Lightroom native UUIDs and searches the
     metadata 'uuid' field instead of ChromaDB document IDs.
     """
-    regenerate_metadata = options.get("regenerate_metadata", True)
-    compute_embeddings = options.get("compute_embeddings", True)
-    compute_metadata = options.get("compute_metadata", False)
+    regenerate_metadata = _to_bool(options.get("regenerate_metadata"), True)
+    compute_embeddings = _to_bool(options.get("compute_embeddings"), True)
+    compute_metadata = _to_bool(options.get("compute_metadata"), False)
 
     if not uuids:
         return []
@@ -239,11 +251,11 @@ def process_image_task(
         global_opts = options[0] if isinstance(options, list) else options
         provider = global_opts.get("provider")
         model_name = global_opts.get("model")
-        replace_ss = global_opts.get("replace_ss", False)
-        regenerate_metadata = global_opts.get("regenerate_metadata", True)
-        compute_embeddings = global_opts.get("compute_embeddings", True)
-        compute_metadata = global_opts.get("compute_metadata", False)
-        compute_faces = global_opts.get("compute_faces", False)
+        replace_ss = _to_bool(global_opts.get("replace_ss"), False)
+        regenerate_metadata = _to_bool(global_opts.get("regenerate_metadata"), True)
+        compute_embeddings = _to_bool(global_opts.get("compute_embeddings"), True)
+        compute_metadata = _to_bool(global_opts.get("compute_metadata"), False)
+        compute_faces = _to_bool(global_opts.get("compute_faces"), False)
 
         logger.info(f"Starting batch processing of {total_images} images...")
         logger.info(
