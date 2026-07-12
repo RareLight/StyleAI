@@ -516,3 +516,66 @@ def test_parse_exif_string_values():
         {"shutter_speed": "15 sec", "iso": "ISO 6400", "focal_length": "85 mm"}
     )
     assert priors.get("scene_night", 0.0) >= 0.4
+
+
+def test_nature_wildlife_landscape_precedence():
+    # 1. Telephoto bird photo should not trigger macro EXIF prior and should classify as landscape
+    priors = sg._evaluate_exif_priors({"focal_length": "400 mm", "lens": "400mm f/4"})
+    assert "scene_macro" not in priors
+    genre = sg._primary_genre_with_keywords(["scene_exterior"], ["bird", "wildlife"])
+    assert genre == "scene_landscape"
+
+    # 2. Landscape with action/motion terms should stay landscape
+    genre_land = sg._primary_genre_with_keywords(
+        ["scene_landscape"], ["landscape", "running water"]
+    )
+    assert genre_land == "scene_landscape"
+
+
+def test_llm_noise_filtering_and_visual_centroids():
+    import numpy as np
+
+    # 1. Verify LLM noise tags are stripped out
+    multi_tags = [
+        "portrait orientation",
+        "dramatic lighting",
+        "action shot",
+        "landscape",
+    ]
+    filtered = sg._filter_llm_noise_keywords(multi_tags)
+    assert filtered == ["landscape"]
+    genre = sg._primary_genre_with_keywords([], multi_tags)
+    assert genre == "scene_landscape"
+
+    # 2. Verify Cold-Start (<5 samples) falls back and does not produce centroids
+    sparse_examples = [
+        {
+            "camera_profile": "Adobe Standard",
+            "scene_tags": ["portrait"],
+            "embedding": [1.0, 0.0, 0.0],
+        }
+        for _ in range(3)
+    ]
+    centroids = sg._compute_catalog_genre_centroids(sparse_examples, min_samples=5)
+    assert "scene_portrait" not in centroids
+
+    # 3. Verify >=5 samples computes normalized centroid and verify_genre_with_visual_centroid works
+    dense_examples = [
+        {
+            "camera_profile": "Adobe Standard",
+            "scene_tags": ["portrait"],
+            "embedding": np.array([1.0, 0.0], dtype=np.float32),
+        }
+        for _ in range(6)
+    ]
+    centroids = sg._compute_catalog_genre_centroids(dense_examples, min_samples=5)
+    assert "scene_portrait" in centroids
+
+    # Verify matching visual centroid arbitrates correctly
+    verified = sg.verify_genre_with_visual_centroid(
+        "scene_unknown",
+        np.array([1.0, 0.0], dtype=np.float32),
+        centroids,
+        similarity_threshold=0.60,
+    )
+    assert verified == "scene_portrait"
