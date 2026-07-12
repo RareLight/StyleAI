@@ -542,6 +542,38 @@ function SearchIndexAPI.findPhotosByPhotoIds(photoIds, progressScope)
     return photos
 end
 
+function SearchIndexAPI.findPhotosByPhotoIdsMap(photoIds, progressScope)
+    local photoMap = {}
+    if type(photoIds) ~= "table" or #photoIds == 0 then
+        return photoMap
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    if not shouldUseGlobalPhotoId() then
+        for _, photoId in ipairs(photoIds) do
+            local photo = catalog:findPhotoByUuid(photoId)
+            if photo then
+                photoMap[photoId] = photo
+            end
+        end
+        return photoMap
+    end
+
+    local idSet = {}
+    for _, photoId in ipairs(photoIds) do
+        idSet[photoId] = true
+    end
+
+    local targetCount = #photoIds
+    local startedAt = LrDate.currentTime()
+    local allPhotos = catalog:getAllPhotos()
+    local allPhotosElapsed = math.floor((LrDate.currentTime() - startedAt) * 1000)
+    log:trace("findPhotosByPhotoIdsMap: catalog:getAllPhotos() returned " .. tostring(#allPhotos) ..
+        " photos in " .. tostring(allPhotosElapsed) .. "ms")
+
+    return scanCatalogForGlobalPhotoIds(catalog, allPhotos, idSet, targetCount, progressScope, "Scanning catalog")
+end
+
 ---
 -- Performs a single-pass catalog lookup across multiple style candidate lists simultaneously.
 -- Avoids repeated catalog:getAllPhotos() scans when creating collections for multiple styles.
