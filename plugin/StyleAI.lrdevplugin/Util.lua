@@ -1669,75 +1669,40 @@ local function getOrCreateCollection(catalog, collName, parentSet, writeOptions)
 	return collection
 end
 
-local function _getOrCreateCollectionSetNoLock(catalog, setName, parentSet)
-	local collectionSet
-	local children = parentSet and parentSet:getChildCollections() or catalog:getChildCollections()
-	if children then
-		for _, child in ipairs(children) do
-			if child:type() == "LrCollectionSet" and child:getName() == setName then
-				collectionSet = child
-				break
-			end
-		end
-	end
-	if not collectionSet then
-		collectionSet = catalog:createCollectionSet(setName, parentSet, true)
-	end
-	return collectionSet
-end
-
-local function _getOrCreateCollectionNoLock(catalog, collName, parentSet)
-	local collection
-	local collChildren = parentSet:getChildCollections()
-	if collChildren then
-		for _, c in ipairs(collChildren) do
-			if c:type() == "LrCollection" and c:getName() == collName then
-				collection = c
-				break
-			end
-		end
-	end
-	if not collection then
-		collection = catalog:createCollection(collName, parentSet, false)
-	end
-	return collection
-end
-
-function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions)
+function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, progressScope)
 	if type(stylesData) ~= "table" or #stylesData == 0 then
 		return false
 	end
 	writeOptions = writeOptions or { timeout = 60 }
 	local catalog = LrApplication.activeCatalog()
 
+	local rootSet = getOrCreateCollectionSet(catalog, "StyleAI", nil, writeOptions)
+	if not rootSet then return false end
+	local trainedSet = getOrCreateCollectionSet(catalog, "Trained Styles", rootSet, writeOptions)
+	if not trainedSet then return false end
+
 	local collectionsToPopulate = {}
-
-	-- Pass 1: Create all collections
-	catalog:withWriteAccessDo("Create Style Collections", function()
-		local rootSet = _getOrCreateCollectionSetNoLock(catalog, "StyleAI", nil)
-		if not rootSet then return end
-		local trainedSet = _getOrCreateCollectionSetNoLock(catalog, "Trained Styles", rootSet)
-		if not trainedSet then return end
-
-		for _, data in ipairs(stylesData) do
-			if data.photos and #data.photos > 0 then
-				local profileName = data.profileName or "Unknown Profile"
-				local styleName = data.styleName or "Unknown Style"
-				local profileSet = _getOrCreateCollectionSetNoLock(catalog, profileName, trainedSet)
-				if profileSet then
-					local collection = _getOrCreateCollectionNoLock(catalog, styleName, profileSet)
-					if collection then
-						table.insert(collectionsToPopulate, { collection = collection, photos = data.photos })
-					end
+	for i, data in ipairs(stylesData) do
+		if data.photos and #data.photos > 0 then
+			local profileName = data.profileName or "Unknown Profile"
+			local styleName = data.styleName or "Unknown Style"
+			if progressScope then
+				progressScope:setCaption(string.format("Creating style collection (%d/%d): %s...", i, #stylesData, styleName))
+			end
+			local profileSet = getOrCreateCollectionSet(catalog, profileName, trainedSet, writeOptions)
+			if profileSet then
+				local collection = getOrCreateCollection(catalog, styleName, profileSet, writeOptions)
+				if collection then
+					table.insert(collectionsToPopulate, { collection = collection, photos = data.photos })
 				end
 			end
 		end
-	end, writeOptions)
-	LrTasks.yield()
-	LrTasks.sleep(0.05)
+	end
 
-	-- Pass 2: Add photos to collections
 	if #collectionsToPopulate > 0 then
+		if progressScope then
+			progressScope:setCaption("Adding photos to style collections...")
+		end
 		catalog:withWriteAccessDo("Populate Style Collections", function()
 			for _, item in ipairs(collectionsToPopulate) do
 				item.collection:addPhotos(item.photos)
@@ -1750,38 +1715,37 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions)
 	return true
 end
 
-function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions)
+function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions, progressScope)
 	if type(stylesData) ~= "table" or #stylesData == 0 then
 		return false
 	end
 	writeOptions = writeOptions or { timeout = 60 }
 	local catalog = LrApplication.activeCatalog()
 
+	local rootSet = getOrCreateCollectionSet(catalog, "StyleAI", nil, writeOptions)
+	if not rootSet then return false end
+	local recSet = getOrCreateCollectionSet(catalog, "Training Recommendations", rootSet, writeOptions)
+	if not recSet then return false end
+
 	local collectionsToPopulate = {}
-
-	-- Pass 1: Create all collections
-	catalog:withWriteAccessDo("Create Upgrade Collections", function()
-		local rootSet = _getOrCreateCollectionSetNoLock(catalog, "StyleAI", nil)
-		if not rootSet then return end
-		local recSet = _getOrCreateCollectionSetNoLock(catalog, "Training Recommendations", rootSet)
-		if not recSet then return end
-
-		for _, data in ipairs(stylesData) do
-			if data.photos and #data.photos > 0 then
-				local styleName = data.styleName or "Style"
-				local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName)
-				local collection = _getOrCreateCollectionNoLock(catalog, collName, recSet)
-				if collection then
-					table.insert(collectionsToPopulate, { collection = collection, photos = data.photos })
-				end
+	for i, data in ipairs(stylesData) do
+		if data.photos and #data.photos > 0 then
+			local styleName = data.styleName or "Style"
+			if progressScope then
+				progressScope:setCaption(string.format("Creating upgrade collection (%d/%d): %s...", i, #stylesData, styleName))
+			end
+			local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName)
+			local collection = getOrCreateCollection(catalog, collName, recSet, writeOptions)
+			if collection then
+				table.insert(collectionsToPopulate, { collection = collection, photos = data.photos })
 			end
 		end
-	end, writeOptions)
-	LrTasks.yield()
-	LrTasks.sleep(0.05)
+	end
 
-	-- Pass 2: Add photos to collections
 	if #collectionsToPopulate > 0 then
+		if progressScope then
+			progressScope:setCaption("Populating upgrade collections...")
+		end
 		catalog:withWriteAccessDo("Populate Upgrade Collections", function()
 			for _, item in ipairs(collectionsToPopulate) do
 				item.collection:addPhotos(item.photos)
