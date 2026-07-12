@@ -1786,7 +1786,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                                 if success then
                                     if enableMetadata then
                                         item.image = nil
-                                        table.insert(sendToLlmQueue, item)
+                                        table.insert(llmQueue, item)
                                     else
                                         stats.processed = stats.processed + 1
                                         stats.success = stats.success + 1
@@ -1814,7 +1814,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                                     log:error("Failed to enqueue photo: " .. leafName .. " Error: " .. tostring(err))
                                 end
                             else
-                                table.insert(sendToLlmQueue, item)
+                                table.insert(llmQueue, item)
                             end
                         else
                             stats.failed = stats.failed + 1
@@ -1924,7 +1924,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end
 
     -- Monitor workers and server availability
-    while activeWorkers > 0 or activeSenderWorkers > 0 or activeLlmWorkers > 0 do
+    while activeWorkers > 0 or activeLlmWorkers > 0 do
         if progressScope:isCanceled() then break end
         LrTasks.yield()
         LrTasks.sleep(0.1)
@@ -1933,7 +1933,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     -- Wait for workers to stop in case of server failure
     if not keepRunning then
-        while activeWorkers > 0 or activeSenderWorkers > 0 do
+        while activeWorkers > 0 do
             LrTasks.yield()
             LrTasks.sleep(0.5)
         end
