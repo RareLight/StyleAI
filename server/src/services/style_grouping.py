@@ -1132,7 +1132,7 @@ def group_examples_by_profile_genre(
             or ex.get("keywords")
             or ex.get("flattened_keywords")
         )
-        genre = _primary_genre_with_keywords(scene_tags, user_keywords)
+        genre = _primary_genre_with_keywords(scene_tags, user_keywords, ex)
         key = (profile, genre)
         groups.setdefault(key, []).append(ex)
     return groups

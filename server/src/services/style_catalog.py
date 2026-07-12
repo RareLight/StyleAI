@@ -732,7 +732,7 @@ def update_style_for_example(
         scene_tags, user_keywords or []
     )
     cam = (camera_model or "unknown").strip()
-    profile = (camera_profile or "default").strip()
+    profile = grouping._profile_name(camera_profile)
 
     # Trigger discovery for all examples matching this camera+profile+genre combo
     logger.info(
@@ -746,10 +746,11 @@ def update_style_for_example(
         ex["photo_id"]
         for ex in all_examples
         if (ex.get("camera_model") or "unknown").strip() == cam
-        and (ex.get("camera_profile") or "default").strip() == profile
+        and grouping._profile_name(ex.get("camera_profile")) == profile
         and grouping._primary_genre_with_keywords(
             grouping._safe_json_loads(ex.get("scene_tags"), []),
             grouping._safe_json_loads(ex.get("user_keywords"), []),
+            ex,
         )
         == primary_genre
     ]

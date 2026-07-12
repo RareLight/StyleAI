@@ -67,23 +67,20 @@ def _hero_score(meta: dict[str, Any]) -> float:
 def _normalize_profile_for_comparison(profile: str) -> str:
     if not profile:
         return ""
-    # Strip + HDR or HDR token to inspect base profile name
-    p_clean = re.sub(r"(?i)\s*\+?\s*HDR\b", "", profile).strip().lower()
-    p_clean = re.sub(r"\s*\(v\d+\)", "", p_clean).strip()
-    p_clean = re.sub(r"\s+", " ", p_clean)
-    return p_clean
+    from services import style_grouping as grouping
+
+    return grouping._profile_name(profile).lower()
 
 
 def _profiles_compatible(style_profile: str, photo_profile: str) -> bool:
     if not style_profile or not photo_profile:
         return False
-    style_is_hdr = bool(re.search(r"(?i)\bHDR\b", style_profile))
-    photo_is_hdr = bool(re.search(r"(?i)\bHDR\b", photo_profile))
-    if style_is_hdr != photo_is_hdr:
-        return False
-    return _normalize_profile_for_comparison(
-        style_profile
-    ) == _normalize_profile_for_comparison(photo_profile)
+    from services import style_grouping as grouping
+
+    return (
+        grouping._profile_name(style_profile).lower()
+        == grouping._profile_name(photo_profile).lower()
+    )
 
 
 def _models_compatible(style_model: str, photo_model: str) -> bool:

@@ -1050,33 +1050,13 @@ def _enrich_and_sync_metadatas_from_main_index(
     """
     if not ids or not metadatas:
         return
-    missing_ids = []
-    for i, m in enumerate(metadatas):
-        if not m:
-            continue
-        meta = dict(m) if not isinstance(m, dict) else m
-        kws = (
-            meta.get("user_keywords")
-            or meta.get("keywords")
-            or meta.get("flattened_keywords")
-        )
-        tags = meta.get("scene_tags") or meta.get("tags")
-        if (not kws or kws in ("", "[]", "null", "None")) and (
-            not tags or tags in ("", "[]", "null", "None")
-        ):
-            if i < len(ids):
-                missing_ids.append(ids[i])
-
-    if not missing_ids:
-        return
-
     try:
         from services import chroma as chroma_service
 
         chroma_service._ensure_initialized()
         if chroma_service.collection is None:
             return
-        main_res = chroma_service.collection.get(ids=missing_ids, include=["metadatas"])
+        main_res = chroma_service.collection.get(ids=ids, include=["metadatas"])
         main_ids = main_res.get("ids") or []
         main_metas = main_res.get("metadatas") or []
         main_map = {
@@ -1087,6 +1067,23 @@ def _enrich_and_sync_metadatas_from_main_index(
 
         updated_ids = []
         updated_metas = []
+        sync_keys = (
+            "filename",
+            "camera_profile",
+            "camera_model",
+            "camera_make",
+            "shutter_speed",
+            "iso",
+            "focal_length",
+            "lens",
+            "flash",
+            "dateTimeOriginal",
+            "user_keywords",
+            "keywords",
+            "flattened_keywords",
+            "scene_tags",
+            "tags",
+        )
         for i, pid in enumerate(ids):
             if pid in main_map and i < len(metadatas) and metadatas[i]:
                 mm = main_map[pid]
@@ -1096,29 +1093,17 @@ def _enrich_and_sync_metadatas_from_main_index(
                     else metadatas[i]
                 )
                 changed = False
-                if not meta.get("filename") and mm.get("filename"):
-                    meta["filename"] = mm["filename"]
-                    changed = True
-                kws_cur = (
-                    meta.get("user_keywords")
-                    or meta.get("keywords")
-                    or meta.get("flattened_keywords")
-                )
-                if not kws_cur or kws_cur in ("", "[]", "null", "None"):
-                    for k in ("user_keywords", "keywords", "flattened_keywords"):
-                        val = mm.get(k)
-                        if val and val not in ("", "[]", "null", "None"):
-                            meta["user_keywords"] = val
+                for k in sync_keys:
+                    val_main = mm.get(k)
+                    if val_main is not None and val_main not in (
+                        "",
+                        "[]",
+                        "null",
+                        "None",
+                    ):
+                        if meta.get(k) != val_main:
+                            meta[k] = val_main
                             changed = True
-                            break
-                tags_cur = meta.get("scene_tags") or meta.get("tags")
-                if not tags_cur or tags_cur in ("", "[]", "null", "None"):
-                    for k in ("scene_tags", "tags"):
-                        val = mm.get(k)
-                        if val and val not in ("", "[]", "null", "None"):
-                            meta["scene_tags"] = val
-                            changed = True
-                            break
                 if changed:
                     metadatas[i] = meta
                     updated_ids.append(pid)
