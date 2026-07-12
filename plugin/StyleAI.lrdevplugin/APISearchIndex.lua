@@ -1905,10 +1905,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         activeWorkers = activeWorkers + 1
     end
 
-    for i = 1, maxSenderWorkers do
-        LrTasks.startAsyncTask(senderWorker)
-        log:trace("Started sender worker #" .. tostring(i))
-    end
+    -- Sender worker has been removed in favor of fire-and-forget in analyzeWorker
 
     local maxLlmWorkers = math.max(1, maxSenderWorkers - 2)
     if enableMetadata and options.model and (string.find(string.lower(options.model), "lmstudio") or string.find(string.lower(options.model), "ollama")) then
