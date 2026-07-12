@@ -1326,8 +1326,9 @@ def group_examples_by_profile_genre(
     Returns:
         Dict keyed by (profile, genre) → list of examples.
     """
-    genre_centroids = _compute_catalog_genre_centroids(examples, min_samples=1)
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    genre_centroids = _compute_catalog_genre_centroids(examples)
+
     for ex in examples:
         profile = _profile_name(ex.get("camera_profile"))
         scene_tags = ex.get("scene_tags") or ex.get("tags")
@@ -1340,6 +1341,7 @@ def group_examples_by_profile_genre(
         genre = verify_genre_with_visual_centroid(
             genre, ex.get("embedding"), genre_centroids
         )
+
         key = (profile, genre)
         groups.setdefault(key, []).append(ex)
     return groups

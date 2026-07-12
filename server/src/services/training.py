@@ -48,6 +48,11 @@ _CANONICAL_EDITING_REGIMES: dict[str, str] = {
     "scene_studio": "a commercial studio tabletop photograph of a product, food dish, lego, or toy shot against a seamless studio backdrop under artificial studio flash lighting",
     "scene_macro": "an extreme close-up macro photograph of a tiny insect, bug, beetle, spider, flower stamen, or water droplet showing high magnification detail",
     "scene_night": "an astrophotography photograph of the night sky, milky way, stars, aurora borealis, or extreme low-light night scene",
+    "scene_action": "an action, sports, or athletics photograph showing fast motion, dynamic movement, extreme sports, motorsport, aviation, or racing",
+    "scene_street": "a street photography or urban documentary photograph capturing candid moments, city life, pedestrians, or everyday urban environments",
+    "scene_event": "an event, wedding, concert, or photojournalism photograph capturing a gathering, ceremony, performance, or stage with varied or ambient lighting",
+    "scene_wildlife": "a wildlife photograph of a wild animal, bird in flight, or mammal in its natural habitat, distinct from a standard pet portrait",
+    "scene_nature": "a nature photograph focusing on detailed flora, fauna, foliage, or botanical elements that are not wide landscapes or extreme macros",
 }
 
 _AESTHETIC_PROBES: dict[str, str] = {
@@ -73,6 +78,11 @@ _REGIME_CONFIDENCE_FLOORS: dict[str, float] = {
     "scene_studio": 0.55,
     "scene_architecture": 0.55,
     "scene_night": 0.50,
+    "scene_action": 0.50,
+    "scene_street": 0.50,
+    "scene_event": 0.50,
+    "scene_wildlife": 0.50,
+    "scene_nature": 0.50,
     "scene_portrait": 0.45,
     "scene_landscape": 0.40,
 }
@@ -454,6 +464,9 @@ def histogram_distance(sig1: dict[str, Any], sig2: dict[str, Any]) -> float:
 # ---------------------------------------------------------------------------
 
 
+_cached_probe_vectors: dict[str, Any] = {}
+
+
 def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
     """Return list of scene-type tag strings present in the image.
 
@@ -490,13 +503,24 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
 
         with torch.no_grad():
             canonical_names = list(_CANONICAL_EDITING_REGIMES.keys())
-            canonical_texts = list(_CANONICAL_EDITING_REGIMES.values())
+
+            # Cache the text embeddings globally to avoid O(17N) forward passes
+            global _cached_probe_vectors
+            if not _cached_probe_vectors:
+                for name, text in _CANONICAL_EDITING_REGIMES.items():
+                    tokens = tokenize_fn([text]).to(get_torch_device())
+                    _cached_probe_vectors[name] = F.normalize(
+                        clip_model.encode_text(tokens), p=2, dim=1
+                    )
+                for name, text in _AESTHETIC_PROBES.items():
+                    tokens = tokenize_fn([text]).to(get_torch_device())
+                    _cached_probe_vectors[name] = F.normalize(
+                        clip_model.encode_text(tokens), p=2, dim=1
+                    )
 
             sims: list[float] = []
-            for probe_text in canonical_texts:
-                tokens = tokenize_fn([probe_text]).to(get_torch_device())
-                text_features = clip_model.encode_text(tokens)
-                text_vec = F.normalize(text_features, p=2, dim=1)
+            for name in canonical_names:
+                text_vec = _cached_probe_vectors[name]
                 sims.append(float((img_vec * text_vec).sum().cpu()))
 
             tau = 0.05
@@ -508,8 +532,7 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
                 key=lambda x: x[0],
                 reverse=True,
             )
-            # Walk the ranked regimes and accept the first whose probability
-            # meets its regime-specific confidence floor.
+
             chosen_regime: str | None = None
             for prob, regime in ranked:
                 floor = _REGIME_CONFIDENCE_FLOORS.get(regime, 0.45)
@@ -521,16 +544,11 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
                 [chosen_regime] if chosen_regime else ["scene_general"]
             )
 
-            for style_tag, probe_text in _AESTHETIC_PROBES.items():
-                try:
-                    tokens = tokenize_fn([probe_text]).to(get_torch_device())
-                    text_features = clip_model.encode_text(tokens)
-                    text_vec = F.normalize(text_features, p=2, dim=1)
-                    sim = float((img_vec * text_vec).sum().cpu())
-                    if sim >= _SCENE_THRESHOLD:
-                        result_tags.append(style_tag)
-                except Exception:
-                    pass
+            for style_tag in _AESTHETIC_PROBES.keys():
+                text_vec = _cached_probe_vectors[style_tag]
+                sim = float((img_vec * text_vec).sum().cpu())
+                if sim >= _SCENE_THRESHOLD:
+                    result_tags.append(style_tag)
 
             return result_tags
 
@@ -1142,6 +1160,7 @@ def list_training_examples() -> list[dict[str, Any]]:
         examples.append(
             {
                 "photo_id": pid,
+                "lr_uuid": meta.get("uuid", ""),
                 "filename": meta.get("filename", "") or "",
                 "label": meta.get("label", ""),
                 "summary": meta.get("summary", ""),

@@ -27,35 +27,14 @@ LrTasks.startAsyncTask(function()
 			return
 		end
 
-		local progressScope = LrProgressScope({
-			title = LOC("$$$/StyleAI/UpgradeAssistant/Progress=Discovering style upgrade candidates...")
-		})
-		progressScope:setIndeterminate()
-
-		local success, results = SearchIndexAPI.getUpgradeRecommendations(100)
-		progressScope:done()
-
-		if not success then
-			ErrorHandler.handleError("Failed to get style upgrade recommendations: " .. tostring(results))
-			return
-		end
-
-		local styles = (results and results.styles) or {}
-		if #styles == 0 then
-			LrDialogs.message(
-				LOC("$$$/StyleAI/UpgradeAssistant/NoStylesTitle=No Styles Needing Upgrades"),
-				LOC("$$$/StyleAI/UpgradeAssistant/NoStylesMsg=All signature styles in your database are already fully upgraded (50+ examples), or no styles were found yet. Great job!"),
-				"info"
-			)
-			return
-		end
-
 		local f = LrView.osFactory()
 		local bind = LrView.bind
 		local share = LrView.share
 		local props = LrBinding.makePropertyTable(ctx)
 
-		props.styles = styles
+		props.isLoading = false
+		props.statusMessage = ""
+		props.styles = {}
 		props.listItems = {}
 		props.selectedStyleIndex = 0
 
@@ -153,28 +132,55 @@ LrTasks.startAsyncTask(function()
 		props:addObserver("selectedStyleIndex", updateDetailView)
 		props:addObserver("styles", updateDetailView)
 
-		local items = {}
-		for i, s in ipairs(styles) do
-			local count = tonumber(s.current_count) or 0
-			local badge = "🔴 Undertrained"
-			if count >= 50 then
-				badge = "🌟 ML Predictive (Best)"
-			elseif count >= 15 then
-				badge = "⭐️ ML Predictive (Good)"
-			elseif count >= 3 then
-				badge = "🟡 Basic"
-			end
-			local recCount = #(s.recommended_photo_ids or {})
-			local label = string.format("%s • %s [%s • N=%d] (+%d recs)", s.style_name or "Unknown", s.camera_profile or "Default", badge, count, recCount)
-			table.insert(items, { title = label, value = i })
+		local function loadRecommendations()
+			LrTasks.startAsyncTask(function()
+				props.isLoading = true
+				props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/Progress=Discovering style upgrade candidates...")
+
+				local success, results = SearchIndexAPI.getUpgradeRecommendations(100)
+
+				if not success then
+					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/Error=Failed to get recommendations: ^1", tostring(results))
+					props.isLoading = false
+					return
+				end
+
+				local styles = (results and results.styles) or {}
+				if #styles == 0 then
+					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/NoStylesMsg=All signature styles in your database are already fully upgraded (50+ examples), or no styles were found yet. Great job!")
+					props.isLoading = false
+					return
+				end
+
+				props.styles = styles
+
+				local items = {}
+				for i, s in ipairs(styles) do
+					local count = tonumber(s.current_count) or 0
+					local badge = "🔴 Undertrained"
+					if count >= 50 then
+						badge = "🌟 ML Predictive (Best)"
+					elseif count >= 15 then
+						badge = "⭐️ ML Predictive (Good)"
+					elseif count >= 3 then
+						badge = "🟡 Basic"
+					end
+					local recCount = #(s.recommended_photo_ids or {})
+					local label = string.format("%s • %s [%s • N=%d] (+%d recs)", s.style_name or "Unknown", s.camera_profile or "Default", badge, count, recCount)
+					table.insert(items, { title = label, value = i })
+				end
+				props.listItems = items
+				if #items > 0 then
+					props.selectedStyleIndex = items[1].value
+				else
+					props.selectedStyleIndex = 0
+				end
+				updateDetailView()
+
+				props.isLoading = false
+				props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/Loaded=Successfully loaded recommendations.")
+			end)
 		end
-		props.listItems = items
-		if #items > 0 then
-			props.selectedStyleIndex = items[1].value
-		else
-			props.selectedStyleIndex = 0
-		end
-		updateDetailView()
 
 		local function buildDialog()
 			return f:column({
@@ -195,6 +201,7 @@ LrTasks.startAsyncTask(function()
                                 allows_multiple_selection = false,
                                 height_in_lines = 12,
                                 width = 400,
+                                enabled = LrBinding.negativeOfKey("isLoading"),
 							}),
 						}),
 						f:column({
@@ -275,7 +282,7 @@ LrTasks.startAsyncTask(function()
 					f:spacer({ height = 10 }),
 					f:push_button({
 						title = LOC("$$$/StyleAI/UpgradeAssistant/BtnFindAll=Find All & Create Collections for All Styles"),
-						enabled = bind("findAllEnabled"),
+						enabled = LrBinding.negativeOfKey("isLoading"),
 						fill_horizontal = 1,
 						action = function()
 							LrTasks.startAsyncTask(function()
@@ -298,15 +305,19 @@ LrTasks.startAsyncTask(function()
 									end
 								end
 								local batchedResults = SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, findAllProgress)
+								local stylesData = {}
 								for _, entry in ipairs(batchedResults) do
 									if #(entry.photos or {}) > 0 then
-										Util.addPhotosToUpgradeCandidatesCollection(entry.photos, entry.fullName)
+										table.insert(stylesData, { styleName = entry.fullName, photos = entry.photos })
 										totalPhotosAdded = totalPhotosAdded + #entry.photos
 										stylesProcessed = stylesProcessed + 1
-										LrTasks.yield()
-										LrTasks.sleep(0.01)
 									end
 								end
+								
+								if #stylesData > 0 then
+									Util.addMultipleUpgradePhotosToCollections(stylesData)
+								end
+								
 								findAllProgress:done()
 								if stylesProcessed > 0 then
 									LrDialogs.message(
@@ -325,9 +336,17 @@ LrTasks.startAsyncTask(function()
 							end)
 						end,
 					}),
+					f:spacer({ height = 5 }),
+					f:static_text({
+						title = bind("statusMessage"),
+						fill_horizontal = 1,
+						font = "<system/bold>"
+					}),
 				}),
 			})
 		end
+
+		loadRecommendations()
 
 		LrDialogs.presentModalDialog({
 			title = LOC("$$$/StyleAI/UpgradeAssistant/DialogTitle=ML Style Upgrade Assistant"),

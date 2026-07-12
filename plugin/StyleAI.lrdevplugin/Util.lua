@@ -1707,6 +1707,9 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions)
 	writeOptions = writeOptions or { timeout = 60 }
 	local catalog = LrApplication.activeCatalog()
 
+	local collectionsToPopulate = {}
+
+	-- Pass 1: Create all collections
 	catalog:withWriteAccessDo("Create Style Collections", function()
 		local rootSet = _getOrCreateCollectionSetNoLock(catalog, "StyleAI", nil)
 		if not rootSet then return end
@@ -1721,7 +1724,7 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions)
 				if profileSet then
 					local collection = _getOrCreateCollectionNoLock(catalog, styleName, profileSet)
 					if collection then
-						collection:addPhotos(data.photos)
+						table.insert(collectionsToPopulate, { collection = collection, photos = data.photos })
 					end
 				end
 			end
@@ -1730,34 +1733,62 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions)
 	LrTasks.yield()
 	LrTasks.sleep(0.05)
 
-	return true
-end
-
-function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOptions)
-	if type(photos) ~= "table" or #photos == 0 then
-		return nil
-	end
-	writeOptions = writeOptions or { timeout = 60 }
-	local catalog = LrApplication.activeCatalog()
-	
-	local rootSet = getOrCreateCollectionSet(catalog, "StyleAI", nil, writeOptions)
-	if not rootSet then return nil end
-	
-	local recSet = getOrCreateCollectionSet(catalog, "Training Recommendations", rootSet, writeOptions)
-	if not recSet then return nil end
-
-	local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName or "Style")
-	local collection = getOrCreateCollection(catalog, collName, recSet, writeOptions)
-
-	if collection then
-		catalog:withWriteAccessDo("Add photos to " .. collName, function()
-			collection:addPhotos(photos)
+	-- Pass 2: Add photos to collections
+	if #collectionsToPopulate > 0 then
+		catalog:withWriteAccessDo("Populate Style Collections", function()
+			for _, item in ipairs(collectionsToPopulate) do
+				item.collection:addPhotos(item.photos)
+			end
 		end, writeOptions)
 		LrTasks.yield()
 		LrTasks.sleep(0.05)
 	end
 
-	return collection
+	return true
+end
+
+function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions)
+	if type(stylesData) ~= "table" or #stylesData == 0 then
+		return false
+	end
+	writeOptions = writeOptions or { timeout = 60 }
+	local catalog = LrApplication.activeCatalog()
+
+	local collectionsToPopulate = {}
+
+	-- Pass 1: Create all collections
+	catalog:withWriteAccessDo("Create Upgrade Collections", function()
+		local rootSet = _getOrCreateCollectionSetNoLock(catalog, "StyleAI", nil)
+		if not rootSet then return end
+		local recSet = _getOrCreateCollectionSetNoLock(catalog, "Training Recommendations", rootSet)
+		if not recSet then return end
+
+		for _, data in ipairs(stylesData) do
+			if data.photos and #data.photos > 0 then
+				local styleName = data.styleName or "Style"
+				local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName)
+				local collection = _getOrCreateCollectionNoLock(catalog, collName, recSet)
+				if collection then
+					table.insert(collectionsToPopulate, { collection = collection, photos = data.photos })
+				end
+			end
+		end
+	end, writeOptions)
+	LrTasks.yield()
+	LrTasks.sleep(0.05)
+
+	-- Pass 2: Add photos to collections
+	if #collectionsToPopulate > 0 then
+		catalog:withWriteAccessDo("Populate Upgrade Collections", function()
+			for _, item in ipairs(collectionsToPopulate) do
+				item.collection:addPhotos(item.photos)
+			end
+		end, writeOptions)
+		LrTasks.yield()
+		LrTasks.sleep(0.05)
+	end
+
+	return true
 end
 
 function Util.addPhotosToTrainedStylesCollection(photos, profileName, styleName, writeOptions)

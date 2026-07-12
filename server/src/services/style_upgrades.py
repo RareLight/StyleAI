@@ -582,6 +582,12 @@ def get_style_upgrade_recommendations(
 
             already_recommended_pids.update(recommended_ids)
 
+        meta_map = {pid: meta for pid, meta in prelim_candidates_tuples}
+        recommended_objects = [
+            {"globalPhotoId": pid, "lr_uuid": meta_map.get(pid, {}).get("uuid", "")}
+            for pid in recommended_ids
+        ]
+
         results_list.append(
             {
                 "style_id": style_id,
@@ -591,7 +597,7 @@ def get_style_upgrade_recommendations(
                 "current_count": current_count,
                 "target_tier": target_tier,
                 "needed_count": needed_count,
-                "recommended_photo_ids": recommended_ids,
+                "recommended_photo_ids": recommended_objects,
                 "is_highest_tier": is_highest_tier,
             }
         )
