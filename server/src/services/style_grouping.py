@@ -505,15 +505,54 @@ def _extract_keyword_strings(val: Any) -> list[str]:
     return words
 
 
+def _parse_shutter_seconds(val: Any) -> float:
+    if val is None or val == "":
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = (
+        str(val)
+        .lower()
+        .replace("sec", "")
+        .replace("seconds", "")
+        .replace("s", "")
+        .strip()
+    )
+    if "/" in s:
+        parts = s.split("/")
+        try:
+            num, den = float(parts[0].strip()), float(parts[1].strip())
+            return num / den if den != 0 else 0.0
+        except (ValueError, ZeroDivisionError):
+            return 0.0
+    try:
+        match = re.search(r"[-+]?\d*\.?\d+", s)
+        return float(match.group(0)) if match else 0.0
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _parse_exif_float(val: Any) -> float:
+    if val is None or val == "":
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    match = re.search(r"[-+]?\d*\.?\d+", str(val))
+    try:
+        return float(match.group(0)) if match else 0.0
+    except (ValueError, TypeError):
+        return 0.0
+
+
 def _evaluate_exif_priors(exif_metadata: dict[str, Any] | None) -> dict[str, float]:
     """Evaluate EXIF metadata as Bayesian prior evidence weights (not hard overrides)."""
     priors: dict[str, float] = {}
     if not exif_metadata or not isinstance(exif_metadata, dict):
         return priors
 
-    shutter = float(exif_metadata.get("shutter_speed") or 0.0)
-    iso = float(exif_metadata.get("iso") or 0.0)
-    focal = float(exif_metadata.get("focal_length") or 0.0)
+    shutter = _parse_shutter_seconds(exif_metadata.get("shutter_speed"))
+    iso = _parse_exif_float(exif_metadata.get("iso"))
+    focal = _parse_exif_float(exif_metadata.get("focal_length"))
     lens = str(exif_metadata.get("lens") or "").lower()
     flash = bool(exif_metadata.get("flash"))
 

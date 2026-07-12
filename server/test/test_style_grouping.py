@@ -505,3 +505,14 @@ def test_group_examples_by_profile_genre_uses_exif_priors():
     ]
     groups = sg.group_examples_by_profile_genre(examples)
     assert ("Adobe Standard", "scene_night") in groups
+
+
+def test_parse_exif_string_values():
+    assert sg._parse_shutter_seconds("1/200 sec") == 0.005
+    assert sg._parse_shutter_seconds("15 sec") == 15.0
+    assert sg._parse_exif_float("ISO 6400") == 6400.0
+    assert sg._parse_exif_float("85 mm") == 85.0
+    priors = sg._evaluate_exif_priors(
+        {"shutter_speed": "15 sec", "iso": "ISO 6400", "focal_length": "85 mm"}
+    )
+    assert priors.get("scene_night", 0.0) >= 0.4
