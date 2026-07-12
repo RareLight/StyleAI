@@ -1622,18 +1622,9 @@ end
 -- @param styleName string Name of the style (e.g. "Landscape • Nikon Z7 AgX")
 -- @param writeOptions table Optional table passed to withWriteAccessDo (e.g. { timeout = 60 })
 -- @return LrCollection or nil
-function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOptions)
-	if type(photos) ~= "table" or #photos == 0 then
-		return nil
-	end
-	writeOptions = writeOptions or { timeout = 60 }
-	local catalog = LrApplication.activeCatalog()
-	local setName = LOC("$$$/StyleAI/UpgradeAssistant/CollectionSetName=StyleAI")
-	local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName or "Style")
-
-	-- Step 1: Read — look for existing set
+local function getOrCreateCollectionSet(catalog, setName, parentSet, writeOptions)
 	local collectionSet
-	local children = catalog:getChildCollections()
+	local children = parentSet and parentSet:getChildCollections() or catalog:getChildCollections()
 	if children then
 		for _, child in ipairs(children) do
 			if child:type() == "LrCollectionSet" and child:getName() == setName then
@@ -1643,22 +1634,19 @@ function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOpt
 		end
 	end
 
-	-- Step 2: Write — create set if it doesn't exist
 	if not collectionSet then
-		catalog:withWriteAccessDo(string.format(LOC("$$$/StyleAI/UpgradeAssistant/CreateCollectionFmt=Create %s"), collName), function()
-			collectionSet = catalog:createCollectionSet(setName, nil, true)
+		catalog:withWriteAccessDo("Create Collection Set " .. setName, function()
+			collectionSet = catalog:createCollectionSet(setName, parentSet, true)
 		end, writeOptions)
 		LrTasks.yield()
 		LrTasks.sleep(0.05)
 	end
+	return collectionSet
+end
 
-	if not collectionSet then
-		return nil
-	end
-
-	-- Step 3: Read — look for existing collection inside the set
+local function getOrCreateCollection(catalog, collName, parentSet, writeOptions)
 	local collection
-	local collChildren = collectionSet:getChildCollections()
+	local collChildren = parentSet:getChildCollections()
 	if collChildren then
 		for _, c in ipairs(collChildren) do
 			if c:type() == "LrCollection" and c:getName() == collName then
@@ -1668,28 +1656,66 @@ function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOpt
 		end
 	end
 
-	-- Step 4: Write — create collection if it doesn't exist
 	if not collection then
-		catalog:withWriteAccessDo(string.format(LOC("$$$/StyleAI/UpgradeAssistant/CreateCollectionFmt=Create %s"), collName), function()
-			collection = catalog:createCollection(collName, collectionSet, false)
+		catalog:withWriteAccessDo("Create Collection " .. collName, function()
+			collection = catalog:createCollection(collName, parentSet, false)
+		end, writeOptions)
+		LrTasks.yield()
+		LrTasks.sleep(0.05)
+	end
+	return collection
+end
+
+function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOptions)
+	if type(photos) ~= "table" or #photos == 0 then
+		return nil
+	end
+	writeOptions = writeOptions or { timeout = 60 }
+	local catalog = LrApplication.activeCatalog()
+	
+	local rootSet = getOrCreateCollectionSet(catalog, "StyleAI", nil, writeOptions)
+	if not rootSet then return nil end
+	
+	local recSet = getOrCreateCollectionSet(catalog, "Training Recommendations", rootSet, writeOptions)
+	if not recSet then return nil end
+
+	local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName or "Style")
+	local collection = getOrCreateCollection(catalog, collName, recSet, writeOptions)
+
+	if collection then
+		catalog:withWriteAccessDo("Add photos to " .. collName, function()
+			collection:addPhotos(photos)
 		end, writeOptions)
 		LrTasks.yield()
 		LrTasks.sleep(0.05)
 	end
 
-	-- Step 5: Write — add photos to the collection
-	local done = false
-	if collection then
-		catalog:withWriteAccessDo(string.format(LOC("$$$/StyleAI/UpgradeAssistant/AddToCollectionFmt=Add to %s"), collName), function()
-			collection:addPhotos(photos)
-			done = true
-		end, writeOptions)
-	else
-		done = true
-	end
+	return collection
+end
 
-	local startTime = LrDate.currentTime()
-	while not done and (LrDate.currentTime() - startTime) < 10.0 do
+function Util.addPhotosToTrainedStylesCollection(photos, profileName, styleName, writeOptions)
+	if type(photos) ~= "table" or #photos == 0 then
+		return nil
+	end
+	writeOptions = writeOptions or { timeout = 60 }
+	local catalog = LrApplication.activeCatalog()
+	
+	local rootSet = getOrCreateCollectionSet(catalog, "StyleAI", nil, writeOptions)
+	if not rootSet then return nil end
+	
+	local trainedSet = getOrCreateCollectionSet(catalog, "Trained Styles", rootSet, writeOptions)
+	if not trainedSet then return nil end
+	
+	local profileSet = getOrCreateCollectionSet(catalog, profileName or "Unknown Profile", trainedSet, writeOptions)
+	if not profileSet then return nil end
+
+	local collection = getOrCreateCollection(catalog, styleName or "Unknown Style", profileSet, writeOptions)
+
+	if collection then
+		catalog:withWriteAccessDo("Add photos to " .. styleName, function()
+			collection:addPhotos(photos)
+		end, writeOptions)
+		LrTasks.yield()
 		LrTasks.sleep(0.05)
 	end
 

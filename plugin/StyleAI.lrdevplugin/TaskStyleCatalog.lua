@@ -320,51 +320,95 @@ LrTasks.startAsyncTask(function()
 			end)
 		end
 
-		-- Export styles to file as Presets ZIP
-		local function exportStyles()
+		-- Show Photos for a specific style
+		local function showPhotos()
+			local rawIdx = props.selectedStyleIndex
+			local idx = tonumber(rawIdx)
+			if type(rawIdx) == "table" then
+				if rawIdx.value then idx = tonumber(rawIdx.value)
+				elseif rawIdx[1] ~= nil then idx = tonumber(rawIdx[1]) end
+			end
+			if not idx or idx < 1 or not props.styles or idx > #props.styles then return end
+			local s = props.styles[idx]
+
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportingPresets=Exporting presets...")
+			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/LoadingPhotos=Loading trained photos...")
 
 			LrTasks.startAsyncTask(function()
-				local success, data = SearchIndexAPI.exportPresets()
+				local success, details = SearchIndexAPI.getStyleDetails(s.style_id)
 				if not success then
-					props.statusMessage = LOC(
-						"$$$/StyleAI/StyleCatalog/ExportError=Export failed: ^1",
-						tostring(data)
-					)
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/LoadingError=Failed to load style details.")
 					props.isLoading = false
 					return
 				end
 
-				local catalog = LrApplication.activeCatalog()
-				local catalogPath = catalog:getPath()
-				local catalogDir = LrPathUtils.parent(catalogPath)
-
-				local path = LrDialogs.runSavePanel({
-					title = LOC("$$$/StyleAI/StyleCatalog/ExportDialogTitle=Export Signature Style Presets"),
-					prompt = LOC("$$$/StyleAI/StyleCatalog/ExportDialogPrompt=Save ZIP"),
-					requiredFileType = "zip",
-					initialDirectory = catalogDir,
-					initialFilename = "SignatureStyles_Presets.zip",
-				})
-
-				if path then
-					local file = io.open(path, "wb")
-					if file then
-						file:write(data)
-						file:close()
-						props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportSuccess=Presets exported successfully!")
-						LrDialogs.message(
-							LOC("$$$/StyleAI/StyleCatalog/ExportSuccessTitle=Export Successful"),
-							LOC("$$$/StyleAI/StyleCatalog/ExportSuccessMsg=Your presets have been saved to the ZIP file. Unzip them and import them into Lightroom Classic's Presets panel."),
-							"info"
-						)
-					else
-						props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportFileError=Failed to open file for writing.")
-					end
-				else
-					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ExportCancelled=Export cancelled.")
+				if not details.example_photo_ids or #details.example_photo_ids == 0 then
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/NoPhotos=No trained photos found.")
+					props.isLoading = false
+					return
 				end
+
+				local selectProgress = LrProgressScope({ title = LOC("$$$/StyleAI/StyleCatalog/SelectingProgress=Selecting photos in Lightroom Library...") })
+				local photos = SearchIndexAPI.findPhotosByPhotoIds(details.example_photo_ids, selectProgress)
+				selectProgress:done()
+
+				if #photos > 0 then
+					local coll = Util.addPhotosToTrainedStylesCollection(photos, details.camera_profile, details.style_name)
+					LrTasks.pcall(function() LrApplicationView.switchToModule("library") end)
+					LrTasks.yield()
+					LrTasks.sleep(0.2)
+					if coll then
+						LrTasks.pcall(function()
+							local catalog = LrApplication.activeCatalog()
+							catalog:setActiveSources({ coll })
+							LrTasks.sleep(0.15)
+							catalog:setSelectedPhotos(photos[1], photos)
+						end)
+					end
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/PhotosShown=Photos added to collection and selected.")
+					LrDialogs.stopModalWithResult(ctx, "ok")
+				else
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/PhotosNotFound=Photos could not be found in catalog.")
+				end
+				props.isLoading = false
+			end)
+		end
+
+		-- Show All Trained Photos
+		local function showAllPhotos()
+			props.isLoading = true
+			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/LoadingAllPhotos=Loading all trained photos...")
+
+			LrTasks.startAsyncTask(function()
+				local success, styles = SearchIndexAPI.getAllStylesWithExamples()
+				if not success then
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/LoadingAllError=Failed to load styles.")
+					props.isLoading = false
+					return
+				end
+
+				local findAllProgress = LrProgressScope({ title = LOC("$$$/StyleAI/StyleCatalog/FindAllProgress=Creating collections for all trained styles...") })
+				local totalPhotos = 0
+				local totalStyles = 0
+				
+				for _, style in ipairs(styles) do
+					if style.example_photo_ids and #style.example_photo_ids > 0 then
+						local photos = SearchIndexAPI.findPhotosByPhotoIds(style.example_photo_ids, nil)
+						if #photos > 0 then
+							Util.addPhotosToTrainedStylesCollection(photos, style.camera_profile, style.style_name)
+							totalPhotos = totalPhotos + #photos
+							totalStyles = totalStyles + 1
+						end
+					end
+				end
+				findAllProgress:done()
+
+				props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/AllPhotosShown=Created collections for all trained photos.")
+				LrDialogs.message(
+					LOC("$$$/StyleAI/StyleCatalog/FindAllComplete=Collections Created"),
+					string.format(LOC("$$$/StyleAI/StyleCatalog/FindAllCompleteMsg=Created collections for %d styles and added %d total photos under 'StyleAI -> Trained Styles'."), totalStyles, totalPhotos),
+					"info"
+				)
 				props.isLoading = false
 			end)
 		end
@@ -405,8 +449,17 @@ LrTasks.startAsyncTask(function()
 						}),
 					}),
 					f:push_button({
-						title = LOC("$$$/StyleAI/StyleCatalog/Export=Export"),
-						action = exportStyles,
+						title = LOC("$$$/StyleAI/StyleCatalog/ShowPhotos=Show Photos"),
+						action = showPhotos,
+						width = share("toolbarButton"),
+						enabled = bind({
+							key = "isLoading",
+							transform = function(v) return not v end,
+						}),
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/StyleCatalog/ShowAllPhotos=Show All Photos"),
+						action = showAllPhotos,
 						width = share("toolbarButton"),
 						enabled = bind({
 							key = "isLoading",

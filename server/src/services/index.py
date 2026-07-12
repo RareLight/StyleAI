@@ -24,6 +24,8 @@ import io
 import numpy as np
 import torch
 from concurrent.futures import ThreadPoolExecutor
+import threading
+import queue
 
 
 def _flatten_keywords(keywords):
@@ -660,3 +662,69 @@ def process_image_task(
                     pass
 
         gc.collect()
+
+
+# Dynamic Batching Queue
+index_queue = queue.Queue()
+
+
+def _dynamic_gpu_worker():
+    """
+    Background daemon thread that dynamically batches incoming images and runs GPU inference.
+    Pulls up to 32 images at a time from the queue.
+    """
+    logger.info("Starting dynamic GPU batching worker thread...")
+    while True:
+        try:
+            # Block until at least one image is ready
+            first_item = index_queue.get(timeout=1.0)
+        except queue.Empty:
+            continue
+
+        # If we got a cancellation signal, ignore it and continue
+        if first_item is None:
+            index_queue.task_done()
+            continue
+
+        batch = [first_item]
+        # Pull up to 31 more images if available instantly
+        while len(batch) < 32:
+            try:
+                item = index_queue.get_nowait()
+                if item is not None:
+                    batch.append(item)
+                else:
+                    index_queue.task_done()
+            except queue.Empty:
+                break
+
+        logger.info(f"GPU Worker assembled dynamic batch of {len(batch)} images")
+
+        # Reshape for process_image_task
+        image_triplets = []
+        options = []
+        for item in batch:
+            image_triplets.append(
+                (
+                    item["image_bytes"],
+                    item["uuid"],
+                    item["filename"],
+                    item.get("lr_uuid"),
+                )
+            )
+            options.append(item["options"])
+
+        try:
+            success, fail, errs, warns = process_image_task(image_triplets, options)
+            logger.info(f"Dynamic batch processed. Success: {success}, Fail: {fail}")
+        except Exception as e:
+            logger.error(f"Error in dynamic GPU batch processing: {e}", exc_info=True)
+
+        for _ in range(len(batch)):
+            index_queue.task_done()
+
+
+# Start the daemon thread immediately
+threading.Thread(
+    target=_dynamic_gpu_worker, daemon=True, name="DynamicGPUWorker"
+).start()
