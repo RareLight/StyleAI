@@ -841,6 +841,59 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
     return false, "Unexpected response status"
 end
 
+function SearchIndexAPI.enqueuePhotoBase64(item, globalOptions)
+    local url = getBaseUrl() .. "/index_queue"
+    local prefs = LrPrefs.prefsForPlugin()
+
+    local bodyOptions = {
+        regenerate_metadata = tostring(globalOptions.regenerate_metadata ~= false),
+        cache_images = globalOptions.cache_images == true
+    }
+
+    local itemOptions = item.options or {}
+    local encodedItemOptions = {
+        submit_gps = tostring(itemOptions.submit_gps or false),
+        submit_keywords = tostring(itemOptions.submit_keywords or false),
+        submit_folder_names = tostring(itemOptions.submit_folder_names or false),
+        gps_coordinates = itemOptions.gps_coordinates and JSON:encode(itemOptions.gps_coordinates) or nil,
+        existing_keywords = itemOptions.existing_keywords and JSON:encode(itemOptions.existing_keywords) or nil,
+        folder_names = itemOptions.folder_names,
+        user_context = itemOptions.user_context,
+        date_time = itemOptions.date_time,
+        date_time_unix = itemOptions.date_time_unix,
+    }
+
+    local bodyImages = {
+        {
+            image = item.image,
+            photo_id = item.photo_id,
+            lr_uuid = item.lr_uuid,
+            filename = item.filename or "photo.jpg",
+            options = encodedItemOptions
+        }
+    }
+
+    local body = {
+        images = bodyImages,
+        options = bodyOptions
+    }
+
+    local response, err = _request('POST', url, body, 15) -- Short timeout, just enqueueing
+
+    if not response then
+        log:error("Failed to enqueue photo: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+
+    if response.status == "accepted" then
+        return true, response
+    else
+        log:error("Unexpected enqueue response status: " .. tostring(response.status))
+        return false, response.error or "Enqueue failed"
+    end
+end
+
+
 ---
 -- Calls the /metadata/generate endpoint for a single photo.
 -- Designed for Stage 2 of the decoupled pipeline. 
@@ -1575,10 +1628,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         return data
     end
 
-    local preparedQueue = {}
-    local preparationDone = false
-    local activeSenderWorkers = 0
-
+        local preparationDone = false
+    
     local batchRawMetaMap = {}
     if catalog and catalog.batchGetRawMetadata then
         LrTasks.pcall(function()
@@ -1594,16 +1645,11 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     local analyzeWorker = function()
         local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
-        local maxQueueCapacity = maxSenderWorkers * batchSize * 2
-        while #photoToProcessStack > 0 do
+                while #photoToProcessStack > 0 do
             if progressScope:isCanceled() then break end
             if not keepRunning then break end
 
-            if #preparedQueue >= maxQueueCapacity then
-                LrTasks.yield()
-                LrTasks.sleep(0.1)
-            else
-                local photo = table.remove(photoToProcessStack)
+                            local photo = table.remove(photoToProcessStack)
                 if photo then
                     local filename = photo:getFormattedMetadata("fileName")
                     local hashStart = LrDate.currentTime()
@@ -1725,133 +1771,21 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                         if jpegData and #jpegData > 0 then
                             local base64Image = LrStringUtils.encodeBase64(jpegData)
                             local lrUuid = photo:getRawMetadata("uuid")
-                            table.insert(preparedQueue, {
-                                type = "item",
+                            local item = {
                                 photo_id = photoId,
                                 lr_uuid = lrUuid,
                                 image = base64Image,
                                 filename = leafName,
                                 options = photoOptions,
                                 photo = photo
-                            })
-                        else
-                            table.insert(preparedQueue, {
-                                type = "error",
-                                filename = filename,
-                                errorMsg = "Could not obtain image data (preview or export failed)",
-                                photo = photo
-                            })
-                        end
-                    else
-                        table.insert(preparedQueue, {
-                            type = "error",
-                            filename = filename,
-                            errorMsg = "Could not compute photo ID: " .. tostring(photoIdErr),
-                            photo = photo
-                        })
-                    end
-                else
-                    log:error("Photo is nil in analyze worker, probably it got deleted in the meantime.")
-                end
-            end
-        end
-        activeWorkers = activeWorkers - 1
-        log:trace("Analyze worker thread finished. activeWorkers=" .. tostring(activeWorkers))
-        if activeWorkers == 0 then
-            preparationDone = true
-        end
-    end
+                            }
 
-    local senderWorker = function()
-        activeSenderWorkers = activeSenderWorkers + 1
-        local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
-        
-        while keepRunning and not progressScope:isCanceled() do
-            if #preparedQueue == 0 then
-                if preparationDone then
-                    break
-                else
-                    LrTasks.yield()
-                    LrTasks.sleep(0.1)
-                end
-            elseif #preparedQueue < batchSize and not preparationDone then
-                LrTasks.yield()
-                LrTasks.sleep(0.1)
-            else
-                local batchItemsToSend = {}
-                local localFailures = {}
-                local subBatchPhotos = {}
-
-                while #batchItemsToSend + #localFailures < batchSize and #preparedQueue > 0 do
-                    local item = table.remove(preparedQueue)
-                    if item.type == "item" then
-                        table.insert(batchItemsToSend, item)
-                        table.insert(subBatchPhotos, item.photo)
-                    elseif item.type == "error" then
-                        table.insert(localFailures, item)
-                        table.insert(subBatchPhotos, item.photo)
-                    end
-                end
-
-                if #localFailures > 0 then
-                    for _, failItem in ipairs(localFailures) do
-                        stats.failed = stats.failed + 1
-                        stats.processed = stats.processed + 1
-                        table.insert(errorMessages, failItem.errorMsg)
-                        log:error("Failed to prepare photo: " .. failItem.filename .. " Error: " .. failItem.errorMsg)
-                    end
-                end
-
-                if #batchItemsToSend > 0 then
-                    local sendToLlmQueue = {}
-
-                    if enableEmbeddings then
-                        options.cache_images = enableMetadata
-                        local success, indexResponse = SearchIndexAPI.analyzeAndIndexPhotosBatch(batchItemsToSend, options)
-
-                        if success then
-                            local failedFilenames = {}
-                            if indexResponse and indexResponse.error_messages then
-                                for _, msg in ipairs(indexResponse.error_messages) do
-                                    local colonIdx = string.find(msg, ":")
-                                    if colonIdx then
-                                        local fname = string.sub(msg, 1, colonIdx - 1)
-                                        fname = string.gsub(fname, "^%s*(.-)%s*$", "%1") -- trim spaces
-                                        failedFilenames[fname] = msg
-                                    end
-                                end
-                            end
-
-                            if indexResponse and indexResponse.warnings and #indexResponse.warnings > 0 then
-                                for _, w in ipairs(indexResponse.warnings) do
-                                    table.insert(warningsList, w)
-                                end
-                            end
-
-                            local catalog = LrApplication.activeCatalog()
-                            catalog:withPrivateWriteAccessDo(function()
-                                for _, item in ipairs(batchItemsToSend) do
-                                    if item.metadataToCache and item.photo then
-                                        item.photo:setPropertyForPlugin(_PLUGIN, "globalPhotoId", item.photo_id)
-                                        item.photo:setPropertyForPlugin(_PLUGIN, "globalPhotoIdFileSize", tostring(item.metadataToCache.fileSize or ""))
-                                        item.photo:setPropertyForPlugin(
-                                            _PLUGIN,
-                                            "globalPhotoIdFileModificationDate",
-                                            tostring(item.metadataToCache.fileModificationDate or "")
-                                        )
-                                        item.photo:setPropertyForPlugin(_PLUGIN, "globalPhotoIdAlgorithm", tostring(item.metadataToCache.algorithm or "meta1"))
-                                    end
-                                end
-                            end, { timeout = 15 })
-
-                            for _, item in ipairs(batchItemsToSend) do
-                                local filename = item.photo:getFormattedMetadata("fileName")
-                                local leafName = LrPathUtils.leafName(filename or "photo.jpg")
-                                local batchErr = failedFilenames[leafName] or failedFilenames[filename]
-
-                                if not batchErr then
+                            if enableEmbeddings then
+                                options.cache_images = enableMetadata
+                                local success, err = SearchIndexAPI.enqueuePhotoBase64(item, options)
+                                if success then
                                     if enableMetadata then
-                                        item.image = nil -- Cleared because it is cached on server
+                                        item.image = nil
                                         table.insert(sendToLlmQueue, item)
                                     else
                                         stats.processed = stats.processed + 1
@@ -1860,67 +1794,58 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                                         if options.onPhotoAnalyzed then
                                             LrTasks.yield()
                                             LrTasks.sleep(0.01)
-                                            local okCb, cbErr = LrTasks.pcall(function()
+                                            LrTasks.pcall(function()
                                                 options.onPhotoAnalyzed(item.photo, item.photo_id, progressScope)
                                             end)
-                                            if not okCb then
-                                                log:error("onPhotoAnalyzed callback failed for " .. filename .. ": " .. tostring(cbErr))
-                                                stats.success = stats.success - 1
-                                                stats.failed = stats.failed + 1
-                                                table.insert(errorMessages, filename .. ": Failed to save metadata (" .. tostring(cbErr) .. ")")
-                                            end
                                         end
+                                    end
+                                    
+                                    if not enableMetadata then
+                                        progressScope:setPortionComplete(stats.processed, numPhotos)
+                                        progressScope:setCaption(
+                                            LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
+                                                stats.success, numPhotos, stats.failed)
+                                        )
                                     end
                                 else
                                     stats.failed = stats.failed + 1
                                     stats.processed = stats.processed + 1
-                                    table.insert(errorMessages, batchErr)
-                                    table.insert(processedPhotos, item.photo)
-                                    log:error("Failed to analyze/index photo (batch): " .. filename .. " Error: " .. batchErr)
+                                    table.insert(errorMessages, tostring(err))
+                                    log:error("Failed to enqueue photo: " .. leafName .. " Error: " .. tostring(err))
                                 end
+                            else
+                                table.insert(sendToLlmQueue, item)
                             end
                         else
-                            -- Entire batch request failed
-                            for _, item in ipairs(batchItemsToSend) do
-                                local filename = item.photo:getFormattedMetadata("fileName")
-                                stats.processed = stats.processed + 1
-                                stats.failed = stats.failed + 1
-                                table.insert(processedPhotos, item.photo)
-                                local errText = tostring(indexResponse or "Batch request failed")
-                                table.insert(errorMessages, errText)
-                                log:error("Failed to analyze/index photo (batch request failed): " .. filename .. " Error: " .. errText)
-                            end
+                            stats.failed = stats.failed + 1
+                            stats.processed = stats.processed + 1
+                            table.insert(errorMessages, filename .. ": Could not obtain image data (preview or export failed)")
+                            log:error("Failed to extract JPEG: " .. filename)
                         end
                     else
-                        -- Skip Stage 1, go straight to Stage 2
-                        for _, item in ipairs(batchItemsToSend) do
-                            table.insert(sendToLlmQueue, item)
-                        end
+                        stats.failed = stats.failed + 1
+                        stats.processed = stats.processed + 1
+                        table.insert(errorMessages, filename .. ": Could not compute photo ID: " .. tostring(photoIdErr))
+                        log:error("Could not compute photo ID: " .. tostring(photoIdErr))
                     end
-
-                    for _, item in ipairs(sendToLlmQueue) do
-                        table.insert(llmQueue, item)
-                    end
-                end
-
-                if not enableMetadata then
-                    progressScope:setPortionComplete(stats.processed, numPhotos)
-                    progressScope:setCaption(
-                        LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
-                            stats.success, numPhotos, stats.failed)
-                    )
+                else
+                    log:error("Photo is nil in analyze worker, probably it got deleted in the meantime.")
                 end
             end
+        activeWorkers = activeWorkers - 1
+        log:trace("Analyze worker thread finished. activeWorkers=" .. tostring(activeWorkers))
+        if activeWorkers == 0 then
+            preparationDone = true
         end
-        activeSenderWorkers = activeSenderWorkers - 1
-        log:trace("Sender worker thread finished.")
     end
+
+    
 
     local llmWorker = function()
         activeLlmWorkers = activeLlmWorkers + 1
         while keepRunning and not progressScope:isCanceled() do
             if #llmQueue == 0 then
-                if activeSenderWorkers == 0 and preparationDone then
+                if preparationDone then
                     break
                 else
                     LrTasks.yield()
@@ -3702,26 +3627,36 @@ function SearchIndexAPI.exportStyles()
 end
 
 ---
--- Export the style catalog as a Lightroom Classic Presets .zip file.
--- @return boolean success, string zipData or error message
+-- Get details for a specific style including its trained photos.
+-- @param styleId string The style ID.
+-- @return boolean success, table style details or error message
 ---
-function SearchIndexAPI.exportPresets()
-    local url = getBaseUrl() .. "/styles/export-presets"
-    -- 60s timeout, raw=true to receive binary zip without JSON decoding
-    local responseBody, hdrs = _request('GET', url, {}, 60, { raw = true })
-    if not responseBody then
-        return false, hdrs or "Unknown error downloading presets"
+function SearchIndexAPI.getStyleDetails(styleId)
+    local url = getBaseUrl() .. "/styles/" .. tostring(styleId)
+    local response, err = _request('GET', url, {}, 30)
+    if not response then
+        return false, err or "Unknown error"
     end
-    
-    -- Check if it looks like a JSON error instead of a zip file
-    if type(responseBody) == "string" and responseBody:match("^%s*{") then
-        local ok, errJson = pcall(JSON.decode, responseBody)
-        if ok and errJson and errJson.error then
-            return false, errJson.error
-        end
+    if response.status == "ok" and response.style then
+        return true, response.style
     end
-    
-    return true, responseBody
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- Get all styles with their associated photo IDs attached.
+-- @return boolean success, table styles list or error message
+---
+function SearchIndexAPI.getAllStylesWithExamples()
+    local url = getBaseUrl() .. "/styles/all_examples"
+    local response, err = _request('GET', url, {}, 60)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" and response.styles then
+        return true, response.styles
+    end
+    return false, response.error or "Unexpected response"
 end
 
 ---

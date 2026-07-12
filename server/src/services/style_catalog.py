@@ -234,6 +234,26 @@ def list_styles() -> list[dict[str, Any]]:
     return results
 
 
+def get_all_styles_with_examples() -> list[dict[str, Any]]:
+    """Return all styles with their associated example_photo_ids attached."""
+    styles = list_styles()
+    conn = _ensure_initialized()
+    rows = conn.execute("SELECT style_id, photo_id FROM style_examples").fetchall()
+
+    # Group photo_ids by style_id
+    examples_map = {}
+    for r in rows:
+        sid = r["style_id"]
+        if sid not in examples_map:
+            examples_map[sid] = []
+        examples_map[sid].append(r["photo_id"])
+
+    for s in styles:
+        s["example_photo_ids"] = examples_map.get(s["style_id"], [])
+
+    return styles
+
+
 def get_style_examples(style_id: str) -> list[dict[str, Any]]:
     """Return the full training-example dicts linked to a style."""
     conn = _ensure_initialized()

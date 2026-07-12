@@ -601,3 +601,56 @@ def check_unprocessed():
         f"check-unprocessed: {len(needing)} of {len(photo_ids)} photos need processing"
     )
     return jsonify({"photo_ids": needing, "uuids": needing}), 200
+
+
+@index_bp.route("/index_queue", methods=["POST"])
+def enqueue_photo():
+    """
+    Accepts a single base64 encoded image (or small batch) and places it into the asynchronous
+    GPU dynamic batching queue. Returns 202 Accepted immediately so Lightroom doesn't block.
+    """
+    data = request.get_json(silent=True) or {}
+    images_data = data.get("images", [])
+    global_options = data.get("options", {})
+
+    from services.index import index_queue
+
+    enqueued = 0
+    for item in images_data:
+        image_base64 = item.get("image")
+        photo_id = item.get("photo_id") or item.get("uuid")
+        lr_uuid = item.get("lr_uuid")
+        filename = item.get("filename")
+
+        if not image_base64 or not photo_id or not filename:
+            continue
+
+        try:
+            merged_options = dict(global_options)
+            merged_options.update(item.get("options", {}))
+            photo_options = _extract_options(merged_options)
+            photo_options["photo_id"] = photo_id
+
+            import base64
+
+            image_bytes = base64.b64decode(image_base64.encode("ascii"))
+
+            cache_images = global_options.get("cache_images", False)
+            if cache_images:
+                from services import image_cache
+
+                image_cache.store_image(photo_id, image_bytes)
+
+            queue_item = {
+                "image_bytes": image_bytes,
+                "uuid": photo_id,
+                "filename": filename,
+                "lr_uuid": lr_uuid,
+                "options": photo_options,
+            }
+            index_queue.put(queue_item)
+            enqueued += 1
+        except Exception as e:
+            logger.error(f"Error enqueueing image: {e}")
+
+    return jsonify({"status": "accepted", "enqueued": enqueued}), 202
