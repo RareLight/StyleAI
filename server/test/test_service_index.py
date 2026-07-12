@@ -156,6 +156,27 @@ class TestProcessImageTask(unittest.TestCase):
         self.assertEqual(errors, [])
         mock_chroma.add_image.assert_called_once()
 
+    @patch("services.index.chroma_service")
+    def test_process_image_task_string_booleans(self, mock_chroma):
+        # When regenerate_metadata is passed as string 'false', it should not regenerate existing images
+        mock_chroma.collection.get.return_value = {
+            "ids": ["uuid-1"],
+            "metadatas": [{"has_embedding": True, "title": "Existing Title"}],
+        }
+        image_bytes = make_dummy_jpeg(300, 300)
+        triplets = [(image_bytes, "uuid-1", "test.jpg", "lr-1")]
+        options = {
+            "regenerate_metadata": "false",
+            "compute_embeddings": "true",
+            "compute_metadata": "false",
+            "compute_faces": "false",
+        }
+        success, failure, errors, warnings = process_image_task(triplets, options)
+        self.assertEqual(success, 1)
+        self.assertEqual(failure, 0)
+        # Should not call add_image because regenerate_metadata='false' and image already has embedding
+        mock_chroma.add_image.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

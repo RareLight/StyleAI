@@ -815,7 +815,7 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
         date_time = options.date_time,
         ollama_base_url = options.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
         lmstudio_base_url = options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
-        regenerate_metadata = tostring(options.regenerate_metadata ~= false),
+        regenerate_metadata = (options.regenerate_metadata == true),
         semantic_clustering_threshold = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
     }
 
@@ -846,7 +846,7 @@ function SearchIndexAPI.enqueuePhotoBase64(item, globalOptions)
     local prefs = LrPrefs.prefsForPlugin()
 
     local bodyOptions = {
-        regenerate_metadata = tostring(globalOptions.regenerate_metadata ~= false),
+        regenerate_metadata = (globalOptions.regenerate_metadata == true),
         cache_images = globalOptions.cache_images == true
     }
 
@@ -997,7 +997,7 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
         keyword_secondary_language = globalOptions.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English",
         ollama_base_url = globalOptions.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
         lmstudio_base_url = globalOptions.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
-        regenerate_metadata = tostring(globalOptions.regenerate_metadata ~= false),
+        regenerate_metadata = (globalOptions.regenerate_metadata == true),
         cache_images = globalOptions.cache_images == true,
         semantic_clustering_threshold = tostring(globalOptions.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
         audit_llm_inputs = tostring(globalOptions.audit_llm_inputs or (prefs and prefs.auditLlmInputs) or false),
@@ -1518,7 +1518,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     
     local isServerEmpty = SearchIndexAPI.isServerEmpty()
 
-    if options.regenerate_metadata == false and not isServerEmpty then
+    if options.regenerate_metadata ~= true and not isServerEmpty then
         progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/PreflightCheck=Verifying existing index..."))
         local allPhotoIds = {}
         local photoIdToPhotoMap = {}

@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import math
+import re
 import statistics
 from typing import Any
 
@@ -690,29 +691,28 @@ def _camera_id(camera_make: str | None, camera_model: str | None) -> str:
     return f"{make} {model}".strip()
 
 
-import re
-
 def _profile_name(camera_profile: str | None) -> str:
     """Normalise a camera-profile string for grouping."""
     if not camera_profile:
         return "default"
-    
+
     profile = camera_profile.strip()
     is_hdr = bool(re.search(r"(?i)\s*\+?\s*HDR\b", profile))
-    
+
     # Strip HDR and version tags for base normalization
     p_clean = re.sub(r"(?i)\s*\+?\s*HDR\b", "", profile).strip()
     p_clean = re.sub(r"(?i)\s*\(v\d+\)", "", p_clean).strip()
     p_clean = re.sub(r"\s+", " ", p_clean)
-    
+
     # Title case it for consistency to prevent casing fractures
     if p_clean.islower() or p_clean.isupper():
         p_clean = p_clean.title()
-        
+
     if is_hdr:
         p_clean += " + HDR"
-        
+
     return p_clean or "default"
+
 
 def _normalise_value(raw: float, key: str) -> float:
     """Scale a raw slider value to a comparable 0..1-ish space."""

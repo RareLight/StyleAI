@@ -145,8 +145,10 @@ def _extract_options(data) -> dict[str, Any]:
     # Regenerate metadata
     reg_val = data.get("regenerate_metadata")
     if reg_val is None:
-        reg_val = data.get("regenerateMetadata", "true")
-    options["regenerate_metadata"] = str(reg_val).lower() == "true"
+        reg_val = data.get("regenerateMetadata", True)
+    options["regenerate_metadata"] = (
+        reg_val if isinstance(reg_val, bool) else str(reg_val).strip().lower() == "true"
+    )
 
     options["prompt"] = data.get("prompt")
     options["edit_intent"] = data.get("edit_intent")
