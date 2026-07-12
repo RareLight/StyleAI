@@ -398,11 +398,13 @@ LrTasks.startAsyncTask(function()
 				local allRequiredPhotoIds = {}
 				local uniqueIds = {}
 				for _, style in ipairs(styles) do
-					if style.example_photo_ids then
-						for _, pid in ipairs(style.example_photo_ids) do
-							if not uniqueIds[pid] then
-								uniqueIds[pid] = true
-								table.insert(allRequiredPhotoIds, pid)
+					local exList = style.examples or style.example_photo_ids
+					if exList then
+						for _, pidInfo in ipairs(exList) do
+							local pidStr = type(pidInfo) == "table" and pidInfo.globalPhotoId or pidInfo
+							if pidStr and not uniqueIds[pidStr] then
+								uniqueIds[pidStr] = true
+								table.insert(allRequiredPhotoIds, pidInfo)
 							end
 						end
 					end
@@ -411,11 +413,13 @@ LrTasks.startAsyncTask(function()
 				local photoMap = SearchIndexAPI.findPhotosByPhotoIdsMap(allRequiredPhotoIds, findAllProgress)
 				
 				for _, style in ipairs(styles) do
-					if style.example_photo_ids and #style.example_photo_ids > 0 then
+					local exList = style.examples or style.example_photo_ids
+					if exList and #exList > 0 then
 						local photos = {}
-						for _, pid in ipairs(style.example_photo_ids) do
-							if photoMap[pid] then
-								table.insert(photos, photoMap[pid])
+						for _, pidInfo in ipairs(exList) do
+							local pidStr = type(pidInfo) == "table" and pidInfo.globalPhotoId or pidInfo
+							if pidStr and photoMap[pidStr] then
+								table.insert(photos, photoMap[pidStr])
 							end
 						end
 
