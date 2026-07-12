@@ -491,3 +491,17 @@ def test_exif_priors_and_vision_regimes():
     meta_studio = {"flash": True, "iso": 100}
     priors = sg._evaluate_exif_priors(meta_studio)
     assert priors.get("scene_studio", 0.0) >= 0.20
+
+
+def test_group_examples_by_profile_genre_uses_exif_priors():
+    examples = [
+        {
+            "photo_id": "p1",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": ["scene_general"],
+            "shutter_speed": 15.0,
+            "iso": 6400,
+        }
+    ]
+    groups = sg.group_examples_by_profile_genre(examples)
+    assert ("Adobe Standard", "scene_night") in groups
