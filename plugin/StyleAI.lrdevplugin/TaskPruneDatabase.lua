@@ -39,6 +39,10 @@ function TaskPruneDatabase.process()
             return
         end
 
+        if not Util.waitForServerDialog({ suppressProgressDialog = false }) then
+            return
+        end
+
         local progressScope = LrProgressScope({
             title = LOC "$$$/StyleAI/PruneDatabase/ProgressTitle=Cleaning Database...",
             functionContext = nil,

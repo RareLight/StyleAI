@@ -15,9 +15,6 @@ from providers.lmstudio import LMStudioProvider
 from config import logger, DEFAULT_METADATA_PROVIDER
 from PIL import Image
 import io
-import torch
-import torch.nn.functional as F
-from config import get_torch_device
 
 
 import threading
@@ -286,6 +283,10 @@ class AnalysisService:
         Generates embeddings for all images in the batch concurrently on GPU.
         Errors are handled per batch.
         """
+        import torch
+        import torch.nn.functional as F
+        from config import get_torch_device
+
         if not image_model:
             logger.error("Vision model not initialized.")
             return [None] * len(images)

@@ -7,11 +7,6 @@ LrTasks.startAsyncTask(function()
 		LrDialogs.attachErrorDialogToFunctionContext(ctx)
 		log:info("Style Catalog task started")
 
-		if not Util.waitForServerDialog() then
-			log:warn("Style Catalog task aborted: backend server unavailable")
-			return
-		end
-
 		local f = LrView.osFactory()
 		local bind = LrView.bind
 		local share = LrView.share
@@ -122,9 +117,17 @@ LrTasks.startAsyncTask(function()
 		-- Load styles from backend
 		local function loadStyles()
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Loading=Loading styles...")
+			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/LoadingWait=Waiting for StyleAI backend to load...")
 
 			LrTasks.startAsyncTask(function()
+				if not Util.waitForServerDialog({ suppressProgressDialog = true }) then
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ErrorNoServer=Backend server unavailable.")
+					props.isLoading = false
+					return
+				end
+
+				props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Loading=Loading styles...")
+
 				local success, result = SearchIndexAPI.listStyles()
 				if success then
 					props.styles = result or {}

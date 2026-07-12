@@ -22,11 +22,6 @@ LrTasks.startAsyncTask(function()
 		LrDialogs.attachErrorDialogToFunctionContext(ctx)
 		log:info("Discover Style Upgrade Candidates task started")
 
-		if not Util.waitForServerDialog() then
-			log:warn("Discover Style Upgrade Candidates aborted: backend server unavailable")
-			return
-		end
-
 		local f = LrView.osFactory()
 		local bind = LrView.bind
 		local share = LrView.share
@@ -135,6 +130,14 @@ LrTasks.startAsyncTask(function()
 		local function loadRecommendations()
 			LrTasks.startAsyncTask(function()
 				props.isLoading = true
+				props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/ProgressWait=Waiting for StyleAI backend to load...")
+
+				if not Util.waitForServerDialog({ suppressProgressDialog = true }) then
+					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/ErrorNoServer=Backend server unavailable.")
+					props.isLoading = false
+					return
+				end
+
 				props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/Progress=Discovering style upgrade candidates...")
 
 				local success, results = SearchIndexAPI.getUpgradeRecommendations(100)

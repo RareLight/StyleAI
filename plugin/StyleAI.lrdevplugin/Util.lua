@@ -1251,12 +1251,15 @@ function Util.waitForServerDialog(options)
 	local result = false
 
 	LrFunctionContext.callWithContext("WaitForServerContext", function(waitContext)
-		local progressScope = LrDialogs.showModalProgressDialog({
-			title = LOC("$$$/StyleAI/WaitForServer/title=StyleAI"),
-			caption = LOC("$$$/StyleAI/WaitForServer/caption=Waiting for StyleAI database to load..."),
-			cannotCancel = false,
-			functionContext = waitContext,
-		})
+		local progressScope = nil
+		if not options.suppressProgressDialog then
+			progressScope = LrDialogs.showModalProgressDialog({
+				title = LOC("$$$/StyleAI/WaitForServer/title=StyleAI"),
+				caption = LOC("$$$/StyleAI/WaitForServer/caption=Waiting for StyleAI database to load..."),
+				cannotCancel = false,
+				functionContext = waitContext,
+			})
+		end
 
 		local elapsedTime = 0
 		local timeout = 120 -- 120 seconds timeout
@@ -1267,10 +1270,10 @@ function Util.waitForServerDialog(options)
 			end)
 		end
 
-		while not progressScope:isCanceled() and elapsedTime < timeout do
+		while (not progressScope or not progressScope:isCanceled()) and elapsedTime < timeout do
 			if SearchIndexAPI.pingServer() then
 				local compatible, versionMessage = SearchIndexAPI.ensureVersionCompatibility()
-				progressScope:done()
+				if progressScope then progressScope:done() end
 				if compatible then
 					local catalog = LrApplication.activeCatalog()
 					local catalogPath = catalog:getPath()
@@ -1347,11 +1350,11 @@ function Util.waitForServerDialog(options)
 			end
 			LrTasks.sleep(0.5) -- Poll every 500ms
 			elapsedTime = elapsedTime + 0.5
-			progressScope:setPortionComplete(elapsedTime, timeout)
+			if progressScope then progressScope:setPortionComplete(elapsedTime, timeout) end
 		end
 
 		if elapsedTime >= timeout then
-			progressScope:done()
+			if progressScope then progressScope:done() end
 			-- Diagnose and show detailed error
 			local diag = SearchIndexAPI.diagnoseStartupFailure()
 			Util.showDiagnosticFailureDialog(diag)

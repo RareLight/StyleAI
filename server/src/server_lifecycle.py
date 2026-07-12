@@ -11,8 +11,6 @@ import os
 import time
 import config
 from config import logger, IMAGE_MODEL_ID, CLIP_MODEL_NAME, get_torch_device
-import open_clip
-from utils.open_clip_compat import wrap_tokenizer
 import threading
 import datetime
 import gc
@@ -53,6 +51,8 @@ def _get_open_clip_tokenizer(local_files_only=False):
     "timm/..." with no schema prefix silently falls back to SimpleTokenizer
     inside open_clip without raising, which would yield incorrect embeddings.
     """
+    import open_clip
+
     if local_files_only:
         return open_clip.get_tokenizer(CLIP_MODEL_NAME, local_files_only=True)
     return open_clip.get_tokenizer(CLIP_MODEL_NAME)
@@ -105,6 +105,9 @@ def load_model():
             return
 
         try:
+            import open_clip
+            from utils.open_clip_compat import wrap_tokenizer
+
             logger.info("Trying to load open_clip model from local cache")
 
             try:

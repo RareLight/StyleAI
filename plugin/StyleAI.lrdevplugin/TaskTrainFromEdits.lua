@@ -100,10 +100,7 @@ LrTasks.startAsyncTask(function()
 		LrDialogs.attachErrorDialogToFunctionContext(ctx)
 		log:info("Save Training Examples task started")
 
-		if not Util.waitForServerDialog() then
-			log:warn("Train task aborted: backend server unavailable")
-			return
-		end
+
 
 		local options = showTrainDialog(ctx)
 		if not options then
@@ -118,6 +115,10 @@ LrTasks.startAsyncTask(function()
 				LOC("$$$/StyleAI/Training/NoPhotosMsg=No photos found in the selected scope."),
 				"info"
 			)
+		end
+
+		-- Now that the user has committed, ensure the backend is running.
+		if not Util.waitForServerDialog({ suppressProgressDialog = false }) then
 			return
 		end
 

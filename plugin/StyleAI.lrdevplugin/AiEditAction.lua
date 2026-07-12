@@ -736,7 +736,13 @@ function AiEditAction.run(editMode)
 		LrDialogs.attachErrorDialogToFunctionContext(ctx)
 		log:info("AI Edit task started")
 
-		-- Check server connection and health (ensure AI providers are configured)
+		local options = getAiEditOptions(ctx, editMode)
+		if not options then
+			log:info("AI Edit task canceled by user in options dialog")
+			return
+		end
+
+		-- Now that user confirmed options, verify backend and training stats
 		if not Util.waitForServerDialog({ requireProviders = true }) then
 			log:warn("AI Edit task aborted: backend server unavailable")
 			return
@@ -752,11 +758,6 @@ function AiEditAction.run(editMode)
 			return
 		end
 
-		local options = getAiEditOptions(ctx, editMode)
-		if not options then
-			log:info("AI Edit task canceled by user in options dialog")
-			return
-		end
 		log:trace(
 			"AI Edit options selected: scope="
 				.. tostring(options.scope)
