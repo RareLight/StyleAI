@@ -3246,7 +3246,7 @@ function SearchIndexAPI.getDetailedHealth()
     -- Try to ping local LLMs if they are not default localhost but maybe they are
     if not Util.nilOrEmpty(prefs.ollamaBaseUrl) then
         local url = prefs.ollamaBaseUrl .. "/api/tags"
-        local _, hdrs = LrHttp.get(url, nil, 500)
+        local _, hdrs = LrHttp.get(url, nil, 0.5)
         local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status)
         if status == 200 then health.ollama = true end
     end
@@ -3255,7 +3255,7 @@ function SearchIndexAPI.getDetailedHealth()
         local baseUrl = prefs.lmstudioBaseUrl
         if not baseUrl:match("^https?://") then baseUrl = "http://" .. baseUrl end
         local url = baseUrl .. "/v1/models"
-        local _, hdrs = LrHttp.get(url, nil, 500)
+        local _, hdrs = LrHttp.get(url, nil, 0.5)
         local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status)
         if status == 200 then health.lmstudio = true end
     end
