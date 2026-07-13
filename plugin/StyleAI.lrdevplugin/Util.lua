@@ -1188,10 +1188,12 @@ function Util.waitForServerDialog(options)
 	if SearchIndexAPI.pingServer() then
 		local compatible, versionMessage = SearchIndexAPI.ensureVersionCompatibility()
 		if compatible then
-			-- Deep health check for soft warnings
-			local report = Util.checkPluginHealth(options)
-			if not report.healthy then
-				return Util.showHealthIssuesDialog(report)
+			if not options.skipHealthCheck then
+				-- Deep health check for soft warnings
+				local report = Util.checkPluginHealth(options)
+				if not report.healthy then
+					return Util.showHealthIssuesDialog(report)
+				end
 			end
 			-- Check for updates via backend if enabled
 			if prefs.periodicalUpdateCheck then
@@ -1226,10 +1228,12 @@ function Util.waitForServerDialog(options)
 			if SearchIndexAPI.pingServer() then
 				local compatible2, versionMessage2 = SearchIndexAPI.ensureVersionCompatibility()
 				if compatible2 then
-					-- Deep health check for soft warnings
-					local report = Util.checkPluginHealth(options)
-					if not report.healthy then
-						return Util.showHealthIssuesDialog(report)
+					if not options.skipHealthCheck then
+						-- Deep health check for soft warnings
+						local report = Util.checkPluginHealth(options)
+						if not report.healthy then
+							return Util.showHealthIssuesDialog(report)
+						end
 					end
 					-- Check for updates via backend if enabled
 					if prefs.periodicalUpdateCheck then
@@ -1281,19 +1285,23 @@ function Util.waitForServerDialog(options)
 					local dbPath = LrPathUtils.child(catalogDir, "styleai.db")
 					SearchIndexAPI.initializeCatalog(dbPath)
 
-					-- Deep health check for soft warnings
-					local report = Util.checkPluginHealth(options)
-					if not report.healthy then
-						result = Util.showHealthIssuesDialog(report)
-					else
-						-- Check for updates via backend if enabled
-						if prefs.periodicalUpdateCheck then
-							LrTasks.startAsyncTask(function()
-								require("UpdateCheck")
-								UpdateCheck.checkForNewVersionInBackground()
-							end)
-						end
+					if options.skipHealthCheck then
 						result = true
+					else
+						-- Deep health check for soft warnings
+						local report = Util.checkPluginHealth(options)
+						if not report.healthy then
+							result = Util.showHealthIssuesDialog(report)
+						else
+							-- Check for updates via backend if enabled
+							if prefs.periodicalUpdateCheck then
+								LrTasks.startAsyncTask(function()
+									require("UpdateCheck")
+									UpdateCheck.checkForNewVersionInBackground()
+								end)
+							end
+							result = true
+						end
 					end
 					return
 				end
@@ -1320,19 +1328,23 @@ function Util.waitForServerDialog(options)
 					if SearchIndexAPI.pingServer() then
 						local compatible2, versionMessage2 = SearchIndexAPI.ensureVersionCompatibility()
 						if compatible2 then
-							-- Deep health check for soft warnings
-							local report = Util.checkPluginHealth(options)
-							if not report.healthy then
-								result = Util.showHealthIssuesDialog(report)
-							else
-								-- Check for updates via backend if enabled
-								if prefs.periodicalUpdateCheck then
-									LrTasks.startAsyncTask(function()
-										require("UpdateCheck")
-										UpdateCheck.checkForNewVersionInBackground()
-									end)
-								end
+							if options.skipHealthCheck then
 								result = true
+							else
+								-- Deep health check for soft warnings
+								local report = Util.checkPluginHealth(options)
+								if not report.healthy then
+									result = Util.showHealthIssuesDialog(report)
+								else
+									-- Check for updates via backend if enabled
+									if prefs.periodicalUpdateCheck then
+										LrTasks.startAsyncTask(function()
+											require("UpdateCheck")
+											UpdateCheck.checkForNewVersionInBackground()
+										end)
+									end
+									result = true
+								end
 							end
 							return
 						end

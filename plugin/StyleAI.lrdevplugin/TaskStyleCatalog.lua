@@ -120,7 +120,7 @@ LrTasks.startAsyncTask(function()
 			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/LoadingWait=Waiting for StyleAI backend to load...")
 
 			LrTasks.startAsyncTask(function()
-				if not Util.waitForServerDialog({ suppressProgressDialog = true }) then
+				if not Util.waitForServerDialog({ suppressProgressDialog = true, skipHealthCheck = true }) then
 					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ErrorNoServer=Backend server unavailable.")
 					props.isLoading = false
 					return
