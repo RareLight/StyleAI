@@ -478,32 +478,28 @@ local function scanCatalogForGlobalPhotoIds(catalog, allPhotos, idSet, targetCou
         for _, photo in ipairs(chunkPhotos) do
             local matched = false
             local lrUuid = photo:getRawMetadata("uuid")
-            if lrUuid and idSet[lrUuid] and not photoById[lrUuid] then
-                photoById[lrUuid] = photo
+            local cachedId
+            if batchProps then
+                cachedId = batchProps[photo]
+            else
+                cachedId = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoId")
+            end
+
+            if (lrUuid and idSet[lrUuid] and not photoById[lrUuid]) or (cachedId and idSet[cachedId] and not photoById[cachedId]) then
+                if lrUuid and lrUuid ~= "" then photoById[lrUuid] = photo end
+                if cachedId and cachedId ~= "" then photoById[cachedId] = photo end
                 foundCount = foundCount + 1
                 matched = true
             end
 
             if not matched then
-                local cachedId
-                if batchProps then
-                    cachedId = batchProps[photo]
-                else
-                    cachedId = photo:getPropertyForPlugin(_PLUGIN, "globalPhotoId")
-                end
-                if cachedId and idSet[cachedId] and not photoById[cachedId] then
-                    photoById[cachedId] = photo
+                local stableId = Util.computeStableMetadataPhotoId(photo)
+                if stableId and idSet[stableId] and not photoById[stableId] then
+                    if lrUuid and lrUuid ~= "" then photoById[lrUuid] = photo end
+                    if cachedId and cachedId ~= "" then photoById[cachedId] = photo end
+                    photoById[stableId] = photo
                     foundCount = foundCount + 1
                     matched = true
-                end
-
-                if not matched then
-                    local stableId = Util.computeStableMetadataPhotoId(photo)
-                    if stableId and idSet[stableId] and not photoById[stableId] then
-                        photoById[stableId] = photo
-                        foundCount = foundCount + 1
-                        matched = true
-                    end
                 end
             end
         end
@@ -532,17 +528,21 @@ function SearchIndexAPI.findPhotosByPhotoIds(photoIds, progressScope)
         local pidStr = type(pidInfo) == "table" and (pidInfo.globalPhotoId or pidInfo.lr_uuid) or pidInfo
         local lrUuid = type(pidInfo) == "table" and pidInfo.lr_uuid or nil
         if pidStr and pidStr ~= "" then
-            table.insert(idList, pidStr)
+            table.insert(idList, { pidStr = pidStr, lrUuid = lrUuid })
             if lrUuid and lrUuid ~= "" then
                 local photo = catalog:findPhotoByUuid(lrUuid)
                 if photo then
                     photoById[pidStr] = photo
+                    photoById[lrUuid] = photo
                 end
             end
             if not photoById[pidStr] then
                 local photo = catalog:findPhotoByUuid(pidStr)
                 if photo then
                     photoById[pidStr] = photo
+                    if lrUuid and lrUuid ~= "" then
+                        photoById[lrUuid] = photo
+                    end
                 else
                     table.insert(missingIds, pidStr)
                     idSet[pidStr] = true
@@ -563,12 +563,12 @@ function SearchIndexAPI.findPhotosByPhotoIds(photoIds, progressScope)
         end
     end
 
-    for _, pidStr in ipairs(idList) do
-        local photo = photoById[pidStr]
+    for _, item in ipairs(idList) do
+        local photo = photoById[item.pidStr] or (item.lrUuid and photoById[item.lrUuid])
         if photo then
             table.insert(photos, photo)
         else
-            log:warn("findPhotosByPhotoIds: Photo ID " .. tostring(pidStr) .. " not found in catalog.")
+            log:warn("findPhotosByPhotoIds: Photo ID " .. tostring(item.pidStr) .. " not found in catalog.")
         end
     end
 
@@ -599,6 +599,9 @@ function SearchIndexAPI.findPhotosByPhotoIdsMap(photoIds, progressScope)
             end
             if photo then
                 photoMap[pidStr] = photo
+                if lrUuid and lrUuid ~= "" then
+                    photoMap[lrUuid] = photo
+                end
             else
                 table.insert(missingIds, pidStr)
                 idSet[pidStr] = true
@@ -656,6 +659,9 @@ function SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, progressScope)
                 end
                 if photo then
                     photoById[pidStr] = photo
+                    if lrUuid and lrUuid ~= "" then
+                        photoById[lrUuid] = photo
+                    end
                 else
                     table.insert(missingGlobalIds, pidStr)
                     totalTargetCount = totalTargetCount + 1
@@ -688,7 +694,8 @@ function SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, progressScope)
         local photosForStyle = {}
         for _, pidInfo in ipairs(entry.photoIds or {}) do
             local pidStr = type(pidInfo) == "table" and (pidInfo.globalPhotoId or pidInfo.lr_uuid) or pidInfo
-            local photo = photoById[pidStr]
+            local lrUuid = type(pidInfo) == "table" and pidInfo.lr_uuid or nil
+            local photo = photoById[pidStr] or (lrUuid and photoById[lrUuid])
             if photo then
                 table.insert(photosForStyle, photo)
             else
