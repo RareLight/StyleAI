@@ -750,12 +750,18 @@ def _primary_genre_with_keywords(
         }
         if primary_mapped in canonical_regimes:
             return primary_mapped
-        if content_tags[0] in canonical_regimes:
-            return content_tags[0]
+        for t in content_tags:
+            if t in canonical_regimes:
+                return t
+            mapped_t = _get_broad_genre(t)
+            if mapped_t in canonical_regimes:
+                return mapped_t
 
     priors = _evaluate_exif_priors(exif_metadata)
-    if priors.get("scene_night", 0.0) >= 0.4:
-        return "scene_night"
+    if priors:
+        best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
+        if best_prior_score >= 0.30:
+            return best_prior_regime
 
     if content_tags and content_tags[0] != "scene_unknown":
         return _get_broad_genre(content_tags[0])

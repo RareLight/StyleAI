@@ -150,7 +150,10 @@ def test_edited_vs_unedited_priority(mocker):
     mocker.patch("services.chroma.collection", mock_collection)
 
     res = style_upgrades.get_style_upgrade_recommendations()
-    recs = res["styles"][0]["recommended_photo_ids"]
+    recs = [
+        r["globalPhotoId"] if isinstance(r, dict) else r
+        for r in res["styles"][0]["recommended_photo_ids"]
+    ]
     assert len(recs) == 2
     # Even though unedited-1 has a higher star rating (5 stars), edited-1 MUST be selected first!
     assert recs[0] == "edited-1"
@@ -322,7 +325,10 @@ def test_embedding_first_recommendations_over_text_divergence(mocker):
     mocker.patch("services.chroma.collection", mock_collection)
 
     res = style_upgrades.get_style_upgrade_recommendations()
-    recs = res["styles"][0]["recommended_photo_ids"]
+    recs = [
+        r["globalPhotoId"] if isinstance(r, dict) else r
+        for r in res["styles"][0]["recommended_photo_ids"]
+    ]
     assert "photo-cand-diffuse" in recs
     assert "photo-cand-conflict" not in recs
 
@@ -365,7 +371,10 @@ def test_dual_gated_screening_rejects_moderate_similarity_cross_talk(mocker):
     mocker.patch("services.chroma.collection", mock_collection)
 
     res = style_upgrades.get_style_upgrade_recommendations()
-    recs = res["styles"][0]["recommended_photo_ids"]
+    recs = [
+        r["globalPhotoId"] if isinstance(r, dict) else r
+        for r in res["styles"][0]["recommended_photo_ids"]
+    ]
     # Because similarity is < 0.80 and genres diverge, photo-cand is rejected by dual-gated screening!
     assert "photo-cand" not in recs
 
@@ -427,4 +436,30 @@ def test_check_genre_mismatch():
     # Unknown style genre -> no mismatch
     assert not style_upgrades._check_genre_mismatch(
         "scene_unknown", "scene_portrait", meta
+    )
+    # Stitched panorama -> always mismatch
+    assert style_upgrades._check_genre_mismatch(
+        "scene_portrait", "scene_portrait", {"filename": "Yosemite-Pano.dng"}
+    )
+    # Macro tag leak into portrait style -> mismatch
+    assert style_upgrades._check_genre_mismatch(
+        "scene_portrait", "scene_unknown", {"keywords": "flower, macro close-up"}
+    )
+    # Landscape tag leak into portrait style without portrait terms -> mismatch
+    assert style_upgrades._check_genre_mismatch(
+        "scene_portrait", "scene_unknown", {"keywords": "mountain valley sunset"}
+    )
+
+
+def test_is_stitched_panorama():
+    assert style_upgrades._is_stitched_panorama({"filename": "DSC0123-Pano.dng"})
+    assert style_upgrades._is_stitched_panorama({"filename": "photo_panorama.jpg"})
+    assert style_upgrades._is_stitched_panorama(
+        {"keywords": "stitched pano, mountains"}
+    )
+    assert style_upgrades._is_stitched_panorama(
+        {"width": 6000, "height": 2000}
+    )  # 3:1 ratio
+    assert not style_upgrades._is_stitched_panorama(
+        {"filename": "normal_photo.dng", "width": 4000, "height": 3000}
     )

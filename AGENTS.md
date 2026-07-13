@@ -143,3 +143,6 @@ Dependencies are managed exclusively by [uv](https://docs.astral.sh/uv/). Do not
   - All regression targets use true mathematical defaults when missing ($1.0$ for right/bottom crop boundaries, $50.0$ for color grading blending, and linear $y=x$ control points for point curves).
   - Slider predictions are universally clamped to learned bounds (`slider_bounds`) recorded during training.
   - Recipe blending uses true linear interpolation ($\text{start} + \text{strength} \times (\text{target} - \text{start})$) rather than additive stacking.
+- **Multi-Tiered Genre Classification (No Ad-Hoc Wordlists)**: NEVER implement hardcoded keyword exception arrays or custom string-matching lists inside filtering functions (like `_check_genre_mismatch`) to categorize photos or prevent cross-genre leakage. Instead, ALWAYS use the unified multi-tiered classification pipeline (`style_grouping._primary_genre_with_keywords`), which hierarchically evaluates explicit user keywords, vision model scene tags in confidence order, and EXIF Bayesian prior distributions (`_evaluate_exif_priors`, $\ge 0.30$).
+- **Stitched Panoramas Exclusion**: Stitched panoramas (`_is_stitched_panorama`: `-Pano`/`_Pano` filename suffix, `panorama` tags, or aspect ratio $\ge 2.2:1$) must be universally filtered out of style upgrade recommendations and style training datasets.
+
