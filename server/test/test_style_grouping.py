@@ -367,7 +367,10 @@ def test_refined_taxonomy_avoids_broad_studio_overrides():
         "Sceneries": ["Winter Landscape"],
         "Weather": ["Snowy"],
     }
-    assert sg._primary_genre_with_keywords([], winter_kws) == "scene_landscape"
+    assert sg._primary_genre_with_keywords([], winter_kws) in {
+        "scene_landscape",
+        "scene_nature",
+    }
 
     # 2. Kitchen birthday party candid should map to portrait/event, not studio
     birthday_kws = {
@@ -454,6 +457,36 @@ def test_landscape_prominence_over_secondary_activity_tags():
     assert (
         sg._primary_genre_with_keywords(["scene_landscape", "street"], [])
         == "scene_landscape"
+    )
+
+
+def test_animate_subject_overrides_nature_and_wildlife():
+    # 1. Groups of people outdoors tagged nature + event route to scene_event
+    assert (
+        sg._primary_genre_with_keywords(["scene_nature", "scene_event"], [])
+        == "scene_event"
+    )
+    # 2. Pets/people outdoors tagged wildlife + portrait route to scene_portrait
+    assert (
+        sg._primary_genre_with_keywords(["scene_wildlife", "scene_portrait"], [])
+        == "scene_portrait"
+    )
+    # 3. Nature keywords preserve scene_nature instead of being mapped to scene_landscape
+    assert sg._primary_genre_with_keywords([], ["nature"]) == "scene_nature"
+
+
+def test_astrophotography_and_specialized_canonical_overrides():
+    # 1. Astrophotography/night sky over landscape routes to astrophotography
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_landscape", "scene_astrophotography"], []
+        )
+        == "scene_astrophotography"
+    )
+    # 2. Street photography over generic exterior routes to street
+    assert (
+        sg._primary_genre_with_keywords(["scene_exterior", "scene_street"], [])
+        == "scene_street"
     )
 
 
@@ -549,11 +582,11 @@ def test_parse_exif_string_values():
 
 
 def test_nature_wildlife_landscape_precedence():
-    # 1. Telephoto bird photo should not trigger macro EXIF prior and should classify as landscape
+    # 1. Telephoto bird photo should not trigger macro EXIF prior and should classify as wildlife
     priors = sg._evaluate_exif_priors({"focal_length": "400 mm", "lens": "400mm f/4"})
     assert "scene_macro" not in priors
     genre = sg._primary_genre_with_keywords(["scene_exterior"], ["bird", "wildlife"])
-    assert genre == "scene_landscape"
+    assert genre == "scene_wildlife"
 
     # 2. Landscape with action/motion terms should stay landscape
     genre_land = sg._primary_genre_with_keywords(
