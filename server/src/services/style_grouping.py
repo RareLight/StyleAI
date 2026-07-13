@@ -815,6 +815,16 @@ def _primary_genre_with_keywords(
             if mapped != "scene_unknown":
                 return mapped
 
+    priors = _evaluate_exif_priors(exif_metadata)
+    if priors:
+        best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
+        if best_prior_score >= 0.38:
+            return (
+                "scene_landscape"
+                if best_prior_regime in {"scene_nature", "scene_wildlife"}
+                else best_prior_regime
+            )
+
     if content_tags:
         primary_mapped = _get_broad_genre(content_tags[0])
         background_settings = {
@@ -863,7 +873,6 @@ def _primary_genre_with_keywords(
             if mapped_t in {"scene_nature", "scene_wildlife"}:
                 return "scene_landscape"
 
-    priors = _evaluate_exif_priors(exif_metadata)
     if priors:
         best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
         if best_prior_score >= 0.30:
