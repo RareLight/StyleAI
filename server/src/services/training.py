@@ -534,11 +534,11 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
             )
 
             chosen_regime: str | None = None
-            for prob, regime in ranked:
-                floor = _REGIME_CONFIDENCE_FLOORS.get(regime, 0.45)
-                if prob >= floor:
-                    chosen_regime = regime
-                    break
+            if ranked:
+                top_prob, top_regime = ranked[0]
+                floor = _REGIME_CONFIDENCE_FLOORS.get(top_regime, 0.45)
+                if top_prob >= floor or top_prob >= 0.35:
+                    chosen_regime = top_regime
 
             result_tags: list[str] = (
                 [chosen_regime] if chosen_regime else ["scene_general"]
