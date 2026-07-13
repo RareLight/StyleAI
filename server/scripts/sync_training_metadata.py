@@ -47,30 +47,6 @@ def main():
             if i < len(main_data["metadatas"]) and main_data["metadatas"][i]:
                 main_map[pid] = main_data["metadatas"][i]
 
-    sync_keys = (
-        "filename",
-        "camera_profile",
-        "camera_model",
-        "camera_make",
-        "shutter_speed",
-        "iso",
-        "focal_length",
-        "lens",
-        "flash",
-        "dateTimeOriginal",
-        "user_keywords",
-        "keywords",
-        "flattened_keywords",
-        "scene_tags",
-        "tags",
-        "width",
-        "height",
-        "aspect_ratio",
-        "rating",
-        "pick_status",
-        "is_edited",
-    )
-
     updated_ids = []
     updated_metas = []
 
@@ -80,8 +56,9 @@ def main():
 
         if pid in main_map:
             mm = main_map[pid]
-            for k in sync_keys:
-                val_main = mm.get(k)
+            for k, val_main in mm.items():
+                if k in ("label", "summary", "style_name", "photo_id"):
+                    continue
                 if val_main is not None and val_main not in ("", "[]", "null", "None"):
                     if meta.get(k) != val_main:
                         meta[k] = val_main
@@ -113,9 +90,15 @@ def main():
                 ids=updated_ids[idx : idx + batch_size],
                 metadatas=updated_metas[idx : idx + batch_size],
             )
-        logger.info("Metadata sync and tag update complete!")
+        logger.info("Metadata sync complete!")
     else:
         logger.info("All training examples are already up to date.")
+
+    logger.info("Re-discovering style catalog from unified training examples...")
+    from services import style_catalog
+
+    style_catalog.discover_styles_from_examples(None)
+    logger.info("Style catalog discovery and cleanup complete!")
 
 
 if __name__ == "__main__":

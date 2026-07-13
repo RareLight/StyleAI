@@ -1085,29 +1085,6 @@ def _enrich_and_sync_metadatas_from_main_index(
 
         updated_ids = []
         updated_metas = []
-        sync_keys = (
-            "filename",
-            "camera_profile",
-            "camera_model",
-            "camera_make",
-            "shutter_speed",
-            "iso",
-            "focal_length",
-            "lens",
-            "flash",
-            "dateTimeOriginal",
-            "user_keywords",
-            "keywords",
-            "flattened_keywords",
-            "scene_tags",
-            "tags",
-            "width",
-            "height",
-            "aspect_ratio",
-            "rating",
-            "pick_status",
-            "is_edited",
-        )
         for i, pid in enumerate(ids):
             if pid in main_map and i < len(metadatas) and metadatas[i]:
                 mm = main_map[pid]
@@ -1117,8 +1094,9 @@ def _enrich_and_sync_metadatas_from_main_index(
                     else metadatas[i]
                 )
                 changed = False
-                for k in sync_keys:
-                    val_main = mm.get(k)
+                for k, val_main in mm.items():
+                    if k in ("label", "summary", "style_name", "photo_id"):
+                        continue
                     if val_main is not None and val_main not in (
                         "",
                         "[]",

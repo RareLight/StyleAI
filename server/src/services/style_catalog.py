@@ -248,14 +248,18 @@ def _filter_style_examples_by_genre(
     for ex in examples:
         if style_grouping.is_stitched_panorama(ex):
             continue
-        if style_genre and style_genre not in ("scene_unknown", "scene_general"):
-            p_genre = style_grouping.classify_photo_genre(ex, None)
-            if (
-                p_genre
-                and p_genre not in ("scene_unknown", "scene_general")
-                and p_genre != style_genre
-            ):
-                continue
+        if style_genre and style_genre not in ("scene_unknown", "scene_general", ""):
+            p_genre = style_grouping.classify_photo_genre(ex, None) or "scene_unknown"
+            if p_genre not in ("scene_unknown", "scene_general", ""):
+                b_style = style_grouping._get_broad_genre(style_genre)
+                b_p = style_grouping._get_broad_genre(p_genre)
+                if (
+                    p_genre != style_genre
+                    and b_p != style_genre
+                    and p_genre != b_style
+                    and b_p != b_style
+                ):
+                    continue
         filtered.append(ex)
     return filtered
 
@@ -455,11 +459,7 @@ def discover_styles_from_examples(
     if photo_ids is None:
         active_style_ids = {s["style_id"] for s in created_styles}
         for old_s in list_styles():
-            if old_s["style_id"] not in active_style_ids and (
-                old_s.get("genre") == "scene_unknown"
-                or old_s.get("example_count", 0) == 0
-                or "_scene_" in str(old_s.get("style_id", ""))
-            ):
+            if old_s["style_id"] not in active_style_ids:
                 logger.info(
                     "Removing outdated/orphaned style %s (genre: %s)",
                     old_s["style_id"],
