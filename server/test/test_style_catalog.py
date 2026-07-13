@@ -450,7 +450,7 @@ def test_fetch_rich_examples_includes_embeddings(monkeypatch):
     assert np.allclose(res[0]["embedding"], [0.1, 0.2])
 
 
-def test_filter_style_examples_by_genre_excludes_panoramas_and_mismatches():
+def test_filter_style_examples_by_genre_excludes_panoramas():
     examples = [
         {
             "photo_id": "p_portrait",
@@ -462,13 +462,54 @@ def test_filter_style_examples_by_genre_excludes_panoramas_and_mismatches():
             "scene_tags": ["scene_people"],
             "filename": "portrait-pano.jpg",
         },
-        {
-            "photo_id": "p_landscape",
-            "scene_tags": ["scene_landscape"],
-            "filename": "landscape.jpg",
-        },
     ]
 
     filtered = sc._filter_style_examples_by_genre("scene_people", examples)
     assert len(filtered) == 1
     assert filtered[0]["photo_id"] == "p_portrait"
+
+
+def test_group_examples_by_profile_genre_visual_reassignment():
+    from services import style_grouping
+
+    # Create two clear clusters: portrait ([1, 0]) and landscape ([0, 1])
+    # Plus one ambiguous photo classified as scene_unknown but with embedding closer to portrait
+    examples = [
+        {
+            "photo_id": "p1",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": ["scene_people"],
+            "embedding": [1.0, 0.0],
+        },
+        {
+            "photo_id": "p2",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": ["scene_people"],
+            "embedding": [0.99, 0.01],
+        },
+        {
+            "photo_id": "l1",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": ["scene_landscape"],
+            "embedding": [0.0, 1.0],
+        },
+        {
+            "photo_id": "l2",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": ["scene_landscape"],
+            "embedding": [0.01, 0.99],
+        },
+        {
+            "photo_id": "ambig",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": [],
+            "embedding": [0.95, 0.05],
+        },
+    ]
+
+    groups = style_grouping.group_examples_by_profile_genre(examples)
+    assert ("Adobe Standard", "scene_portrait") in groups
+    people_pids = {
+        ex["photo_id"] for ex in groups[("Adobe Standard", "scene_portrait")]
+    }
+    assert "ambig" in people_pids

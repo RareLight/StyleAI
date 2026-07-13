@@ -23,8 +23,6 @@ import threading
 from datetime import datetime
 from typing import Any
 
-import numpy as np
-
 from config import logger
 from services import style_grouping as grouping
 from services import training as training_service
@@ -257,49 +255,16 @@ def list_styles() -> list[dict[str, Any]]:
 def _filter_style_examples_by_genre(
     style_genre: str, examples: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Filter style training examples using unified semantic and visual membership checks."""
+    """Lightweight view-time filter for style training examples.
+
+    Genre correctness is enforced at discovery time by the cross-group visual
+    re-assignment in ``group_examples_by_profile_genre``.  This filter handles
+    only the cases that can change *after* discovery (e.g. a user stitching a
+    panorama from photos that were already trained).
+    """
     from services import style_grouping
 
-    clear_embeddings = []
-    for ex in examples:
-        if style_grouping.is_stitched_panorama(ex):
-            continue
-        p_genre = style_grouping.classify_photo_genre(ex, None) or "scene_unknown"
-        is_compat, is_ambig = style_grouping.is_genre_compatible(style_genre, p_genre)
-        if is_compat and not is_ambig and ex.get("embedding") is not None:
-            clear_embeddings.append(ex.get("embedding"))
-
-    style_embeddings = (
-        np.array(clear_embeddings, dtype=np.float32) if clear_embeddings else None
-    )
-
-    filtered = []
-    for ex in examples:
-        if style_grouping.is_stitched_panorama(ex):
-            continue
-        if style_genre and style_genre not in ("scene_unknown", "scene_general", ""):
-            p_genre = style_grouping.classify_photo_genre(ex, None) or "scene_unknown"
-            is_compat, is_ambig = style_grouping.is_genre_compatible(
-                style_genre, p_genre
-            )
-            if not is_compat:
-                continue
-
-            if (
-                ex.get("embedding") is not None
-                and style_embeddings is not None
-                and len(style_embeddings) > 0
-            ):
-                if not style_grouping.verify_photo_visual_membership(
-                    ex.get("embedding"),
-                    style_embeddings=style_embeddings,
-                    min_similarity=0.45,
-                    require_strict_if_ambiguous=is_ambig,
-                ):
-                    continue
-
-        filtered.append(ex)
-    return filtered
+    return [ex for ex in examples if not style_grouping.is_stitched_panorama(ex)]
 
 
 def get_all_styles_with_examples() -> list[dict[str, Any]]:
@@ -308,14 +273,10 @@ def get_all_styles_with_examples() -> list[dict[str, Any]]:
     conn = _ensure_initialized()
     rows = conn.execute("SELECT style_id, photo_id FROM style_examples").fetchall()
 
-    # Fetch full dicts with embeddings from training service
     all_examples = training_service.list_training_examples()
-    pids = [ex["photo_id"] for ex in all_examples]
-    rich_list = _fetch_rich_examples(pids) if pids else []
-    rich_by_id = {ex["photo_id"]: ex for ex in rich_list}
-    by_id = {ex["photo_id"]: rich_by_id.get(ex["photo_id"], ex) for ex in all_examples}
+    by_id = {ex["photo_id"]: ex for ex in all_examples}
 
-    # Group raw photo_ids by style_id first
+    # Group raw photo_ids by style_id
     raw_map: dict[str, list[str]] = {}
     for r in rows:
         raw_map.setdefault(r["style_id"], []).append(r["photo_id"])
@@ -328,7 +289,10 @@ def get_all_styles_with_examples() -> list[dict[str, Any]]:
         raw_examples = [by_id[pid] for pid in raw_pids if pid in by_id]
         clean_examples = _filter_style_examples_by_genre(s_genre, raw_examples)
         examples_map[sid] = [
-            {"globalPhotoId": ex["photo_id"], "lr_uuid": ex.get("lr_uuid", "")}
+            {
+                "globalPhotoId": ex["photo_id"],
+                "lr_uuid": ex.get("lr_uuid") or ex.get("uuid") or "",
+            }
             for ex in clean_examples
         ]
 
