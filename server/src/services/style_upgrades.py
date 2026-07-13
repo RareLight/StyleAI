@@ -622,7 +622,12 @@ def get_style_upgrade_recommendations(
 
         meta_map = {pid: meta for pid, meta in prelim_candidates_tuples}
         recommended_objects = [
-            {"globalPhotoId": pid, "lr_uuid": meta_map.get(pid, {}).get("uuid", "")}
+            {
+                "globalPhotoId": pid,
+                "lr_uuid": meta_map.get(pid, {}).get("uuid")
+                or meta_map.get(pid, {}).get("lr_uuid")
+                or "",
+            }
             for pid in recommended_ids
         ]
 
