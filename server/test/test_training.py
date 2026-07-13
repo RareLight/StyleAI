@@ -184,6 +184,40 @@ class TestColorAndHistogramFeatures(unittest.TestCase):
         self.assertAlmostEqual(dist_same, 0.0, places=4)
         self.assertGreater(dist_diff, 0.0)
 
+    def test_list_training_examples_preserves_metadata(self):
+        from unittest.mock import MagicMock, patch
+        from services.training import list_training_examples
+
+        mock_coll = MagicMock()
+        mock_coll.get.return_value = {
+            "ids": ["p_ex1"],
+            "metadatas": [
+                {
+                    "uuid": "lr-uuid-1",
+                    "filename": "pano.dng",
+                    "width": 6000,
+                    "height": 2000,
+                    "focal_length": 105.0,
+                    "shutter_speed": 0.01,
+                    "iso": 100,
+                    "rating": 5,
+                    "scene_tags": ["scene_portrait"],
+                }
+            ],
+        }
+        with patch("services.training._ensure_initialized"):
+            with patch("services.training._training_collection", mock_coll):
+                with patch(
+                    "services.training._enrich_and_sync_metadatas_from_main_index"
+                ):
+                    examples = list_training_examples()
+                    self.assertEqual(len(examples), 1)
+                    ex = examples[0]
+                    self.assertEqual(ex["width"], 6000)
+                    self.assertEqual(ex["height"], 2000)
+                    self.assertEqual(ex["focal_length"], 105.0)
+                    self.assertEqual(ex["rating"], 5)
+
 
 if __name__ == "__main__":
     unittest.main()
