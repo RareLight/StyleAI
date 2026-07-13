@@ -448,3 +448,27 @@ def test_fetch_rich_examples_includes_embeddings(monkeypatch):
     assert len(res) == 1
     assert res[0]["photo_id"] == "pid1"
     assert np.allclose(res[0]["embedding"], [0.1, 0.2])
+
+
+def test_filter_style_examples_by_genre_excludes_panoramas_and_mismatches():
+    examples = [
+        {
+            "photo_id": "p_portrait",
+            "scene_tags": ["scene_people"],
+            "filename": "portrait.jpg",
+        },
+        {
+            "photo_id": "p_pano",
+            "scene_tags": ["scene_people"],
+            "filename": "portrait-pano.jpg",
+        },
+        {
+            "photo_id": "p_landscape",
+            "scene_tags": ["scene_landscape"],
+            "filename": "landscape.jpg",
+        },
+    ]
+
+    filtered = sc._filter_style_examples_by_genre("scene_people", examples)
+    assert len(filtered) == 1
+    assert filtered[0]["photo_id"] == "p_portrait"

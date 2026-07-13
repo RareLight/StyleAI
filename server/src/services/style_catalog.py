@@ -234,26 +234,58 @@ def list_styles() -> list[dict[str, Any]]:
     return results
 
 
+def _filter_style_examples_by_genre(
+    style_genre: str, examples: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Filter style training examples using the unified organizational classification pipeline.
+
+    Ensures Trained Styles outputs exclude stitched panoramas and cross-genre mismatches,
+    harmonizing with Upgrade Recommendations.
+    """
+    from services import style_grouping
+
+    filtered = []
+    for ex in examples:
+        if style_grouping.is_stitched_panorama(ex):
+            continue
+        if style_genre and style_genre not in ("scene_unknown", "scene_general"):
+            p_genre = style_grouping.classify_photo_genre(ex, None)
+            if (
+                p_genre
+                and p_genre not in ("scene_unknown", "scene_general")
+                and p_genre != style_genre
+            ):
+                continue
+        filtered.append(ex)
+    return filtered
+
+
 def get_all_styles_with_examples() -> list[dict[str, Any]]:
     """Return all styles with their associated example_photo_ids attached."""
     styles = list_styles()
     conn = _ensure_initialized()
     rows = conn.execute("SELECT style_id, photo_id FROM style_examples").fetchall()
 
-    # Fetch uuids from training service
+    # Fetch full dicts from training service
     all_examples = training_service.list_training_examples()
-    uuid_map = {ex["photo_id"]: ex.get("lr_uuid", "") for ex in all_examples}
+    by_id = {ex["photo_id"]: ex for ex in all_examples}
 
-    # Group photo_ids by style_id
-    examples_map = {}
+    # Group raw photo_ids by style_id first
+    raw_map: dict[str, list[str]] = {}
     for r in rows:
-        sid = r["style_id"]
-        if sid not in examples_map:
-            examples_map[sid] = []
-        pid = r["photo_id"]
-        examples_map[sid].append(
-            {"globalPhotoId": pid, "lr_uuid": uuid_map.get(pid, "")}
-        )
+        raw_map.setdefault(r["style_id"], []).append(r["photo_id"])
+
+    examples_map = {}
+    for s in styles:
+        sid = s["style_id"]
+        s_genre = s.get("genre", "")
+        raw_pids = raw_map.get(sid, [])
+        raw_examples = [by_id[pid] for pid in raw_pids if pid in by_id]
+        clean_examples = _filter_style_examples_by_genre(s_genre, raw_examples)
+        examples_map[sid] = [
+            {"globalPhotoId": ex["photo_id"], "lr_uuid": ex.get("lr_uuid", "")}
+            for ex in clean_examples
+        ]
 
     for s in styles:
         s["examples"] = examples_map.get(s["style_id"], [])
@@ -264,6 +296,11 @@ def get_all_styles_with_examples() -> list[dict[str, Any]]:
 def get_style_examples(style_id: str) -> list[dict[str, Any]]:
     """Return the full training-example dicts linked to a style."""
     conn = _ensure_initialized()
+    style_row = conn.execute(
+        "SELECT genre FROM styles WHERE style_id = ?", (style_id,)
+    ).fetchone()
+    s_genre = style_row["genre"] if style_row else ""
+
     photo_ids = [
         r["photo_id"]
         for r in conn.execute(
@@ -276,7 +313,8 @@ def get_style_examples(style_id: str) -> list[dict[str, Any]]:
     # Fetch from training service
     all_examples = training_service.list_training_examples()
     by_id = {ex["photo_id"]: ex for ex in all_examples}
-    return [by_id[pid] for pid in photo_ids if pid in by_id]
+    raw_examples = [by_id[pid] for pid in photo_ids if pid in by_id]
+    return _filter_style_examples_by_genre(s_genre, raw_examples)
 
 
 def get_style_recipe(style_id: str) -> dict[str, Any]:
