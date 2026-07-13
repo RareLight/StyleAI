@@ -365,6 +365,7 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
 
 _BROAD_GENRE_MAP: dict[str, str] = {
     "scene_portrait": "scene_portrait",
+    "scene_people": "scene_portrait",
     "scene_group": "scene_event",
     "scene_event": "scene_event",
     "scene_action": "scene_action",
@@ -830,21 +831,34 @@ def _primary_genre_with_keywords(
         }
         if primary_mapped in canonical_regimes:
             return primary_mapped
+        if primary_mapped in {"scene_nature", "scene_wildlife"}:
+            return "scene_landscape"
         for t in content_tags:
             if t in canonical_regimes:
                 return t
             mapped_t = _get_broad_genre(t)
             if mapped_t in canonical_regimes:
                 return mapped_t
+            if mapped_t in {"scene_nature", "scene_wildlife"}:
+                return "scene_landscape"
 
     priors = _evaluate_exif_priors(exif_metadata)
     if priors:
         best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
         if best_prior_score >= 0.30:
-            return best_prior_regime
+            return (
+                "scene_landscape"
+                if best_prior_regime in {"scene_nature", "scene_wildlife"}
+                else best_prior_regime
+            )
 
     if content_tags and content_tags[0] != "scene_unknown":
-        return _get_broad_genre(content_tags[0])
+        mapped = _get_broad_genre(content_tags[0])
+        return (
+            "scene_landscape"
+            if mapped in {"scene_nature", "scene_wildlife"}
+            else mapped
+        )
 
     if kw_list:
         # Setting fallback: if no subject/domain matched above, check setting keywords
@@ -1400,12 +1414,11 @@ def group_examples_by_profile_genre(
         Dict keyed by (profile, genre) → list of examples.
     """
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    genre_centroids = _compute_catalog_genre_centroids(examples)
 
     for ex in examples:
         if is_stitched_panorama(ex):
             continue
-        genre = classify_photo_genre(ex, genre_centroids) or "scene_unknown"
+        genre = classify_photo_genre(ex, None) or "scene_unknown"
         profile = _profile_name(ex.get("camera_profile"))
         key = (profile, genre)
         groups.setdefault(key, []).append(ex)
