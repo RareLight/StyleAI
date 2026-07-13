@@ -92,70 +92,21 @@ def _models_compatible(style_model: str, photo_model: str) -> bool:
 
 
 def _is_stitched_panorama(meta: dict[str, Any]) -> bool:
-    """Check if a photo is a stitched panorama (by filename convention, keywords/tags, or extreme aspect ratio)."""
-    if not meta or not isinstance(meta, dict):
-        return False
+    """Check if a photo is a stitched panorama delegating to unified style_grouping."""
+    from services import style_grouping
 
-    filename = str(meta.get("filename") or meta.get("file_name") or "").lower()
-    if any(
-        suffix in filename
-        for suffix in ("-pano", "_pano", "-panorama", "_panorama", "pano.", "panorama.")
-    ):
-        return True
-
-    for kw_field in (
-        "user_keywords",
-        "keywords",
-        "flattened_keywords",
-        "scene_tags",
-        "tags",
-        "title",
-        "caption",
-    ):
-        val = meta.get(kw_field)
-        if val:
-            val_str = str(val).lower()
-            if any(
-                term in val_str
-                for term in ("panorama", "panoramic", "stitched pano", "stitched")
-            ):
-                return True
-
-    try:
-        width = float(
-            meta.get("width") or meta.get("orig_width") or meta.get("ImageWidth") or 0
-        )
-        height = float(
-            meta.get("height")
-            or meta.get("orig_height")
-            or meta.get("ImageHeight")
-            or 0
-        )
-        if width > 0 and height > 0:
-            ratio = max(width, height) / min(width, height)
-            if ratio >= 2.2:
-                return True
-    except (TypeError, ValueError):
-        pass
-
-    return False
+    return style_grouping.is_stitched_panorama(meta)
 
 
 def _check_genre_mismatch(style_genre: str, p_genre: str, meta: dict[str, Any]) -> bool:
     """Check if the candidate photo's primary editing genre conflicts with the style's genre."""
-    if _is_stitched_panorama(meta):
+    from services import style_grouping
+
+    if style_grouping.is_stitched_panorama(meta):
         return True
 
     if not p_genre or p_genre in ("scene_unknown", "scene_general"):
-        from services import style_grouping
-
-        p_genre = style_grouping._primary_genre_with_keywords(
-            meta.get("scene_tags") or meta.get("tags"),
-            meta.get("user_keywords")
-            or meta.get("keywords")
-            or meta.get("flattened_keywords"),
-            meta,
-        )
+        p_genre = style_grouping.classify_photo_genre(meta, None) or "scene_unknown"
 
     if not style_genre or style_genre in ("scene_unknown", "scene_general"):
         return False
@@ -398,12 +349,8 @@ def get_style_upgrade_recommendations(
                 meta = dict(p_metas[i]) if i < len(p_metas) and p_metas[i] else {}
                 if not meta.get("has_embedding", True):
                     continue
-                p_genre = style_grouping._primary_genre_with_keywords(
-                    meta.get("scene_tags") or meta.get("tags"),
-                    meta.get("user_keywords")
-                    or meta.get("keywords")
-                    or meta.get("flattened_keywords"),
-                    meta,
+                p_genre = (
+                    style_grouping.classify_photo_genre(meta, None) or "scene_unknown"
                 )
                 all_photos_metadata_pool.append((pid, meta, p_genre))
         except Exception as e:

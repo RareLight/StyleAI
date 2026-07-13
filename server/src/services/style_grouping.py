@@ -639,6 +639,86 @@ def _evaluate_exif_priors(exif_metadata: dict[str, Any] | None) -> dict[str, flo
     return priors
 
 
+def is_stitched_panorama(meta: dict[str, Any]) -> bool:
+    """Check if a photo is a stitched panorama (by filename convention, keywords/tags, or extreme aspect ratio >= 2.2:1)."""
+    if not meta or not isinstance(meta, dict):
+        return False
+
+    filename = str(meta.get("filename") or meta.get("file_name") or "").lower()
+    if any(
+        suffix in filename
+        for suffix in ("-pano", "_pano", "-panorama", "_panorama", "pano.", "panorama.")
+    ):
+        return True
+
+    for kw_field in (
+        "user_keywords",
+        "keywords",
+        "flattened_keywords",
+        "scene_tags",
+        "tags",
+        "title",
+        "caption",
+    ):
+        val = meta.get(kw_field)
+        if val:
+            val_str = str(val).lower()
+            if any(
+                term in val_str
+                for term in ("panorama", "panoramic", "stitched pano", "stitched")
+            ):
+                return True
+
+    try:
+        width = float(
+            meta.get("width") or meta.get("orig_width") or meta.get("ImageWidth") or 0
+        )
+        height = float(
+            meta.get("height")
+            or meta.get("orig_height")
+            or meta.get("ImageHeight")
+            or 0
+        )
+        if width > 0 and height > 0:
+            ratio = max(width, height) / min(width, height)
+            if ratio >= 2.2:
+                return True
+    except (TypeError, ValueError):
+        pass
+
+    return False
+
+
+def classify_photo_genre(
+    meta: dict[str, Any],
+    genre_centroids: dict[str, np.ndarray] | None = None,
+) -> str | None:
+    """Unified organizational classification pipeline for Trained Styles and Upgrade Recommendations.
+
+    Enforces:
+    - Universal filtering out of stitched panoramas.
+    - Multi-tiered hierarchical genre resolution (explicit User Keywords -> Vision Model Tags -> EXIF Priors).
+    - Never overrides an established multi-tiered genre with SigLIP2 visual centroid dot product.
+    """
+    if not meta or not isinstance(meta, dict):
+        return None
+    if is_stitched_panorama(meta):
+        return None
+
+    scene_tags = meta.get("scene_tags") or meta.get("tags")
+    user_keywords = (
+        meta.get("user_keywords")
+        or meta.get("keywords")
+        or meta.get("flattened_keywords")
+    )
+    genre = _primary_genre_with_keywords(scene_tags, user_keywords, meta)
+    if genre_centroids and genre in ("scene_unknown", "scene_general", ""):
+        genre = verify_genre_with_visual_centroid(
+            genre, meta.get("embedding"), genre_centroids
+        )
+    return genre
+
+
 def _primary_genre(scene_tags: Any) -> str:
     """Return the primary broad genre, ignoring stylistic tags."""
     return _primary_genre_with_keywords(scene_tags, None)
@@ -1247,13 +1327,7 @@ def _compute_catalog_genre_centroids(
         if emb.size == 0:
             continue
         # Use initial genre assignment
-        g = _primary_genre_with_keywords(
-            ex.get("scene_tags") or ex.get("tags"),
-            ex.get("user_keywords")
-            or ex.get("keywords")
-            or ex.get("flattened_keywords"),
-            ex,
-        )
+        g = classify_photo_genre(ex, None)
         if g and g not in ("scene_unknown", "scene_general"):
             genre_embs.setdefault(g, []).append(emb)
 
@@ -1302,19 +1376,12 @@ def verify_genre_with_visual_centroid(
             best_sim = sim
             best_genre = g
 
-    p_sim = 0.0
-    if p_genre in genre_centroids:
-        p_sim = float(np.dot(genre_centroids[p_genre], emb_norm))
-
-    # Only override an established subject genre if visual similarity is overwhelmingly superior
+    # Only override when subject genre is unresolved via tags/keywords/EXIF priors
     if p_genre in ("scene_unknown", "scene_general", ""):
-        if best_sim >= similarity_threshold and best_genre != "scene_unknown":
-            return best_genre
-    else:
-        if (
-            best_sim >= 0.75
-            and (best_sim - p_sim) > 0.20
-            and best_genre != "scene_unknown"
+        if best_sim >= similarity_threshold and best_genre not in (
+            "scene_unknown",
+            "scene_general",
+            "",
         ):
             return best_genre
 
@@ -1336,18 +1403,10 @@ def group_examples_by_profile_genre(
     genre_centroids = _compute_catalog_genre_centroids(examples)
 
     for ex in examples:
+        if is_stitched_panorama(ex):
+            continue
+        genre = classify_photo_genre(ex, genre_centroids) or "scene_unknown"
         profile = _profile_name(ex.get("camera_profile"))
-        scene_tags = ex.get("scene_tags") or ex.get("tags")
-        user_keywords = (
-            ex.get("user_keywords")
-            or ex.get("keywords")
-            or ex.get("flattened_keywords")
-        )
-        genre = _primary_genre_with_keywords(scene_tags, user_keywords, ex)
-        genre = verify_genre_with_visual_centroid(
-            genre, ex.get("embedding"), genre_centroids
-        )
-
         key = (profile, genre)
         groups.setdefault(key, []).append(ex)
     return groups
