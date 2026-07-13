@@ -48,6 +48,17 @@ Applies predictive edits to new photos using dynamic regression architecture.
    - **Style Override:** Users can explicitly force a specific style profile, bypassing similarity searches.
    - **Generative Fallback:** If the ML engine has zero confidence, the system falls back to an LLM (if enabled) for a zero-shot creative edit.
 
+### D. Unified Visual-Semantic Verification Pipeline
+Ensures visual consistency across catalog search recommendations and style training collections (preventing cross-genre pollution like macro shots in `portrait` or landscape in `street`).
+
+1. **Semantic Filter (`is_genre_compatible`)**: Evaluates broad-genre compatibility between a style's target genre and a photo's detected scene tags/keywords. Flags ambiguous tags (`scene_unknown`, `scene_general`).
+2. **Visual Verification (`verify_photo_visual_membership`)**: Computes SigLIP2 cosine similarity against the style's training embeddings matrix or centroid.
+   - Enforces a baseline threshold (`min_similarity = 0.45`).
+   - Elevates the threshold to strict visual similarity (`>= 0.60`) if the photo's text genre was flagged as ambiguous.
+3. **Double-pipeline Integration**:
+   - **Trained Styles Index ("Show All")**: Filters out outlier example photos during catalog rendering to maintain clean, visually unified collections.
+   - **Upgrade Recommendations**: Validates candidates against existing training examples prior to Farthest Point Culling, matching the same visual boundaries.
+
 ---
 
 ## 3. Database Integration Guide
