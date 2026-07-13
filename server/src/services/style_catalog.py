@@ -85,6 +85,24 @@ def _ensure_initialized() -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=5000;")
     conn.row_factory = sqlite3.Row
     _local.connection = conn
+
+    try:
+        row = conn.execute(
+            "SELECT rule_value FROM grouping_rule_state WHERE rule_key = 'NEEDS_REDISCOVERY'"
+        ).fetchone()
+        if row and str(row["rule_value"]) == "1":
+            conn.execute(
+                "UPDATE grouping_rule_state SET rule_value = '0', updated_at = datetime('now') WHERE rule_key = 'NEEDS_REDISCOVERY'"
+            )
+            conn.commit()
+            logger.info("Automatic post-migration rediscovery triggered.")
+            try:
+                discover_styles_from_examples(None)
+            except Exception as e:
+                logger.warning("Post-migration rediscovery failed: %s", e)
+    except Exception:
+        pass
+
     return conn
 
 
