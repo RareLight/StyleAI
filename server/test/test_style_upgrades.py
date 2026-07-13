@@ -463,3 +463,58 @@ def test_is_stitched_panorama():
     assert not style_upgrades._is_stitched_panorama(
         {"filename": "normal_photo.dng", "width": 4000, "height": 3000}
     )
+
+
+def test_get_style_upgrade_recommendations_partitioned_profile_indexing(mocker):
+    """Verify get_style_upgrade_recommendations partitions candidates by profile and excludes stitched panoramas."""
+    mock_style = [
+        {
+            "style_id": "style-profile-opt",
+            "style_name": "Style Profile Opt",
+            "example_count": 10,
+            "camera_profile": "Adobe Standard",
+            "genre": "scene_landscape",
+        }
+    ]
+    mocker.patch("services.style_catalog.list_styles", return_value=mock_style)
+    mocker.patch("services.style_catalog.get_style_examples", return_value=[])
+    mocker.patch("services.chroma._ensure_initialized")
+
+    mock_collection = mocker.MagicMock()
+    mock_collection.get.side_effect = [
+        # Pass 1: metadata scan
+        {
+            "ids": ["p1", "p2", "p_pano"],
+            "metadatas": [
+                {
+                    "camera_profile": "Adobe Standard",
+                    "rating": 5,
+                    "scene_tags": ["scene_landscape"],
+                },
+                {
+                    "camera_profile": "Nikon Standard",
+                    "rating": 5,
+                    "scene_tags": ["scene_landscape"],
+                },
+                {
+                    "camera_profile": "Adobe Standard",
+                    "filename": "pano-stitch.jpg",
+                    "width": 6000,
+                    "height": 2000,
+                },
+            ],
+        },
+        # Pass 2: embedding fetch for matching candidates only (p1 matches profile & genre; p2 profile mismatch; p_pano is stitched panorama)
+        {
+            "ids": ["p1"],
+            "embeddings": [[1.0, 0.0, 0.0]],
+        },
+    ]
+    mocker.patch("services.chroma.collection", mock_collection)
+
+    res = style_upgrades.get_style_upgrade_recommendations()
+    recs = res["styles"][0]["recommended_photo_ids"]
+    rec_ids = [r["globalPhotoId"] for r in recs]
+    assert "p1" in rec_ids
+    assert "p2" not in rec_ids
+    assert "p_pano" not in rec_ids

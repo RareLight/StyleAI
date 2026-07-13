@@ -334,7 +334,9 @@ def get_style_upgrade_recommendations(
     # PASS 1: Pre-fetch ALL metadata (fast) and filter candidates by profile
     # =========================================================================
     chroma_service._ensure_initialized()
-    all_photos_metadata_pool: list[tuple[str, dict[str, Any], str]] = []
+    photos_by_norm_profile: dict[
+        str, list[tuple[str, dict[str, Any], str, str, float]]
+    ] = {}
 
     if chroma_service.collection is not None:
         try:
@@ -349,10 +351,23 @@ def get_style_upgrade_recommendations(
                 meta = dict(p_metas[i]) if i < len(p_metas) and p_metas[i] else {}
                 if not meta.get("has_embedding", True):
                     continue
+                if style_grouping.is_stitched_panorama(meta):
+                    continue
                 p_genre = (
                     style_grouping.classify_photo_genre(meta, None) or "scene_unknown"
                 )
-                all_photos_metadata_pool.append((pid, meta, p_genre))
+                photo_profile = (meta.get("camera_profile") or "").strip()
+                norm_profile = style_grouping._profile_name(photo_profile).lower()
+                photo_model = (meta.get("camera_model") or "").strip()
+                norm_model = re.sub(r"[^a-zA-Z0-9]", "", photo_model).lower()
+                h_score = _hero_score(meta)
+
+                photos_by_norm_profile.setdefault(norm_profile, []).append(
+                    (pid, meta, p_genre, norm_model, h_score)
+                )
+
+            for bucket in photos_by_norm_profile.values():
+                bucket.sort(key=lambda x: x[4], reverse=True)
         except Exception as e:
             logger.warning(
                 f"Failed to pre-fetch image metadata pool: {e}", exc_info=True
@@ -369,34 +384,46 @@ def get_style_upgrade_recommendations(
         camera_model = (style.get("camera_model") or "").strip()
         genre = (style.get("genre") or "").strip()
 
+        norm_style_profile = style_grouping._profile_name(camera_profile).lower()
+        norm_style_model = re.sub(r"[^a-zA-Z0-9]", "", camera_model).lower()
+        is_hdr_style = "HDR" in camera_profile
+
         # Add existing examples to the fetch list so we can compute centroids/E_mat
         existing_ids = all_style_examples_map.get(style_id, set())
         needed_photo_ids.update(existing_ids)
 
-        is_hdr_style = "HDR" in camera_profile
+        candidate_pool = list(photos_by_norm_profile.get(norm_style_profile, []))
+        if norm_style_profile != "default" and "" in photos_by_norm_profile:
+            candidate_pool.extend(photos_by_norm_profile[""])
+
         candidates = []
 
-        for pid, meta, p_genre in all_photos_metadata_pool:
+        for pid, meta, p_genre, norm_photo_model, _ in candidate_pool:
             if pid in existing_ids or pid in already_recommended_pids:
                 continue
 
             photo_profile = (meta.get("camera_profile") or "").strip()
-            photo_model = (meta.get("camera_model") or "").strip()
-
-            if photo_profile:
-                if not _profiles_compatible(camera_profile, photo_profile):
-                    continue
-            else:
-                if camera_profile != "Default" and photo_model and camera_model:
-                    if not _models_compatible(camera_model, photo_model):
+            if not photo_profile:
+                if (
+                    camera_profile != "Default"
+                    and norm_style_model
+                    and norm_photo_model
+                ):
+                    if norm_style_model != norm_photo_model:
                         continue
                 if is_hdr_style:
                     continue
 
-            genre_mismatch = _check_genre_mismatch(genre, p_genre, meta)
+            genre_mismatch = (
+                genre not in ("scene_unknown", "scene_general", "")
+                and p_genre not in ("scene_unknown", "scene_general", "")
+                and p_genre != genre
+            )
             if not genre_mismatch:
                 candidates.append((pid, meta))
                 needed_photo_ids.add(pid)
+                if len(candidates) >= 250:
+                    break
 
         style_prelim_candidates_map[style_id] = candidates
 
