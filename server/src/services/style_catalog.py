@@ -471,21 +471,27 @@ def discover_styles_from_examples(
         "Discovered %d styles from %d examples", len(created_styles), len(examples)
     )
 
-    # Generate signature style summary in the background or synchronously
-    try:
-        from services import style_summary
+    def _run_post_discovery_bg_tasks():
+        try:
+            from services import style_summary
 
-        style_summary.summarize_catalog_styles()
-    except Exception as exc:
-        logger.warning(f"Failed to generate catalog style summaries: {exc}")
+            style_summary.summarize_catalog_styles()
+        except Exception as exc:
+            logger.warning(f"Failed to generate catalog style summaries: {exc}")
+        try:
+            from services import predictive_engine
 
-    # Train predictive ML models
-    try:
-        from services import predictive_engine
+            predictive_engine.train_style_models()
+        except Exception as exc:
+            logger.warning(f"Failed to train predictive ML models: {exc}")
 
-        predictive_engine.train_style_models()
-    except Exception as exc:
-        logger.warning(f"Failed to train predictive ML models: {exc}")
+    import threading
+
+    threading.Thread(
+        target=_run_post_discovery_bg_tasks,
+        name="StyleDiscoveryBG",
+        daemon=True,
+    ).start()
 
     return created_styles
 
