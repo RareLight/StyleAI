@@ -513,3 +513,16 @@ def test_group_examples_by_profile_genre_visual_reassignment():
         ex["photo_id"] for ex in groups[("Adobe Standard", "scene_portrait")]
     }
     assert "ambig" in people_pids
+
+
+def test_filter_style_examples_by_genre_excludes_incompatible():
+    examples = [
+        {"photo_id": "land1", "scene_tags": ["scene_landscape"]},
+        {"photo_id": "macro1", "scene_tags": ["scene_macro"]},
+        {"photo_id": "wild1", "scene_tags": ["scene_wildlife"]},
+        {"photo_id": "port1", "scene_tags": ["scene_portrait"]},
+        {"photo_id": "act1", "scene_tags": ["scene_action"]},
+    ]
+    filtered = sc._filter_style_examples_by_genre("scene_landscape", examples)
+    filtered_ids = [ex["photo_id"] for ex in filtered]
+    assert filtered_ids == ["land1"]
