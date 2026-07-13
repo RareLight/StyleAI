@@ -1145,7 +1145,7 @@ def list_training_examples() -> list[dict[str, Any]]:
         ex.update(
             {
                 "photo_id": pid,
-                "lr_uuid": meta.get("uuid", ""),
+                "lr_uuid": meta.get("lr_uuid") or meta.get("uuid") or "",
                 "filename": meta.get("filename", "") or "",
                 "label": meta.get("label", ""),
                 "summary": meta.get("summary", ""),

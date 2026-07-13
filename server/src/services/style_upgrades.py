@@ -17,6 +17,10 @@ import numpy as np
 from services import chroma as chroma_service
 from services import style_catalog
 from services import style_grouping
+from services.style_grouping import (
+    BURST_COSINE_DISTANCE,
+    VISUAL_MIN_SIMILARITY,
+)
 
 logger = logging.getLogger("styleai")
 
@@ -539,10 +543,10 @@ def get_style_upgrade_recommendations(
                 for i, (pid, emb, meta) in enumerate(prelim_candidates):
                     max_sim = float(max_sims[i])
                     # Reject exact duplicates / burst shots
-                    if (1.0 - max_sim) <= 0.05:
+                    if (1.0 - max_sim) <= BURST_COSINE_DISTANCE:
                         continue
                     # Reject candidate if it is visually/semantically unrelated to the style
-                    if max_sim < 0.45:
+                    if max_sim < VISUAL_MIN_SIMILARITY:
                         continue
                     valid_candidates.append((pid, emb, meta))
             else:
@@ -550,7 +554,7 @@ def get_style_upgrade_recommendations(
                 for pid, emb, meta in prelim_candidates:
                     if centroid is not None and len(centroid) > 0:
                         sim = float(np.dot(centroid, emb))
-                        if sim < 0.45:
+                        if sim < VISUAL_MIN_SIMILARITY:
                             continue
                     valid_candidates.append((pid, emb, meta))
 
@@ -583,7 +587,7 @@ def get_style_upgrade_recommendations(
                         break
 
                     sim = float(np.dot(emb_a, emb_b))
-                    if (1.0 - sim) <= 0.05:
+                    if (1.0 - sim) <= BURST_COSINE_DISTANCE:
                         cluster.append((pid_b, emb_b, meta_b))
                         clustered_pids.add(pid_b)
 

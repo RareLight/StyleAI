@@ -53,6 +53,27 @@ _SLIDER_RANGES: dict[str, float] = {
 
 DEFAULT_VARIANCE_THRESHOLD = 0.15
 
+# ---------------------------------------------------------------------------
+# Shared Visual Similarity Thresholds
+# ---------------------------------------------------------------------------
+# Both the Style Discovery pipeline (group_examples_by_profile_genre) and the
+# Upgrade Recommendations pipeline (_select_style_recommendations) use these
+# thresholds to enforce visually coherent style groupings.
+#
+# VISUAL_MIN_SIMILARITY: Minimum cosine similarity for a photo to be
+#     considered visually related to a style cluster.
+# VISUAL_STRICT_SIMILARITY: Elevated threshold applied when text-based genre
+#     classification is ambiguous (scene_unknown / scene_general).
+# BURST_COSINE_DISTANCE: Maximum cosine distance (1 - sim) to consider two
+#     embeddings near-duplicates (burst shots).
+# VISUAL_REASSIGN_MARGIN: During discovery, a photo is re-assigned to a
+#     different style group only if the competing centroid similarity exceeds
+#     the assigned centroid similarity by at least this margin.
+VISUAL_MIN_SIMILARITY = 0.45
+VISUAL_STRICT_SIMILARITY = 0.60
+BURST_COSINE_DISTANCE = 0.05
+VISUAL_REASSIGN_MARGIN = 0.05
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -1402,17 +1423,62 @@ def verify_genre_with_visual_centroid(
     return p_genre
 
 
+def _compute_group_centroids(
+    groups: dict[tuple[str, str], list[dict[str, Any]]],
+) -> dict[tuple[str, str], np.ndarray]:
+    """Compute L2-normalized visual centroids for each (profile, genre) group."""
+    centroids: dict[tuple[str, str], np.ndarray] = {}
+    for key, group_ex in groups.items():
+        embs = [ex["embedding"] for ex in group_ex if ex.get("embedding") is not None]
+        if embs:
+            emb_matrix = np.array(embs, dtype=np.float32)
+            mean_vec = np.mean(emb_matrix, axis=0)
+            norm = float(np.linalg.norm(mean_vec))
+            if norm > 1e-9:
+                centroids[key] = mean_vec / norm
+    return centroids
+
+
+def _normalize_embedding(emb: Any) -> np.ndarray | None:
+    """Return an L2-normalized embedding vector, or None if unusable."""
+    if emb is None:
+        return None
+    emb_arr = emb if isinstance(emb, np.ndarray) else np.array(emb, dtype=np.float32)
+    if emb_arr.size == 0:
+        return None
+    norm = float(np.linalg.norm(emb_arr))
+    if norm <= 1e-9:
+        return None
+    return emb_arr / norm
+
+
 def group_examples_by_profile_genre(
     examples: list[dict[str, Any]],
 ) -> dict[tuple[str, str], list[dict[str, Any]]]:
-    """Group training examples by (profile, genre).
+    """Group training examples by (profile, genre) with cross-group visual verification.
+
+    Uses the same 3-stage pipeline as the Upgrade Recommendations path:
+
+    1. **Text classification** (shared: ``classify_photo_genre``): Initial genre
+       assignment based on scene tags, user keywords, and EXIF priors.
+    2. **Visual centroid computation**: Compute an L2-normalized centroid
+       embedding for each ``(profile, genre)`` group.
+    3. **Cross-group visual re-assignment**: For every photo, compare its
+       embedding similarity to its *own* group's centroid vs. *all other*
+       groups' centroids (same camera profile).  If another group's centroid is
+       a significantly better visual match (by ``VISUAL_REASSIGN_MARGIN``),
+       re-assign the photo.  This mirrors the ``C_mat @ E_mat.T >= 0.45``
+       gating check that keeps the Upgrade Recommendations pipeline accurate.
 
     Args:
-        examples: List of training-example metadata dicts (from ChromaDB).
+        examples: Training-example metadata dicts (must include ``embedding``).
 
     Returns:
-        Dict keyed by (profile, genre) → list of examples.
+        Dict keyed by ``(profile, genre)`` → list of examples.
     """
+    # ------------------------------------------------------------------
+    # Pass 1: Initial text-based grouping (shared with upgrades pipeline)
+    # ------------------------------------------------------------------
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
 
     for ex in examples:
@@ -1422,6 +1488,112 @@ def group_examples_by_profile_genre(
         profile = _profile_name(ex.get("camera_profile"))
         key = (profile, genre)
         groups.setdefault(key, []).append(ex)
+
+    # Need at least 2 groups within a profile for cross-group comparison
+    profiles_with_multiple_groups: set[str] = set()
+    profile_group_count: dict[str, int] = {}
+    for profile, _genre in groups:
+        profile_group_count[profile] = profile_group_count.get(profile, 0) + 1
+    for profile, count in profile_group_count.items():
+        if count >= 2:
+            profiles_with_multiple_groups.add(profile)
+
+    if not profiles_with_multiple_groups:
+        return groups
+
+    # ------------------------------------------------------------------
+    # Pass 2: Compute visual centroids per group
+    # ------------------------------------------------------------------
+    centroids = _compute_group_centroids(groups)
+
+    if not centroids:
+        return groups
+
+    # ------------------------------------------------------------------
+    # Pass 3: Cross-group visual re-assignment
+    # ------------------------------------------------------------------
+    # For each photo, check if another group (same profile) is a better
+    # visual fit.  This catches the cases where classify_photo_genre is
+    # confidently *wrong* (e.g. a macro shot classified as portrait).
+    reassignments: list[tuple[tuple[str, str], tuple[str, str], dict[str, Any]]] = []
+
+    for key, group_ex in groups.items():
+        profile, genre = key
+        if profile not in profiles_with_multiple_groups:
+            continue
+        own_centroid = centroids.get(key)
+        if own_centroid is None:
+            continue
+
+        for ex in group_ex:
+            emb_norm = _normalize_embedding(ex.get("embedding"))
+            if emb_norm is None:
+                continue
+
+            own_sim = float(np.dot(own_centroid, emb_norm))
+
+            best_other_key: tuple[str, str] | None = None
+            best_other_sim = -1.0
+
+            for other_key, other_centroid in centroids.items():
+                other_profile, other_genre = other_key
+                if other_profile != profile or other_key == key:
+                    continue
+                sim = float(np.dot(other_centroid, emb_norm))
+                if sim > best_other_sim:
+                    best_other_sim = sim
+                    best_other_key = other_key
+
+            if (
+                best_other_key is not None
+                and best_other_sim > own_sim + VISUAL_REASSIGN_MARGIN
+                and best_other_sim >= VISUAL_MIN_SIMILARITY
+            ):
+                reassignments.append((key, best_other_key, ex))
+
+    # Apply reassignments
+    for old_key, new_key, ex in reassignments:
+        if ex in groups.get(old_key, []):
+            groups[old_key].remove(ex)
+            groups.setdefault(new_key, []).append(ex)
+
+    # Recompute centroids after reassignment and do one more pass for
+    # ambiguous photos (scene_unknown/scene_general) that may now have a
+    # clear best-fit group.
+    if reassignments:
+        centroids = _compute_group_centroids(groups)
+
+    ambiguous_key_genre = ("scene_unknown", "scene_general", "")
+    ambiguous_keys = [k for k in groups if k[1] in ambiguous_key_genre]
+    for amb_key in ambiguous_keys:
+        profile = amb_key[0]
+        remaining: list[dict[str, Any]] = []
+        for ex in groups.get(amb_key, []):
+            emb_norm = _normalize_embedding(ex.get("embedding"))
+            if emb_norm is None:
+                remaining.append(ex)
+                continue
+
+            best_key: tuple[str, str] | None = None
+            best_sim = -1.0
+            for other_key, centroid in centroids.items():
+                if other_key[0] != profile or other_key[1] in ambiguous_key_genre:
+                    continue
+                sim = float(np.dot(centroid, emb_norm))
+                if sim > best_sim:
+                    best_sim = sim
+                    best_key = other_key
+
+            if best_key is not None and best_sim >= VISUAL_MIN_SIMILARITY:
+                groups.setdefault(best_key, []).append(ex)
+            else:
+                remaining.append(ex)
+
+        groups[amb_key] = remaining
+
+    # Clean up empty groups
+    groups = {k: v for k, v in groups.items() if v}
+
     return groups
 
 

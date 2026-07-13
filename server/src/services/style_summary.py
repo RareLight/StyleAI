@@ -1,9 +1,9 @@
 import json
 import os
-from config import logger, DEFAULT_METADATA_PROVIDER, DATA_DIR
+from config import logger, DEFAULT_METADATA_PROVIDER, DB_PATH
 from . import style_catalog as catalog_service
 
-SUMMARY_FILE = os.path.join(DATA_DIR, "signature_style.json")
+SUMMARY_FILE = os.path.join(DB_PATH or ".", "signature_style.json")
 
 
 def get_signature_style_summary() -> str | None:
