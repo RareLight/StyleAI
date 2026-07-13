@@ -1101,6 +1101,12 @@ def _enrich_and_sync_metadatas_from_main_index(
             "flattened_keywords",
             "scene_tags",
             "tags",
+            "width",
+            "height",
+            "aspect_ratio",
+            "rating",
+            "pick_status",
+            "is_edited",
         )
         for i, pid in enumerate(ids):
             if pid in main_map and i < len(metadatas) and metadatas[i]:
@@ -1157,7 +1163,8 @@ def list_training_examples() -> list[dict[str, Any]]:
     examples = []
     for i, pid in enumerate(ids):
         meta = dict(metadatas[i]) if i < len(metadatas) else {}
-        examples.append(
+        ex = dict(meta)
+        ex.update(
             {
                 "photo_id": pid,
                 "lr_uuid": meta.get("uuid", ""),
@@ -1189,6 +1196,7 @@ def list_training_examples() -> list[dict[str, Any]]:
                 "zone_bright_highlights": meta.get("zone_bright_highlights", "0.0"),
             }
         )
+        examples.append(ex)
     examples.sort(key=lambda x: x["captured_at"], reverse=True)
     return examples
 
