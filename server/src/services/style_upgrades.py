@@ -420,20 +420,8 @@ def get_style_upgrade_recommendations(
                 if is_hdr_style:
                     continue
 
-            genre_mismatch = False
-            if genre and genre not in ("scene_unknown", "scene_general", ""):
-                if p_genre not in ("scene_unknown", "scene_general", ""):
-                    b_style = style_grouping._get_broad_genre(genre)
-                    b_p = style_grouping._get_broad_genre(p_genre)
-                    if (
-                        p_genre != genre
-                        and b_p != genre
-                        and p_genre != b_style
-                        and b_p != b_style
-                    ):
-                        genre_mismatch = True
-
-            if not genre_mismatch:
+            is_compat, _ = style_grouping.is_genre_compatible(genre, p_genre)
+            if is_compat:
                 candidates.append((pid, meta))
                 needed_photo_ids.add(pid)
                 if len(candidates) >= 250:

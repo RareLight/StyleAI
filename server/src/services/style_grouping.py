@@ -1522,3 +1522,91 @@ def generate_style_description(
             desc += f" Commonly includes: {', '.join(scene_names)}."
 
     return desc
+
+
+def is_genre_compatible(style_genre: str, photo_genre: str) -> tuple[bool, bool]:
+    """Unified broad-genre compatibility check shared by Trained Styles and Upgrade Recommendations.
+
+    Returns:
+        (is_compatible, is_ambiguous):
+        - is_compatible: True if broad genres match or either genre is general/unknown.
+        - is_ambiguous: True if either genre is scene_unknown/scene_general/empty, signaling
+          that visual membership verification is required.
+    """
+    s_clean = (style_genre or "").strip()
+    p_clean = (photo_genre or "").strip()
+
+    is_ambiguous = s_clean in ("scene_unknown", "scene_general", "") or p_clean in (
+        "scene_unknown",
+        "scene_general",
+        "",
+    )
+
+    if is_ambiguous:
+        return True, True
+
+    b_style = _get_broad_genre(s_clean)
+    b_photo = _get_broad_genre(p_clean)
+
+    is_compat = (
+        p_clean == s_clean
+        or b_photo == s_clean
+        or p_clean == b_style
+        or b_photo == b_style
+    )
+    return is_compat, False
+
+
+def verify_photo_visual_membership(
+    embedding: Any,
+    style_embeddings: np.ndarray | None = None,
+    style_centroid: np.ndarray | None = None,
+    min_similarity: float = 0.45,
+    require_strict_if_ambiguous: bool = False,
+) -> bool:
+    """Unified SigLIP2 visual verification helper shared by Trained Styles and Upgrade Recommendations.
+
+    Verifies whether a photo's embedding vector belongs to a style cluster by checking
+    cosine similarity against the style's training embeddings matrix or visual centroid.
+    """
+    if embedding is None:
+        return True
+
+    emb_arr = (
+        embedding
+        if isinstance(embedding, np.ndarray)
+        else np.array(embedding, dtype=np.float32)
+    )
+    if emb_arr.size == 0:
+        return True
+    norm = float(np.linalg.norm(emb_arr))
+    if norm <= 1e-9:
+        return True
+    emb_norm = emb_arr / norm
+
+    threshold = 0.60 if require_strict_if_ambiguous else min_similarity
+
+    if style_embeddings is not None and len(style_embeddings) > 0:
+        E_mat = (
+            style_embeddings
+            if isinstance(style_embeddings, np.ndarray)
+            else np.array(style_embeddings, dtype=np.float32)
+        )
+        if E_mat.ndim == 1:
+            E_mat = E_mat.reshape(1, -1)
+        sims = emb_norm @ E_mat.T
+        max_sim = float(np.max(sims))
+        return max_sim >= threshold
+
+    if style_centroid is not None and len(style_centroid) > 0:
+        c_arr = (
+            style_centroid
+            if isinstance(style_centroid, np.ndarray)
+            else np.array(style_centroid, dtype=np.float32)
+        )
+        c_norm = float(np.linalg.norm(c_arr))
+        if c_norm > 1e-9:
+            sim = float(np.dot(emb_norm, c_arr / c_norm))
+            return sim >= threshold
+
+    return True
