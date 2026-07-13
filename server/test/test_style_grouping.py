@@ -579,3 +579,65 @@ def test_llm_noise_filtering_and_visual_centroids():
         similarity_threshold=0.60,
     )
     assert verified == "scene_portrait"
+
+
+def test_unified_genre_compatibility():
+    is_compat, is_ambig = sg.is_genre_compatible("scene_portrait", "scene_people")
+    assert is_compat is True
+    assert is_ambig is False
+
+    is_compat, is_ambig = sg.is_genre_compatible("scene_portrait", "scene_landscape")
+    assert is_compat is False
+    assert is_ambig is False
+
+    is_compat, is_ambig = sg.is_genre_compatible("scene_portrait", "scene_unknown")
+    assert is_compat is True
+    assert is_ambig is True
+
+
+def test_unified_visual_membership():
+    import numpy as np
+
+    style_embeddings = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0],
+        ],
+        dtype=np.float32,
+    )
+
+    photo_emb_good = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    assert (
+        sg.verify_photo_visual_membership(
+            photo_emb_good, style_embeddings=style_embeddings, min_similarity=0.45
+        )
+        is True
+    )
+
+    photo_emb_bad = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+    assert (
+        sg.verify_photo_visual_membership(
+            photo_emb_bad, style_embeddings=style_embeddings, min_similarity=0.45
+        )
+        is False
+    )
+
+    photo_emb_med = np.array([0.5, 0.866, 0.0], dtype=np.float32)
+    assert (
+        sg.verify_photo_visual_membership(
+            photo_emb_med,
+            style_embeddings=style_embeddings,
+            min_similarity=0.45,
+            require_strict_if_ambiguous=False,
+        )
+        is True
+    )
+    assert (
+        sg.verify_photo_visual_membership(
+            photo_emb_med,
+            style_embeddings=style_embeddings,
+            min_similarity=0.45,
+            require_strict_if_ambiguous=True,
+        )
+        is False
+    )
