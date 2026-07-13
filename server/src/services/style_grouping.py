@@ -397,7 +397,7 @@ _BROAD_GENRE_MAP: dict[str, str] = {
     "scene_nature": "scene_nature",
     "scene_macro": "scene_macro",
     "scene_flowers": "scene_macro",
-    "scene_wildlife": "scene_nature",
+    "scene_wildlife": "scene_wildlife",
     "scene_architecture": "scene_architecture",
     "scene_studio": "scene_studio",
     "scene_interior": "scene_architecture",
@@ -542,7 +542,9 @@ def clear_semantic_genre_cache() -> None:
 
 def _get_broad_genre(tag: str) -> str:
     """Map a specific scene tag to a broad bucket."""
-    return _BROAD_GENRE_MAP.get(tag, "scene_unknown")
+    return _BROAD_GENRE_MAP.get(
+        tag, tag if tag.startswith("scene_") else "scene_unknown"
+    )
 
 
 def _extract_keyword_strings(val: Any) -> list[str]:
@@ -824,6 +826,16 @@ def _primary_genre_with_keywords(
                 if best_prior_regime in {"scene_nature", "scene_wildlife"}
                 else best_prior_regime
             )
+        if best_prior_regime == "scene_macro" and best_prior_score >= 0.35:
+            top_tag = content_tags[0] if content_tags else ""
+            if top_tag not in {
+                "scene_portrait",
+                "scene_wildlife",
+                "scene_studio",
+            } and not (
+                top_tag == "scene_landscape" and "scene_macro" not in content_tags
+            ):
+                return "scene_macro"
 
     if content_tags:
         primary_mapped = _get_broad_genre(content_tags[0])
@@ -831,15 +843,26 @@ def _primary_genre_with_keywords(
             "scene_exterior",
             "scene_interior",
             "scene_golden_hour",
-            "scene_landscape",
             "scene_unknown",
         }
-        if primary_mapped in background_settings:
-            tier_order_subjects = [
-                "scene_studio",
-                "scene_macro",
-                "scene_portrait",
-            ]
+        if primary_mapped in background_settings or primary_mapped == "scene_landscape":
+            tier_order_subjects = (
+                [
+                    "scene_studio",
+                    "scene_macro",
+                    "scene_portrait",
+                    "scene_wildlife",
+                ]
+                if primary_mapped == "scene_landscape"
+                else [
+                    "scene_studio",
+                    "scene_macro",
+                    "scene_portrait",
+                    "scene_wildlife",
+                    "scene_action",
+                    "scene_event",
+                ]
+            )
             for target_genre in tier_order_subjects:
                 for t in content_tags:
                     t_lower = t.lower()
@@ -859,36 +882,47 @@ def _primary_genre_with_keywords(
             "scene_studio",
             "scene_macro",
             "scene_night",
+            "scene_wildlife",
+            "scene_action",
+            "scene_event",
+            "scene_street",
         }
         if primary_mapped in canonical_regimes:
             return primary_mapped
-        if primary_mapped in {"scene_nature", "scene_wildlife"}:
-            return "scene_landscape"
+        if primary_mapped == "scene_nature":
+            if "scene_macro" in content_tags or (
+                priors and priors.get("scene_macro", 0.0) > 0
+            ):
+                return "scene_macro"
+            return "scene_nature"
+        if primary_mapped == "scene_wildlife":
+            if "scene_macro" in content_tags:
+                return "scene_macro"
+            return "scene_wildlife"
         for t in content_tags:
             if t in canonical_regimes:
                 return t
             mapped_t = _get_broad_genre(t)
             if mapped_t in canonical_regimes:
                 return mapped_t
-            if mapped_t in {"scene_nature", "scene_wildlife"}:
-                return "scene_landscape"
+            if mapped_t == "scene_nature":
+                if "scene_macro" in content_tags or (
+                    priors and priors.get("scene_macro", 0.0) > 0
+                ):
+                    return "scene_macro"
+                return "scene_nature"
+            if mapped_t == "scene_wildlife":
+                if "scene_macro" in content_tags:
+                    return "scene_macro"
+                return "scene_wildlife"
 
     if priors:
         best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
         if best_prior_score >= 0.30:
-            return (
-                "scene_landscape"
-                if best_prior_regime in {"scene_nature", "scene_wildlife"}
-                else best_prior_regime
-            )
+            return best_prior_regime
 
     if content_tags and content_tags[0] != "scene_unknown":
-        mapped = _get_broad_genre(content_tags[0])
-        return (
-            "scene_landscape"
-            if mapped in {"scene_nature", "scene_wildlife"}
-            else mapped
-        )
+        return _get_broad_genre(content_tags[0])
 
     if kw_list:
         # Setting fallback: if no subject/domain matched above, check setting keywords
@@ -1599,6 +1633,28 @@ def group_examples_by_profile_genre(
                 remaining.append(ex)
 
         groups[amb_key] = remaining
+
+    # Final visual verification: move any visual outlier (similarity < VISUAL_MIN_SIMILARITY)
+    # out of specific genre groups into scene_general so it does not pollute style profiles.
+    for key in list(groups.keys()):
+        profile, genre = key
+        if genre in ambiguous_key_genre:
+            continue
+        centroid = centroids.get(key)
+        if centroid is None:
+            continue
+        valid_ex: list[dict[str, Any]] = []
+        for ex in groups[key]:
+            emb_norm = _normalize_embedding(ex.get("embedding"))
+            if emb_norm is None:
+                valid_ex.append(ex)
+                continue
+            sim = float(np.dot(centroid, emb_norm))
+            if sim >= VISUAL_MIN_SIMILARITY:
+                valid_ex.append(ex)
+            else:
+                groups.setdefault((profile, "scene_general"), []).append(ex)
+        groups[key] = valid_ex
 
     # Clean up empty groups
     groups = {k: v for k, v in groups.items() if v}

@@ -492,6 +492,36 @@ def test_exif_priors_and_vision_regimes():
     priors = sg._evaluate_exif_priors(meta_studio)
     assert priors.get("scene_studio", 0.0) >= 0.20
 
+    # 4. Close-up flower shot outdoor on macro lens tagged scene_nature -> scene_macro
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_nature"], [], exif_metadata=meta_macro_lens
+        )
+        == "scene_macro"
+    )
+
+    # 5. Outdoor close-up tagged with both scene_nature and scene_macro -> scene_macro
+    assert (
+        sg._primary_genre_with_keywords(["scene_nature", "scene_macro"], [])
+        == "scene_macro"
+    )
+
+    # 6. Wildlife shot on 105mm macro lens tagged scene_wildlife -> scene_wildlife
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_wildlife"], [], exif_metadata=meta_macro_lens
+        )
+        == "scene_wildlife"
+    )
+
+    # 7. Scenic landscape vista shot on 105mm macro lens tagged scene_landscape -> scene_landscape
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_landscape"], [], exif_metadata=meta_macro_lens
+        )
+        == "scene_landscape"
+    )
+
 
 def test_group_examples_by_profile_genre_uses_exif_priors():
     examples = [
