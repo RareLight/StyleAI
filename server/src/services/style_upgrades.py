@@ -393,8 +393,11 @@ def get_style_upgrade_recommendations(
         needed_photo_ids.update(existing_ids)
 
         candidate_pool = list(photos_by_norm_profile.get(norm_style_profile, []))
-        if norm_style_profile != "default" and "" in photos_by_norm_profile:
-            candidate_pool.extend(photos_by_norm_profile[""])
+        if norm_style_profile != "default":
+            if "" in photos_by_norm_profile:
+                candidate_pool.extend(photos_by_norm_profile[""])
+            if "default" in photos_by_norm_profile:
+                candidate_pool.extend(photos_by_norm_profile["default"])
 
         candidates = []
 
@@ -403,7 +406,10 @@ def get_style_upgrade_recommendations(
                 continue
 
             photo_profile = (meta.get("camera_profile") or "").strip()
-            if not photo_profile:
+            if (
+                not photo_profile
+                or style_grouping._profile_name(photo_profile).lower() == "default"
+            ):
                 if (
                     camera_profile != "Default"
                     and norm_style_model
@@ -414,11 +420,19 @@ def get_style_upgrade_recommendations(
                 if is_hdr_style:
                     continue
 
-            genre_mismatch = (
-                genre not in ("scene_unknown", "scene_general", "")
-                and p_genre not in ("scene_unknown", "scene_general", "")
-                and p_genre != genre
-            )
+            genre_mismatch = False
+            if genre and genre not in ("scene_unknown", "scene_general", ""):
+                if p_genre not in ("scene_unknown", "scene_general", ""):
+                    b_style = style_grouping._get_broad_genre(genre)
+                    b_p = style_grouping._get_broad_genre(p_genre)
+                    if (
+                        p_genre != genre
+                        and b_p != genre
+                        and p_genre != b_style
+                        and b_p != b_style
+                    ):
+                        genre_mismatch = True
+
             if not genre_mismatch:
                 candidates.append((pid, meta))
                 needed_photo_ids.add(pid)
@@ -540,7 +554,7 @@ def get_style_upgrade_recommendations(
                     if (1.0 - max_sim) <= 0.05:
                         continue
                     # Reject candidate if it is visually/semantically unrelated to the style
-                    if max_sim < 0.60:
+                    if max_sim < 0.45:
                         continue
                     valid_candidates.append((pid, emb, meta))
             else:
@@ -548,7 +562,7 @@ def get_style_upgrade_recommendations(
                 for pid, emb, meta in prelim_candidates:
                     if centroid is not None and len(centroid) > 0:
                         sim = float(np.dot(centroid, emb))
-                        if sim < 0.60:
+                        if sim < 0.45:
                             continue
                     valid_candidates.append((pid, emb, meta))
 
