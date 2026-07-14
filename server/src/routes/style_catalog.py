@@ -47,6 +47,7 @@ def list_styles():
 @style_catalog_bp.route("/styles/upgrades/recommendations", methods=["GET", "POST"])
 def get_upgrade_recommendations():
     try:
+        catalog_service._ensure_initialized()
         limit = request.args.get("limit", 100, type=int)
         if request.is_json and request.json:
             limit = request.json.get("limit", limit)
