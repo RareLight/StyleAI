@@ -62,6 +62,20 @@ Ensures visual consistency across catalog search recommendations and style train
    - **Trained Styles Index ("Show All")**: Uses `classify_photo_genre(ex)` and `is_genre_compatible` during catalog rendering (`style_catalog.py`) to maintain clean, visually unified collections.
    - **Upgrade Recommendations ("Find All")**: Uses the exact same `classify_photo_genre(meta)` and `is_genre_compatible` logic (`style_upgrades.py`) prior to Farthest Point Culling, guaranteeing identical categorization boundaries across both features.
 
+### E. Automated Semantic Caching & Rule Version Invalidation Pipeline
+To prevent repetitive SigLIP2 embedding lookups for unknown user keywords during large catalog scans, `style_grouping._dynamic_semantic_mapping` caches closest semantic bucket matches inside the `semantic_genre_cache` table (`styles.sqlite`).
+
+1. **Troubleshooting History & Why Cache Management is Critical**:
+   - During production troubleshooting of cross-genre contamination (such as generic nature or trail words being categorized as `scene_wildlife`), developers discovered that updating classification functions or keyword guards in Python (`style_grouping.py`) alone did not resolve incorrect groupings.
+   - Persistent entries stored in `semantic_genre_cache` survived server restarts and caused endpoints (including `/styles/upgrades/recommendations`) to immediately return stale, obsolete category mappings.
+2. **Automated Rule Version Tracking (`CURRENT_GROUPING_RULE_VERSION`)**:
+   - To guarantee synchronization between code rules and SQLite cache tables, `style_catalog.py` maintains a `CURRENT_GROUPING_RULE_VERSION` constant tracked inside the `grouping_rule_state` table.
+   - Whenever categorization logic is modified, incrementing `CURRENT_GROUPING_RULE_VERSION` automatically triggers `catalog_service._ensure_initialized()` on startup or route invocation to:
+     - Purge all entries from `semantic_genre_cache` (`DELETE FROM semantic_genre_cache`).
+     - Flag `NEEDS_REDISCOVERY = '1'`, automatically scheduling a clean re-discovery of all existing style profiles against the updated rules.
+3. **Lazy Initialization Hook**:
+   - API endpoints that query recommendations or styles enforce a lazy call to `catalog_service._ensure_initialized()` at their entry point so cache wipes run before any evaluation.
+
 ---
 
 ## 3. Database Integration Guide
