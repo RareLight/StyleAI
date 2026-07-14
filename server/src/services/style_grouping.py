@@ -499,9 +499,23 @@ def _dynamic_semantic_mapping(keyword: str) -> str:
     }
     if closest_dist < 0.75:
         closest_bucket = list(_DYNAMIC_BUCKETS.keys())[closest_idx]
-        if closest_bucket in {"scene_architecture", "scene_street", "scene_action"}:
-            if any(nw in keyword_lower for nw in nature_guard_words):
-                closest_bucket = "scene_landscape"
+        if closest_bucket in {
+            "scene_architecture",
+            "scene_street",
+            "scene_action",
+            "scene_wildlife",
+        }:
+            non_animal_nature = {
+                nw
+                for nw in nature_guard_words
+                if nw not in {"bird", "birds", "wildlife", "animal"}
+            }
+            if any(nw in keyword_lower for nw in non_animal_nature):
+                closest_bucket = (
+                    "scene_landscape"
+                    if closest_bucket != "scene_wildlife"
+                    else "scene_nature"
+                )
     else:
         closest_bucket = None
 
@@ -765,12 +779,12 @@ def _primary_genre_with_keywords(
             "scene_event",
             "scene_portrait",
             "scene_wildlife",
-            "scene_nature",
             "scene_astrophotography",
             "scene_night",
             "scene_architecture",
             "scene_street",
             "scene_landscape",
+            "scene_nature",
             "scene_action",
         ]
 
@@ -932,13 +946,17 @@ def _primary_genre_with_keywords(
             return primary_mapped
         top_vision_tags = content_tags[:4]
         if primary_mapped == "scene_nature":
-            if "scene_macro" in top_vision_tags or (
+            top_mapped = {_get_broad_genre(t) for t in top_vision_tags}
+            if "scene_macro" in top_mapped or (
                 priors and priors.get("scene_macro", 0.0) > 0
             ):
                 return "scene_macro"
+            if "scene_landscape" in top_mapped:
+                return "scene_landscape"
             return "scene_nature"
         if primary_mapped == "scene_wildlife":
-            if "scene_macro" in top_vision_tags:
+            top_mapped = {_get_broad_genre(t) for t in top_vision_tags}
+            if "scene_macro" in top_mapped:
                 return "scene_macro"
             return "scene_wildlife"
         for t in top_vision_tags:
@@ -948,13 +966,17 @@ def _primary_genre_with_keywords(
             if mapped_t in canonical_regimes:
                 return mapped_t
             if mapped_t == "scene_nature":
-                if "scene_macro" in top_vision_tags or (
+                top_mapped = {_get_broad_genre(t2) for t2 in top_vision_tags}
+                if "scene_macro" in top_mapped or (
                     priors and priors.get("scene_macro", 0.0) > 0
                 ):
                     return "scene_macro"
+                if "scene_landscape" in top_mapped:
+                    return "scene_landscape"
                 return "scene_nature"
             if mapped_t == "scene_wildlife":
-                if "scene_macro" in top_vision_tags:
+                top_mapped = {_get_broad_genre(t2) for t2 in top_vision_tags}
+                if "scene_macro" in top_mapped:
                     return "scene_macro"
                 return "scene_wildlife"
 

@@ -663,6 +663,16 @@ def test_nature_wildlife_landscape_precedence():
     )
     assert genre_land == "scene_landscape"
 
+    # 3. Nature fallback should map secondary landscape and macro tags cleanly
+    assert (
+        sg._primary_genre_with_keywords(["scene_nature", "mountain", "valley"], [])
+        == "scene_landscape"
+    )
+    assert (
+        sg._primary_genre_with_keywords(["scene_nature", "flower", "petal"], [])
+        == "scene_macro"
+    )
+
 
 def test_llm_noise_filtering_and_visual_centroids():
     import numpy as np
