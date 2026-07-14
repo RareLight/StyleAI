@@ -51,13 +51,16 @@ Applies predictive edits to new photos using dynamic regression architecture.
 ### D. Unified Visual-Semantic Verification Pipeline
 Ensures visual consistency across catalog search recommendations and style training collections (preventing cross-genre pollution like macro shots in `portrait` or landscape in `street`).
 
-1. **Semantic Filter (`is_genre_compatible`)**: Evaluates broad-genre compatibility between a style's target genre and a photo's detected scene tags/keywords. Flags ambiguous tags (`scene_unknown`, `scene_general`).
-2. **Visual Verification (`verify_photo_visual_membership`)**: Computes SigLIP2 cosine similarity against the style's training embeddings matrix or centroid.
+1. **Top-3 Vision Tag Confidence Horizon (`content_tags[:3]`)**:
+   - SigLIP2 returns up to 10 scene tags per image sorted by probability.
+   - To prevent noisy tail predictions (ranks 4–10) from overriding strong primary tags (`scene_event`, `scene_landscape`, `scene_exterior`), all subject override tiers and fallback lookups are strictly bounded to the top 3 highest-confidence vision predictions (`content_tags[:3]`).
+2. **Semantic Filter (`is_genre_compatible`)**: Evaluates broad-genre compatibility between a style's target genre and a photo's detected scene tags/keywords. Flags ambiguous tags (`scene_unknown`, `scene_general`).
+3. **Visual Verification (`verify_photo_visual_membership`)**: Computes SigLIP2 cosine similarity against the style's training embeddings matrix or centroid.
    - Enforces a baseline threshold (`min_similarity = 0.45`).
    - Elevates the threshold to strict visual similarity (`>= 0.60`) if the photo's text genre was flagged as ambiguous.
-3. **Double-pipeline Integration**:
-   - **Trained Styles Index ("Show All")**: Filters out outlier example photos during catalog rendering to maintain clean, visually unified collections.
-   - **Upgrade Recommendations**: Validates candidates against existing training examples prior to Farthest Point Culling, matching the same visual boundaries.
+4. **Strict Parity Across "Show All" & "Find All" Pipelines**:
+   - **Trained Styles Index ("Show All")**: Uses `classify_photo_genre(ex)` and `is_genre_compatible` during catalog rendering (`style_catalog.py`) to maintain clean, visually unified collections.
+   - **Upgrade Recommendations ("Find All")**: Uses the exact same `classify_photo_genre(meta)` and `is_genre_compatible` logic (`style_upgrades.py`) prior to Farthest Point Culling, guaranteeing identical categorization boundaries across both features.
 
 ---
 

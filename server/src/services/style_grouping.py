@@ -875,8 +875,9 @@ def _primary_genre_with_keywords(
                     "scene_street",
                     "scene_architecture",
                 ]
+            top_vision_tags = content_tags[:3]
             for target_genre in tier_order_subjects:
-                for t in content_tags:
+                for t in top_vision_tags:
                     t_lower = t.lower()
                     if (
                         _BROAD_GENRE_MAP.get(t_lower) == target_genre
@@ -902,30 +903,31 @@ def _primary_genre_with_keywords(
         }
         if primary_mapped in canonical_regimes:
             return primary_mapped
+        top_vision_tags = content_tags[:3]
         if primary_mapped == "scene_nature":
-            if "scene_macro" in content_tags or (
+            if "scene_macro" in top_vision_tags or (
                 priors and priors.get("scene_macro", 0.0) > 0
             ):
                 return "scene_macro"
             return "scene_nature"
         if primary_mapped == "scene_wildlife":
-            if "scene_macro" in content_tags:
+            if "scene_macro" in top_vision_tags:
                 return "scene_macro"
             return "scene_wildlife"
-        for t in content_tags:
+        for t in top_vision_tags:
             if t in canonical_regimes:
                 return t
             mapped_t = _get_broad_genre(t)
             if mapped_t in canonical_regimes:
                 return mapped_t
             if mapped_t == "scene_nature":
-                if "scene_macro" in content_tags or (
+                if "scene_macro" in top_vision_tags or (
                     priors and priors.get("scene_macro", 0.0) > 0
                 ):
                     return "scene_macro"
                 return "scene_nature"
             if mapped_t == "scene_wildlife":
-                if "scene_macro" in content_tags:
+                if "scene_macro" in top_vision_tags:
                     return "scene_macro"
                 return "scene_wildlife"
 

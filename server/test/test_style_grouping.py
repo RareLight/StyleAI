@@ -490,6 +490,22 @@ def test_astrophotography_and_specialized_canonical_overrides():
     )
 
 
+def test_top_vision_tag_confidence_horizon_ignores_tail_noise():
+    # Tail predictions at rank 4-10 (e.g., scene_wildlife at index 7) must not override top event/exterior tags
+    noisy_tags = [
+        "scene_exterior",
+        "scene_event",
+        "wedding",
+        "outdoor",
+        "park",
+        "grass",
+        "trees",
+        "scene_wildlife",
+        "scene_portrait",
+    ]
+    assert sg._primary_genre_with_keywords(noisy_tags, []) == "scene_event"
+
+
 def test_dynamic_semantic_mapping_persists_to_sqlite(monkeypatch):
     # Clear memory cache for test keyword
     sg._DYNAMIC_GENRE_CACHE.pop("stargazing_test", None)
