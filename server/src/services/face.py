@@ -97,6 +97,12 @@ def detect_faces(
         img_temp.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
         source = img_temp.convert("RGB")
     img = np.array(source)
+    if pil_image is None and "img_temp" in locals():
+        try:
+            img_temp.close()
+        except Exception:
+            pass
+
     faces = app.get(img)
 
     # Filter by confidence threshold

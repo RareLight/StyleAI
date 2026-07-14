@@ -735,6 +735,13 @@ def _dynamic_gpu_worker():
         for _ in range(len(batch)):
             index_queue.task_done()
 
+        # Explicitly clear local references to image bytes so they do not linger in the worker stack frame
+        try:
+            del batch, image_triplets, options, first_item
+        except NameError:
+            pass
+        gc.collect()
+
 
 # Start the daemon thread immediately
 threading.Thread(

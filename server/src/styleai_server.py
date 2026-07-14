@@ -32,7 +32,11 @@ logger.info("Flask app created")
 
 @app.before_request
 def _touch_activity():
-    """Record that the server received an HTTP request so idle-shutdown knows we're alive."""
+    """Record that the server received an HTTP request so idle-shutdown knows we're alive.
+    Ignore health/ping/status polls so idle models can unload cleanly after indexing."""
+    path = request.path or ""
+    if path in ("/ping", "/health") or path.startswith("/status"):
+        return
     server_lifecycle.note_request()
 
 
