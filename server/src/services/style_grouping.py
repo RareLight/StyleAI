@@ -809,15 +809,32 @@ def _primary_genre_with_keywords(
     if priors:
         best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
         if best_prior_score >= 0.38:
-            return best_prior_regime
+            if best_prior_regime == "scene_night":
+                top_mapped = {_get_broad_genre(t) for t in content_tags[:4]}
+                if not top_mapped.intersection(
+                    {
+                        "scene_astrophotography",
+                        "scene_portrait",
+                        "scene_event",
+                        "scene_wildlife",
+                        "scene_studio",
+                    }
+                ):
+                    return best_prior_regime
+            else:
+                return best_prior_regime
         if best_prior_regime == "scene_macro" and best_prior_score >= 0.35:
-            top_tag = content_tags[0] if content_tags else ""
-            if top_tag not in {
-                "scene_portrait",
-                "scene_wildlife",
-                "scene_studio",
-            } and not (
-                top_tag == "scene_landscape" and "scene_macro" not in content_tags
+            top_mapped_tags = {_get_broad_genre(t) for t in content_tags[:4]}
+            if not top_mapped_tags.intersection(
+                {
+                    "scene_portrait",
+                    "scene_wildlife",
+                    "scene_studio",
+                    "scene_event",
+                }
+            ) and not (
+                "scene_landscape" in top_mapped_tags
+                and "scene_macro" not in content_tags
             ):
                 return "scene_macro"
 
@@ -827,6 +844,7 @@ def _primary_genre_with_keywords(
             "scene_exterior",
             "scene_interior",
             "scene_golden_hour",
+            "scene_night",
             "scene_unknown",
         }
         first_tag = content_tags[0].lower() if content_tags else ""
@@ -843,6 +861,7 @@ def _primary_genre_with_keywords(
                 tier_order_subjects = [
                     "scene_studio",
                     "scene_macro",
+                    "scene_event",
                     "scene_portrait",
                     "scene_wildlife",
                     "scene_astrophotography",
@@ -854,7 +873,9 @@ def _primary_genre_with_keywords(
                     "scene_event",
                     "scene_portrait",
                     "scene_wildlife",
+                    "scene_action",
                     "scene_astrophotography",
+                    "scene_landscape",
                 ]
             elif primary_mapped == "scene_wildlife":
                 tier_order_subjects = [
@@ -875,7 +896,7 @@ def _primary_genre_with_keywords(
                     "scene_street",
                     "scene_architecture",
                 ]
-            top_vision_tags = content_tags[:3]
+            top_vision_tags = content_tags[:4]
             for target_genre in tier_order_subjects:
                 for t in top_vision_tags:
                     t_lower = t.lower()
@@ -887,6 +908,12 @@ def _primary_genre_with_keywords(
                     mapped = _KEYWORD_TO_GENRE.get(t_lower)
                     if mapped and _get_broad_genre(mapped) == target_genre:
                         return target_genre
+
+        top_vision_tags = content_tags[:4]
+        if primary_mapped == "scene_action":
+            top_mapped = {_get_broad_genre(t) for t in top_vision_tags}
+            if "scene_event" in top_mapped:
+                return "scene_event"
 
         canonical_regimes = {
             "scene_portrait",
@@ -903,7 +930,7 @@ def _primary_genre_with_keywords(
         }
         if primary_mapped in canonical_regimes:
             return primary_mapped
-        top_vision_tags = content_tags[:3]
+        top_vision_tags = content_tags[:4]
         if primary_mapped == "scene_nature":
             if "scene_macro" in top_vision_tags or (
                 priors and priors.get("scene_macro", 0.0) > 0
