@@ -27,6 +27,8 @@ from config import logger
 from services import style_grouping as grouping
 from services import training as training_service
 
+CURRENT_GROUPING_RULE_VERSION = "3"
+
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
@@ -87,6 +89,21 @@ def _ensure_initialized() -> sqlite3.Connection:
     _local.connection = conn
 
     try:
+        ver_row = conn.execute(
+            "SELECT rule_value FROM grouping_rule_state WHERE rule_key = 'GROUPING_RULE_VERSION'"
+        ).fetchone()
+        db_ver = str(ver_row["rule_value"]) if ver_row else "0"
+        if db_ver != CURRENT_GROUPING_RULE_VERSION:
+            grouping.clear_semantic_genre_cache()
+            conn.execute(
+                "INSERT OR REPLACE INTO grouping_rule_state (rule_key, rule_value, updated_at) VALUES ('GROUPING_RULE_VERSION', ?, datetime('now'))",
+                (CURRENT_GROUPING_RULE_VERSION,),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO grouping_rule_state (rule_key, rule_value, updated_at) VALUES ('NEEDS_REDISCOVERY', '1', datetime('now'))"
+            )
+            conn.commit()
+
         row = conn.execute(
             "SELECT rule_value FROM grouping_rule_state WHERE rule_key = 'NEEDS_REDISCOVERY'"
         ).fetchone()
@@ -97,6 +114,7 @@ def _ensure_initialized() -> sqlite3.Connection:
             conn.commit()
             logger.info("Automatic post-migration rediscovery triggered.")
             try:
+                grouping.clear_semantic_genre_cache()
                 discover_styles_from_examples(None)
             except Exception as e:
                 logger.warning("Post-migration rediscovery failed: %s", e)
