@@ -86,3 +86,17 @@ When classifying photos or preventing cross-genre leakage (e.g., in Style Upgrad
   3. **Tier 3 (EXIF Bayesian Priors):** When text or vision tags do not resolve a canonical regime, evaluates EXIF prior distributions (`_evaluate_exif_priors`, where strong priors $\ge 0.30$ determine regime from focal length, macro lenses, flash, or exposure settings).
 - **Stitched Panoramas Exclusion:** Stitched panoramas (`_is_stitched_panorama`: `-Pano`/`_Pano` filename suffix, `panorama` tags, or aspect ratio $\ge 2.2:1$) must be universally filtered out of style upgrade recommendations and style training datasets.
 
+## 12. Automated Rule Versioning & Semantic Cache Invalidation (`CURRENT_GROUPING_RULE_VERSION`)
+
+To speed up classification across massive catalogs, dynamic semantic mappings (`_dynamic_semantic_mapping`) persist closest bucket lookups in the `semantic_genre_cache` table (`styles.sqlite`).
+
+- **Troubleshooting History & Why Versioning is Critical:**
+  During live debugging, modifying Python categorization logic (`style_grouping.py`) did not resolve cross-genre contamination on its own. Persistent loose semantic cache entries (such as nature or trail words mapped to `scene_wildlife`) survived restarts and caused endpoints like `/styles/upgrades/recommendations` to serve stale category mappings.
+- **Rule Version Bumping:**
+  Whenever categorization rules, distance thresholds, or guards change in `style_grouping.py`, developers **must** increment `CURRENT_GROUPING_RULE_VERSION` in `style_catalog.py`.
+- **Automated Lifecycle Actions:**
+  When `catalog_service._ensure_initialized()` executes on database open or API routing:
+  1. It checks `SELECT rule_value FROM grouping_rule_state WHERE rule_key = 'GROUPING_RULE_VERSION'`.
+  2. If the stored version differs from `CURRENT_GROUPING_RULE_VERSION`, it purges `semantic_genre_cache` (`DELETE FROM semantic_genre_cache`) and sets `NEEDS_REDISCOVERY = '1'`.
+  3. `NEEDS_REDISCOVERY = '1'` triggers `discover_styles_from_examples()`, cleanly rebuilding all style buckets and cache entries against the latest logic.
+
