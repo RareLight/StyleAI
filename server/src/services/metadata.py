@@ -329,6 +329,9 @@ class AnalysisService:
                     # This allows other Waitress threads to run their CPU preprocessing concurrently!
                     all_embeddings.extend(normalized.cpu().numpy().tolist())
 
+                    # Explicitly delete GPU tensors at end of chunk to release VRAM references immediately
+                    del chunk, image_features, normalized, tensors
+
                 for j, idx in enumerate(valid_indices):
                     embeddings[idx] = all_embeddings[j]
 
@@ -337,6 +340,12 @@ class AnalysisService:
                 f"Failed to generate batched image embeddings: {e}",
                 exc_info=True,
             )
+        finally:
+            if get_torch_device() == "mps":
+                try:
+                    torch.mps.empty_cache()
+                except Exception:
+                    pass
 
         return embeddings
 
