@@ -783,3 +783,18 @@ def test_unified_visual_membership():
         )
         is False
     )
+
+
+def test_cat_portrait_vision_tags_resolve_to_portrait():
+    assert sg._primary_genre(["scene_wildlife", "cat", "feline"]) == "scene_portrait"
+    assert sg._primary_genre(["wildlife", "kitten"]) == "scene_portrait"
+
+
+def test_nature_swallowing_precedence():
+    assert sg._primary_genre(["scene_nature", "cat"]) == "scene_portrait"
+    assert sg._primary_genre(["scene_nature", "wedding"]) == "scene_event"
+    assert sg._primary_genre(["scene_nature", "mountain vista"]) == "scene_landscape"
+
+
+def test_landscape_not_hijacked_by_wildlife():
+    assert sg._primary_genre(["scene_landscape", "bird"]) == "scene_landscape"
