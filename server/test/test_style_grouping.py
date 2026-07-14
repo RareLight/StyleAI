@@ -500,10 +500,63 @@ def test_top_vision_tag_confidence_horizon_ignores_tail_noise():
         "park",
         "grass",
         "trees",
-        "scene_wildlife",
         "scene_portrait",
     ]
     assert sg._primary_genre_with_keywords(noisy_tags, []) == "scene_event"
+
+
+def test_pet_portrait_and_landscape_overrides_in_nature_and_macro():
+    # 1. Pet portrait shot on a macro lens must resolve to scene_portrait, not macro
+    meta_macro_lens = {"lens": "105mm Macro f/2.8"}
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_exterior", "dog", "grass"], [], exif_metadata=meta_macro_lens
+        )
+        == "scene_portrait"
+    )
+    # 2. Landscape shot with primary tag scene_nature resolves to scene_landscape
+    assert sg._primary_genre_with_keywords(
+        ["scene_nature", "scene_landscape", "mountain"], []
+    )
+
+
+def test_systematic_pro_workflow_categorization_audits():
+    # 1. Milky Way photo with night EXIF prior (shutter=15s, iso=6400) resolves to astrophotography
+    night_exif = {"shutter_speed": "15", "iso": 6400}
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_astrophotography", "stars", "milky way"],
+            [],
+            exif_metadata=night_exif,
+        )
+        == "scene_astrophotography"
+    )
+    # 2. Action sports photo in a park (scene_nature + scene_action) resolves to action
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_nature", "scene_action", "runner", "forest"], []
+        )
+        == "scene_action"
+    )
+    # 3. Outdoor wedding shot against a landscape resolves to scene_event
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_landscape", "scene_event", "wedding", "mountain"], []
+        )
+        == "scene_event"
+    )
+    # 4. Night portrait shot in ambient night resolves to scene_portrait
+    assert (
+        sg._primary_genre_with_keywords(["scene_night", "scene_portrait", "person"], [])
+        == "scene_portrait"
+    )
+    # 5. Action occurring during an event resolves to scene_event (event precedence)
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_action", "scene_event", "dance floor", "wedding"], []
+        )
+        == "scene_event"
+    )
 
 
 def test_dynamic_semantic_mapping_persists_to_sqlite(monkeypatch):
