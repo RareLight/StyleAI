@@ -369,6 +369,7 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     # Night & Astrophotography
     "night": "scene_night",
     "astrophotography": "scene_astrophotography",
+    "stargazing": "scene_astrophotography",
     "astro": "scene_astrophotography",
     "nightscape": "scene_astrophotography",
     "aurora": "scene_astrophotography",
@@ -497,7 +498,7 @@ def _dynamic_semantic_mapping(keyword: str) -> str:
         "grass",
         "leaf",
     }
-    if closest_dist < 0.75:
+    if closest_dist < 0.55:
         closest_bucket = list(_DYNAMIC_BUCKETS.keys())[closest_idx]
         if closest_bucket in {
             "scene_architecture",
@@ -831,17 +832,6 @@ def _primary_genre_with_keywords(
                         ):
                             return target_genre
 
-        for kw in kw_list:
-            if len(kw.strip()) > 1:
-                mapped_bucket = _dynamic_semantic_mapping(kw)
-                if mapped_bucket:
-                    return mapped_bucket
-
-        for t in kw_list:
-            mapped = _get_broad_genre(t)
-            if mapped != "scene_unknown":
-                return mapped
-
     priors = _evaluate_exif_priors(exif_metadata)
     if priors:
         best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
@@ -1055,6 +1045,17 @@ def _primary_genre_with_keywords(
                 return "scene_architecture"
             if any(w in t_lower for w in setting_land_words):
                 return "scene_landscape"
+
+        for kw in kw_list:
+            if len(kw.strip()) > 1:
+                mapped_bucket = _dynamic_semantic_mapping(kw)
+                if mapped_bucket:
+                    return mapped_bucket
+
+        for t in kw_list:
+            mapped = _get_broad_genre(t)
+            if mapped != "scene_unknown":
+                return mapped
 
     return "scene_unknown"
 

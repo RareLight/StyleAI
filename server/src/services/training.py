@@ -837,6 +837,8 @@ def add_training_example(
         if not force_retrain:
             raise ValueError(f"Skipped {photo_id}: Already trained")
 
+    from services import style_grouping
+
     metadata: dict[str, Any] = {
         "photo_id": photo_id,
         "develop_settings": json.dumps(develop_settings, ensure_ascii=False),
@@ -845,6 +847,13 @@ def add_training_example(
         ),
         "captured_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "has_embedding": embedding is not None,
+        "is_panorama": style_grouping.is_stitched_panorama(
+            {
+                "filename": filename or "",
+                "user_keywords": user_keywords or [],
+                "camera_profile": camera_profile or "",
+            }
+        ),
     }
     if not user_keywords or not filename:
         try:

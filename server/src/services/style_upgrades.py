@@ -202,9 +202,9 @@ def _select_style_recommendations(
             internal_sims = np.dot(E_mat, centroid)
             mu_sim = float(np.mean(internal_sims))
             sigma_sim = float(np.std(internal_sims))
-            sim_floor = max(0.58, mu_sim - 2.5 * sigma_sim)
+            sim_floor = max(VISUAL_MIN_SIMILARITY, mu_sim - 2.5 * sigma_sim)
         else:
-            sim_floor = 0.60
+            sim_floor = VISUAL_MIN_SIMILARITY
 
         C_mat = np.array([c[1] for c in deduped_candidates], dtype=np.float32)
         if C_mat.ndim == 1:
@@ -222,7 +222,7 @@ def _select_style_recommendations(
         for pid, emb, meta, h_score in deduped_candidates:
             if genre_centroid is not None and len(genre_centroid) > 0:
                 sim = float(np.dot(genre_centroid, emb))
-                if sim < 0.58:
+                if sim < VISUAL_MIN_SIMILARITY:
                     continue
                 relevance = sim + 0.10 * h_score
             else:
@@ -353,6 +353,12 @@ def get_style_upgrade_recommendations(
                 p_metas = []
             for i, pid in enumerate(p_ids):
                 meta = dict(p_metas[i]) if i < len(p_metas) and p_metas[i] else {}
+                if catalog_ids:
+                    cat_str = str(
+                        meta.get("catalog_id") or meta.get("catalog_ids") or ""
+                    )
+                    if cat_str and not any(cid in cat_str for cid in catalog_ids):
+                        continue
                 if not meta.get("has_embedding", True):
                     continue
                 if style_grouping.is_stitched_panorama(meta):
@@ -402,6 +408,11 @@ def get_style_upgrade_recommendations(
                 candidate_pool.extend(photos_by_norm_profile[""])
             if "default" in photos_by_norm_profile:
                 candidate_pool.extend(photos_by_norm_profile["default"])
+            if (
+                "adobe standard" in photos_by_norm_profile
+                and norm_style_profile != "adobe standard"
+            ):
+                candidate_pool.extend(photos_by_norm_profile["adobe standard"])
 
         candidates = []
 
@@ -410,10 +421,8 @@ def get_style_upgrade_recommendations(
                 continue
 
             photo_profile = (meta.get("camera_profile") or "").strip()
-            if (
-                not photo_profile
-                or style_grouping._profile_name(photo_profile).lower() == "default"
-            ):
+            norm_p_prof = style_grouping._profile_name(photo_profile).lower()
+            if not photo_profile or norm_p_prof in ("default", "adobe standard", ""):
                 if (
                     camera_profile != "Default"
                     and norm_style_model
@@ -421,7 +430,7 @@ def get_style_upgrade_recommendations(
                 ):
                     if norm_style_model != norm_photo_model:
                         continue
-                if is_hdr_style:
+                if is_hdr_style and "hdr" not in norm_p_prof:
                     continue
 
             is_compat, _ = style_grouping.is_genre_compatible(genre, p_genre)
