@@ -226,6 +226,11 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "bunny": "scene_portrait",
     "hamster": "scene_portrait",
     "reptile": "scene_portrait",
+    "mammal": "scene_portrait",
+    "furry": "scene_portrait",
+    "fur": "scene_portrait",
+    "domestic animal": "scene_portrait",
+    "domestic": "scene_portrait",
     # Landscapes & Scenery
     "landscape": "scene_landscape",
     "nature": "scene_nature",
@@ -714,6 +719,49 @@ def _parse_exif_float(val: Any) -> float:
         return 0.0
 
 
+def _get_35mm_equivalent_focal_length(make: str, model: str, focal: float) -> float:
+    """Convert focal length to 35mm full-frame equivalent based on camera make and model."""
+    if focal <= 0:
+        return 0.0
+    
+    make_lower = make.lower()
+    model_lower = model.lower()
+    
+    crop = 1.0
+    if make_lower in ("olympus", "om digital solutions", "panasonic"):
+        if "dc-s" in model_lower:
+            crop = 1.0
+        else:
+            crop = 2.0
+    elif "fujifilm" in make_lower:
+        if "gfx" in model_lower:
+            crop = 0.79
+        else:
+            crop = 1.5
+    elif "sony" in make_lower:
+        if any(x in model_lower for x in ("ilce-6", "ilce-5", "ilce-3", "nex", "zv-e10", "a6", "a5", "a3")):
+            crop = 1.5
+    elif "nikon" in make_lower:
+        dx_models = ("z 50", "z fc", "z 30", "d3000", "d3100", "d3200", "d3300", "d3400", "d3500", 
+                     "d5000", "d5100", "d5200", "d5300", "d5500", "d5600", 
+                     "d7000", "d7100", "d7200", "d7500", "d500", "d300", "d200", 
+                     "d90", "d80", "d70", "d60", "d40")
+        if any(x in model_lower for x in dx_models):
+            crop = 1.5
+    elif "canon" in make_lower:
+        if any(x in model_lower for x in ("eos m", "r7", "r10", "r50", "r100", "rebel", "kiss", "7d")):
+            crop = 1.6
+        elif re.search(r'\b\d{2,4}d\b', model_lower):
+            crop = 1.6
+    elif "leica" in make_lower:
+        if any(x in model_lower for x in (" t", " tl", " cl", "t (", "tl (", "cl (")):
+            crop = 1.5
+        elif re.search(r'\bs\b', model_lower):
+            crop = 0.8
+
+    return focal * crop
+
+
 def _evaluate_exif_priors(exif_metadata: dict[str, Any] | None) -> dict[str, float]:
     """Evaluate EXIF metadata as Bayesian prior evidence weights (not hard overrides)."""
     priors: dict[str, float] = {}
@@ -725,14 +773,18 @@ def _evaluate_exif_priors(exif_metadata: dict[str, Any] | None) -> dict[str, flo
     focal = _parse_exif_float(exif_metadata.get("focal_length"))
     lens = str(exif_metadata.get("lens") or "").lower()
     flash = bool(exif_metadata.get("flash"))
+    make = str(exif_metadata.get("camera_make") or "")
+    model = str(exif_metadata.get("camera_model") or "")
+
+    focal_35mm = _get_35mm_equivalent_focal_length(make, model, focal)
 
     if shutter >= 10.0 and iso >= 3200:
         priors["scene_night"] = 0.4
-    if "macro" in lens:
+    if re.search(r'\b(macro|micro|mc)\b', lens):
         priors["scene_macro"] = priors.get("scene_macro", 0.0) + 0.35
-    elif 85.0 <= focal <= 135.0:
+    elif 85.0 <= focal_35mm <= 135.0:
         priors["scene_portrait"] = priors.get("scene_portrait", 0.0) + 0.15
-    if 0.0 < focal <= 24.0:
+    if 0.0 < focal_35mm <= 24.0:
         priors["scene_landscape"] = priors.get("scene_landscape", 0.0) + 0.15
         priors["scene_architecture"] = priors.get("scene_architecture", 0.0) + 0.15
     if flash and 0 < iso <= 200:
@@ -831,6 +883,26 @@ def _primary_genre_with_keywords(
     user_keywords: Any,
     exif_metadata: dict[str, Any] | None = None,
 ) -> str:
+    """Return the primary editing regime with an explicit EXIF hardware exclusion for macro."""
+    genre = _primary_genre_with_keywords_impl(scene_tags, user_keywords, exif_metadata)
+    if genre == "scene_macro":
+        if exif_metadata and isinstance(exif_metadata, dict):
+            lens = str(exif_metadata.get("lens") or "").strip().lower()
+            if lens and lens not in ("none", "unknown", "null"):
+                if not re.search(r'\b(macro|micro|mc)\b', lens):
+                    # Filter out macro keywords and tags and re-evaluate
+                    filtered_tags = [t for t in _extract_keyword_strings(scene_tags) if _get_broad_genre(t) != "scene_macro"]
+                    filtered_kws = [k for k in _extract_keyword_strings(user_keywords) if _get_broad_genre(k) != "scene_macro"]
+                    new_genre = _primary_genre_with_keywords_impl(filtered_tags, filtered_kws, exif_metadata)
+                    return "scene_nature" if new_genre in ("scene_macro", "scene_unknown", "") else new_genre
+    return genre
+
+
+def _primary_genre_with_keywords_impl(
+    scene_tags: Any,
+    user_keywords: Any,
+    exif_metadata: dict[str, Any] | None = None,
+) -> str:
     """Return the primary editing regime using explicit user keywords, Softmax vision, and EXIF priors."""
     kw_list = _filter_llm_noise_keywords(_extract_keyword_strings(user_keywords))
     tag_list = _filter_llm_noise_keywords(_extract_keyword_strings(scene_tags))
@@ -900,7 +972,7 @@ def _primary_genre_with_keywords(
         best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
         if best_prior_score >= 0.38:
             if best_prior_regime == "scene_night":
-                top_mapped = {_get_broad_genre(t) for t in content_tags[:4]}
+                top_mapped = {_get_broad_genre(t) for t in content_tags[:6]}
                 if not top_mapped.intersection(
                     {
                         "scene_astrophotography",
@@ -914,7 +986,7 @@ def _primary_genre_with_keywords(
             else:
                 return best_prior_regime
         if best_prior_regime == "scene_macro" and best_prior_score >= 0.35:
-            top_mapped_tags = {_get_broad_genre(t) for t in content_tags[:4]}
+            top_mapped_tags = {_get_broad_genre(t) for t in content_tags[:6]}
             if not top_mapped_tags.intersection(
                 {
                     "scene_portrait",
@@ -991,7 +1063,7 @@ def _primary_genre_with_keywords(
                     "scene_street",
                     "scene_architecture",
                 ]
-            top_vision_tags = content_tags[:4]
+            top_vision_tags = content_tags[:6]
             for target_genre in tier_order_subjects:
                 for t in top_vision_tags:
                     t_lower = t.lower()
@@ -1006,7 +1078,7 @@ def _primary_genre_with_keywords(
                     if mapped and _get_broad_genre(mapped) == target_genre:
                         return target_genre
 
-        top_vision_tags = content_tags[:4]
+        top_vision_tags = content_tags[:6]
         if primary_mapped == "scene_action":
             top_mapped = {_get_broad_genre(t) for t in top_vision_tags}
             if "scene_event" in top_mapped:
