@@ -59,16 +59,57 @@ class LMStudioProvider(LLMProviderBase):
                 f"Failed to set lmstudio-python sync API timeout: {e}", exc_info=True
             )
 
+    def _resolve_host(self, host_override: str | None = None) -> str:
+        """
+        Resolve active LM Studio host using host override, specified default host,
+        or automatic discovery via the LM Studio SDK (for dynamic port binding).
+        """
+        candidate = (host_override or self.host or "").strip()
+
+        # Cheap pre-check short-circuit: host without colon is invalid
+        if candidate and ":" not in candidate:
+            return candidate
+
+        # If an explicit non-default custom host was specified (e.g. 192.168.1.50:1234 or custom port),
+        # validate it first before falling back to discovery.
+        if candidate and candidate != LMSTUDIO_HOST:
+            try:
+                if lms.Client.is_valid_api_host(candidate):
+                    return candidate
+            except Exception as e:
+                logger.debug(
+                    f"Validation for custom LM Studio host {candidate} failed: {e}"
+                )
+
+        # Attempt auto-discovery via lmstudio SDK for dynamically assigned local API ports (e.g. 127.0.0.1:41343)
+        try:
+            find_host = getattr(lms.Client, "find_default_local_api_host", None)
+            if callable(find_host):
+                discovered = find_host()
+                if discovered and lms.Client.is_valid_api_host(discovered):
+                    self.host = discovered
+                    return discovered
+        except Exception as e:
+            logger.debug(f"LM Studio host auto-discovery failed: {e}")
+
+        # Fall back to testing candidate host if valid
+        if candidate:
+            try:
+                if lms.Client.is_valid_api_host(candidate):
+                    return candidate
+            except Exception:
+                pass
+
+        return candidate or LMSTUDIO_HOST
+
     def is_available(self) -> bool:
         """Check if LM Studio server is reachable with a short timeout"""
         try:
-            # First, a basic validation of host format
-            if not self.host or ":" not in self.host:
+            effective_host = self._resolve_host()
+            if not effective_host or ":" not in effective_host:
                 return False
 
-            # Use the SDK's validation but be aware it might block if the host is a dead IP.
-            # In a future version, we might add a socket-level pre-check here.
-            return lms.Client.is_valid_api_host(self.host)
+            return lms.Client.is_valid_api_host(effective_host)
         except Exception as e:
             logger.warning(f"LM Studio availability check failed for {self.host}: {e}")
             return False
@@ -143,11 +184,12 @@ class LMStudioProvider(LLMProviderBase):
             MetadataGenerationResponse with generated metadata
         """
         try:
-            # Resolve host: request override -> provider default
-            host = getattr(request, "lmstudio_base_url", None) or self.host
+            # Resolve host: request override -> provider default -> auto-discovery
+            host_override = getattr(request, "lmstudio_base_url", None)
+            effective_host = self._resolve_host(host_override)
 
             # Use a scoped client for this host instead of global default client
-            with lms.Client(host) as client:
+            with lms.Client(effective_host) as client:
                 # Prepare image via client so we don't depend on the default client
                 if isinstance(request.image_data, list):
                     image_handles = [
@@ -297,15 +339,20 @@ class LMStudioProvider(LLMProviderBase):
             List of model identifiers for vision-capable models.
         """
         try:
-            # Use a scoped client so we respect the configured host and
-            # avoid relying on a not-yet-resolved default API port.
-            with lms.Client(self.host) as client:
+            effective_host = self._resolve_host()
+            # Use a scoped client so we respect the resolved active host and
+            # avoid relying on a hardcoded default API port.
+            with lms.Client(effective_host) as client:
                 models = client.llm.list_downloaded()
                 # Only populate the dropdown with vision-capable models
                 vision_models = [
                     model.model_key
                     for model in models
-                    if getattr(getattr(model, "info", None), "vision", False)
+                    if getattr(
+                        model,
+                        "vision",
+                        getattr(getattr(model, "info", None), "vision", False),
+                    )
                 ]
                 return vision_models
 

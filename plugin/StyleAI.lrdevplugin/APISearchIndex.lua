@@ -3286,6 +3286,14 @@ function SearchIndexAPI.getDetailedHealth()
         if status == 200 then health.lmstudio = true end
     end
 
+    -- Fall back to backend provider health check for dynamic LM Studio port discovery
+    if not health.lmstudio and health.backend then
+        local bHealth = SearchIndexAPI.getBackendHealth()
+        if bHealth and bHealth.llm_providers and bHealth.llm_providers.lmstudio == "available" then
+            health.lmstudio = true
+        end
+    end
+
     return health
 end
 

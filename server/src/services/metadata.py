@@ -524,6 +524,7 @@ class AnalysisService:
                     result[provider_name] = []
                     continue
 
+                self.provider_status[provider_name] = "available"
                 models = provider_instance.list_available_models()
                 result[provider_name] = models
             except Exception as e:
