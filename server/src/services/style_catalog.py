@@ -27,7 +27,7 @@ from config import logger
 from services import style_grouping as grouping
 from services import training as training_service
 
-CURRENT_GROUPING_RULE_VERSION = "5"
+CURRENT_GROUPING_RULE_VERSION = "7"
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -276,7 +276,7 @@ def _filter_style_examples_by_genre(
     """Lightweight view-time filter for style training examples.
 
     Enforces that training examples attached to a style are not stitched panoramas
-    and are semantically or visually compatible with the style's canonical genre.
+    and are semantically compatible with the style's canonical genre.
     """
     from services import style_grouping
 
@@ -288,16 +288,6 @@ def _filter_style_examples_by_genre(
         if p_genre and style_genre:
             compat, ambiguous = style_grouping.is_genre_compatible(style_genre, p_genre)
             if not compat and not ambiguous:
-                emb = ex.get("embedding")
-                if emb is not None and (
-                    isinstance(emb, list)
-                    and len(emb) > 0
-                    or hasattr(emb, "size")
-                    and emb.size > 0
-                ):
-                    # Retain visually assigned examples from 3-pass discovery
-                    clean.append(ex)
-                    continue
                 continue
         clean.append(ex)
     return clean

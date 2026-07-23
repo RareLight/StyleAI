@@ -1,15 +1,7 @@
 local LrTasks = import("LrTasks")
 local LrPrefs = import("LrPrefs")
 
-local function getIsMac()
-	if _G.MAC_ENV ~= nil then
-		return _G.MAC_ENV
-	end
-	local ok, isMac = pcall(function()
-		return import("LrSystemInfo").osVersion():sub(1, 3):lower() == "mac"
-	end)
-	return ok and isMac
-end
+-- Removed redundant getIsMac() function since MAC_ENV is globally available.
 
 local function safeLogTrace(msg)
 	if _G.log and type(_G.log.trace) == "function" then
@@ -34,17 +26,19 @@ local function shutdownApp(doneFunc, progressFunc)
 
 	local url = "http://127.0.0.1:" .. tostring(port) .. "/shutdown"
 
-	local isMac = getIsMac()
-	if isMac then
+	if MAC_ENV then
 		LrTasks.execute("curl -X POST -s " .. url .. " >/dev/null 2>&1 &")
 	else
-		LrTasks.execute('powershell -Command "Invoke-WebRequest -Method POST -Uri ' .. url .. ' -UseBasicParsing" >NUL 2>&1')
+		LrTasks.execute('start /B powershell -NoProfile -Command "Invoke-WebRequest -Method POST -Uri ' .. url .. ' -UseBasicParsing" >NUL 2>&1')
 	end
 
 	safeLogTrace("ShutdownApp: Synchronous shutdown signal sent.")
 
 	if type(doneFunc) == "function" then
 		safeLogTrace("ShutdownApp: Calling doneFunc()")
+		-- Intentionally using native pcall instead of LrTasks.pcall.
+		-- This executes completely synchronously during teardown where LrTasks 
+		-- scheduler context is unreliable and LrTasks.pcall may hang.
 		pcall(doneFunc)
 	else
 		safeLogTrace("ShutdownApp: doneFunc is " .. type(doneFunc) .. ", skipping")

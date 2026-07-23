@@ -179,6 +179,7 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 						end
 					end
 					-- Keep track of used top-level keywords
+					if not prefs.knownTopLevelKeywords then prefs.knownTopLevelKeywords = {} end
 					if not Util.table_contains(prefs.knownTopLevelKeywords, options.topLevelKeyword) then
 						table.insert(prefs.knownTopLevelKeywords, options.topLevelKeyword)
 					end
@@ -791,7 +792,8 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 	-- ── Property table initialisation ────────────────────────────────────
 	for _, id in ipairs(activeOrderedIds) do
 		local fullPath = activeKwVal[id] or ""
-		local prefix = activeKwMeta[id].path
+		local meta = activeKwMeta[id] or {}
+		local prefix = meta.path
 		if prefix and prefix ~= "" then
 			fullPath = prefix .. " > " .. fullPath
 		end

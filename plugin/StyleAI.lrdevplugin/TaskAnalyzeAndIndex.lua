@@ -34,10 +34,10 @@ local function showAnalyzeAndIndexDialog(ctx)
         props.enableEmbeddings = false
         props.enableMetadata = true
     elseif props.indexingMode == "embed" then
-        props.enableEmbeddings = true
+        props.enableEmbeddings = props.clipReady
         props.enableMetadata = false
     else -- "both"
-        props.enableEmbeddings = true
+        props.enableEmbeddings = props.clipReady
         props.enableMetadata = true
     end
     props.regenerateMetadata = false
@@ -57,8 +57,8 @@ local function showAnalyzeAndIndexDialog(ctx)
     end)
 
     props:addObserver('clipReady', function(properties, key, newValue)
-        if newValue and (properties.indexingMode == "embed" or properties.indexingMode == "both") then
-            properties.enableEmbeddings = true
+        if properties.indexingMode == "embed" or properties.indexingMode == "both" then
+            properties.enableEmbeddings = newValue
         end
     end)
 
@@ -67,7 +67,7 @@ local function showAnalyzeAndIndexDialog(ctx)
         if newValue == true then
             properties.appendMetadata = false
         else
-            properties.appendMetadata = true
+            properties.appendMetadata = prefs.appendMetadata ~= false
         end
     end)
 
@@ -88,7 +88,9 @@ local function showAnalyzeAndIndexDialog(ctx)
     end)
 
     props:addObserver('selectedPrompt', function(properties, key, newValue)
-        properties.prompts[properties.prompt] = newValue
+        if newValue ~= nil and properties.prompt then
+            properties.prompts[properties.prompt] = newValue
+        end
     end)
 
     props.generateKeywords = prefs.generateKeywords ~= false
@@ -637,6 +639,7 @@ local function showAnalyzeAndIndexDialog(ctx)
         prefs.keywordSecondaryLanguage = props.keywordSecondaryLanguage
 
         -- Keep track of used top-level keywords
+        if not prefs.knownTopLevelKeywords then prefs.knownTopLevelKeywords = {} end
         if props.useTopLevelKeyword and not Util.table_contains(prefs.knownTopLevelKeywords, props.topLevelKeyword) then
             table.insert(prefs.knownTopLevelKeywords, props.topLevelKeyword)
         end

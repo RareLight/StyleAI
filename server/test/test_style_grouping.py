@@ -798,3 +798,109 @@ def test_nature_swallowing_precedence():
 
 def test_landscape_not_hijacked_by_wildlife():
     assert sg._primary_genre(["scene_landscape", "bird"]) == "scene_landscape"
+
+
+# ---------------------------------------------------------------------------
+# Regression: keyword fallback must run before vision-level nature guards
+# (commit 56a98a1 moved them after, causing nature to swallow specialized genres)
+# ---------------------------------------------------------------------------
+
+
+def test_macro_keyword_not_swallowed_by_nature_vision():
+    """Macro user keyword must win over nature vision tags."""
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_nature", "scene_nature", "scene_nature"],
+            ["macro", "flower closeup"],
+        )
+        == "scene_macro"
+    )
+
+
+def test_landscape_keyword_not_swallowed_by_nature_vision():
+    """Landscape keyword must win over nature vision tags."""
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_nature", "scene_landscape"],
+            ["mountain scenery"],
+        )
+        == "scene_landscape"
+    )
+
+
+def test_wildlife_keyword_not_swallowed_by_nature_vision():
+    """Wildlife keyword must win when mixed with forest/nature keywords."""
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_nature"],
+            ["forest", "wildlife tracking"],
+        )
+        == "scene_wildlife"
+    )
+
+
+def test_pure_nature_still_returns_nature():
+    """Pure nature keywords without specialized alternatives must still return nature."""
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_nature"],
+            ["wilderness"],
+        )
+        == "scene_nature"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Audit fixes: operator precedence, longest-match, bucket consistency, filter
+# ---------------------------------------------------------------------------
+
+
+def test_get_broad_genre_longest_match_car_race():
+    """'car race' should match 'race' (scene_action) not 'car' (scene_studio)."""
+    assert sg._get_broad_genre("car race") == "scene_action"
+
+
+def test_get_broad_genre_longest_match_race_car():
+    """'race car' should match 'race' (scene_action) not 'car' (scene_studio)."""
+    assert sg._get_broad_genre("race car") == "scene_action"
+
+
+def test_get_broad_genre_longest_match_candid_street():
+    """'candid street' should match 'candid street' (scene_street) not 'candid' (scene_event)."""
+    assert sg._get_broad_genre("candid street photography") == "scene_street"
+
+
+def test_get_broad_genre_exact_still_works():
+    """Exact keyword matches must still resolve correctly."""
+    assert sg._get_broad_genre("macro") == "scene_macro"
+    assert sg._get_broad_genre("wedding") == "scene_event"
+    assert sg._get_broad_genre("scene_portrait") == "scene_portrait"
+
+
+def test_dynamic_buckets_wildlife_not_in_nature():
+    """Wildlife-related keywords should map to scene_wildlife, not scene_nature via dynamic buckets."""
+    # If dynamic buckets are consistent, a keyword close to 'wildlife' should
+    # not land in scene_nature
+    mapped = sg._dynamic_semantic_mapping("bird watching")
+    assert mapped != "scene_nature", (
+        f"'bird watching' mapped to scene_nature instead of a wildlife/portrait bucket"
+    )
+
+
+def test_landscape_branch_background_setting_guard():
+    """Operator precedence fix: landscape branch must check background_settings guard.
+
+    When primary_mapped is scene_landscape but first_tag is a background setting,
+    the landscape-specific tier_order_subjects should NOT be used.
+    """
+    # scene_golden_hour primary tag with landscape secondary — should use the
+    # general 'else' tier_order_subjects (which includes architecture, street, etc.)
+    # not the landscape-specific one (which only has studio, macro, event, portrait, astro)
+    result = sg._primary_genre_with_keywords(
+        ["scene_golden_hour", "scene_architecture", "scene_landscape"],
+        [],
+    )
+    # With the precedence fix, scene_golden_hour IS in background_settings,
+    # so the landscape branch guard fires and we fall into the else branch
+    # which includes scene_architecture as a candidate
+    assert result == "scene_architecture"
