@@ -505,8 +505,11 @@ class AnalysisService:
 
     def get_available_models(
         self,
+        openai_apikey: str | None = None,
+        gemini_apikey: str | None = None,
         ollama_base_url: str | None = None,
         lmstudio_base_url: str | None = None,
+        **kwargs,
     ) -> dict[str, list[str]]:
         """
         Return all available multimodal (vision-capable) models from all providers.
