@@ -76,5 +76,18 @@ def test_lmstudio_is_available_returns_sdk_result(mocker):
     fake_lms.Client.is_valid_api_host.return_value = True
     from providers.lmstudio import LMStudioProvider
 
-    provider = LMStudioProvider({"base_url": "host:1234"})
+    provider = LMStudioProvider({"base_url": "customhost:1234"})
     assert provider.is_available() is True
+
+
+def test_lmstudio_is_available_uses_auto_discovery_when_default_host_invalid(mocker):
+    fake_lms = mocker.patch("providers.lmstudio.lms")
+    fake_lms.Client.is_valid_api_host.side_effect = lambda host: (
+        host == "127.0.0.1:41343"
+    )
+    fake_lms.Client.find_default_local_api_host.return_value = "127.0.0.1:41343"
+    from providers.lmstudio import LMStudioProvider
+
+    provider = LMStudioProvider({"base_url": "localhost:1234"})
+    assert provider.is_available() is True
+    assert provider.host == "127.0.0.1:41343"
