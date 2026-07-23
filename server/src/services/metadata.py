@@ -517,8 +517,10 @@ class AnalysisService:
                 if provider_name == "ollama" and ollama_base_url:
                     provider_instance = OllamaProvider({"base_url": ollama_base_url})
                 if provider_name == "lmstudio" and lmstudio_base_url:
-                    # Reuse existing provider instance but point it to a different host
-                    provider_instance.host = lmstudio_base_url
+                    # Reuse existing provider instance but point it to a normalized host
+                    provider_instance.host = provider_instance._normalize_host(
+                        lmstudio_base_url
+                    )
 
                 if not provider_instance.is_available():
                     result[provider_name] = []

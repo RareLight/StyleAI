@@ -38,7 +38,8 @@ class LMStudioProvider(LLMProviderBase):
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
-        self.host = config.get("base_url", LMSTUDIO_HOST)
+        raw_host = config.get("base_url") if "base_url" in config else LMSTUDIO_HOST
+        self.host = self._normalize_host(raw_host) if raw_host else ""
         self.timeout = config.get("timeout", 720)
         # lmstudio-python's synchronous API defaults to timing out after ~60s of
         # inactivity when waiting for a response/stream event. Wire our configured
@@ -59,22 +60,42 @@ class LMStudioProvider(LLMProviderBase):
                 f"Failed to set lmstudio-python sync API timeout: {e}", exc_info=True
             )
 
+    @staticmethod
+    def _normalize_host(host: str | None) -> str:
+        """
+        Normalize LM Studio host string by stripping http(s):// protocols and path suffixes.
+        LM Studio SDK expects 'host:port' format (e.g. '192.168.1.207:12042' or 'localhost:1234').
+        """
+        if not host:
+            return ""
+        h = host.strip()
+        h = re.sub(r"^https?://", "", h, flags=re.IGNORECASE)
+        return h.split("/")[0].strip()
+
     def _resolve_host(self, host_override: str | None = None) -> str:
         """
         Resolve active LM Studio host using host override, specified default host,
         or automatic discovery via the LM Studio SDK (for dynamic port binding).
         """
-        candidate = (host_override or self.host or "").strip()
+        if host_override == "":
+            return ""
+
+        raw_candidate = host_override if host_override is not None else self.host
+        candidate = self._normalize_host(raw_candidate)
+
+        if not candidate:
+            return ""
 
         # Cheap pre-check short-circuit: host without colon is invalid
-        if candidate and ":" not in candidate:
+        if ":" not in candidate:
             return candidate
 
-        # If an explicit non-default custom host was specified (e.g. 192.168.1.50:1234 or custom port),
+        # If an explicit custom host was specified (e.g. 192.168.1.207:12042 or custom port),
         # validate it first before falling back to discovery.
-        if candidate and candidate != LMSTUDIO_HOST:
+        if candidate != self._normalize_host(LMSTUDIO_HOST):
             try:
                 if lms.Client.is_valid_api_host(candidate):
+                    self.host = candidate
                     return candidate
             except Exception as e:
                 logger.debug(
@@ -86,30 +107,36 @@ class LMStudioProvider(LLMProviderBase):
             find_host = getattr(lms.Client, "find_default_local_api_host", None)
             if callable(find_host):
                 discovered = find_host()
-                if discovered and lms.Client.is_valid_api_host(discovered):
-                    self.host = discovered
-                    return discovered
+                if discovered:
+                    norm_discovered = self._normalize_host(discovered)
+                    if norm_discovered and lms.Client.is_valid_api_host(
+                        norm_discovered
+                    ):
+                        self.host = norm_discovered
+                        return norm_discovered
         except Exception as e:
             logger.debug(f"LM Studio host auto-discovery failed: {e}")
 
         # Fall back to testing candidate host if valid
-        if candidate:
-            try:
-                if lms.Client.is_valid_api_host(candidate):
-                    return candidate
-            except Exception:
-                pass
+        try:
+            if lms.Client.is_valid_api_host(candidate):
+                return candidate
+        except Exception:
+            pass
 
-        return candidate or LMSTUDIO_HOST
+        return candidate
 
     def is_available(self) -> bool:
         """Check if LM Studio server is reachable with a short timeout"""
         try:
+            if not self.host:
+                return False
+
             effective_host = self._resolve_host()
             if not effective_host or ":" not in effective_host:
                 return False
 
-            return lms.Client.is_valid_api_host(effective_host)
+            return bool(lms.Client.is_valid_api_host(effective_host))
         except Exception as e:
             logger.warning(f"LM Studio availability check failed for {self.host}: {e}")
             return False
