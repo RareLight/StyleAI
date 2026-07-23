@@ -91,3 +91,16 @@ def test_lmstudio_is_available_uses_auto_discovery_when_default_host_invalid(moc
     provider = LMStudioProvider({"base_url": "localhost:1234"})
     assert provider.is_available() is True
     assert provider.host == "127.0.0.1:41343"
+
+
+def test_lmstudio_normalizes_http_scheme_in_host(mocker):
+    fake_lms = mocker.patch("providers.lmstudio.lms")
+    fake_lms.Client.is_valid_api_host.side_effect = lambda host: (
+        host == "192.168.1.207:12042"
+    )
+    from providers.lmstudio import LMStudioProvider
+
+    provider = LMStudioProvider({"base_url": "http://192.168.1.207:12042/v1"})
+    assert provider.is_available() is True
+    assert provider.host == "192.168.1.207:12042"
+    fake_lms.Client.is_valid_api_host.assert_called_with("192.168.1.207:12042")
