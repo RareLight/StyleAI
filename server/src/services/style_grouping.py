@@ -218,6 +218,14 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "american shorthair": "scene_portrait",
     "scottish fold": "scene_portrait",
     "russian blue": "scene_portrait",
+    "horse": "scene_portrait",
+    "equine": "scene_portrait",
+    "equestrian": "scene_portrait",
+    "pony": "scene_portrait",
+    "rabbit": "scene_portrait",
+    "bunny": "scene_portrait",
+    "hamster": "scene_portrait",
+    "reptile": "scene_portrait",
     # Landscapes & Scenery
     "landscape": "scene_landscape",
     "nature": "scene_nature",
@@ -247,6 +255,16 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "winter landscape": "scene_landscape",
     "snowy": "scene_landscape",
     "vista": "scene_landscape",
+    "meadow": "scene_landscape",
+    "field": "scene_landscape",
+    "grassland": "scene_landscape",
+    "countryside": "scene_landscape",
+    "rural": "scene_landscape",
+    "horizon": "scene_landscape",
+    "clouds": "scene_landscape",
+    "sky": "scene_landscape",
+    "scenic": "scene_landscape",
+    "outdoors": "scene_landscape",
     # Nature & Wildlife & Macro
     "wildlife": "scene_wildlife",
     "bird": "scene_wildlife",
@@ -274,6 +292,15 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "droplet": "scene_macro",
     "water droplet": "scene_macro",
     "dew": "scene_macro",
+    "leaf": "scene_macro",
+    "leaves": "scene_macro",
+    "mushroom": "scene_macro",
+    "fungi": "scene_macro",
+    "moss": "scene_macro",
+    "snail": "scene_macro",
+    "frog": "scene_macro",
+    "toad": "scene_macro",
+    "petal": "scene_macro",
     # Architecture & Real Estate & Property
     "architecture": "scene_architecture",
     "cityscape": "scene_architecture",
@@ -915,6 +942,7 @@ def _primary_genre_with_keywords(
             "scene_landscape",
             "scene_nature",
             "scene_wildlife",
+            "scene_macro",
         }:
             if (
                 first_tag == "scene_landscape"
@@ -943,6 +971,12 @@ def _primary_genre_with_keywords(
                     "scene_studio",
                     "scene_macro",
                     "scene_event",
+                    "scene_portrait",
+                    "scene_action",
+                ]
+            elif primary_mapped == "scene_macro":
+                tier_order_subjects = [
+                    "scene_studio",
                     "scene_portrait",
                 ]
             else:
@@ -996,7 +1030,7 @@ def _primary_genre_with_keywords(
 
         if primary_mapped == "scene_wildlife":
             top_mapped = {_get_broad_genre(t) for t in top_vision_tags}
-            for candidate in ["scene_portrait", "scene_event", "scene_macro"]:
+            for candidate in ["scene_portrait", "scene_event", "scene_macro", "scene_action"]:
                 if candidate in top_mapped:
                     return candidate
             return "scene_wildlife"
@@ -1006,7 +1040,6 @@ def _primary_genre_with_keywords(
             "scene_landscape",
             "scene_architecture",
             "scene_studio",
-            "scene_macro",
             "scene_night",
             "scene_astrophotography",
             "scene_wildlife",
@@ -1037,7 +1070,7 @@ def _primary_genre_with_keywords(
                 return "scene_nature"
             if mapped_t == "scene_wildlife":
                 top_mapped = {_get_broad_genre(t2) for t2 in top_vision_tags}
-                for candidate in ["scene_portrait", "scene_event", "scene_macro"]:
+                for candidate in ["scene_portrait", "scene_event", "scene_macro", "scene_action"]:
                     if candidate in top_mapped:
                         return candidate
                 return "scene_wildlife"

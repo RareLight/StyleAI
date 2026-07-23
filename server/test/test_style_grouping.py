@@ -904,3 +904,29 @@ def test_landscape_branch_background_setting_guard():
     # so the landscape branch guard fires and we fall into the else branch
     # which includes scene_architecture as a candidate
     assert result == "scene_architecture"
+
+
+def test_pet_close_up_overrides_macro():
+    """Pet portraits tagged as close_up (macro) should be overridden by dog/cat tags."""
+    result = sg._primary_genre_with_keywords(["close_up", "dog"], [])
+    assert result == "scene_portrait"
+
+
+def test_sports_overrides_wildlife():
+    """Action sports should override wildlife if tagged together."""
+    result = sg._primary_genre_with_keywords(["wildlife", "surfing"], [])
+    assert result == "scene_action"
+
+
+def test_expanded_keywords_landscape():
+    """New landscape keywords like meadow should map to scene_landscape."""
+    result = sg._primary_genre_with_keywords(["nature", "meadow"], [])
+    assert result == "scene_landscape"
+    assert sg._get_broad_genre("meadow") == "scene_landscape"
+
+
+def test_expanded_keywords_macro():
+    """New macro keywords like mushroom should map to scene_macro."""
+    result = sg._primary_genre_with_keywords(["nature", "mushroom"], [])
+    assert result == "scene_macro"
+    assert sg._get_broad_genre("mushroom") == "scene_macro"
