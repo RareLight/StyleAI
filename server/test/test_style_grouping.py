@@ -930,3 +930,74 @@ def test_expanded_keywords_macro():
     result = sg._primary_genre_with_keywords(["nature", "mushroom"], [])
     assert result == "scene_macro"
     assert sg._get_broad_genre("mushroom") == "scene_macro"
+
+
+def test_exif_lens_strips_macro_genre():
+    """If a non-macro lens EXIF is provided, scene_macro is stripped from consideration."""
+    exif_metadata = {"lens": "50mm f/1.4"}
+    result = sg._primary_genre_with_keywords(["close_up", "insect"], [], exif_metadata)
+    assert result == "scene_nature"
+
+
+def test_exif_lens_allows_macro_genre():
+    """If a macro/micro/mc lens EXIF is provided, scene_macro is permitted."""
+    exif_metadata = {"lens": "100mm f/2.8 Macro"}
+    result = sg._primary_genre_with_keywords(["close_up", "insect"], [], exif_metadata)
+    assert result == "scene_macro"
+
+    exif_metadata = {"lens": "NIKKOR Z MC 105mm f/2.8 VR S"}
+    result = sg._primary_genre_with_keywords(["close_up", "insect"], [], exif_metadata)
+    assert result == "scene_macro"
+
+    exif_metadata = {"lens": "AF-S Micro-Nikkor 60mm f/2.8G ED"}
+    result = sg._primary_genre_with_keywords(["close_up", "insect"], [], exif_metadata)
+    assert result == "scene_macro"
+
+
+def test_extended_horizon_catches_buried_subjects():
+    """Extended top_vision_tags horizon allows pet subjects buried by environment tags to trigger portrait overrides."""
+    tags = ["nature", "grass", "outdoors", "sunny", "trees", "dog"]
+    result = sg._primary_genre_with_keywords(tags, [])
+    assert result == "scene_portrait"
+
+
+def test_focal_length_crop_factors_sony():
+    assert sg._get_35mm_equivalent_focal_length("Sony", "ILCE-7M3", 50) == 50.0
+    assert sg._get_35mm_equivalent_focal_length("Sony", "ILCE-6400", 50) == 75.0
+    assert sg._get_35mm_equivalent_focal_length("Sony", "a6000", 50) == 75.0
+
+
+def test_focal_length_crop_factors_fuji():
+    assert sg._get_35mm_equivalent_focal_length("Fujifilm", "X-T4", 56) == 84.0
+    assert sg._get_35mm_equivalent_focal_length("Fujifilm", "GFX 100", 110) == 86.9
+
+
+def test_focal_length_crop_factors_mft():
+    assert sg._get_35mm_equivalent_focal_length("OM Digital Solutions", "OM-1", 45) == 90.0
+    assert sg._get_35mm_equivalent_focal_length("Olympus", "E-M1 Mark III", 25) == 50.0
+    assert sg._get_35mm_equivalent_focal_length("Panasonic", "DC-G9", 25) == 50.0
+    assert sg._get_35mm_equivalent_focal_length("Panasonic", "DC-S5", 50) == 50.0
+
+
+def test_focal_length_crop_factors_nikon():
+    assert sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON Z 8", 50) == 50.0
+    assert sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON Z 50", 50) == 75.0
+    assert sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON D850", 50) == 50.0
+    assert sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON D500", 50) == 75.0
+
+
+def test_focal_length_crop_factors_canon():
+    assert sg._get_35mm_equivalent_focal_length("Canon", "Canon EOS R5", 50) == 50.0
+    assert sg._get_35mm_equivalent_focal_length("Canon", "Canon EOS R7", 50) == 80.0
+    assert sg._get_35mm_equivalent_focal_length("Canon", "Canon EOS 5D Mark IV", 50) == 50.0
+    assert sg._get_35mm_equivalent_focal_length("Canon", "Canon EOS 80D", 50) == 80.0
+
+
+def test_exif_priors_use_35mm_equivalent():
+    # 45mm on MFT = 90mm -> portrait (should be 0.15)
+    priors = sg._evaluate_exif_priors({"camera_make": "Olympus", "camera_model": "E-M1", "focal_length": 45})
+    assert priors.get("scene_portrait") == 0.15
+    # 12mm on MFT = 24mm -> landscape/architecture
+    priors = sg._evaluate_exif_priors({"camera_make": "Olympus", "camera_model": "E-M1", "focal_length": 12})
+    assert priors.get("scene_landscape") == 0.15
+
