@@ -62,6 +62,15 @@ local function showAnalyzeAndIndexDialog(ctx)
         end
     end)
 
+    -- Force Re-index automatically switches write mode to overwrite (appendMetadata = false)
+    props:addObserver('regenerateMetadata', function(properties, key, newValue)
+        if newValue == true then
+            properties.appendMetadata = false
+        else
+            properties.appendMetadata = true
+        end
+    end)
+
     -- Metadata generation options
     props.temperature = prefs.temperature or 0.1
     props.promptTitles = {}
@@ -115,8 +124,8 @@ local function showAnalyzeAndIndexDialog(ctx)
 
     table.sort(modelItems, function(a, b) return a.title < b.title end)
     if (not modelItems or #modelItems == 0) then
-        -- Fallback option if nothing matched filters
-        table.insert(modelItems, { title = LOC("$$$/StyleAI/TaskAnalyzeAndIndex/QwenDefault=qwen: (default)"), value = 'qwen::' })
+        -- Fallback option if no models detected from backend
+        table.insert(modelItems, { title = LOC("$$$/StyleAI/TaskAiEditPhotos/NoModels=No AI models available"), value = "none" })
     end
     if not props.modelKey or props.modelKey == '' then
         props.modelKey = modelItems[1].value
@@ -157,12 +166,6 @@ local function showAnalyzeAndIndexDialog(ctx)
             properties.isCloudModel = true
         else
             properties.isCloudModel = false
-        end
-
-        if provider == "qwen" then
-            properties.llmStatusText = "QWEN: Ready"
-            properties.llmStatusColor = LrColor(0, 0.8, 0)
-            return
         end
 
         local health = properties.healthData or {}
@@ -252,6 +255,12 @@ local function showAnalyzeAndIndexDialog(ctx)
                 f:column {
                     f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/SkipExisting=Resume (Skip photos with existing data)", checked_value = false },
                     f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/RegenerateMetadata=Force Re-index (Overwrite existing AI data)", checked_value = true },
+                    f:static_text {
+                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/ForceReindexWarning=⚠️ Caution: Force Re-index will overwrite all existing tags, titles, captions, and alt text for processed photos.",
+                        visible = bind 'regenerateMetadata',
+                        text_color = LrColor(0.85, 0.4, 0),
+                        tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ForceReindexWarningTooltip=Forces re-analysis and completely overwrites existing metadata for selected fields.",
+                    },
                 }
             },
         }),
@@ -396,7 +405,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                             f:popup_menu { value = bind 'modelKey', items = modelItems, width = 300 },
                             f:static_text {
                                 title = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudWarning=⚠️ Images will be sent to the internet.",
-                                -- visible = bind 'isCloudModel', -- disabled for testing
+                                visible = bind 'isCloudModel',
                                 text_color = LrColor(0.8, 0.5, 0),
                                 tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudTooltip=Enterprise APIs typically do not use data for training, but privacy cannot be fully guaranteed. See our Wiki for details.",
                             },
@@ -523,7 +532,14 @@ local function showAnalyzeAndIndexDialog(ctx)
                     fill_horizontal = 1,
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/WriteMode=Write:", width = share 'ctxLabelWidth' },
-                        f:checkbox { value = bind 'appendMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadata=Append to existing values instead of replacing", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadataTooltip=Adds AI keywords and text without erasing your existing metadata." },
+                        f:column {
+                            f:checkbox { value = bind 'appendMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadata=Append to existing values instead of replacing", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadataTooltip=Adds AI keywords and text without erasing your existing metadata." },
+                            f:static_text {
+                                title = LOC "$$$/StyleAI/AnalyzeAndIndex/ForceReindexWriteNotice=⚠️ Force Re-index active: Write mode is set to overwrite existing values.",
+                                visible = bind 'regenerateMetadata',
+                                text_color = LrColor(0.85, 0.4, 0),
+                            },
+                        },
                     },
                 },
             },
@@ -542,6 +558,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                     if confirm == "ok" then
                         props.indexingMode = "both"
                         props.scope = "selected"
+                        props.enableMetadata = true
                         props.enableEmbeddings = props.clipReady
                         props.regenerateMetadata = false
                         props.temperature = 0.1
@@ -557,7 +574,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         props.topLevelKeyword = "StyleAI"
                         props.bilingualKeywords = false
                         props.keywordSecondaryLanguage = Defaults.defaultKeywordSecondaryLanguage
-                        props.modelKey = (modelItems and modelItems[1]) and modelItems[1].value or "qwen::"
+                        props.modelKey = (modelItems and modelItems[1]) and modelItems[1].value or "none"
                         props.language = "English"
                         props.replaceSS = false
                         props.submitGPS = false

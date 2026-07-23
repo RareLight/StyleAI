@@ -428,6 +428,7 @@ local function getAiEditOptions(ctx, editMode)
 						}),
 						f:static_text {
 							title = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudWarning=⚠️ Images will be sent to the internet.",
+							visible = bind 'isCloudModel',
 							text_color = LrColor(0.8, 0.5, 0),
 							tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudTooltip=Enterprise APIs typically do not use data for training, but privacy cannot be fully guaranteed. See our Wiki for details.",
 						},
