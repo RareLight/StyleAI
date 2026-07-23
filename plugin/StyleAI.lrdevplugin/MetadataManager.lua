@@ -133,6 +133,16 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 			-- Save keywords (sessionCache avoids LrKeyword:getChildren() when the SDK errors there)
 			log:trace("Saving keywords to catalog")
 			if saveKeywords and keywords ~= nil and type(keywords) == "table" and prefs.generateKeywords then
+				-- When overwrite mode is active (appendMetadata = false), clear existing keywords from photo
+				if not options.appendMetadata then
+					local existingKws = photo:getRawMetadata("keywords") or {}
+					for _, kw in ipairs(existingKws) do
+						LrTasks.pcall(function()
+							photo:removeKeyword(kw)
+						end)
+					end
+				end
+
 				local keywordSessionCache = {}
 
 				-- Build alias-dedup index when alias mode is on. Scope follows the user's
@@ -151,7 +161,7 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 				end
 
 				local topKeyword = nil
-				if prefs.useKeywordHierarchy and options.useTopLevelKeyword then
+				if options.useTopLevelKeyword then
 					topKeyword = createKeywordSafely(
 						catalog,
 						options.topLevelKeyword or "StyleAI",
@@ -162,7 +172,7 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 					)
 					if topKeyword then
 						local okAdd, errAdd = LrTasks.pcall(function()
-							photo:addKeyword(topKeyword) -- Add top-level keyword to photo. To see the number of tagged photos in keyword list (Gerald Uhl)
+							photo:addKeyword(topKeyword) -- Add top-level keyword to photo as a standalone tag
 						end)
 						if not okAdd then
 							log:error("Failed to add top-level keyword to photo: " .. tostring(errAdd))
@@ -179,7 +189,7 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 					photo,
 					catalog,
 					keywords,
-					topKeyword,
+					nil, -- Do not pass topKeyword as parent for root categories so categories remain root/standalone and topKeyword remains a standalone tag
 					existingKeywordNames,
 					currentTopLevelKeyword,
 					keywordSessionCache
@@ -668,21 +678,32 @@ function MetadataManager.addKeywordRecursively(
 
 	local addKeywords = {}
 	local reservedTopLevel = currentTopLevelKeyword or prefs.topLevelKeyword
+	local reservedLower = reservedTopLevel and string.lower(Util.trim(reservedTopLevel)) or nil
 	for key, value in pairs(keywordSubTable) do
 		local keyword
 		if type(key) == "string" and key ~= "" and key ~= "None" and key ~= "none" and prefs.useKeywordHierarchy then
-			keyword = createKeywordSafely(catalog, key, {}, false, parent, sessionCache)
+			local keyLower = string.lower(Util.trim(key))
+			local isCategoryReserved = (reservedLower and keyLower == reservedLower)
+				or keyLower == "styleai"
+				or key == Defaults.topLevelKeywordSynonym
+			if isCategoryReserved then
+				log:trace("Skipping category: " .. tostring(key) .. " as it is a reserved top-level keyword.")
+			else
+				keyword = createKeywordSafely(catalog, key, {}, false, parent, sessionCache)
+			end
 		elseif type(key) == "number" and value then
 			local keywordName, keywordSynonyms, keywordAliases, keywordSynonymAliases = parseKeywordLeaf(value)
 			if keywordName and keywordName ~= "" and keywordName ~= "None" and keywordName ~= "none" then
+				local kwLower = string.lower(Util.trim(keywordName))
+				local isReserved = keywordName == "Ollama"
+					or keywordName == "LMStudio"
+					or keywordName == "Google Gemini"
+					or keywordName == "ChatGPT"
+					or (reservedLower and kwLower == reservedLower)
+					or kwLower == "styleai"
+					or keywordName == Defaults.topLevelKeywordSynonym
 				if not Util.table_contains(addKeywords, keywordName) then
-					if
-						keywordName == "Ollama"
-						or keywordName == "LMStudio"
-						or keywordName == "Google Gemini"
-						or keywordName == "ChatGPT"
-						or keywordName == reservedTopLevel
-					then
+					if isReserved then
 						log:trace("Skipping keyword: " .. tostring(keywordName) .. " as it is reserved.")
 					else
 						local currentParent = prefs.useKeywordHierarchy and parent or nil
@@ -1091,16 +1112,42 @@ function MetadataManager.getCatalogKeywordHierarchy()
 	local topKeywords = catalog:getKeywords()
 	local hierarchy = {}
 
+	local reservedNames = {}
+	if prefs.knownTopLevelKeywords then
+		for _, k in ipairs(prefs.knownTopLevelKeywords) do
+			if type(k) == "string" then
+				reservedNames[string.lower(Util.trim(k))] = true
+			end
+		end
+	end
+	if prefs.topLevelKeyword then
+		reservedNames[string.lower(Util.trim(prefs.topLevelKeyword))] = true
+	end
+	reservedNames["styleai"] = true
+
 	local function traverseKeywords(keywords, parentHierarchy)
 		for _, keyword in ipairs(keywords) do
-			-- if not Util.table_contains(prefs.knownTopLevelKeywords, keyword) and not Util.table_contains(keyword:getSynonyms(), Defaults.topLevelKeywordSynonym) then
-			local children = keyword:getChildren()
-			if #children > 0 then
-				local keywordEntry = {}
-				parentHierarchy[keyword:getName()] = keywordEntry
-				traverseKeywords(children, keywordEntry)
+			local name = keyword:getName()
+			local nameLower = string.lower(Util.trim(name or ""))
+			local synonyms = keyword:getSynonyms() or {}
+			local isReserved = reservedNames[nameLower]
+			if not isReserved then
+				for _, syn in ipairs(synonyms) do
+					if syn == Defaults.topLevelKeywordSynonym then
+						isReserved = true
+						break
+					end
+				end
 			end
-			-- end
+
+			if not isReserved then
+				local children = keyword:getChildren()
+				if #children > 0 then
+					local keywordEntry = {}
+					parentHierarchy[name] = keywordEntry
+					traverseKeywords(children, keywordEntry)
+				end
+			end
 		end
 	end
 
@@ -1130,7 +1177,13 @@ function MetadataManager.getPhotoKeywordHierarchy(photo)
 		local path = {}
 		local current = keyword
 		while current do
-			if not Util.table_contains(prefs.knownTopLevelKeywords, current) then
+			local cName = current:getName()
+			local cNameLower = string.lower(Util.trim(cName or ""))
+			local isReserved = (prefs.topLevelKeyword and string.lower(Util.trim(prefs.topLevelKeyword)) == cNameLower)
+				or cNameLower == "styleai"
+				or Util.table_contains(prefs.knownTopLevelKeywords or {}, cName)
+				or Util.table_contains(prefs.knownTopLevelKeywords or {}, cNameLower)
+			if not isReserved then
 				table.insert(path, 1, current)
 			end
 			current = current:getParent()

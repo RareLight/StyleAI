@@ -112,7 +112,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 				end
 				table.insert(
 					issues,
-					LOC("$$$/StyleAI/Health/ApiKeysMissing=LLM not configured (Semantic search disabled, but AI Editing works).")
+					LOC("$$$/StyleAI/Health/ApiKeysMissing=LLM not configured (AI Auto-Tagging disabled, but Semantic Search and Predictive AI Editing work).")
 				)
 			end
 
