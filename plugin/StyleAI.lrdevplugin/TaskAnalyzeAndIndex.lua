@@ -29,10 +29,38 @@ local function showAnalyzeAndIndexDialog(ctx)
         end
     end)
 
-    -- Tasks to perform
-    props.enableEmbeddings = (prefs.enableEmbeddings ~= false) -- default true
-    props.enableMetadata = prefs.enableMetadata ~= false       -- default true
+    -- Tasks to perform (automatically aligned with selected indexingMode)
+    if props.indexingMode == "meta" then
+        props.enableEmbeddings = false
+        props.enableMetadata = true
+    elseif props.indexingMode == "embed" then
+        props.enableEmbeddings = true
+        props.enableMetadata = false
+    else -- "both"
+        props.enableEmbeddings = true
+        props.enableMetadata = true
+    end
     props.regenerateMetadata = false
+
+    -- Automatically sync task checkboxes whenever indexingMode changes
+    props:addObserver('indexingMode', function(properties, key, newValue)
+        if newValue == "both" then
+            properties.enableEmbeddings = properties.clipReady
+            properties.enableMetadata = true
+        elseif newValue == "meta" then
+            properties.enableEmbeddings = false
+            properties.enableMetadata = true
+        elseif newValue == "embed" then
+            properties.enableEmbeddings = properties.clipReady
+            properties.enableMetadata = false
+        end
+    end)
+
+    props:addObserver('clipReady', function(properties, key, newValue)
+        if newValue and (properties.indexingMode == "embed" or properties.indexingMode == "both") then
+            properties.enableEmbeddings = true
+        end
+    end)
 
     -- Metadata generation options
     props.temperature = prefs.temperature or 0.1
