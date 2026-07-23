@@ -410,9 +410,10 @@ _BROAD_GENRE_MAP: dict[str, str] = {
 _DYNAMIC_BUCKETS = {
     "scene_portrait": "portrait, people, family, fashion, headshot, baby, newborn, maternity, pet, pets, dog, cat, animal, puppy, kitten",
     "scene_event": "wedding, event, concert, ceremony, reception, party, conference, gala, banquet, festival, candid, group, gathering",
-    "scene_landscape": "landscape, outdoors, travel, sunset, sunrise, scenery, vista, mountains, ocean, seascape, drone, aerial",
-    "scene_nature": "wildlife, plants, birds, fauna, flora, trees, forest, wilderness",
-    "scene_macro": "macro, close-up, extreme detail, insect, bug, beetle, spider, butterfly, flower detail, water droplet, botanical closeup",
+    "scene_landscape": "landscape, outdoors, travel, sunset, sunrise, scenery, vista, mountains, ocean, seascape, drone, aerial, forest, valley",
+    "scene_nature": "plants, trees, wilderness, greenery, undergrowth, foliage, habitat",
+    "scene_macro": "macro, close-up, extreme detail, insect, bug, beetle, spider, butterfly, flower detail, water droplet, botanical closeup, flora",
+    "scene_wildlife": "wildlife, birds, fauna, animal tracking, safari, bird watching, raptor, avian",
     "scene_architecture": "architecture, real estate, interior design, building, house, property, monument, bridge, structure",
     "scene_studio": "studio, product, food, culinary, commercial, controlled light, flash, still life, toy photography, lego, car, automotive",
     "scene_street": "street photography, urban life, documentary, photojournalism, city street, candid street, alley, graffiti, urban environment",
@@ -556,7 +557,12 @@ def clear_semantic_genre_cache() -> None:
 
 
 def _get_broad_genre(tag: str) -> str:
-    """Map a specific scene tag to a broad bucket."""
+    """Map a specific scene tag to a broad bucket.
+
+    Uses longest-match selection when multiple substring keys match to prevent
+    short keys (e.g. 'car', 'dog', 'bee') from hijacking compound tags like
+    'car race' or 'hot dog'.
+    """
     tag_lower = tag.lower().strip()
     if tag_lower in _BROAD_GENRE_MAP:
         return _BROAD_GENRE_MAP[tag_lower]
@@ -565,13 +571,18 @@ def _get_broad_genre(tag: str) -> str:
         return _BROAD_GENRE_MAP.get(
             mapped, mapped if mapped.startswith("scene_") else "scene_unknown"
         )
+
+    # Collect all substring matches and prefer the longest key to avoid
+    # short-key collisions (e.g. 'car' matching 'car race' -> scene_studio
+    # when 'race' -> scene_action is the correct longer match).
+    matches: list[tuple[int, str]] = []
     for k, v in _BROAD_GENRE_MAP.items():
         if len(k) >= 3 and (
             f" {k} " in f" {tag_lower} "
             or tag_lower.startswith(f"{k} ")
             or tag_lower.endswith(f" {k}")
         ):
-            return v
+            matches.append((len(k), v))
     for k, v in _KEYWORD_TO_GENRE.items():
         if len(k) >= 3 and (
             f" {k} " in f" {tag_lower} "
@@ -581,7 +592,9 @@ def _get_broad_genre(tag: str) -> str:
             mapped = _BROAD_GENRE_MAP.get(
                 v, v if v.startswith("scene_") else "scene_unknown"
             )
-            return mapped
+            matches.append((len(k), mapped))
+    if matches:
+        return max(matches, key=lambda x: x[0])[1]
     return tag if tag.startswith("scene_") else "scene_unknown"
 
 
@@ -832,6 +845,29 @@ def _primary_genre_with_keywords(
                         ):
                             return target_genre
 
+        # Fuzzy keyword fallbacks: dynamic semantic mapping + broad genre.
+        # Must run BEFORE vision tags because vision-level nature/wildlife
+        # guards hard-return without checking keywords.
+        for kw in kw_list:
+            if len(kw.strip()) > 1:
+                mapped_bucket = _dynamic_semantic_mapping(kw)
+                if mapped_bucket:
+                    return mapped_bucket
+
+        for t in kw_list:
+            mapped = _get_broad_genre(t)
+            if mapped != "scene_unknown":
+                # Don't let broad "nature" override if a specialized genre
+                # exists elsewhere in the keyword list
+                if mapped == "scene_nature":
+                    specialized = {_get_broad_genre(k) for k in kw_list} - {
+                        "scene_nature",
+                        "scene_unknown",
+                    }
+                    if specialized:
+                        continue
+                return mapped
+
     priors = _evaluate_exif_priors(exif_metadata)
     if priors:
         best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
@@ -883,8 +919,7 @@ def _primary_genre_with_keywords(
             if (
                 first_tag == "scene_landscape"
                 or primary_mapped == "scene_landscape"
-                and first_tag not in background_settings
-            ):
+            ) and first_tag not in background_settings:
                 tier_order_subjects = [
                     "scene_studio",
                     "scene_macro",
@@ -1046,16 +1081,7 @@ def _primary_genre_with_keywords(
             if any(w in t_lower for w in setting_land_words):
                 return "scene_landscape"
 
-        for kw in kw_list:
-            if len(kw.strip()) > 1:
-                mapped_bucket = _dynamic_semantic_mapping(kw)
-                if mapped_bucket:
-                    return mapped_bucket
 
-        for t in kw_list:
-            mapped = _get_broad_genre(t)
-            if mapped != "scene_unknown":
-                return mapped
 
     return "scene_unknown"
 
