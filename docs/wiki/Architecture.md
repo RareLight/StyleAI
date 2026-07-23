@@ -62,7 +62,12 @@ Ensures visual consistency across catalog search recommendations and style train
    - **Trained Styles Index ("Show All")**: Uses `classify_photo_genre(ex)` and `is_genre_compatible` during catalog rendering (`style_catalog.py`) to maintain clean, visually unified collections.
    - **Upgrade Recommendations ("Find All")**: Uses the exact same `classify_photo_genre(meta)` and `is_genre_compatible` logic (`style_upgrades.py`) prior to Farthest Point Culling, guaranteeing identical categorization boundaries across both features.
 
-### E. Automated Semantic Caching & Rule Version Invalidation Pipeline
+### E. Hardware-Aware EXIF Evaluation Pipeline
+To accurately assign Bayesian priors, the system relies on hardware nomenclature translation rather than raw EXIF values.
+1. **Sensor Crop Factor Conversion**: Because the plugin exports raw focal lengths (e.g. 45mm), the backend uses `_get_35mm_equivalent_focal_length` to parse `camera_make` and `camera_model`. This ensures OM System, Fuji, APS-C, and Medium Format shooters are evaluated fairly against full-frame boundaries (e.g. `85-135mm` for portraits).
+2. **Strict Macro Lens Verification**: Photos categorized as `scene_macro` must pass an explicit regex check (`\b(macro|micro|mc)\b`) against their EXIF `lens` string. If a non-macro lens is detected, the category is stripped and the photo falls back to a secondary genre (e.g. `scene_nature`).
+
+### F. Automated Semantic Caching & Rule Version Invalidation Pipeline
 To prevent repetitive SigLIP2 embedding lookups for unknown user keywords during large catalog scans, `style_grouping._dynamic_semantic_mapping` caches closest semantic bucket matches inside the `semantic_genre_cache` table (`styles.sqlite`).
 
 1. **Troubleshooting History & Why Cache Management is Critical**:

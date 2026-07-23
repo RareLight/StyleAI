@@ -187,72 +187,7 @@ LrTasks.startAsyncTask(function()
 			end)
 		end
 
-		-- Discover styles from all training examples
-		local function discoverStyles()
-			props.isLoading = true
-			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Discovering=Discovering styles from training examples...")
 
-			LrTasks.startAsyncTask(function()
-				local success, result = SearchIndexAPI.discoverStyles(nil)
-				if success then
-					local count = result.styles_created or 0
-					props.statusMessage = LOC(
-						"$$$/StyleAI/StyleCatalog/DiscoveredCount=Discovered ^1 style(s).",
-						tostring(count)
-					)
-					-- Reload the list
-					loadStyles()
-				else
-					props.statusMessage = LOC(
-						"$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1",
-						tostring(result)
-					)
-					props.isLoading = false
-				end
-			end)
-		end
-
-		-- Delete the selected style
-		local function deleteSelectedStyle()
-			local idx = props.selectedStyleIndex
-			if not idx or idx < 1 or idx > #props.styles then
-				return
-			end
-
-			local style = props.styles[idx]
-			local styleName = style.style_name or style.style_id or "this style"
-
-			local confirm = LrDialogs.confirm(
-				LOC("$$$/StyleAI/StyleCatalog/DeleteTitle=Delete Style"),
-				LOC(
-					"$$$/StyleAI/StyleCatalog/DeleteConfirm=Are you sure you want to delete '^1'? Training examples will not be affected.",
-					styleName
-				),
-				LOC("$$$/StyleAI/common/Delete=Delete"),
-				LOC("$$$/StyleAI/common/Cancel=Cancel")
-			)
-
-			if confirm ~= "ok" then
-				return
-			end
-
-			props.isLoading = true
-			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Deleting=Deleting style...")
-
-			LrTasks.startAsyncTask(function()
-				local success, err = SearchIndexAPI.resetStyle(style.style_id)
-				if success then
-					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Deleted=Style deleted.")
-					loadStyles()
-				else
-					props.statusMessage = LOC(
-						"$$$/StyleAI/StyleCatalog/DeleteError=Delete failed: ^1",
-						tostring(err)
-					)
-					props.isLoading = false
-				end
-			end)
-		end
 
 		-- Rename the selected style
 		local function renameSelectedStyle()
@@ -292,12 +227,12 @@ LrTasks.startAsyncTask(function()
 			end)
 		end
 
-		-- Reset all styles
-		local function resetAllStyles()
+		-- Reset and Discover styles
+		local function resetAndDiscoverStyles()
 			local confirm = LrDialogs.confirm(
-				LOC("$$$/StyleAI/StyleCatalog/ResetAllTitle=Reset All Styles"),
-				LOC("$$$/StyleAI/StyleCatalog/ResetAllConfirm=This will delete ALL discovered styles. Training examples will be preserved. Are you sure?"),
-				LOC("$$$/StyleAI/common/ResetAll=Reset All"),
+				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverTitle=Reset & Discover Styles"),
+				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverConfirm=This will clear your current index of styles and rediscover them from your saved training examples. Are you sure you want to proceed?"),
+				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverAction=Reset & Discover"),
 				LOC("$$$/StyleAI/common/Cancel=Cancel")
 			)
 
@@ -311,15 +246,29 @@ LrTasks.startAsyncTask(function()
 			LrTasks.startAsyncTask(function()
 				local success, err = SearchIndexAPI.resetAllStyles()
 				if success then
-					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ResetAllDone=All styles cleared.")
-					loadStyles()
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Discovering=Discovering styles from training examples...")
+					local dSuccess, result = SearchIndexAPI.discoverStyles(nil)
+					if dSuccess then
+						local count = result.styles_created or 0
+						props.statusMessage = LOC(
+							"$$$/StyleAI/StyleCatalog/DiscoveredCount=Discovered ^1 style(s).",
+							tostring(count)
+						)
+						loadStyles()
+					else
+						props.statusMessage = LOC(
+							"$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1",
+							tostring(result)
+						)
+						props.isLoading = false
+					end
 				else
 					props.statusMessage = LOC(
 						"$$$/StyleAI/StyleCatalog/ResetAllError=Reset failed: ^1",
 						tostring(err)
 					)
+					props.isLoading = false
 				end
-				props.isLoading = false
 			end)
 		end
 
@@ -475,16 +424,6 @@ LrTasks.startAsyncTask(function()
 
 				-- Toolbar
 				f:row({
-
-					f:push_button({
-						title = LOC("$$$/StyleAI/StyleCatalog/Discover=Discover"),
-						action = discoverStyles,
-						width = share("toolbarButton"),
-						enabled = bind({
-							key = "isLoading",
-							transform = function(v) return not v end,
-						}),
-					}),
 					f:push_button({
 						title = LOC("$$$/StyleAI/StyleCatalog/ShowPhotos=Show Photos"),
 						action = showPhotos,
@@ -513,17 +452,8 @@ LrTasks.startAsyncTask(function()
 						}),
 					}),
 					f:push_button({
-						title = LOC("$$$/StyleAI/StyleCatalog/Delete=Delete"),
-						action = deleteSelectedStyle,
-						width = share("toolbarButton"),
-						enabled = bind({
-							key = "isLoading",
-							transform = function(v) return not v end,
-						}),
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/StyleCatalog/ResetAll=Reset All"),
-						action = resetAllStyles,
+						title = LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverAction=Reset & Discover"),
+						action = resetAndDiscoverStyles,
 						width = share("toolbarButton"),
 						enabled = bind({
 							key = "isLoading",

@@ -460,28 +460,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							propertyTable.refreshStyleStats()
 						end,
 					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/Training/ClearAll=⚠️ Reset Signature Styles"),
-						action = function(button)
-							local confirm = LrDialogs.confirm(
-								LOC("$$$/StyleAI/Training/ClearConfirmTitle=Reset Discovered Styles"),
-								LOC("$$$/StyleAI/Training/ClearConfirmMsg=This will clear your auto-discovered signature styles while preserving the underlying training examples and vector embeddings. Continue?"),
-								LOC("$$$/StyleAI/Training/ClearConfirmOk=Reset Styles"),
-								LOC("$$$/StyleAI/Training/ClearConfirmCancel=Cancel")
-							)
-							if confirm == "ok" then
-								LrTasks.startAsyncTask(function()
-									local ok, err = SearchIndexAPI.clearAllTrainingExamples()
-									if ok then
-										propertyTable.refreshStyleStats()
-										LrDialogs.message(LOC("$$$/StyleAI/Training/ClearedTitle=Styles Reset"), LOC("$$$/StyleAI/Training/ClearedMsg=Your signature styles have been reset. Training examples were preserved."), "info")
-									else
-										ErrorHandler.handleError(LOC("$$$/StyleAI/Training/ClearFailedTitle=Reset Failed"), tostring(err or "Unknown error"))
-									end
-								end)
-							end
-						end,
-					}),
+
 					f:push_button({
 						title = LOC("$$$/StyleAI/Training/WipeAll=🛑 Wipe All Training"),
 						action = function(button)
