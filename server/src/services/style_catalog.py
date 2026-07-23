@@ -27,7 +27,7 @@ from config import logger
 from services import style_grouping as grouping
 from services import training as training_service
 
-CURRENT_GROUPING_RULE_VERSION = "4"
+CURRENT_GROUPING_RULE_VERSION = "5"
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -276,7 +276,7 @@ def _filter_style_examples_by_genre(
     """Lightweight view-time filter for style training examples.
 
     Enforces that training examples attached to a style are not stitched panoramas
-    and are semantically compatible with the style's canonical genre.
+    and are semantically or visually compatible with the style's canonical genre.
     """
     from services import style_grouping
 
@@ -286,8 +286,18 @@ def _filter_style_examples_by_genre(
             continue
         p_genre = style_grouping.classify_photo_genre(ex, None)
         if p_genre and style_genre:
-            compat, _ = style_grouping.is_genre_compatible(style_genre, p_genre)
-            if not compat:
+            compat, ambiguous = style_grouping.is_genre_compatible(style_genre, p_genre)
+            if not compat and not ambiguous:
+                emb = ex.get("embedding")
+                if emb is not None and (
+                    isinstance(emb, list)
+                    and len(emb) > 0
+                    or hasattr(emb, "size")
+                    and emb.size > 0
+                ):
+                    # Retain visually assigned examples from 3-pass discovery
+                    clean.append(ex)
+                    continue
                 continue
         clean.append(ex)
     return clean
@@ -814,9 +824,17 @@ def update_style_for_example(
     """
     _ensure_initialized()
 
-    # User keywords take precedence over AI scene tags for genre
+    exif_meta = {
+        "camera_make": camera_make,
+        "camera_model": camera_model,
+        "camera_profile": camera_profile,
+        "user_keywords": user_keywords,
+        "scene_tags": scene_tags,
+    }
+    if exposure_metrics:
+        exif_meta.update(exposure_metrics)
     primary_genre = grouping._primary_genre_with_keywords(
-        scene_tags, user_keywords or []
+        scene_tags, user_keywords or [], exif_meta
     )
     cam = (camera_model or "unknown").strip()
     profile = grouping._profile_name(camera_profile)
