@@ -1087,6 +1087,10 @@ def _primary_genre_with_keywords_impl(
             "scene_event",
             "scene_street",
             "scene_macro",
+            "scene_nature",
+            "scene_food",
+            "scene_exterior",
+            "scene_interior",
         }
         if primary_mapped in canonical_regimes:
             return primary_mapped

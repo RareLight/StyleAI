@@ -298,6 +298,7 @@ def add_training_batch():
         filename = item.get("filename")
 
         focal_length = item.get("focal_length")
+        lens = item.get("lens")
         capture_time_unix = item.get("capture_time")
         camera_make = item.get("camera_make")
         camera_model = item.get("camera_model")
@@ -397,6 +398,7 @@ def add_training_batch():
                 summary=summary,
                 image_bytes=image_bytes_data,
                 focal_length=focal_length,
+                lens=lens,
                 capture_time_unix=capture_time_unix,
                 camera_make=camera_make,
                 camera_model=camera_model,

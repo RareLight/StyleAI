@@ -510,6 +510,16 @@ def process_image_task(
                     main_metadata["camera_model"] = str(opt["camera_model"])[:64]
                 if opt.get("camera_make"):
                     main_metadata["camera_make"] = str(opt["camera_make"])[:64]
+                if opt.get("lens"):
+                    main_metadata["lens"] = str(opt["lens"])[:128]
+                if opt.get("focal_length") is not None:
+                    main_metadata["focal_length"] = float(opt["focal_length"])
+                if opt.get("iso") is not None:
+                    main_metadata["iso"] = float(opt["iso"])
+                if opt.get("aperture") is not None:
+                    main_metadata["aperture"] = float(opt["aperture"])
+                if opt.get("shutter_speed"):
+                    main_metadata["shutter_speed"] = str(opt["shutter_speed"])[:16]
                 if opt.get("rating") is not None:
                     try:
                         main_metadata["rating"] = int(opt["rating"])

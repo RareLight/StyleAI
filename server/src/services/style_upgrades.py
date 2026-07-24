@@ -233,10 +233,9 @@ def _select_style_recommendations(
             break
         # Suppress near-duplicate frames (similarity > 0.90) among selected photos
         if selected_embs:
-            sel_mat = np.array(selected_embs, dtype=np.float32)
-            if sel_mat.ndim == 1:
-                sel_mat = sel_mat.reshape(1, -1)
-            if float(np.max(sel_mat @ emb)) > 0.90:
+            # Let numpy's C backend handle the list-to-array conversion implicitly
+            sims_to_selected = np.dot(selected_embs, emb)
+            if float(np.max(sims_to_selected)) > 0.90:
                 continue
         selected_ids.append(pid)
         selected_embs.append(emb)
