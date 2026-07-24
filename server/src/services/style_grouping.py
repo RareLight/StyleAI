@@ -1059,34 +1059,21 @@ def _primary_genre_with_keywords_impl(
                     if mapped and _get_broad_genre(mapped) == target_genre:
                         return target_genre
 
+            # No overriding subject found in the tag horizon — return the
+            # primary environmental regime, using EXIF macro prior to
+            # disambiguate pure scene_nature when a macro lens is present.
+            if primary_mapped == "scene_nature":
+                if priors and priors.get("scene_macro", 0.0) > 0:
+                    return "scene_macro"
+                return "scene_nature"
+            if primary_mapped == "scene_wildlife":
+                return "scene_wildlife"
+
         top_vision_tags = content_tags[:6]
         if primary_mapped == "scene_action":
             top_mapped = {_get_broad_genre(t) for t in top_vision_tags}
             if "scene_event" in top_mapped:
                 return "scene_event"
-
-        if primary_mapped == "scene_nature":
-            top_mapped = {_get_broad_genre(t) for t in content_tags[:12]}
-            for candidate in [
-                "scene_portrait",
-                "scene_event",
-                "scene_studio",
-                "scene_macro",
-                "scene_landscape",
-                "scene_wildlife",
-            ]:
-                if candidate in top_mapped:
-                    return candidate
-            if priors and priors.get("scene_macro", 0.0) > 0:
-                return "scene_macro"
-            return "scene_nature"
-
-        if primary_mapped == "scene_wildlife":
-            top_mapped = {_get_broad_genre(t) for t in content_tags[:12]}
-            for candidate in ["scene_portrait", "scene_event", "scene_macro", "scene_action"]:
-                if candidate in top_mapped:
-                    return candidate
-            return "scene_wildlife"
 
         canonical_regimes = {
             "scene_portrait",
@@ -1168,7 +1155,9 @@ def _primary_genre_with_keywords_impl(
 
     # 4. VISION MODEL FALLBACK
     if content_tags and content_tags[0] != "scene_unknown":
-        return _get_broad_genre(content_tags[0])
+        fallback = _get_broad_genre(content_tags[0])
+        if fallback != "scene_unknown":
+            return fallback
 
     # 5. DYNAMIC SEMANTIC VECTOR MAPPING (SentenceTransformer)
     if kw_list:
@@ -1189,9 +1178,9 @@ def _primary_genre_with_keywords_impl(
         }
         for t in kw_list:
             t_lower = t.lower()
-            if any(w in t_lower for w in setting_arch_words):
+            if any(f" {w} " in f" {t_lower} " or t_lower == w for w in setting_arch_words):
                 return "scene_architecture"
-            if any(w in t_lower for w in setting_land_words):
+            if any(f" {w} " in f" {t_lower} " or t_lower == w for w in setting_land_words):
                 return "scene_landscape"
 
     return "scene_unknown"
