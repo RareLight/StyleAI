@@ -310,6 +310,7 @@ class LLMProviderBase(ABC):
                 # Leaf node - array of keywords
                 schema["properties"][category_name] = {
                     "type": "array",
+                    "maxItems": 20,
                     "items": self._keyword_leaf_item_schema(
                         request_bilingual=bilingual, request_aliases=aliases
                     ),
@@ -418,6 +419,7 @@ class LLMProviderBase(ABC):
                     for category in request.keyword_categories:
                         keywords_schema["properties"][category] = {
                             "type": "array",
+                            "maxItems": 20,
                             "items": self._keyword_leaf_item_schema(
                                 request.bilingual_keywords,
                                 request.generate_aliases,
@@ -430,6 +432,7 @@ class LLMProviderBase(ABC):
                 # Simple keyword array
                 schema["properties"]["keywords"] = {
                     "type": "array",
+                    "maxItems": 40,
                     "items": self._keyword_leaf_item_schema(
                         request.bilingual_keywords, request.generate_aliases
                     ),
