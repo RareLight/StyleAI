@@ -102,21 +102,6 @@ def _is_stitched_panorama(meta: dict[str, Any]) -> bool:
     return style_grouping.is_stitched_panorama(meta)
 
 
-def _check_genre_mismatch(style_genre: str, p_genre: str, meta: dict[str, Any]) -> bool:
-    """Check if the candidate photo's primary editing genre conflicts with the style's genre."""
-    from services import style_grouping
-
-    if style_grouping.is_stitched_panorama(meta):
-        return True
-
-    if not p_genre or p_genre in ("scene_unknown", "scene_general"):
-        p_genre = style_grouping.classify_photo_genre(meta, None) or "scene_unknown"
-
-    if not style_genre or style_genre in ("scene_unknown", "scene_general"):
-        return False
-    if not p_genre or p_genre in ("scene_unknown", "scene_general"):
-        return False
-    return p_genre != style_genre
 
 
 def _select_style_recommendations(
@@ -385,7 +370,7 @@ def get_style_upgrade_recommendations(
 
     needed_photo_ids: set[str] = set()
     already_recommended_pids: set[str] = set()
-    style_prelim_candidates_map: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    style_prelim_candidates_map: dict[str, list[tuple[str, dict[str, Any], bool]]] = {}
 
     for style in styles:
         style_id = style.get("style_id", "")
@@ -433,9 +418,9 @@ def get_style_upgrade_recommendations(
                 if is_hdr_style and "hdr" not in norm_p_prof:
                     continue
 
-            is_compat, _ = style_grouping.is_genre_compatible(genre, p_genre)
+            is_compat, is_ambig = style_grouping.is_genre_compatible(genre, p_genre)
             if is_compat:
-                candidates.append((pid, meta))
+                candidates.append((pid, meta, is_ambig))
                 needed_photo_ids.add(pid)
                 if len(candidates) >= 250:
                     break
@@ -536,10 +521,10 @@ def get_style_upgrade_recommendations(
                     E_mat = E_mat.reshape(1, -1)
 
             # Hydrate candidates with embeddings
-            prelim_candidates: list[tuple[str, Any, dict[str, Any]]] = []
-            for pid, meta in prelim_candidates_tuples:
+            prelim_candidates: list[tuple[str, Any, dict[str, Any], bool]] = []
+            for pid, meta, is_ambig in prelim_candidates_tuples:
                 if pid in pool_emb_map and pid not in already_recommended_pids:
-                    prelim_candidates.append((pid, pool_emb_map[pid], meta))
+                    prelim_candidates.append((pid, pool_emb_map[pid], meta, is_ambig))
 
             valid_candidates: list[tuple[str, Any, dict[str, Any]]] = []
             if E_mat is not None and len(E_mat) > 0 and prelim_candidates:
@@ -549,21 +534,23 @@ def get_style_upgrade_recommendations(
                 sim_matrix = C_mat @ E_mat.T
                 max_sims = np.max(sim_matrix, axis=1)
 
-                for i, (pid, emb, meta) in enumerate(prelim_candidates):
+                for i, (pid, emb, meta, is_ambig) in enumerate(prelim_candidates):
                     max_sim = float(max_sims[i])
                     # Reject exact duplicates / burst shots
                     if (1.0 - max_sim) <= BURST_COSINE_DISTANCE:
                         continue
                     # Reject candidate if it is visually/semantically unrelated to the style
-                    if max_sim < VISUAL_MIN_SIMILARITY:
+                    threshold = 0.60 if is_ambig else VISUAL_MIN_SIMILARITY
+                    if max_sim < threshold:
                         continue
                     valid_candidates.append((pid, emb, meta))
             else:
                 centroid = genre_centroids.get(genre)
-                for pid, emb, meta in prelim_candidates:
+                for pid, emb, meta, is_ambig in prelim_candidates:
                     if centroid is not None and len(centroid) > 0:
                         sim = float(np.dot(centroid, emb))
-                        if sim < VISUAL_MIN_SIMILARITY:
+                        threshold = 0.60 if is_ambig else VISUAL_MIN_SIMILARITY
+                        if sim < threshold:
                             continue
                     valid_candidates.append((pid, emb, meta))
 
@@ -635,7 +622,7 @@ def get_style_upgrade_recommendations(
 
             already_recommended_pids.update(recommended_ids)
 
-        meta_map = {pid: meta for pid, meta in prelim_candidates_tuples}
+        meta_map = {pid: meta for pid, meta, _ in prelim_candidates_tuples}
         recommended_objects = [
             {
                 "globalPhotoId": pid,
