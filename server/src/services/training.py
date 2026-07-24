@@ -785,6 +785,7 @@ def add_training_example(
     summary: str | None = None,
     image_bytes: bytes | None = None,
     focal_length: float | None = None,
+    lens: str | None = None,
     capture_time_unix: float | None = None,
     camera_make: str | None = None,
     camera_model: str | None = None,
@@ -810,6 +811,7 @@ def add_training_example(
         summary:          Optional short description of the edit style.
         image_bytes:      Raw image bytes for exposure metric computation.
         focal_length:     Focal length in mm from EXIF.
+        lens:             Lens model string from EXIF.
         capture_time_unix: Capture time as Unix timestamp.
         camera_make:      Camera manufacturer string.
         camera_model:     Camera model string.
@@ -908,6 +910,8 @@ def add_training_example(
     # EXIF categorical fields
     metadata["focal_length_bucket"] = focal_length_bucket(focal_length)
     metadata["time_of_day_bucket"] = time_of_day_bucket(capture_unix=capture_time_unix)
+    if lens:
+        metadata["lens"] = str(lens)[:128]
     if capture_time_unix is not None:
         metadata["capture_time"] = float(capture_time_unix)
     if camera_make:
