@@ -116,6 +116,15 @@ _LLM_NOISE_VOCABULARY: set[str] = {
     "depth of field",
     "shallow depth of field",
     "bokeh",
+    "daylight",
+    "daytime",
+    "grass",
+    "trees",
+    "water",
+    "background",
+    "foreground",
+    "lighting",
+    "weather",
 }
 
 

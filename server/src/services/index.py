@@ -452,13 +452,16 @@ def process_image_task(
                     success_count += 1
                     continue
 
-                # Start with existing metadata if not regenerating
-                if not regenerate_metadata and existing:
+                if existing:
                     main_metadata = existing.copy()
                     # Update only basic fields that should always be current
                     main_metadata["filename"] = filename
                     main_metadata["photo_id"] = uuid
                     main_metadata["uuid"] = lr_uuid or existing.get("uuid", uuid)
+                    # Only wipe LLM metadata if the user explicitly requested it
+                    if regenerate_metadata and compute_metadata:
+                        for key in ["title", "caption", "alt_text", "keywords", "flattened_keywords"]:
+                            main_metadata.pop(key, None)
                 else:
                     main_metadata = {
                         "filename": filename,
