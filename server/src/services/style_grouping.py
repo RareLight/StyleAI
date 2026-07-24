@@ -958,6 +958,23 @@ def _primary_genre_with_keywords_impl(
                         continue
                 return mapped
 
+    # 1.5 SPECIALIZED SEMANTIC VECTOR MAPPING
+    if kw_list:
+        specialized_regimes = {
+            "scene_astrophotography",
+            "scene_macro",
+            "scene_event",
+            "scene_action",
+            "scene_studio",
+            "scene_portrait",
+            "scene_wildlife",
+        }
+        for kw in kw_list:
+            if len(kw.strip()) > 1:
+                mapped_bucket = _dynamic_semantic_mapping(kw)
+                if mapped_bucket in specialized_regimes:
+                    return mapped_bucket
+
     # 2. VISION MODEL TAGS
     if content_tags:
         primary_mapped = _get_broad_genre(content_tags[0])
