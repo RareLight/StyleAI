@@ -498,8 +498,8 @@ def test_top_vision_tag_confidence_horizon_ignores_tail_noise():
         "wedding",
         "outdoor",
         "park",
-        "grass",
-        "trees",
+        "mountain",
+        "forest",
         "scene_portrait",
     ]
     assert sg._primary_genre_with_keywords(noisy_tags, []) == "scene_event"
