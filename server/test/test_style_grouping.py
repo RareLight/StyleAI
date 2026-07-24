@@ -1001,3 +1001,82 @@ def test_exif_priors_use_35mm_equivalent():
     priors = sg._evaluate_exif_priors({"camera_make": "Olympus", "camera_model": "E-M1", "focal_length": 12})
     assert priors.get("scene_landscape") == 0.15
 
+
+# ---------------------------------------------------------------------------
+# Audit Gap Tests: Added to cover issues identified in classification audit
+# ---------------------------------------------------------------------------
+
+
+def test_event_not_hijacked_by_portrait_lens_exif():
+    """Candid event photo taken with 85mm portrait lens should stay scene_event."""
+    meta_portrait_lens = {"focal_length": 85.0}
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_event", "scene_portrait"], [], exif_metadata=meta_portrait_lens
+        )
+        == "scene_event"
+    )
+    # Also test with explicit event keyword + portrait lens
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_portrait"], ["wedding"], exif_metadata=meta_portrait_lens
+        )
+        == "scene_event"
+    )
+
+
+def test_generic_keywords_do_not_hijack_vision_tags():
+    """Generic keywords like 'vacation' or 'trip' must not override specific vision tags."""
+    assert (
+        sg._primary_genre_with_keywords(["scene_portrait"], ["vacation"])
+        == "scene_portrait"
+    )
+    assert (
+        sg._primary_genre_with_keywords(["scene_landscape"], ["trip"])
+        == "scene_landscape"
+    )
+
+
+def test_step6_substring_no_false_positives():
+    """Step 6 word-boundary matching must not have substring false positives."""
+    result = sg._primary_genre_with_keywords(["scene_unknown"], ["groom"])
+    assert result != "scene_architecture", f"'groom' falsely matched 'room' -> {result}"
+
+    result = sg._primary_genre_with_keywords(["scene_unknown"], ["mushroom"])
+    assert result != "scene_architecture", f"'mushroom' falsely matched 'room' -> {result}"
+
+    result = sg._primary_genre_with_keywords(["scene_unknown"], ["greenhouse"])
+    assert result != "scene_architecture", f"'greenhouse' falsely matched 'house' -> {result}"
+
+    # Legitimate exact matches should still work
+    result = sg._primary_genre_with_keywords(["scene_unknown"], ["room"])
+    assert result == "scene_architecture"
+    result = sg._primary_genre_with_keywords(["scene_unknown"], ["indoor"])
+    assert result == "scene_architecture"
+
+
+def test_buried_wildlife_subject_deep_horizon():
+    """Wildlife subject tags buried under nature noise at rank 8+ should still be found."""
+    tags = [
+        "scene_nature", "tree", "grass", "outdoors",
+        "vegetation", "wilderness", "green", "bird",
+    ]
+    result = sg._primary_genre_with_keywords(tags, [])
+    assert result == "scene_wildlife", f"Buried 'bird' at rank 8 not found: {result}"
+
+
+def test_stitched_panorama_exclusion():
+    """Stitched panoramas must be filtered out by classify_photo_genre."""
+    meta_pano_suffix = {"filename": "DSC_1234-Pano.jpg", "scene_tags": ["scene_landscape"]}
+    assert sg.classify_photo_genre(meta_pano_suffix) is None
+
+    meta_pano_tag = {"scene_tags": ["scene_landscape", "panorama"]}
+    assert sg.classify_photo_genre(meta_pano_tag) is None
+
+
+def test_step4_fallback_does_not_shortcircuit_semantic_mapping():
+    """Step 4 must not return scene_unknown when the mapped genre is unknown,
+    allowing Steps 5/6 to try semantic mapping or setting fallbacks."""
+    sg._DYNAMIC_GENRE_CACHE.clear()
+    result = sg._primary_genre_with_keywords(["scene_general"], ["indoor"])
+    assert result == "scene_architecture", f"Step 4 short-circuited, got: {result}"
