@@ -143,7 +143,7 @@ def test_edited_vs_unedited_priority(mocker):
         ],
         "metadatas": [
             {"camera_profile": "Adobe Standard", "is_edited": False, "rating": 5},
-            {"camera_profile": "Adobe Standard", "is_edited": True, "rating": 3},
+            {"camera_profile": "Adobe Standard", "is_edited": True, "rating": 4},
             {"camera_profile": "Adobe Standard", "is_edited": False, "rating": 4},
         ],
     }

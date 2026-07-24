@@ -19,7 +19,6 @@ from services import style_catalog
 from services import style_grouping
 from services.style_grouping import (
     BURST_COSINE_DISTANCE,
-    VISUAL_MIN_SIMILARITY,
 )
 
 logger = logging.getLogger("styleai")
@@ -110,7 +109,13 @@ def _select_style_recommendations(
     target_count: int,
     genre_centroid: np.ndarray | None = None,
 ) -> list[str]:
-    """Select up to target_count candidate photos using Burst Deduplication and Maximal Marginal Relevance (MMR) Farthest Point Sampling."""
+    """Select up to target_count candidate photos using Burst Deduplication and
+    pure relevance-sorted selection with near-duplicate suppression.
+
+    Photos are ranked by visual similarity to the style's existing training
+    examples (+ hero quality bonus) and selected greedily, skipping any
+    candidate whose similarity to an already-selected photo exceeds 0.90.
+    """
     if not candidates or target_count <= 0:
         return []
 
@@ -187,9 +192,9 @@ def _select_style_recommendations(
             internal_sims = np.dot(E_mat, centroid)
             mu_sim = float(np.mean(internal_sims))
             sigma_sim = float(np.std(internal_sims))
-            sim_floor = max(VISUAL_MIN_SIMILARITY, mu_sim - 2.5 * sigma_sim)
+            sim_floor = max(0.60, mu_sim - 2.5 * sigma_sim)
         else:
-            sim_floor = VISUAL_MIN_SIMILARITY
+            sim_floor = 0.65
 
         C_mat = np.array([c[1] for c in deduped_candidates], dtype=np.float32)
         if C_mat.ndim == 1:
@@ -207,7 +212,7 @@ def _select_style_recommendations(
         for pid, emb, meta, h_score in deduped_candidates:
             if genre_centroid is not None and len(genre_centroid) > 0:
                 sim = float(np.dot(genre_centroid, emb))
-                if sim < VISUAL_MIN_SIMILARITY:
+                if sim < 0.60:
                     continue
                 relevance = sim + 0.10 * h_score
             else:
@@ -217,40 +222,24 @@ def _select_style_recommendations(
     if not scored_pool:
         return []
 
-    # Step 3: Maximal Marginal Relevance (MMR) Farthest Point Sampling for diversity across visual space
+    # Step 3: Pure relevance-sorted selection with near-duplicate suppression
+    scored_pool.sort(key=lambda x: x[0], reverse=True)
+
     selected_ids: list[str] = []
     selected_embs: list[np.ndarray] = []
-    remaining = list(scored_pool)
-    lambda_param = 0.85  # 85% relevance to signature style, 15% visual diversity
 
-    while remaining and len(selected_ids) < target_count:
-        best_idx = -1
-        best_mmr = -1e9
-
-        for i, (rel, pid, emb, meta) in enumerate(remaining):
-            if not selected_embs:
-                mmr_score = rel
-            else:
-                sel_mat = np.array(selected_embs, dtype=np.float32)
-                if sel_mat.ndim == 1:
-                    sel_mat = sel_mat.reshape(1, -1)
-                max_sim_to_selected = float(np.max(sel_mat @ emb))
-                if max_sim_to_selected > 0.90:
-                    continue
-                mmr_score = (
-                    lambda_param * rel - (1.0 - lambda_param) * max_sim_to_selected
-                )
-
-            if mmr_score > best_mmr:
-                best_mmr = mmr_score
-                best_idx = i
-
-        if best_idx == -1:
+    for _, pid, emb, _ in scored_pool:
+        if len(selected_ids) >= target_count:
             break
-
-        rel, chosen_pid, chosen_emb, _ = remaining.pop(best_idx)
-        selected_ids.append(chosen_pid)
-        selected_embs.append(chosen_emb)
+        # Suppress near-duplicate frames (similarity > 0.90) among selected photos
+        if selected_embs:
+            sel_mat = np.array(selected_embs, dtype=np.float32)
+            if sel_mat.ndim == 1:
+                sel_mat = sel_mat.reshape(1, -1)
+            if float(np.max(sel_mat @ emb)) > 0.90:
+                continue
+        selected_ids.append(pid)
+        selected_embs.append(emb)
 
     return selected_ids
 
@@ -348,6 +337,19 @@ def get_style_upgrade_recommendations(
                     continue
                 if style_grouping.is_stitched_panorama(meta):
                     continue
+                # Quality cutoff: reject low-quality candidates
+                try:
+                    pick = int(meta.get("pick_status", 0) or 0)
+                except (TypeError, ValueError):
+                    pick = 0
+                if pick == -1:
+                    continue  # Rejected photos are never recommended
+                try:
+                    rating = int(meta.get("rating", 0) or 0)
+                except (TypeError, ValueError):
+                    rating = 0
+                if 1 <= rating <= 3:
+                    continue  # Low-rated photos are never recommended
                 p_genre = (
                     style_grouping.classify_photo_genre(meta, None) or "scene_unknown"
                 )
@@ -370,7 +372,7 @@ def get_style_upgrade_recommendations(
 
     needed_photo_ids: set[str] = set()
     already_recommended_pids: set[str] = set()
-    style_prelim_candidates_map: dict[str, list[tuple[str, dict[str, Any], bool]]] = {}
+    style_prelim_candidates_map: dict[str, list[tuple[str, dict[str, Any]]]] = {}
 
     for style in styles:
         style_id = style.get("style_id", "")
@@ -418,9 +420,9 @@ def get_style_upgrade_recommendations(
                 if is_hdr_style and "hdr" not in norm_p_prof:
                     continue
 
-            is_compat, is_ambig = style_grouping.is_genre_compatible(genre, p_genre)
+            is_compat, _ = style_grouping.is_genre_compatible(genre, p_genre)
             if is_compat:
-                candidates.append((pid, meta, is_ambig))
+                candidates.append((pid, meta))
                 needed_photo_ids.add(pid)
                 if len(candidates) >= 250:
                     break
@@ -521,10 +523,10 @@ def get_style_upgrade_recommendations(
                     E_mat = E_mat.reshape(1, -1)
 
             # Hydrate candidates with embeddings
-            prelim_candidates: list[tuple[str, Any, dict[str, Any], bool]] = []
-            for pid, meta, is_ambig in prelim_candidates_tuples:
+            prelim_candidates: list[tuple[str, Any, dict[str, Any]]] = []
+            for pid, meta in prelim_candidates_tuples:
                 if pid in pool_emb_map and pid not in already_recommended_pids:
-                    prelim_candidates.append((pid, pool_emb_map[pid], meta, is_ambig))
+                    prelim_candidates.append((pid, pool_emb_map[pid], meta))
 
             valid_candidates: list[tuple[str, Any, dict[str, Any]]] = []
             if E_mat is not None and len(E_mat) > 0 and prelim_candidates:
@@ -534,23 +536,21 @@ def get_style_upgrade_recommendations(
                 sim_matrix = C_mat @ E_mat.T
                 max_sims = np.max(sim_matrix, axis=1)
 
-                for i, (pid, emb, meta, is_ambig) in enumerate(prelim_candidates):
+                for i, (pid, emb, meta) in enumerate(prelim_candidates):
                     max_sim = float(max_sims[i])
                     # Reject exact duplicates / burst shots
                     if (1.0 - max_sim) <= BURST_COSINE_DISTANCE:
                         continue
                     # Reject candidate if it is visually/semantically unrelated to the style
-                    threshold = 0.60 if is_ambig else VISUAL_MIN_SIMILARITY
-                    if max_sim < threshold:
+                    if max_sim < 0.60:
                         continue
                     valid_candidates.append((pid, emb, meta))
             else:
                 centroid = genre_centroids.get(genre)
-                for pid, emb, meta, is_ambig in prelim_candidates:
+                for pid, emb, meta in prelim_candidates:
                     if centroid is not None and len(centroid) > 0:
                         sim = float(np.dot(centroid, emb))
-                        threshold = 0.60 if is_ambig else VISUAL_MIN_SIMILARITY
-                        if sim < threshold:
+                        if sim < 0.60:
                             continue
                     valid_candidates.append((pid, emb, meta))
 
@@ -622,7 +622,7 @@ def get_style_upgrade_recommendations(
 
             already_recommended_pids.update(recommended_ids)
 
-        meta_map = {pid: meta for pid, meta, _ in prelim_candidates_tuples}
+        meta_map = {pid: meta for pid, meta in prelim_candidates_tuples}
         recommended_objects = [
             {
                 "globalPhotoId": pid,

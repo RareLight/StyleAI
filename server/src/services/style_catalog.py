@@ -275,22 +275,15 @@ def _filter_style_examples_by_genre(
 ) -> list[dict[str, Any]]:
     """Lightweight view-time filter for style training examples.
 
-    Enforces that training examples attached to a style are not stitched panoramas
-    and are semantically compatible with the style's canonical genre.
+    Only filters out stitched panoramas.  Does NOT re-run text classification
+    because training-time visual reassignment (Pass 3 of
+    group_examples_by_profile_genre) may have legitimately moved a photo to a
+    different genre cluster.  View-time queries must trust the database's
+    style_id linkage.
     """
     from services import style_grouping
 
-    clean = []
-    for ex in examples:
-        if style_grouping.is_stitched_panorama(ex):
-            continue
-        p_genre = style_grouping.classify_photo_genre(ex, None)
-        if p_genre and style_genre:
-            compat, ambiguous = style_grouping.is_genre_compatible(style_genre, p_genre)
-            if not compat and not ambiguous:
-                continue
-        clean.append(ex)
-    return clean
+    return [ex for ex in examples if not style_grouping.is_stitched_panorama(ex)]
 
 
 def get_all_styles_with_examples() -> list[dict[str, Any]]:
