@@ -9,6 +9,12 @@ local function safeLogTrace(msg)
 	end
 end
 
+local LrSystemInfo = import("LrSystemInfo")
+local MAC_ENV = false
+pcall(function()
+	MAC_ENV = LrSystemInfo.osVersion():sub(1, 3):lower() == "mac"
+end)
+
 local function shutdownApp(doneFunc, progressFunc)
 	-- Gracefully shut down the entire backend server when Lightroom exits.
 	-- The server will be restarted automatically the next time Lightroom opens.
