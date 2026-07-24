@@ -388,6 +388,7 @@ LrTasks.startAsyncTask(function()
 					iso = exifOptions.iso,
 					aperture = exifOptions.aperture,
 					shutter_speed = exifOptions.shutter_speed,
+					lens = exifOptions.lens,
 					image_bytes = imageBytes,
 					filepath = getPhotoRawMeta(photo, "path"),
 					rating = tonumber(getPhotoRawMeta(photo, "rating")) or 0,

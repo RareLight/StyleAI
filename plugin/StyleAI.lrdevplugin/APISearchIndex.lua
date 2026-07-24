@@ -1805,6 +1805,11 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                             photoOptions.camera_profile = exifInfo.camera_profile
                             photoOptions.camera_make = exifInfo.camera_make
                             photoOptions.camera_model = exifInfo.camera_model
+                            photoOptions.focal_length = exifInfo.focal_length
+                            photoOptions.lens = exifInfo.lens
+                            photoOptions.iso = exifInfo.iso
+                            photoOptions.aperture = exifInfo.aperture
+                            photoOptions.shutter_speed = exifInfo.shutter_speed
                         end
                         photoOptions.rating = tonumber(getPhotoRawMeta(photo, "rating")) or 0
                         photoOptions.pick_status = tonumber(getPhotoRawMeta(photo, "pickStatus")) or 0
@@ -2744,7 +2749,7 @@ end
 -- Gets photos that need processing for "New or unprocessed photos" scope.
 -- When taskOptions is provided, uses backend to check which photos lack the selected tasks' data.
 -- When taskOptions is nil, falls back to legacy behavior: photos not in index (with embeddings).
--- @param taskOptions table|nil { enableEmbeddings, enableMetadata, enableFaces, enableVertexAI, regenerateMetadata }
+-- @param taskOptions table|nil { enableEmbeddings, enableMetadata, enableFaces, regenerateMetadata }
 -- @param lookupProgressScope LrProgressScope|nil Optional progress for "looking up which photos need processing".
 -- @return boolean success, table photosToProcess
 --
@@ -2913,8 +2918,6 @@ end
 -- Retrieves all available multimodal models from all providers.
 -- Always filters to vision-capable models only.
 -- Dynamically checks Ollama and LM Studio availability on each call.
--- @param openaiApiKey string|nil OpenAI API key for listing ChatGPT models
--- @param geminiApiKey string|nil Gemini API key for listing Gemini models
 -- @return table|nil Response from server with format: { models = { qwen = {...}, ollama = {...}, ... } }
 function SearchIndexAPI.getModels()
     local url = getBaseUrl() .. ENDPOINTS.MODELS
@@ -3182,7 +3185,7 @@ function SearchIndexAPI.checkServerHealth()
         if not hasAvailable and next(providers) ~= nil then
             ErrorHandler.handleError(
                 LOC "$$$/StyleAI/Health/NoProviders=No AI metadata providers are available.",
-                LOC "$$$/StyleAI/Health/NoProvidersDetail=Please configure Ollama, LM Studio, ChatGPT, or Gemini in the plugin preferences."
+                LOC "$$$/StyleAI/Health/NoProvidersDetail=Please configure Ollama or LM Studio in the plugin preferences."
             )
         elseif #failedProviders > 0 then
             log:warn("Some AI providers failed to initialize: " .. table.concat(failedProviders, ", "))
@@ -3263,8 +3266,6 @@ function SearchIndexAPI.getDetailedHealth()
     local health = {
         backend = SearchIndexAPI.pingServer() == true,
         clip = SearchIndexAPI.isClipReady() == true,
-        gemini = false,
-        chatgpt = false,
         ollama = false,
         lmstudio = false,
     }

@@ -1,6 +1,6 @@
 # Setting Up LM Studio with StyleAI
 
-LM Studio is a desktop application that lets you discover, download, and run local LLMs. It features a built-in local inference server that is compatible with the OpenAI API format, making it very easy to integrate with StyleAI for private, offline image analysis.
+LM Studio is a desktop application that lets you discover, download, and run local LLMs. It features a built-in local inference server that is compatible with standard LLM API formats, making it very easy to integrate with StyleAI for private, offline image analysis.
 
 ## Installation
 

@@ -380,7 +380,7 @@ class LLMProviderBase(ABC):
     ) -> dict[str, Any]:
         """
         Prepare JSON schema for structured output.
-        Different providers have different formats (OpenAI vs Gemini).
+        Different providers have different formats.
         Must be overridden by specific providers.
         """
         schema = {"type": "object", "properties": {}, "required": []}

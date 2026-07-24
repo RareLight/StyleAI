@@ -23,10 +23,10 @@ Whether you want to cull a massive photo shoot, find a specific photo using natu
 **Your Privacy, First:** In an era where AI often means uploading your personal or client photos to the cloud, StyleAI flips the script. By leveraging highly optimized vision models (SigLIP2) and embeddings (InsightFace), StyleAI runs its core indexing and predictive editing **entirely locally on your own machine**. Your photos, your metadata, and your intellectual property never have to leave your hard drive. 
 
 > [!IMPORTANT]
-> **Privacy First, But Not Guaranteed Online**
-> StyleAI is designed as a local, privacy-first tool. Our Predictive ML Editing, Face Recognition, and Semantic Search operate 100% locally. However, if you choose to use the optional Generative AI fallback for creative prompting via cloud APIs (like ChatGPT or Google Gemini), please note that privacy can never be fully guaranteed. 
+> **Privacy First**
+> StyleAI is designed as a local, privacy-first tool. Our Predictive ML Editing, Face Recognition, Semantic Search, and Auto-Tagging operate 100% locally. 
 > 
-> For a full breakdown of how we protect your data (including EXIF stripping, downsizing, and auto-blurring faces before any optional cloud requests), please read our full **[Privacy and Security Explainer](https://github.com/RareLight/StyleAI/wiki/Privacy-and-Security)**.
+> For a full breakdown of how we protect your data (including EXIF stripping and downsizing), please read our full **[Privacy and Security Explainer](https://github.com/RareLight/StyleAI/wiki/Privacy-and-Security)**.
 
 ---
 
@@ -38,7 +38,7 @@ Whether you want to cull a massive photo shoot, find a specific photo using natu
 - **Semantic Free-Text Search:** Find photos using natural language. Just type exactly what you remember—"Red sports car parked in front of a snowy garage" or "Bride laughing in the rain"—and StyleAI will build a Lightroom Collection with the most relevant matches.
 - **Smart Image Culling & Face Recognition:** StyleAI groups similar bursts of photos, clusters faces locally (using InsightFace), helps you pick out the sharpest frames, and effortlessly creates organized collections for your picks and rejects.
 - **100% Local Inference (Privacy First):** Protect your clients and your art. Run all core embeddings, face recognition, and predictive styling locally.
-- **Cloud LLMs Available:** If you need maximum zero-shot reasoning capabilities, you can optionally connect to the cloud with ChatGPT, Google Gemini, Vertex AI, or run local LLMs via Ollama/LM-Studio.
+- **Local LLMs Available:** If you need maximum zero-shot reasoning capabilities, you can optionally connect to local LLMs via Ollama/LM-Studio.
 
 ---
 
@@ -70,7 +70,7 @@ StyleAI uses a split frontend/backend architecture to bypass Lightroom's Lua lim
 - **Vision & Embeddings:** Open-CLIP (SigLIP2), PyTorch.
 - **Identity & Faces:** InsightFace.
 - **Database:** ChromaDB (Vector Search with isolated collections for search vs. training) & SQLite (Metadata).
-- **AI Integrations:** Google Gemini, Vertex AI, ChatGPT/OpenAI, Ollama, LM-Studio.
+- **AI Integrations:** Ollama, LM-Studio.
 
 ## License
 
@@ -84,5 +84,5 @@ If you're a developer or a photographer with ideas, check out our [CONTRIBUTING.
 
 **Original Upstream Development by:**
 - **Bastian Machek (LrGenius / Fokuspunk)** – *Creator & Lead Developer*
-- **Refactor and expanded ML/AI capabilities by Anna Grunseth (Rare Light Photography) and Google Gemini/Antigravity**
+- **Refactor and expanded ML/AI capabilities by Anna Grunseth (Rare Light Photography)**
 - **The Open Source Community** – *Special thanks to all contributors, testers, and the developers of the underlying AI frameworks (InsightFace, OpenCLIP, PyTorch, ChromaDB).*

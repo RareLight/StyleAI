@@ -68,10 +68,6 @@ The plugin is designed to work with local and cloud providers, while keeping Lig
 
 - Adobe Lightroom Classic (supported by plugin SDK settings)
 - StyleAI backend server reachable from Lightroom
-- Optional API keys depending on provider:
-  - Gemini
-  - OpenAI / ChatGPT
-  - Vertex AI (project + location)
 
 ---
 
@@ -100,7 +96,7 @@ Notes:
 
 - Migration is incremental and skips photos that are not indexed in backend.
 - Existing migrated entries are skipped automatically.
-- Main embeddings, vertex embeddings, and face references are migrated.
+- Main embeddings and face references are migrated.
 
 ---
 
@@ -145,58 +141,9 @@ In the plugin settings dialog you can configure:
 
 - Backend server URL
 - Ollama base URL
-- API keys and Vertex settings
 - Export size and quality used for AI processing
 - Prompt presets
 - Optional CLIP model download for advanced search
-
----
-
-## Google Vertex AI Login (gcloud)
-
-If you want to use Vertex AI from StyleAI, run the login on the machine where the backend server runs.
-
-### macOS
-
-1. Install Google Cloud CLI (if not installed):
-   - [https://cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install)
-2. Open Terminal and run:
-
-```bash
-gcloud init
-gcloud config set project YOUR_PROJECT_ID
-gcloud auth application-default login
-```
-
-3. Optional verification:
-
-```bash
-gcloud auth application-default print-access-token
-```
-
-### Windows (PowerShell)
-
-1. Install Google Cloud CLI (if not installed):
-   - [https://cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install)
-2. Open **Google Cloud SDK Shell** (or PowerShell with gcloud in PATH) and run:
-
-```powershell
-gcloud init
-gcloud config set project YOUR_PROJECT_ID
-gcloud auth application-default login
-```
-
-3. Optional verification:
-
-```powershell
-gcloud auth application-default print-access-token
-```
-
-### Notes
-
-- `gcloud auth application-default login` creates local Application Default Credentials (ADC) used by the backend.
-- In plugin settings, set `Vertex AI Project ID` and `Vertex AI Location` (for example `us-central1`).
-- For headless/server deployments, prefer a service account with `GOOGLE_APPLICATION_CREDENTIALS`.
 
 ---
 
@@ -217,7 +164,7 @@ If you migrated from legacy UUID-based IDs to `photo_id`:
 
 - The plugin can trigger backend migration from the Plugin Manager UI.
 - Migration uses a progress scope and batch requests.
-- Existing collections (main embeddings, vertex embeddings, faces) are migrated through backend migration endpoints.
+- Existing collections (main embeddings, faces) are migrated through backend migration endpoints.
 
 ---
 

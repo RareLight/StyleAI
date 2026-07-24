@@ -13,9 +13,6 @@ StyleAI is made possible by these amazing open-source projects and AI frameworks
 - **Scikit-learn**: Simple and efficient tools for predictive data analysis. [Website](https://scikit-learn.org/)
 
 ## AI Model Providers & Interfaces
-- **Google Gemini**: Large language models for multimodal analysis.
-- **Google Vertex AI**: Enterprise AI platform for training and deploying models.
-- **OpenAI / ChatGPT**: Advanced conversational AI and embeddings.
 - **Ollama**: Run open-source large language models locally. [Website](https://ollama.ai/)
 - **LM Studio**: Discover, download, and run local LLMs. [Website](https://lmstudio.ai/)
 

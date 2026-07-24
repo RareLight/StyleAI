@@ -40,14 +40,7 @@ Lightroom communicates with the `styleai-server` over a local network port (defa
   2. Verify the server URL `http://127.0.0.1:8000` matches where your server is running.
   3. Ensure the server terminal/console hasn't crashed.
 
-### 3. Invalid API Keys
-
-If you're using cloud providers (Gemini, ChatGPT, Vertex AI), authentication failures are hard-blocked by the providers.
-
-- **Symptom**: "Unauthorized" or 401/403 HTTP errors reported in the Lightroom Error Dialog.
-- **Resolution**: Double-check your API keys in the Lightroom Plug-in Manager. Make sure they haven't expired and have sufficient billing quotas attached.
-
-### 4. Local Model Timeout
+### 3. Local Model Timeout
 
 Local AI models (via LM Studio or Ollama) can take significantly longer to process than cloud APIs, particularly on machines without powerful GPUs.
 

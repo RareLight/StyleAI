@@ -84,8 +84,7 @@ function Util.dumpTable(t)
 	result = result:gsub('(url = "data:image/jpeg;base64,)([A-Za-z0-9+/]+=?=?)"', '%1base64 removed"')
 	-- Redact common API key fields by name (prefs / options)
 	result = result:gsub('(api_key%s*=%s*)"([^"]*)"', '%1"<redacted>"')
-	result = result:gsub('(chatgptApiKey%s*=%s*)"([^"]*)"', '%1"<redacted>"')
-	result = result:gsub('(geminiApiKey%s*=%s*)"([^"]*)"', '%1"<redacted>"')
+
 	return result
 end
 
@@ -212,8 +211,11 @@ function Util.getPhotoExif(photo)
 		exif.camera_model = model
 	end
 
-
-
+	-- Lens
+	local lens = safeGetFormattedMetadata(photo, "lens")
+	if type(lens) == "string" and lens ~= "" then
+		exif.lens = lens
+	end
 	-- ISO
 	local iso = safeGetRawMetadata(photo, "isoSpeedRating")
 	if type(iso) == "number" then
@@ -1478,12 +1480,12 @@ function Util.checkPluginHealth(options)
 		})
 	end
 
-	if not health.gemini and not health.chatgpt and not health.ollama and not health.lmstudio then
+	if not health.ollama and not health.lmstudio then
 		report.healthy = false
 		table.insert(report.issues, {
 			title = LOC("$$$/StyleAI/Health/ApiKeysMissing=No AI providers configured for AI generation."),
 			hint = LOC(
-				"$$$/StyleAI/Health/ApiKeysMissingHint=You need to configure Gemini or ChatGPT API keys (or a local provider) to generate keywords and descriptions."
+				"$$$/StyleAI/Health/ApiKeysMissingHint=You need to configure Ollama or LM Studio to generate keywords and descriptions."
 			),
 			critical = options.requireProviders == true,
 		})
