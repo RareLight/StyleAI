@@ -71,8 +71,7 @@ Defaults.defaultSystemInstruction =
 	"Rules:\n" ..
 	"- DO NOT tag background noise, minor objects, or generic filler (e.g., outdoors, grass, sky, daylight).\n" ..
 	"- Be highly specific and objective.\n" ..
-	"- Format in Title Case.\n" ..
-	"- No special characters (commas only)."
+	"- Format in Title Case."
 
 Defaults.legacyEditSystemInstructions = {
 	"You are a senior Lightroom Classic retoucher. Return only a structured Lightroom edit recipe that matches the schema exactly. No prose, no markdown, no unsupported controls. Build edits in this order: white balance and exposure foundation, tonal shaping, color refinement, detail/effects. Use masks only when materially beneficial and only for subject, sky, or background. Prefer subtle, natural, premium output unless explicitly asked for a stylized look."

@@ -99,7 +99,7 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.generateAltText = prefs.generateAltText or false
     props.useKeywordHierarchy = prefs.useKeywordHierarchy or false
     props.useCatalogKeywordStructure = prefs.useCatalogKeywordStructure or false
-    props.useTopLevelKeyword = prefs.useTopLevelKeyword or false
+    props.useTopLevelKeyword = true
     props.topLevelKeyword = prefs.topLevelKeyword or "StyleAI"
     props.bilingualKeywords = prefs.bilingualKeywords or false
     props.keywordSecondaryLanguage = prefs.keywordSecondaryLanguage or Defaults.defaultKeywordSecondaryLanguage
@@ -451,11 +451,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         f:spacer { width = share 'labelWidth' },
                         f:checkbox { value = bind 'useCatalogKeywordStructure', title = LOC "$$$/StyleAI/UI/UseCatalogKeywordStructure=Use existing catalog structure" }
                     },
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/useTopLevelKeyword=Top-level Keyword:", width = share 'labelWidth' },
-                        f:checkbox { value = bind 'useTopLevelKeyword' },
-                        f:edit_field { value = bind 'topLevelKeyword', width_in_chars = 20, enabled = bind 'useTopLevelKeyword' },
-                    },
+
                     f:row {
                         f:static_text { title = LOC "$$$/StyleAI/UI/BilingualKeywords=Bilingual Synonyms:", width = share 'labelWidth' },
                         f:checkbox { value = bind 'bilingualKeywords', enabled = bind 'generateKeywords' },
@@ -560,7 +556,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         props.generateAltText = false
                         props.useKeywordHierarchy = false
                         props.useCatalogKeywordStructure = false
-                        props.useTopLevelKeyword = false
+                        props.useTopLevelKeyword = true
                         props.topLevelKeyword = "StyleAI"
                         props.bilingualKeywords = false
                         props.keywordSecondaryLanguage = Defaults.defaultKeywordSecondaryLanguage

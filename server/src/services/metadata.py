@@ -379,9 +379,11 @@ class AnalysisService:
                 uuid, image_data[i], per_image_options
             )
 
-        # ThreadPoolExecutor is safe here since LLM calls are I/O bound
-        # Max workers matches batch size to process the entire batch in parallel
-        max_workers = max(1, len(uuids))
+        # ThreadPoolExecutor is safe here since LLM calls are I/O bound.
+        # However, because local LLMs (LM Studio/Ollama) are extremely VRAM and
+        # context-switching bound, high concurrency causes massive degradation.
+        # We cap max_workers to 2 to protect GPU throughput.
+        max_workers = max(1, min(len(uuids), 2))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(process_single, i, uuid) for i, uuid in enumerate(uuids)
