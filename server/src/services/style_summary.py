@@ -16,7 +16,7 @@ def get_signature_style_summary() -> str | None:
     return None
 
 
-def summarize_catalog_styles(api_key: str | None = None) -> str | None:
+def summarize_catalog_styles() -> str | None:
     """
     Summarize all discovered styles in the catalog using an LLM.
     Returns a 'Signature Style' summary string.
@@ -51,19 +51,7 @@ def summarize_catalog_styles(api_key: str | None = None) -> str | None:
 
     summary_text = None
     try:
-        if provider == "chatgpt":
-            import openai
-
-            client = openai.OpenAI(api_key=api_key)
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": system_prompt}],
-                temperature=0.4,
-                max_tokens=500,
-            )
-            summary_text = response.choices[0].message.content.strip()
-
-        elif provider == "ollama":
+        if provider == "ollama":
             import requests
 
             # Assume local ollama

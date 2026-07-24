@@ -14,7 +14,7 @@ The background service is responsible for:
 - **Semantic Search:** Executing fast, vector-based similarity searches using ChromaDB.
 - **Metadata Persistence:** Keeping a high-performance secondary SQLite database for tags, face matching, style training, and other AI-generated text.
 - **Face & Person APIs:** Processing and matching facial data to build identity maps over time.
-- **Generative Fallback:** Providing access to Cloud LLMs (Gemini, ChatGPT) or Local LLMs (Ollama, LM Studio) for creative generative editing when local predictive confidence is low.
+- **Generative Fallback:** Providing access to Local LLMs (Ollama, LM Studio) for creative generative editing when local predictive confidence is low.
 
 ## Error Handling & Logic
 

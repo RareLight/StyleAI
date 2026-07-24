@@ -698,8 +698,6 @@ function MetadataManager.addKeywordRecursively(
 				local kwLower = string.lower(Util.trim(keywordName))
 				local isReserved = keywordName == "Ollama"
 					or keywordName == "LMStudio"
-					or keywordName == "Google Gemini"
-					or keywordName == "ChatGPT"
 					or (reservedLower and kwLower == reservedLower)
 					or kwLower == "styleai"
 					or keywordName == Defaults.topLevelKeywordSynonym

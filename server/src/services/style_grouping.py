@@ -531,7 +531,7 @@ def _dynamic_semantic_mapping(keyword: str) -> str:
         "grass",
         "leaf",
     }
-    if closest_dist < 0.55:
+    if closest_dist <= 0.45:
         closest_bucket = list(_DYNAMIC_BUCKETS.keys())[closest_idx]
         if closest_bucket in {
             "scene_architecture",
@@ -907,7 +907,9 @@ def _primary_genre_with_keywords_impl(
     kw_list = _filter_llm_noise_keywords(_extract_keyword_strings(user_keywords))
     tag_list = _filter_llm_noise_keywords(_extract_keyword_strings(scene_tags))
     content_tags = [t for t in tag_list if not t.startswith("style_")]
+    priors = _evaluate_exif_priors(exif_metadata)
 
+    # 1. EXPLICIT DICTIONARY KEYWORDS
     if kw_list:
         tier_order = [
             "scene_studio",
@@ -944,20 +946,9 @@ def _primary_genre_with_keywords_impl(
                         ):
                             return target_genre
 
-        # Fuzzy keyword fallbacks: dynamic semantic mapping + broad genre.
-        # Must run BEFORE vision tags because vision-level nature/wildlife
-        # guards hard-return without checking keywords.
-        for kw in kw_list:
-            if len(kw.strip()) > 1:
-                mapped_bucket = _dynamic_semantic_mapping(kw)
-                if mapped_bucket:
-                    return mapped_bucket
-
         for t in kw_list:
             mapped = _get_broad_genre(t)
             if mapped != "scene_unknown":
-                # Don't let broad "nature" override if a specialized genre
-                # exists elsewhere in the keyword list
                 if mapped == "scene_nature":
                     specialized = {_get_broad_genre(k) for k in kw_list} - {
                         "scene_nature",
@@ -967,39 +958,7 @@ def _primary_genre_with_keywords_impl(
                         continue
                 return mapped
 
-    priors = _evaluate_exif_priors(exif_metadata)
-    if priors:
-        best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
-        if best_prior_score >= 0.38:
-            if best_prior_regime == "scene_night":
-                top_mapped = {_get_broad_genre(t) for t in content_tags[:6]}
-                if not top_mapped.intersection(
-                    {
-                        "scene_astrophotography",
-                        "scene_portrait",
-                        "scene_event",
-                        "scene_wildlife",
-                        "scene_studio",
-                    }
-                ):
-                    return best_prior_regime
-            else:
-                return best_prior_regime
-        if best_prior_regime == "scene_macro" and best_prior_score >= 0.35:
-            top_mapped_tags = {_get_broad_genre(t) for t in content_tags[:6]}
-            if not top_mapped_tags.intersection(
-                {
-                    "scene_portrait",
-                    "scene_wildlife",
-                    "scene_studio",
-                    "scene_event",
-                }
-            ) and not (
-                "scene_landscape" in top_mapped_tags
-                and "scene_macro" not in content_tags
-            ):
-                return "scene_macro"
-
+    # 2. VISION MODEL TAGS
     if content_tags:
         primary_mapped = _get_broad_genre(content_tags[0])
         background_settings = {
@@ -1063,7 +1022,12 @@ def _primary_genre_with_keywords_impl(
                     "scene_street",
                     "scene_architecture",
                 ]
-            top_vision_tags = content_tags[:6]
+            
+            if primary_mapped in ("scene_nature", "scene_wildlife", "scene_exterior"):
+                top_vision_tags = content_tags[:12]
+            else:
+                top_vision_tags = content_tags[:6]
+
             for target_genre in tier_order_subjects:
                 for t in top_vision_tags:
                     t_lower = t.lower()
@@ -1085,7 +1049,7 @@ def _primary_genre_with_keywords_impl(
                 return "scene_event"
 
         if primary_mapped == "scene_nature":
-            top_mapped = {_get_broad_genre(t) for t in top_vision_tags}
+            top_mapped = {_get_broad_genre(t) for t in content_tags[:12]}
             for candidate in [
                 "scene_portrait",
                 "scene_event",
@@ -1101,7 +1065,7 @@ def _primary_genre_with_keywords_impl(
             return "scene_nature"
 
         if primary_mapped == "scene_wildlife":
-            top_mapped = {_get_broad_genre(t) for t in top_vision_tags}
+            top_mapped = {_get_broad_genre(t) for t in content_tags[:12]}
             for candidate in ["scene_portrait", "scene_event", "scene_macro", "scene_action"]:
                 if candidate in top_mapped:
                     return candidate
@@ -1118,6 +1082,7 @@ def _primary_genre_with_keywords_impl(
             "scene_action",
             "scene_event",
             "scene_street",
+            "scene_macro",
         }
         if primary_mapped in canonical_regimes:
             return primary_mapped
@@ -1128,7 +1093,7 @@ def _primary_genre_with_keywords_impl(
             if mapped_t in canonical_regimes:
                 return mapped_t
             if mapped_t == "scene_nature":
-                top_mapped = {_get_broad_genre(t2) for t2 in top_vision_tags}
+                top_mapped = {_get_broad_genre(t2) for t2 in content_tags[:12]}
                 for candidate in [
                     "scene_portrait",
                     "scene_event",
@@ -1139,45 +1104,71 @@ def _primary_genre_with_keywords_impl(
                 ]:
                     if candidate in top_mapped:
                         return candidate
+                if priors and priors.get("scene_macro", 0.0) > 0:
+                    return "scene_macro"
                 return "scene_nature"
             if mapped_t == "scene_wildlife":
-                top_mapped = {_get_broad_genre(t2) for t2 in top_vision_tags}
+                top_mapped = {_get_broad_genre(t2) for t2 in content_tags[:12]}
                 for candidate in ["scene_portrait", "scene_event", "scene_macro", "scene_action"]:
                     if candidate in top_mapped:
                         return candidate
                 return "scene_wildlife"
 
+    # 3. EXIF PRIORS
     if priors:
         best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
+        if best_prior_score >= 0.38:
+            if best_prior_regime == "scene_night":
+                top_mapped = {_get_broad_genre(t) for t in content_tags[:6]}
+                if not top_mapped.intersection(
+                    {
+                        "scene_astrophotography",
+                        "scene_portrait",
+                        "scene_event",
+                        "scene_wildlife",
+                        "scene_studio",
+                    }
+                ):
+                    return best_prior_regime
+            else:
+                return best_prior_regime
+        if best_prior_regime == "scene_macro" and best_prior_score >= 0.35:
+            top_mapped_tags = {_get_broad_genre(t) for t in content_tags[:6]}
+            if not top_mapped_tags.intersection(
+                {
+                    "scene_portrait",
+                    "scene_wildlife",
+                    "scene_studio",
+                    "scene_event",
+                }
+            ) and not (
+                "scene_landscape" in top_mapped_tags
+                and "scene_macro" not in content_tags
+            ):
+                return "scene_macro"
         if best_prior_score >= 0.30:
             return best_prior_regime
 
+    # 4. VISION MODEL FALLBACK
     if content_tags and content_tags[0] != "scene_unknown":
         return _get_broad_genre(content_tags[0])
 
+    # 5. DYNAMIC SEMANTIC VECTOR MAPPING (SentenceTransformer)
     if kw_list:
-        # Setting fallback: if no subject/domain matched above, check setting keywords
+        for kw in kw_list:
+            if len(kw.strip()) > 1:
+                mapped_bucket = _dynamic_semantic_mapping(kw)
+                if mapped_bucket:
+                    return mapped_bucket
+
+    # 6. SETTING FALLBACKS
+    if kw_list:
         setting_arch_words = {
-            "indoor",
-            "interior",
-            "room",
-            "living room",
-            "bedroom",
-            "dining room",
-            "home",
-            "hallway",
-            "house",
-            "structure",
-            "building",
-            "real estate",
+            "indoor", "interior", "room", "living room", "bedroom", "dining room",
+            "home", "hallway", "house", "structure", "building", "real estate",
         }
         setting_land_words = {
-            "outdoor",
-            "exterior",
-            "outdoors",
-            "outside",
-            "scenery",
-            "vista",
+            "outdoor", "exterior", "outdoors", "outside", "scenery", "vista",
         }
         for t in kw_list:
             t_lower = t.lower()
@@ -1185,8 +1176,6 @@ def _primary_genre_with_keywords_impl(
                 return "scene_architecture"
             if any(w in t_lower for w in setting_land_words):
                 return "scene_landscape"
-
-
 
     return "scene_unknown"
 

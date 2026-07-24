@@ -14,18 +14,9 @@ StyleAI was built with a simple goal: to provide powerful AI tools for photograp
 
 ---
 
-## 💻 Local vs. ☁️ Cloud Processing
+## 💻 Local Processing
 
-You have full control over where your data is processed. This is how we handle it:
-
-### 🏠 Local Processing (Default)
-When using local models like **Ollama** or **LM Studio**, all analysis, tagging, and semantic indexing happen entirely on your machine. No image data or metadata is transmitted to external servers.
-
-### 🌐 Cloud Processing (Optional)
-If you choose to enable cloud providers (OpenAI, Google Gemini, Vertex AI), only the necessary data is sent to these services:
-- **Image Content**: Temporary transmission of image pixels or descriptive prompts for analysis.
-- **Contextual Hints**: Any manual photo context you provide.
-- **API Keys**: Stored locally and sent only to the respective provider.
+You have full control over where your data is processed. All analysis, tagging, and semantic indexing happen entirely on your machine using local models like **Ollama** or **LM Studio**. No image data or metadata is ever transmitted to external servers.
 
 ---
 
@@ -52,19 +43,14 @@ If you choose to enable cloud providers (OpenAI, Google Gemini, Vertex AI), only
 ### 📸 Images and Face Recognition
 We use **InsightFace** for local face clustering. These biometric templates are stored in your local backend database and are **never** shared with us or any third party.
 
-### 🔑 API Keys
-Your API keys for services like OpenAI or Vertex AI are stored in the Lightroom plugin configuration (on your disk). They are transmitted only to the service provider via encrypted HTTPS requests.
-
 ---
 
-## 📋 Third-Party Services
+## 📋 Local Inference Engines
 
-If you utilize cloud features, please refer to the privacy policies of the supported providers:
+StyleAI relies on these local tools:
 
-*   [OpenAI Privacy Policy](https://openai.com/policies/privacy-policy)
-*   [Google Cloud (Vertex AI) Privacy Notice](https://cloud.google.com/terms/cloud-privacy-notice)
-*   [Ollama (Local)](https://ollama.com/) - *Fully Private*
-*   [LM Studio (Local)](https://lmstudio.ai/) - *Fully Private*
+*   [Ollama](https://ollama.com/) - *Fully Private*
+*   [LM Studio](https://lmstudio.ai/) - *Fully Private*
 
 ---
 
@@ -76,4 +62,4 @@ As the developer, I (Bastian Machek) have no access to your data. If you have qu
 - **GitHub:** [Report an Issue](https://github.com/RareLight/StyleAI/issues)
 
 > [!TIP]
-> **Tip for Maximum Privacy:** Want 100% data sovereignty? Use **Ollama** for language tasks and **OpenCLIP (Local)** for search indexing. This ensures that zero bytes of your library ever leave your local network.
+> **100% Data Sovereignty:** Because StyleAI exclusively uses local inference engines and local vector databases, zero bytes of your library ever leave your local network.

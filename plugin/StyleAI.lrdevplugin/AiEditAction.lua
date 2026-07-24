@@ -277,18 +277,7 @@ local function getAiEditOptions(ctx, editMode)
 		properties.showLlmOptions = (newValue == "creative")
 	end)
 	
-	local function updateIsCloudModel(properties, key)
-	    local provider = key
-	    if key then
-	        local sep = string.find(key, "::", 1, true)
-	        if sep then provider = string.sub(key, 1, sep - 1) end
-	    end
-	    properties.isCloudModel = (provider == "chatgpt" or provider == "gemini" or provider == "vertexai")
-	end
-	
-	props:addObserver("modelKey", function(properties, k, newValue)
-	    updateIsCloudModel(properties, newValue)
-	end)
+
 
 	local modelItems = buildModelItems()
 	log:trace("getAiEditOptions: modelItems count=" .. tostring(#modelItems))
@@ -298,7 +287,7 @@ local function getAiEditOptions(ctx, editMode)
 	if not props.modelKey or props.modelKey == "" then
 		props.modelKey = modelItems[1].value
 	end
-	updateIsCloudModel(props, props.modelKey)
+
 
 	local styleItems = {}
 	if ENABLE_DEBUG_STYLE_OVERRIDE then
@@ -426,12 +415,7 @@ local function getAiEditOptions(ctx, editMode)
 							items = modelItems,
 							width = 300,
 						}),
-						f:static_text {
-							title = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudWarning=⚠️ Images will be sent to the internet.",
-							visible = bind 'isCloudModel',
-							text_color = LrColor(0.8, 0.5, 0),
-							tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudTooltip=Enterprise APIs typically do not use data for training, but privacy cannot be fully guaranteed. See our Wiki for details.",
-						},
+
 					}),
 				}),
 			}),

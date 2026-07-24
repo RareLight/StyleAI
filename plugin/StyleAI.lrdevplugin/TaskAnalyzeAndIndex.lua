@@ -154,7 +154,6 @@ local function showAnalyzeAndIndexDialog(ctx)
         if not key or key == "" then
             properties.llmStatusText = LOC("$$$/StyleAI/AnalyzeAndIndex/LlmStatusNone=LLM: No model selected")
             properties.llmStatusColor = LrColor(0.8, 0, 0)
-            properties.isCloudModel = false
             return
         end
 
@@ -164,12 +163,6 @@ local function showAnalyzeAndIndexDialog(ctx)
             provider = string.sub(key, 1, sep - 1)
         end
         
-        if provider == "chatgpt" or provider == "gemini" or provider == "vertexai" then
-            properties.isCloudModel = true
-        else
-            properties.isCloudModel = false
-        end
-
         local health = properties.healthData or {}
         local providers = health.llm_providers or {}
         local status = providers[provider]
@@ -405,12 +398,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/aiModel=AI Model:", width = share 'labelWidth' },
                         f:column {
                             f:popup_menu { value = bind 'modelKey', items = modelItems, width = 300 },
-                            f:static_text {
-                                title = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudWarning=⚠️ Images will be sent to the internet.",
-                                visible = bind 'isCloudModel',
-                                text_color = LrColor(0.8, 0.5, 0),
-                                tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/CloudTooltip=Enterprise APIs typically do not use data for training, but privacy cannot be fully guaranteed. See our Wiki for details.",
-                            },
+
                         },
                     },
                     f:row {

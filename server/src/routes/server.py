@@ -180,25 +180,21 @@ def list_models():
     Always filters for multimodal (vision-capable) models only.
 
     POST JSON: {
-        openai_apikey?: str,  # Optional OpenAI API key for ChatGPT models
-        gemini_apikey?: str   # Optional Gemini API key for Gemini models
+        ollama_base_url?: str,
+        lmstudio_base_url?: str
     }
 
     Returns: {
         "models": {
             "qwen": ["model1", "model2"],
             "ollama": [...],
-            "lmstudio": [...],
-            "chatgpt": [...],
-            "gemini": [...]
+            "lmstudio": [...]
         }
     }
     """
-    # Parse API keys and options from request
+    # Parse options from request
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
-        openai_apikey = data.get("openai_apikey")
-        gemini_apikey = data.get("gemini_apikey")
         ollama_base_url = data.get("ollama_base_url")
         lmstudio_base_url = data.get("lmstudio_base_url")
         logger.info(
@@ -206,8 +202,6 @@ def list_models():
         )
     else:
         # Support GET for backward compatibility
-        openai_apikey = request.args.get("openai_apikey")
-        gemini_apikey = request.args.get("gemini_apikey")
         ollama_base_url = request.args.get("ollama_base_url")
         lmstudio_base_url = request.args.get("lmstudio_base_url")
 
@@ -217,8 +211,6 @@ def list_models():
         # Get all available multimodal models
         # This will dynamically re-check Ollama and LM Studio availability
         models = get_analysis_service().get_available_models(
-            openai_apikey=openai_apikey,
-            gemini_apikey=gemini_apikey,
             ollama_base_url=ollama_base_url,
             lmstudio_base_url=lmstudio_base_url,
         )

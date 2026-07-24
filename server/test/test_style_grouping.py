@@ -126,9 +126,9 @@ def test_dynamic_semantic_mapping():
     )
 
     # Semantic mapping tests (these simulate unknown keywords)
-    # Astronomy telescope -> astrophotography
+    # Deep sky astrophotography -> astrophotography
     assert (
-        sg._primary_genre_with_keywords(["scene_unknown"], ["astronomy_telescope"])
+        sg._primary_genre_with_keywords(["scene_unknown"], ["deep_sky_astrophotography"])
         == "scene_astrophotography"
     )
 
@@ -143,8 +143,8 @@ def test_dynamic_semantic_mapping():
     )
 
     # Test caching (should be instantaneous and read from dict)
-    assert "astronomy_telescope" in sg._DYNAMIC_GENRE_CACHE
-    assert sg._DYNAMIC_GENRE_CACHE["astronomy_telescope"] == "scene_astrophotography"
+    assert "deep_sky_astrophotography" in sg._DYNAMIC_GENRE_CACHE
+    assert sg._DYNAMIC_GENRE_CACHE["deep_sky_astrophotography"] == "scene_astrophotography"
 
 
 # ---------------------------------------------------------------------------
@@ -561,8 +561,8 @@ def test_systematic_pro_workflow_categorization_audits():
 
 def test_dynamic_semantic_mapping_persists_to_sqlite(monkeypatch):
     # Clear memory cache for test keyword
-    sg._DYNAMIC_GENRE_CACHE.pop("astronomy_telescope", None)
-    mapped = sg._dynamic_semantic_mapping("astronomy_telescope")
+    sg._DYNAMIC_GENRE_CACHE.pop("deep_sky_astrophotography", None)
+    mapped = sg._dynamic_semantic_mapping("deep_sky_astrophotography")
     assert mapped == "scene_astrophotography"
 
 

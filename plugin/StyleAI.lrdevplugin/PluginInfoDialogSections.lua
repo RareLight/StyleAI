@@ -105,7 +105,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 			else
 				table.insert(issues, LOC("$$$/StyleAI/Health/BackendOk=Local ML Engine: Running (Editing fully functional)."))
 			end
-			if not health.gemini and not health.chatgpt and not health.ollama and not health.lmstudio then
+			if not health.ollama and not health.lmstudio then
 				if status ~= "critical" then
 					status = "warning"
 					color = { 0.1, 0.5, 0.8 } -- Blue instead of yellow to indicate it's optional

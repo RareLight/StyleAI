@@ -41,11 +41,11 @@ Once installed, we recommend using the new automated setup flow:
 The Wizard will guide you step-by-step through:
 - Connecting to your Python backend server.
 - Seamlessly migrating any existing Lightroom metadata into the vector database.
-- Selecting and configuring your preferred AI provider.
+- Selecting and configuring your preferred local AI provider.
 
 ### Manual Configuration
 If you prefer to configure settings manually, open the **Lightroom Plug-in Manager** (`File -> Plug-in Manager`) and locate StyleAI. Here you will find cleanly organized tabs for:
-- **Models & Prompts:** Configure your preferred local (Ollama/LM Studio) or cloud (Gemini/OpenAI) LLM providers, and enter API keys. *Note: API keys are now securely stored in your OS Keychain rather than plaintext preferences!*
+- **Models & Prompts:** Configure your preferred local (Ollama/LM Studio) LLM providers.
 - **Support & Diagnostics:** If you encounter issues, click **Generate Diagnostic Report** to automatically fetch server health and logs into a beautifully formatted HTML file.
 
 *Having trouble? Refer to the [Troubleshooting](Troubleshooting) guide for connectivity and API issues.*

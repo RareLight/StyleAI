@@ -35,7 +35,7 @@ This section contains the canonical rules, conventions, architecture details, an
 - **Backend Server (Python/Flask)**: Local background server executing AI model inference, vector database storage, SQLite metadata management, and LLM integrations.
 - **ChromaDB**: Vector store for image embeddings (SigLIP2) and face embeddings (InsightFace).
 - **SQLite**: Structured database for metadata, face templates, and style training profiles.
-- **Supported LLMs**: Google Gemini, OpenAI/ChatGPT, Ollama, LM-Studio.
+- **Supported LLMs**: Ollama, LM-Studio.
 
 ## 2. Directory Structure
 
@@ -58,7 +58,7 @@ StyleAI/
 │       ├── server_lifecycle.py    # Process PID & OK file signalling, idle unloading
 │       ├── routes/                # Flask Blueprints (HTTP endpoints)
 │       ├── services/              # Business logic (chroma, index, search, face, style_engine)
-│       └── providers/             # LLM provider implementations (gemini, chatgpt, ollama)
+│       └── providers/             # LLM provider implementations (ollama, lmstudio)
 ├── docs/wiki/                     # GitHub Wiki source pages (auto-published)
 └── .agents/rules/                 # Always-on constraint files for agents
 ```
@@ -163,3 +163,13 @@ To prevent recurring taxonomy and architecture regressions, strictly adhere to t
 - **DO Implement Explicit Hierarchical Overrides**: Always map specific domestic/human-centric tags (e.g., `domestic`, `dog`, `mammal`) to `scene_portrait` to force the pipeline to choose the correct intent over wild categories.
 - **DO NOT Hardcode EXIF Hardware Bounds**: Never evaluate raw focal lengths against 35mm boundaries (e.g., `85 <= focal <= 135` for portrait) without first applying a sensor crop factor.
 - **DO Use 35mm Equivalents**: Always use `_get_35mm_equivalent_focal_length` to parse `camera_make` and `camera_model` before applying Bayesian EXIF priors.
+- **DO Explicitly Communicate Required User Actions**: Whenever making code changes that affect style grouping, keyword extraction, genre mapping, database schema, EXIF extraction, or ML training behavior, you MUST explicitly inform the user in your response what actions they need to take in Lightroom (e.g., clicking "Reset & Discover" in the Styles Index to re-bucket existing examples, or running "Train AI Style" to pull updated features like lens EXIF).
+- **DO Include ALL Primary Regimes in Canonical Fallbacks**: Never omit primary domains (like `scene_macro` or `scene_nature`) from `canonical_regimes` sets in categorization logic. Omitting a primary category causes it to be unconditionally overwritten by whatever arbitrary background tags happen to follow it.
+- **DO Extract Required EXIF Strings in Lua Plugin**: If the backend relies on EXIF strings like `lens` for hardware verification, you MUST ensure `Util.getPhotoExif` actually extracts and sends it. Missing data will cause the backend to fail open and skip verification logic.
+- **DO Use Asymmetric Horizons for Suppressed Subjects**: Some subjects (like `dog`, `pet`, or `insect`) are heavily suppressed by environmental noise (`grass`, `nature`, `outdoors`) and may appear beyond index 6. When evaluating `nature` or `wildlife` tags, use a deeper horizon (`[:12]`) to find suppressed subjects without expanding the global tail-noise horizon.
+- **DO NOT Hardcode Local API Ports**: Never assume local inference engines (like LM Studio) run on static default ports (e.g., `1234`). Always use the SDK's auto-discovery mechanisms (`find_default_local_api_host()`) to locate active dynamic/ephemeral ports.
+- **DO NOT Use Standalone Providers for Local Models**: Avoid hardcoding standalone provider fallbacks (e.g., `qwen::`) for models executed via local runner APIs. They should be prefixed correctly based on the runner (e.g., `ollama::` or `lmstudio::`).
+- **DO Manage Hidden UI State**: When hiding configuration sections in the Lightroom UI (e.g., via `visible = bind '...'`), always explicitly clear or reset the underlying boolean properties (like `enableMetadata`) in the mode-switching or reset handlers. Hidden fields that retain stale values or default to `false` can cause batch processing loops to silently skip essential steps.
+- **DO Enforce Multi-Catalog Isolation**: Whenever querying ChromaDB (`collection.get()`) for features like Style Upgrade Recommendations, ALWAYS filter the results by the user's active `catalog_ids` to prevent cross-contamination from inactive catalogs.
+- **DO Respect Visual Re-assignments at View-Time**: If a training example was visually reassigned to a different style cluster during the ML training pipeline (e.g., Pass 3 centroid distance), NEVER re-run raw text classification to filter it out at view-time. View-time queries must trust the database's `style_id` linkage.
+- **DO Order Keyword Precedence**: When classifying photos, explicitly mapped dictionary keywords MUST take precedence. This is followed by vision model tags and EXIF priors. Dynamic semantic vector mapping (SentenceTransformer) MUST be the lowest priority fallback and must enforce tight similarity thresholds (>= 0.55 / cosine distance <= 0.45) to prevent generic keywords (e.g., "vacation") from hijacking accurate vision tags.

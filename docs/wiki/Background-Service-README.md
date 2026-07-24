@@ -9,7 +9,7 @@ This is the Python-based core of **StyleAI**. It acts as the local bridge betwee
 - **📂 Database Management:** Stores image metadata, AI-generated descriptions, and vector embeddings in a local SQLite database and ChromaDB vector store to ensure blazing-fast retrieval without re-scanning images.
 - **🧠 ML / AI Orchestration:** 
     - Executes completely local ML prediction for personalized editing (KNN, Supervised Partial Least Squares, Elastic Net Regression) with burst deduplication and density weighting.
-    - Interfaces with **Cloud APIs** (Google Gemini, OpenAI) and **Local LLMs** (Ollama, LM Studio) for creative generative fallback edits and auto-tagging.
+    - Interfaces with **Local LLMs** (Ollama, LM Studio) for creative generative fallback edits and auto-tagging.
 - **🔎 Semantic Search Engine:** Uses `SigLIP2` to generate dense visual image embeddings locally. This allows users to search their Lightroom catalog using natural language descriptions instead of just keywords.
 - **🎭 Face Intelligence:** Provides face detection and recognition capabilities powered entirely locally by `InsightFace`.
 - **⚙️ Metadata Sync:** Handles the import of existing keywords and metadata from Lightroom to build a comprehensive search index.
