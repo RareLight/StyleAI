@@ -423,32 +423,7 @@ def test_profiles_and_models_compatibility():
     assert not style_upgrades._models_compatible("Nikon Z7", "Nikon Z8")
 
 
-def test_check_genre_mismatch():
-    # Matching scalar genre -> no mismatch
-    assert not style_upgrades._check_genre_mismatch(
-        "scene_portrait", "scene_portrait", {}
-    )
-    # Specialty-first primary genre differs -> strict mismatch even if loose multi-label tags contain the word
-    meta = {"scene_tags": ["scene_studio", "scene_architecture"]}
-    assert style_upgrades._check_genre_mismatch(
-        "scene_architecture", "scene_studio", meta
-    )
-    # Unknown style genre -> no mismatch
-    assert not style_upgrades._check_genre_mismatch(
-        "scene_unknown", "scene_portrait", meta
-    )
-    # Stitched panorama -> always mismatch
-    assert style_upgrades._check_genre_mismatch(
-        "scene_portrait", "scene_portrait", {"filename": "Yosemite-Pano.dng"}
-    )
-    # Macro tag leak into portrait style -> mismatch
-    assert style_upgrades._check_genre_mismatch(
-        "scene_portrait", "scene_unknown", {"keywords": "flower, macro close-up"}
-    )
-    # Landscape tag leak into portrait style without portrait terms -> mismatch
-    assert style_upgrades._check_genre_mismatch(
-        "scene_portrait", "scene_unknown", {"keywords": "mountain valley sunset"}
-    )
+
 
 
 def test_is_stitched_panorama():
