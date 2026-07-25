@@ -218,9 +218,11 @@ class LMStudioProvider(LLMProviderBase):
             # Use a scoped client for this host instead of global default client
             with lms.Client(effective_host) as client:
                 # Prepare image via client so we don't depend on the default client
-                if isinstance(request.image_data, list):
+                if request.image_data is None:
+                    image_handles = []
+                elif isinstance(request.image_data, list):
                     image_handles = [
-                        client.files.prepare_image(img) for img in request.image_data
+                        client.files.prepare_image(img) for img in request.image_data if img is not None
                     ]
                 else:
                     image_handles = [client.files.prepare_image(request.image_data)]
@@ -237,7 +239,10 @@ class LMStudioProvider(LLMProviderBase):
                 logger.debug("Sending request to LM Studio")
 
                 chat = lms.Chat(system_prompt)
-                chat.add_user_message(user_prompt, images=image_handles)
+                if image_handles:
+                    chat.add_user_message(user_prompt, images=image_handles)
+                else:
+                    chat.add_user_message(user_prompt)
 
                 self._save_debug_cache(
                     request.uuid, request.image_data, system_prompt, user_prompt
