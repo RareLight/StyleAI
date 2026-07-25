@@ -113,7 +113,7 @@ Dependencies are managed exclusively by [uv](https://docs.astral.sh/uv/). Do not
 
 ### Lua Plugin Conventions
 - **Asynchronicity**: Long-running operations must run in `LrTasks.startAsyncTask`.
-- **Yielding pcall**: Use `LrTasks.pcall` instead of native `pcall` to allow yielding.
+- **Yielding pcall**: Use `LrTasks.pcall` instead of native `pcall` to allow yielding. **CRITICAL**: Never wrap Lightroom's shutdown `doneFunc` in native `pcall`. It causes a C-boundary yield error that aborts the sequence and hangs Lightroom indefinitely.
 - **Top-Level Actions**: File naming must follow the `Task*.lua` pattern.
 - **Localization**: Wrap user strings in `LOC()`. Synchronize updates to `en`, `de`, and `fr` translation files.
 - **Error UI**: Surface all errors in Lightroom using `ErrorHandler.handleError`.
@@ -139,6 +139,7 @@ Dependencies are managed exclusively by [uv](https://docs.astral.sh/uv/). Do not
   - **Pillar 1 (Burst Curation & Weighting)**: During style training, photos with capture times $\Delta t \le 10\text{s}$ and SigLIP2 cosine distance $\le 0.05$ are automatically clustered into bursts. Hero shots are selected based on highest relative star rating within the cluster, breaking ties with Pick Flags (`pick_status == 1`) and edit complexity. Surviving hero shots share normalized cluster density weight ($w_i = 1.0 / |C|$).
   - **Pillar 2 (Small Datasets, $15 \le N < 50$)**: Uses supervised **Partial Least Squares (`WeightedPLSRegression`)** instead of unsupervised PCA. Row scaling ($X \odot \sqrt{w}, Y \odot \sqrt{w}$) is applied prior to NIPALS decomposition to support sample weights.
   - **Pillar 3 (Large Datasets, $N \ge 50$)**: Uses **Elastic Net (`ElasticNet`)** with $L_1$-ratio $=0.2$ and $\alpha=0.1$ for sparse feature selection over high-dimensional vision space.
+- **LLM Inference Batching (CRITICAL)**: LLM metadata requests from Lua MUST be batched (e.g. sending arrays of 32 photos to `/metadata/generate_batch`). Never dispatch metadata requests sequentially using the single `/metadata/generate` route when processing batches. Sequential fetching bypasses backend Semantic Clustering, forcing the LLM to process every image individually and destroying inference throughput on fast hardware.
 - **Tonal Math & Clamping**:
   - All regression targets use true mathematical defaults when missing ($1.0$ for right/bottom crop boundaries, $50.0$ for color grading blending, and linear $y=x$ control points for point curves).
   - Slider predictions are universally clamped to learned bounds (`slider_bounds`) recorded during training.
@@ -157,6 +158,8 @@ Dependencies are managed exclusively by [uv](https://docs.astral.sh/uv/). Do not
 ### ⚠️ Anti-Patterns & Positive Guidance (Lessons Learned)
 To prevent recurring taxonomy and architecture regressions, strictly adhere to these DOs and DON'Ts:
 
+- **DO NOT Bypass Semantic Clustering with Sequential LLM Requests**: When writing plugins or scripts to fetch metadata, never iterate over items and call `/metadata/generate` sequentially. This bypasses the deduplication pipeline and artificially bottlenecks the GPU. Always batch requests and send them to `/metadata/generate_batch`.
+- **DO NOT Use Native `pcall` in Lightroom Teardown**: Never use native `pcall` to wrap Lightroom's internal `doneFunc` or shutdown tasks. Lightroom's SDK teardown sequence yields, and native `pcall` causes a C-stack crash that hangs the entire Lightroom application. Always use `LrTasks.pcall`.
 - **DO NOT Short-Circuit Taxonomy Evaluation**: Never add early `return` statements for specific genres (like macro or landscape) that bypass keyword dictionaries or stronger subject overrides.
 - **DO Evaluate the Full Subject Horizon**: Always let the unified classification pipeline process at least the top 6 vision tags (`content_tags[:6]`) before falling back to generic vision priors.
 - **DO NOT Rely Solely on Raw Vision Confidence for Ambiguous Subjects**: The vision model cannot reliably distinguish semantically opposed but visually similar subjects (e.g., `wildlife` vs `pet` or `macro` vs `nature`).
