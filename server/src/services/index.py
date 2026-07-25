@@ -668,15 +668,9 @@ def process_image_task(
         error_messages.append(f"Batch processing error: {str(e)}")
         return 0, total_images, error_messages, warnings
     finally:
-        # Free MPS allocator cache between requests. PyTorch holds onto freed
-        # blocks aggressively on Apple silicon, which combined with InsightFace
-        # and ChromaDB is enough to trip macOS jetsam on smaller-RAM machines.
-        if get_torch_device() == "mps":
-            try:
-                torch.mps.empty_cache()
-            except Exception:
-                pass
-
+        # Removed aggressive torch.mps.empty_cache() call here.
+        # Calling empty_cache() concurrently from multiple Waitress threads
+        # triggers a known MPS backend spin-lock bug causing permanent high GPU utilization.
         # Explicitly close Pillow images to instantly free unmanaged C-level memory buffers
         # Without this, iterating through 7200 photos will leak memory while waiting on GC
         if "pil_images" in locals() and pil_images:

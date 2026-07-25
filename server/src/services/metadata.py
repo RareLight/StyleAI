@@ -341,11 +341,7 @@ class AnalysisService:
                 exc_info=True,
             )
         finally:
-            if get_torch_device() == "mps":
-                try:
-                    torch.mps.empty_cache()
-                except Exception:
-                    pass
+            pass # Removed empty_cache() to prevent concurrent spin locks on MPS
 
         return embeddings
 
