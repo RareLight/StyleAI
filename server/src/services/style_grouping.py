@@ -170,8 +170,8 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "cats": "scene_portrait",
     "puppy": "scene_portrait",
     "kitten": "scene_portrait",
-    "animal": "scene_portrait",
-    "animals": "scene_portrait",
+    "animal": "scene_wildlife",
+    "animals": "scene_wildlife",
     "tabby": "scene_portrait",
     "shorthair": "scene_portrait",
     "spaniel": "scene_portrait",
@@ -276,7 +276,6 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "clouds": "scene_landscape",
     "sky": "scene_landscape",
     "scenic": "scene_landscape",
-    "outdoors": "scene_landscape",
     # Nature & Wildlife & Macro
     "wildlife": "scene_wildlife",
     "bird": "scene_wildlife",
@@ -287,6 +286,7 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "raptor": "scene_wildlife",
     "macro": "scene_macro",
     "close_up": "scene_macro",
+    "close up": "scene_macro",
     "detail": "scene_macro",
     "flower": "scene_macro",
     "flowers": "scene_macro",
@@ -321,8 +321,6 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "property": "scene_architecture",
     "realtor": "scene_architecture",
     "interior photography": "scene_architecture",
-    "interior": "scene_architecture",
-    "indoor": "scene_architecture",
     "living room": "scene_architecture",
     "home": "scene_architecture",
     "house": "scene_architecture",
@@ -459,6 +457,17 @@ _DYNAMIC_BUCKETS = {
     "scene_astrophotography": "astrophotography, nightscape, night sky, milky way, aurora borealis, northern lights, stars, star trails, telescope, deep sky",
 }
 
+_VISION_ONLY_GENRE_MAP: dict[str, str] = {
+    "person": "scene_portrait",
+    "people": "scene_portrait",
+    "man": "scene_portrait",
+    "woman": "scene_portrait",
+    "girl": "scene_portrait",
+    "boy": "scene_portrait",
+    "guy": "scene_portrait",
+    "human": "scene_portrait",
+}
+
 _DYNAMIC_GENRE_CACHE: dict[str, str] = {}
 _ef_instance = None
 _bucket_embeddings = None
@@ -593,7 +602,7 @@ def clear_semantic_genre_cache() -> None:
         pass
 
 
-def _get_broad_genre(tag: str) -> str:
+def _get_broad_genre(tag: str, is_vision: bool = False) -> str:
     """Map a specific scene tag to a broad bucket.
 
     Uses longest-match selection when multiple substring keys match to prevent
@@ -601,6 +610,10 @@ def _get_broad_genre(tag: str) -> str:
     'car race' or 'hot dog'.
     """
     tag_lower = tag.lower().strip()
+    if is_vision and tag_lower in _VISION_ONLY_GENRE_MAP:
+        mapped = _VISION_ONLY_GENRE_MAP[tag_lower]
+        return _BROAD_GENRE_MAP.get(mapped, mapped)
+
     if tag_lower in _BROAD_GENRE_MAP:
         return _BROAD_GENRE_MAP[tag_lower]
     if tag_lower in _KEYWORD_TO_GENRE:
@@ -630,6 +643,16 @@ def _get_broad_genre(tag: str) -> str:
                 v, v if v.startswith("scene_") else "scene_unknown"
             )
             matches.append((len(k), mapped))
+            
+    if is_vision:
+        for k, v in _VISION_ONLY_GENRE_MAP.items():
+            if len(k) >= 3 and (
+                f" {k} " in f" {tag_lower} "
+                or tag_lower.startswith(f"{k} ")
+                or tag_lower.endswith(f" {k}")
+            ):
+                matches.append((len(k), v))
+
     if matches:
         return max(matches, key=lambda x: x[0])[1]
     return tag if tag.startswith("scene_") else "scene_unknown"
@@ -982,7 +1005,7 @@ def _primary_genre_with_keywords_impl(
 
     # 2. VISION MODEL TAGS
     if content_tags:
-        primary_mapped = _get_broad_genre(content_tags[0])
+        primary_mapped = _get_broad_genre(content_tags[0], is_vision=True)
         background_settings = {
             "scene_exterior",
             "scene_interior",
@@ -1065,13 +1088,13 @@ def _primary_genre_with_keywords_impl(
                 for t in top_vision_tags:
                     t_lower = t.lower()
                     if (
-                        _get_broad_genre(t) == target_genre
-                        or _get_broad_genre(t_lower) == target_genre
+                        _get_broad_genre(t, is_vision=True) == target_genre
+                        or _get_broad_genre(t_lower, is_vision=True) == target_genre
                         or _BROAD_GENRE_MAP.get(t_lower) == target_genre
                         or _BROAD_GENRE_MAP.get(t) == target_genre
                     ):
                         return target_genre
-                    mapped = _KEYWORD_TO_GENRE.get(t_lower)
+                    mapped = _KEYWORD_TO_GENRE.get(t_lower) or _VISION_ONLY_GENRE_MAP.get(t_lower)
                     if mapped and _get_broad_genre(mapped) == target_genre:
                         return target_genre
 
@@ -1087,7 +1110,7 @@ def _primary_genre_with_keywords_impl(
 
         top_vision_tags = content_tags[:6]
         if primary_mapped == "scene_action":
-            top_mapped = {_get_broad_genre(t) for t in top_vision_tags}
+            top_mapped = {_get_broad_genre(t, is_vision=True) for t in top_vision_tags}
             if "scene_event" in top_mapped:
                 return "scene_event"
 
@@ -1113,11 +1136,11 @@ def _primary_genre_with_keywords_impl(
         for t in top_vision_tags:
             if t in canonical_regimes:
                 return t
-            mapped_t = _get_broad_genre(t)
+            mapped_t = _get_broad_genre(t, is_vision=True)
             if mapped_t in canonical_regimes:
                 return mapped_t
             if mapped_t == "scene_nature":
-                top_mapped = {_get_broad_genre(t2) for t2 in content_tags[:12]}
+                top_mapped = {_get_broad_genre(t2, is_vision=True) for t2 in content_tags[:12]}
                 for candidate in [
                     "scene_portrait",
                     "scene_event",
@@ -1132,7 +1155,7 @@ def _primary_genre_with_keywords_impl(
                     return "scene_macro"
                 return "scene_nature"
             if mapped_t == "scene_wildlife":
-                top_mapped = {_get_broad_genre(t2) for t2 in content_tags[:12]}
+                top_mapped = {_get_broad_genre(t2, is_vision=True) for t2 in content_tags[:12]}
                 for candidate in ["scene_portrait", "scene_event", "scene_macro", "scene_action"]:
                     if candidate in top_mapped:
                         return candidate
@@ -1143,7 +1166,7 @@ def _primary_genre_with_keywords_impl(
         best_prior_regime, best_prior_score = max(priors.items(), key=lambda x: x[1])
         if best_prior_score >= 0.38:
             if best_prior_regime == "scene_night":
-                top_mapped = {_get_broad_genre(t) for t in content_tags[:6]}
+                top_mapped = {_get_broad_genre(t, is_vision=True) for t in content_tags[:6]}
                 if not top_mapped.intersection(
                     {
                         "scene_astrophotography",
@@ -1157,7 +1180,7 @@ def _primary_genre_with_keywords_impl(
             else:
                 return best_prior_regime
         if best_prior_regime == "scene_macro" and best_prior_score >= 0.35:
-            top_mapped_tags = {_get_broad_genre(t) for t in content_tags[:6]}
+            top_mapped_tags = {_get_broad_genre(t, is_vision=True) for t in content_tags[:6]}
             if not top_mapped_tags.intersection(
                 {
                     "scene_portrait",

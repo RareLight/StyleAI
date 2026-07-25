@@ -1696,35 +1696,73 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 	if not trainedSet then return false end
 
 	local collectionsToPopulate = {}
-	for i, data in ipairs(stylesData) do
-		if data.photos and #data.photos > 0 then
-			local profileName = data.profileName or "Unknown Profile"
-			local styleName = data.styleName or "Unknown Style"
-			if progressScope then
-				progressScope:setCaption(string.format("Creating style collection (%d/%d): %s...", i, #stylesData, styleName))
-			end
-			local profileSet = getOrCreateCollectionSet(catalog, profileName, trainedSet, writeOptions)
-			if profileSet then
-				local collection = getOrCreateCollection(catalog, styleName, profileSet, writeOptions)
-				if collection then
-					table.insert(collectionsToPopulate, { collection = collection, photos = data.photos })
+	
+	if progressScope then
+		progressScope:setCaption("Creating style collections...")
+	end
+
+	catalog:withWriteAccessDo("Create and Populate Style Collections", function()
+		-- Cache existing profile sets to avoid repeated C-boundary calls
+		local existingProfileSets = {}
+		local children = trainedSet:getChildCollections()
+		if children then
+			for _, child in ipairs(children) do
+				if child:type() == "LrCollectionSet" then
+					existingProfileSets[child:getName()] = child
 				end
 			end
 		end
-	end
 
-	if #collectionsToPopulate > 0 then
-		if progressScope then
-			progressScope:setCaption("Adding photos to style collections...")
+		for i, data in ipairs(stylesData) do
+			if data.photos and #data.photos > 0 then
+				local profileName = data.profileName or "Unknown Profile"
+				local styleName = data.styleName or "Unknown Style"
+				
+				-- 1. Find or create profile set
+				local profileSet = existingProfileSets[profileName]
+				if not profileSet then
+					profileSet = catalog:createCollectionSet(profileName, trainedSet, true)
+					existingProfileSets[profileName] = profileSet
+				end
+
+				-- Cache collections within this profile set lazily
+				if not profileSet.cachedCollections then
+					profileSet.cachedCollections = {}
+					local collChildren = profileSet:getChildCollections()
+					if collChildren then
+						for _, c in ipairs(collChildren) do
+							if c:type() == "LrCollection" then
+								profileSet.cachedCollections[c:getName()] = c
+							end
+						end
+					end
+				end
+
+				-- 2. Find or create style collection
+				local collection = profileSet.cachedCollections[styleName]
+				if not collection then
+					collection = catalog:createCollection(styleName, profileSet, false)
+					profileSet.cachedCollections[styleName] = collection
+				end
+
+				-- 3. Add to populate list
+				table.insert(collectionsToPopulate, { collection = collection, photos = data.photos })
+			end
 		end
-		catalog:withWriteAccessDo("Populate Style Collections", function()
+
+		-- Populate all collections in the same transaction
+		if #collectionsToPopulate > 0 then
+			if progressScope then
+				progressScope:setCaption("Adding photos to style collections...")
+			end
 			for _, item in ipairs(collectionsToPopulate) do
 				item.collection:addPhotos(item.photos)
 			end
-		end, writeOptions)
-		LrTasks.yield()
-		LrTasks.sleep(0.05)
-	end
+		end
+	end, writeOptions)
+
+	LrTasks.yield()
+	LrTasks.sleep(0.05)
 
 	return true
 end
@@ -1742,32 +1780,51 @@ function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions, pr
 	if not recSet then return false end
 
 	local collectionsToPopulate = {}
-	for i, data in ipairs(stylesData) do
-		if data.photos and #data.photos > 0 then
-			local styleName = data.styleName or "Style"
-			if progressScope then
-				progressScope:setCaption(string.format("Creating upgrade collection (%d/%d): %s...", i, #stylesData, styleName))
+	
+	if progressScope then
+		progressScope:setCaption("Creating upgrade collections...")
+	end
+
+	catalog:withWriteAccessDo("Create and Populate Upgrade Collections", function()
+		-- Cache existing collections to avoid repeated C-boundary calls
+		local existingCollections = {}
+		local children = recSet:getChildCollections()
+		if children then
+			for _, child in ipairs(children) do
+				if child:type() == "LrCollection" then
+					existingCollections[child:getName()] = child
+				end
 			end
-			local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName)
-			local collection = getOrCreateCollection(catalog, collName, recSet, writeOptions)
-			if collection then
+		end
+
+		for i, data in ipairs(stylesData) do
+			if data.photos and #data.photos > 0 then
+				local styleName = data.styleName or "Style"
+				local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName)
+				
+				local collection = existingCollections[collName]
+				if not collection then
+					collection = catalog:createCollection(collName, recSet, false)
+					existingCollections[collName] = collection
+				end
+
 				table.insert(collectionsToPopulate, { collection = collection, photos = data.photos })
 			end
 		end
-	end
 
-	if #collectionsToPopulate > 0 then
-		if progressScope then
-			progressScope:setCaption("Populating upgrade collections...")
-		end
-		catalog:withWriteAccessDo("Populate Upgrade Collections", function()
+		-- Populate all collections in the same transaction
+		if #collectionsToPopulate > 0 then
+			if progressScope then
+				progressScope:setCaption("Adding photos to upgrade collections...")
+			end
 			for _, item in ipairs(collectionsToPopulate) do
 				item.collection:addPhotos(item.photos)
 			end
-		end, writeOptions)
-		LrTasks.yield()
-		LrTasks.sleep(0.05)
-	end
+		end
+	end, writeOptions)
+
+	LrTasks.yield()
+	LrTasks.sleep(0.05)
 
 	return true
 end
