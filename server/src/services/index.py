@@ -388,12 +388,13 @@ def process_image_task(
             if uid in images_needing_metadata:
                 opt = options[i] if isinstance(options, list) else options
                 if str(opt.get("audit_llm_inputs", "")).lower() == "true":
-                    log_diagnostic_image(
-                        img_bytes,
-                        "indexing",
-                        fname,
-                        output_dir=opt.get("audit_llm_inputs_path"),
-                    )
+                    if img_bytes:
+                        log_diagnostic_image(
+                            img_bytes,
+                            "indexing",
+                            fname,
+                            output_dir=opt.get("audit_llm_inputs_path"),
+                        )
 
         # 2. SigLIP2 & LLM via analyze_batch
         try:

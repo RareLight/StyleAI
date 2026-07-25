@@ -58,6 +58,7 @@ Lightroom SDK plugins are prone to C-stack overflows if coroutine yields and dat
 - **NEVER yield inside a database transaction:** Do not call `LrTasks.yield()` inside `withWriteAccessDo` or `withPrivateWriteAccessDo` closures. Doing so suspends the Lua coroutine while holding a C-level SQLite transaction lock. The orphaned C-stack frames will rapidly accumulate and crash Lightroom.
 - **The macOS Spin-Lock:** Using the pattern `if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end` is a dangerous anti-pattern. On macOS, `LrTasks.yield()` without a subsequent sleep does NOT reliably return control to the Lightroom UI loop. During heavy batch processing, this causes C-stack buildup. ALWAYS use `LrTasks.yield(); LrTasks.sleep(0.01)` regardless of OS to guarantee the transaction stack flushes.
 - **Transaction Bloat:** When applying multiple edits or metadata properties to a photo, combine them into a single `withWriteAccessDo` block. Firing multiple sequential database transactions per-photo exponentially increases SQLite overhead and stack pressure during batch operations.
+- **Native `pcall` in Shutdown/Teardown:** Never use native `pcall` to wrap Lightroom's internal `doneFunc` or shutdown tasks. Lightroom's SDK teardown sequence yields under the hood. Wrapping it in native `pcall` causes a C-boundary yield error that aborts the sequence silently, hanging Lightroom indefinitely. Always use `LrTasks.pcall`.
 
 ## 8. Python Backend Memory Efficiency
 
@@ -100,3 +101,7 @@ To speed up classification across massive catalogs, dynamic semantic mappings (`
   2. If the stored version differs from `CURRENT_GROUPING_RULE_VERSION`, it purges `semantic_genre_cache` (`DELETE FROM semantic_genre_cache`) and sets `NEEDS_REDISCOVERY = '1'`.
   3. `NEEDS_REDISCOVERY = '1'` triggers `discover_styles_from_examples()`, cleanly rebuilding all style buckets and cache entries against the latest logic.
 
+## 13. LLM Metadata Generation Anti-Patterns
+
+- **Sequential Processing:** Never iterate over items and call `/metadata/generate` sequentially in plugins or scripts. This bypasses the backend's semantic deduplication pipeline (Semantic Clustering) and bottlenecks the GPU, as the LLM processes every image individually. Always batch requests and send them to `/metadata/generate_batch`.
+- **Hard-Failing on Missing Image Cache:** The plugin supports "LLM-only" batch generation, where it relies on existing vision tags in the database to generate metadata, explicitly skipping the expensive JPEG export to the backend cache to save time. The backend endpoints (`/metadata/generate_batch`, `/metadata/generate`) MUST NOT fail with HTTP 400 errors when `image_bytes` are `None`. They must gracefully proceed and generate text-only metadata.
