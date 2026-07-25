@@ -2052,25 +2052,25 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 if #batch > 0 then
                     local success, llmResponse = SearchIndexAPI.generateMetadataBatch(batch, options)
                     
+                    if success and options.onBatchAnalyzed then
+                        LrTasks.yield()
+                        LrTasks.sleep(0.01)
+                        local okCb, cbErr = LrTasks.pcall(function()
+                            options.onBatchAnalyzed(batch, progressScope)
+                        end)
+                        if not okCb then
+                            log:error("onBatchAnalyzed callback failed: " .. tostring(cbErr))
+                            success = false
+                            llmResponse = { error = "Batch metadata callback failed: " .. tostring(cbErr) }
+                        end
+                    end
+
                     for _, item in ipairs(batch) do
                         stats.processed = stats.processed + 1
                         table.insert(processedPhotos, item.photo)
                         
                         if success then
                             stats.success = stats.success + 1
-                            if options.onPhotoAnalyzed then
-                                LrTasks.yield()
-                                LrTasks.sleep(0.01)
-                                local okCb, cbErr = LrTasks.pcall(function()
-                                    options.onPhotoAnalyzed(item.photo, item.photo_id, progressScope)
-                                end)
-                                if not okCb then
-                                    log:error("onPhotoAnalyzed callback failed for " .. item.filename .. ": " .. tostring(cbErr))
-                                    stats.success = stats.success - 1
-                                    stats.failed = stats.failed + 1
-                                    table.insert(errorMessages, item.filename .. ": Failed to save metadata (" .. tostring(cbErr) .. ")")
-                                end
-                            end
                         else
                             stats.failed = stats.failed + 1
                             local errText = "Metadata generation failed for batch"
