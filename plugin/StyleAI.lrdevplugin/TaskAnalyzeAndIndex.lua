@@ -944,19 +944,26 @@ LrTasks.startAsyncTask(function()
 			and not props.keywordAliases
 		then
 			usedInlineApply = true
-			options.onPhotoAnalyzed = function(photo, photoId, scope)
-				local response = SearchIndexAPI.getPhotoData(photoId)
-				if response and response.metadata then
-					MetadataManager.applyMetadata(photo, response, nil, {
-						applyKeywords = props.generateKeywords,
-						applyTitle = props.generateTitle,
-						applyCaption = props.generateCaption,
-						applyAltText = props.generateAltText,
-						useTopLevelKeyword = props.useTopLevelKeyword,
-						topLevelKeyword = props.topLevelKeyword,
-						appendMetadata = props.appendMetadata,
-					})
-				end
+			options.onBatchAnalyzed = function(batch, scope)
+				LrApplication.activeCatalog():withWriteAccessDo("Apply AI Metadata Batch", function()
+					for _, item in ipairs(batch) do
+						local photo = item.photo
+						local photoId = item.photo_id
+						local response = SearchIndexAPI.getPhotoData(photoId)
+						if response and response.metadata then
+							MetadataManager.applyMetadata(photo, response, nil, {
+								applyKeywords = props.generateKeywords,
+								applyTitle = props.generateTitle,
+								applyCaption = props.generateCaption,
+								applyAltText = props.generateAltText,
+								useTopLevelKeyword = props.useTopLevelKeyword,
+								topLevelKeyword = props.topLevelKeyword,
+								appendMetadata = props.appendMetadata,
+								useExistingTransaction = true,
+							})
+						end
+					end
+				end, Defaults.catalogWriteAccessOptions)
 			end
 		end
 
