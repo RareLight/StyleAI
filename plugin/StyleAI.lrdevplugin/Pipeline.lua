@@ -41,14 +41,10 @@ function Pipeline.runSequentialBatch(photos, progressScope, options, processFn)
         
         local success, resultOrErr = false, "Unknown error"
         
-        if options.requireWriteAccess then
-            catalog:withPrivateWriteAccessDo(function()
-                -- LrTasks.pcall allows yielding inside the write access block
-                success, resultOrErr = LrTasks.pcall(processFn, photo, i, total, catalog)
-            end, options.writeAccessTimeout or { timeout = 30 })
-        else
-            success, resultOrErr = LrTasks.pcall(processFn, photo, i, total, catalog)
-        end
+        -- Do not wrap processFn in catalog:withPrivateWriteAccessDo here because processFn might yield,
+        -- which causes fatal C-stack buildup in Lightroom. It is up to the caller to wrap ONLY
+        -- synchronous database updates within withPrivateWriteAccessDo.
+        success, resultOrErr = LrTasks.pcall(processFn, photo, i, total, catalog)
         
         if success and resultOrErr ~= false then
             summary.successCount = summary.successCount + 1

@@ -981,7 +981,7 @@ LrTasks.startAsyncTask(function()
 
 			for _, photo in ipairs(processedPhotos) do
 				LrTasks.yield()
-				LrTasks.sleep(0.001)
+				LrTasks.sleep(0.01)
 				-- Process responses if validation is enabled or just save metadata
 				local photoId, photoIdErr = SearchIndexAPI.getPhotoIdForPhoto(photo)
 				if photoId then
