@@ -711,6 +711,10 @@ def enqueue_photo():
                 "lr_uuid": lr_uuid,
                 "options": photo_options,
             }
+            
+            from services.index import active_embeddings_uuids
+            active_embeddings_uuids.add(photo_id)
+            
             index_queue.put(queue_item)
             enqueued += 1
         except Exception as e:

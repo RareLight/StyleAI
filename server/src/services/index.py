@@ -30,6 +30,8 @@ import queue
 
 from typing import Any
 
+# Track UUIDs that are currently queued or being processed by the GPU worker
+active_embeddings_uuids = set()
 
 def _to_bool(val: Any, default: bool = False) -> bool:
     """Safely convert boolean or string representation to a bool."""
@@ -739,6 +741,9 @@ def _dynamic_gpu_worker():
             logger.info(f"Dynamic batch processed. Success: {success}, Fail: {fail}")
         except Exception as e:
             logger.error(f"Error in dynamic GPU batch processing: {e}", exc_info=True)
+        finally:
+            for item in batch:
+                active_embeddings_uuids.discard(item["uuid"])
 
         for _ in range(len(batch)):
             index_queue.task_done()
