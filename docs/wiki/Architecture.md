@@ -20,12 +20,10 @@ StyleAI leverages a split frontend/backend architecture to deliver local-first, 
 ### A. Photo Analysis & Indexing Pipeline (Ingestion)
 Builds the foundational search index and metadata repository.
 
-1. **Lightroom (Client):** Renders a proxy JPEG, extracts EXIF/keywords, and POSTs to `/index_base64`.
-2. **CPU Preprocessing:** Background threads decode the JPEG and calculate an MD5 hash.
-3. **Vision & Face Inference:** 
-   - **SigLIP2:** Extracts a 1152-dimensional dense embedding (categorizing scene lighting and semantics).
-   - **InsightFace:** Extracts 512-dimensional face templates and bounding boxes.
-4. **Storage:** Vectors are pushed to the `photos` and `faces` collections in ChromaDB.
+1. **Lightroom (Client) - Fast Embeddings Phase:** `analyzeWorker` renders proxy JPEGs, extracts EXIF/keywords, and enqueues them asynchronously to `/index_queue`.
+2. **CPU Preprocessing & Embeddings:** Python's `DynamicGPUWorker` batches these JPEGs, decodes them, and extracts 1152-dimensional SigLIP2 embeddings and InsightFace templates on the GPU. The embeddings are stored in ChromaDB and the raw images are cached in RAM.
+3. **Lightroom (Client) - Metadata Phase:** `llmWorker` pulls batches of up to 32 photos and POSTs them to `/metadata/generate_batch`.
+4. **Semantic Clustering & Inference:** The Python backend clusters the batch to deduplicate visually identical bursts, drastically reducing LLM calls. The surviving representative images are processed concurrently by the ThreadPool using the selected LLM. Results are instantly propagated back to all photos in the batch.
 
 ### B. Style Training Pipeline
 Allows the system to mathematically learn your personal grading style without distortion from burst shooting or missing metadata.

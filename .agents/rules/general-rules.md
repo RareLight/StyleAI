@@ -19,6 +19,7 @@ These rules ensure consistency across the Lightroom plugin and the Python backen
   - **CRITICAL**: NEVER call `LrTasks.yield()` inside `withWriteAccessDo` or `withPrivateWriteAccessDo` closures. Doing so while holding a C-level transaction lock will cause fatal C-stack overflows.
   - **macOS Spin-Locks**: NEVER use `if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end`. On macOS, `yield()` without sleep fails to return control to the UI scheduler, causing C-stack accumulation during batches. ALWAYS use `LrTasks.yield(); LrTasks.sleep(0.01)` to ensure proper flushing.
   - **Transaction Bloat**: Consolidate multiple database transactions into a single `withWriteAccessDo` block per photo to minimize SQLite queue overhead.
+  - **Shutdown Blocking (CRITICAL)**: Never wrap Lightroom's shutdown `doneFunc` in native `pcall`. Lightroom's shutdown sequence yields under the hood; wrapping it in native `pcall` causes a fatal C-boundary yield error that aborts the sequence, hanging Lightroom indefinitely. Always use `LrTasks.pcall(doneFunc)`.
 - **Localization**: All GUI strings MUST be localized using the `LOC` function. Keep `TranslatedStrings_de.txt` (German) and `TranslatedStrings_fr.txt` (French) synchronized with the primary English strings.
 - **Utilities**: Leverage `Util.lua` for common logic (e.g., table manipulation, stable photo IDs, file hashing).
 - **Photo Identity**: Prefer the stable `globalPhotoId` (metadata-based) generated via `Util.getGlobalPhotoIdForPhoto` for cross-catalog consistency.
@@ -53,6 +54,7 @@ These rules ensure consistency across the Lightroom plugin and the Python backen
 
 ## ML Training Curation & Regression Rules
 - **Burst Curation**: All style training pipelines MUST execute burst clustering ($\Delta t \le 10\text{s}$ and SigLIP2 cosine distance $\le 0.05$) to prevent repetitive frames from skewing model weights. Relative hero shots within a burst are selected by maximum star rating, pick flag status (`pick_status == 1`), and edit complexity, sharing normalized density weight ($w_i = 1.0 / |C|$).
+- **LLM Inference Batching (CRITICAL)**: LLM metadata requests from Lua MUST be batched (e.g. sending arrays of 32 photos to `/metadata/generate_batch`). Never dispatch metadata requests sequentially using the single `/metadata/generate` route when processing batches. Sequential fetching bypasses backend Semantic Clustering, forcing the LLM to process every image individually and destroying inference throughput on fast hardware.
 - **Supervised PLS vs Elastic Net**: When training style models, use **Partial Least Squares (`WeightedPLSRegression`)** with row scaling ($X \odot \sqrt{w}, Y \odot \sqrt{w}$) for small datasets ($15 \le N < 50$), and **Elastic Net (`ElasticNet`)** with $L_1$-ratio $=0.2$ for large datasets ($N \ge 50$). Never use unsupervised PCA for style target regression.
 - **Tonal Math Defaults & Clamping**: Always use true mathematical defaults for missing regression targets ($1.0$ for right/bottom crop boundaries, $50.0$ for color grading blending, and linear $y=x$ control points for point curves). Universally clamp inference predictions to learned training bounds (`slider_bounds`) and blend recipes using linear interpolation ($\text{start} + \text{strength} \times (\text{target} - \text{start})$).
 
@@ -70,6 +72,8 @@ These rules ensure consistency across the Lightroom plugin and the Python backen
 ### ⚠️ Anti-Patterns & Positive Guidance (Lessons Learned)
 To prevent recurring taxonomy and architecture regressions, strictly adhere to these DOs and DON'Ts:
 
+- **DO NOT Bypass Semantic Clustering with Sequential LLM Requests**: When writing plugins or scripts to fetch metadata, never iterate over items and call `/metadata/generate` sequentially. This bypasses the deduplication pipeline and artificially bottlenecks the GPU. Always batch requests and send them to `/metadata/generate_batch`.
+- **DO NOT Use Native `pcall` in Lightroom Teardown**: Never use native `pcall` to wrap Lightroom's internal `doneFunc` or shutdown tasks. Lightroom's SDK teardown sequence yields, and native `pcall` causes a C-stack crash that hangs the entire Lightroom application. Always use `LrTasks.pcall`.
 - **DO NOT Short-Circuit Taxonomy Evaluation**: Never add early `return` statements for specific genres (like macro or landscape) that bypass keyword dictionaries or stronger subject overrides.
 - **DO Evaluate the Full Subject Horizon**: Always let the unified classification pipeline process at least the top 6 vision tags (`content_tags[:6]`) before falling back to generic vision priors.
 - **DO NOT Rely Solely on Raw Vision Confidence for Ambiguous Subjects**: The vision model cannot reliably distinguish semantically opposed but visually similar subjects (e.g., `wildlife` vs `pet` or `macro` vs `nature`).
