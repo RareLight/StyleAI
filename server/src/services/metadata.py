@@ -194,6 +194,16 @@ class AnalysisService:
                     return embeddings[idx]
                 if uid not in uuids_needing_embeddings:
                     # Attempt to fetch existing embedding from ChromaDB
+                    from .index import active_embeddings_uuids
+                    import time
+                    
+                    # If the embedding was requested and is still processing, wait for it
+                    if "embeddings" in opt.get("tasks", []) and uid in active_embeddings_uuids:
+                        for _ in range(60): # Wait up to 15 seconds
+                            if uid not in active_embeddings_uuids:
+                                break
+                            time.sleep(0.25)
+
                     res = chroma_service.get_image(uid)
                     if (
                         res

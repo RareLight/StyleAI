@@ -1720,19 +1720,23 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 				
 				-- 1. Find or create profile set
 				local profileSet = existingProfileSets[profileName]
+				local isNewProfileSet = false
 				if not profileSet then
 					profileSet = catalog:createCollectionSet(profileName, trainedSet, true)
 					existingProfileSets[profileName] = profileSet
+					isNewProfileSet = true
 				end
 
 				-- Cache collections within this profile set lazily
 				if not profileSet.cachedCollections then
 					profileSet.cachedCollections = {}
-					local collChildren = profileSet:getChildCollections()
-					if collChildren then
-						for _, c in ipairs(collChildren) do
-							if c:type() == "LrCollection" then
-								profileSet.cachedCollections[c:getName()] = c
+					if not isNewProfileSet then
+						local collChildren = profileSet:getChildCollections()
+						if collChildren then
+							for _, c in ipairs(collChildren) do
+								if c:type() == "LrCollection" then
+									profileSet.cachedCollections[c:getName()] = c
+								end
 							end
 						end
 					end
