@@ -1065,6 +1065,85 @@ function SearchIndexAPI.generateMetadataSingle(photoId, base64Image, filename, o
 end
 
 ---
+-- Calls the /metadata/generate_batch endpoint for a batch of photos.
+-- Designed to re-introduce Semantic Clustering for Stage 2 (LLM Metadata generation).
+function SearchIndexAPI.generateMetadataBatch(items, options)
+    if not items or type(items) ~= "table" or #items == 0 then
+        return false, "No items provided for batch metadata generation"
+    end
+
+    options = options or {}
+    local url = getBaseUrl() .. "/metadata/generate_batch"
+
+    local bodyOptions = {
+        tasks = options.tasks or {},
+        provider = options.provider,
+        model = options.model,
+        language = options.language or (prefs and prefs.generateLanguage) or "English",
+        temperature = tostring(options.temperature or (prefs and prefs.temperature) or 0.2),
+        replace_ss = tostring(options.replace_ss or false),
+        generate_keywords = tostring(options.generate_keywords or false),
+        generate_caption = tostring(options.generate_caption or false),
+        generate_title = tostring(options.generate_title or false),
+        generate_alt_text = tostring(options.generate_alt_text or false),
+        submit_gps = tostring(options.submit_gps or false),
+        submit_keywords = tostring(options.submit_keywords or false),
+        submit_folder_names = tostring(options.submit_folder_names or false),
+        user_context = options.user_context,
+        gps_coordinates = options.gps_coordinates and JSON:encode(options.gps_coordinates) or nil,
+        existing_keywords = options.existing_keywords and JSON:encode(options.existing_keywords) or nil,
+        folder_names = options.folder_names,
+        prompt = options.prompt,
+        keyword_categories = options.keyword_categories and JSON:encode(options.keyword_categories) or "[]",
+        bilingual_keywords = tostring(options.bilingual_keywords or false),
+        keyword_secondary_language = options.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English",
+        date_time = options.date_time,
+        date_time_unix = options.date_time_unix,
+        ollama_base_url = options.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
+        lmstudio_base_url = options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
+        regenerate_metadata = tostring(options.regenerate_metadata ~= false),
+        semantic_clustering_threshold = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
+    }
+
+    local body = {
+        options = bodyOptions,
+        tasks = {}
+    }
+
+    for _, item in ipairs(items) do
+        table.insert(body.tasks, {
+            photo_id = item.photo_id,
+            uuid = item.photo_id,
+            filename = item.filename or "photo.jpg",
+            options = item.options or {}
+        })
+    end
+
+    log:trace("Generating metadata for batch of " .. tostring(#items) .. " photos.")
+
+    local response, err = _request('POST', url, body, 1800) -- Very large timeout for LLM batch
+
+    if not response then
+        log:error("Failed to generate metadata batch: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+    
+    if response.status == "processed" then
+        local success_count = response.success_count or 0
+        if success_count > 0 then
+            log:trace("Successfully generated metadata for " .. tostring(success_count) .. " photos in batch.")
+            return true, response
+        else
+            log:error("Metadata generation failed for batch.")
+            return false, response.error or "Processing failed"
+        end
+    end
+    
+    log:error("Unexpected response status for metadata generate_batch: " .. tostring(response.status))
+    return false, "Unexpected response status"
+end
+
+---
 -- Analyzes and indexes a batch of photos using base64-encoded JPEGs.
 -- Uses the /index_base64_batch endpoint.
 -- @param batch table Array of tables containing { photo_id, image, filename, options }
@@ -1962,37 +2041,47 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     LrTasks.sleep(0.1)
                 end
             else
-                local item = table.remove(llmQueue)
-                if item then
-                    local success, llmResponse = SearchIndexAPI.generateMetadataSingle(item.photo_id, item.image, item.filename, options)
-                    stats.processed = stats.processed + 1
-                    table.insert(processedPhotos, item.photo)
+                local batch = {}
+                while #llmQueue > 0 and #batch < 32 do
+                    local item = table.remove(llmQueue)
+                    if item then
+                        table.insert(batch, item)
+                    end
+                end
+                
+                if #batch > 0 then
+                    local success, llmResponse = SearchIndexAPI.generateMetadataBatch(batch, options)
                     
-                    if success then
-                        stats.success = stats.success + 1
-                        if options.onPhotoAnalyzed then
-                            LrTasks.yield()
-                            LrTasks.sleep(0.01)
-                            local okCb, cbErr = LrTasks.pcall(function()
-                                options.onPhotoAnalyzed(item.photo, item.photo_id, progressScope)
-                            end)
-                            if not okCb then
-                                log:error("onPhotoAnalyzed callback failed for " .. item.filename .. ": " .. tostring(cbErr))
-                                stats.success = stats.success - 1
-                                stats.failed = stats.failed + 1
-                                table.insert(errorMessages, item.filename .. ": Failed to save metadata (" .. tostring(cbErr) .. ")")
+                    for _, item in ipairs(batch) do
+                        stats.processed = stats.processed + 1
+                        table.insert(processedPhotos, item.photo)
+                        
+                        if success then
+                            stats.success = stats.success + 1
+                            if options.onPhotoAnalyzed then
+                                LrTasks.yield()
+                                LrTasks.sleep(0.01)
+                                local okCb, cbErr = LrTasks.pcall(function()
+                                    options.onPhotoAnalyzed(item.photo, item.photo_id, progressScope)
+                                end)
+                                if not okCb then
+                                    log:error("onPhotoAnalyzed callback failed for " .. item.filename .. ": " .. tostring(cbErr))
+                                    stats.success = stats.success - 1
+                                    stats.failed = stats.failed + 1
+                                    table.insert(errorMessages, item.filename .. ": Failed to save metadata (" .. tostring(cbErr) .. ")")
+                                end
                             end
+                        else
+                            stats.failed = stats.failed + 1
+                            local errText = "Metadata generation failed for batch"
+                            if type(llmResponse) == "string" then
+                                errText = llmResponse
+                            elseif type(llmResponse) == "table" and llmResponse.error then
+                                errText = tostring(llmResponse.error)
+                            end
+                            table.insert(errorMessages, item.filename .. ": " .. errText)
+                            log:error("LLM Generation failed for " .. item.filename .. ": " .. errText)
                         end
-                    else
-                        stats.failed = stats.failed + 1
-                        local errText = "Metadata generation failed"
-                        if type(llmResponse) == "string" then
-                            errText = llmResponse
-                        elseif type(llmResponse) == "table" and llmResponse.error then
-                            errText = tostring(llmResponse.error)
-                        end
-                        table.insert(errorMessages, item.filename .. ": " .. errText)
-                        log:error("LLM Generation failed for " .. item.filename .. ": " .. errText)
                     end
 
                     progressScope:setPortionComplete(stats.processed, numPhotos)
