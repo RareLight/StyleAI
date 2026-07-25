@@ -144,8 +144,6 @@ def _filter_llm_noise_keywords(keywords: list[str]) -> list[str]:
 _KEYWORD_TO_GENRE: dict[str, str] = {
     # Portraits & People & Pets
     "portrait": "scene_portrait",
-    "people": "scene_portrait",
-    "person": "scene_portrait",
     "headshot": "scene_portrait",
     "fashion": "scene_portrait",
     "newborn": "scene_portrait",
@@ -319,8 +317,6 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "architecture": "scene_architecture",
     "cityscape": "scene_architecture",
     "skyline": "scene_architecture",
-    "building": "scene_architecture",
-    "buildings": "scene_architecture",
     "real estate": "scene_architecture",
     "property": "scene_architecture",
     "realtor": "scene_architecture",
@@ -1011,6 +1007,7 @@ def _primary_genre_with_keywords_impl(
                     "scene_macro",
                     "scene_event",
                     "scene_portrait",
+                    "scene_wildlife",
                     "scene_astrophotography",
                 ]
             elif primary_mapped == "scene_nature":
@@ -1041,6 +1038,7 @@ def _primary_genre_with_keywords_impl(
                 tier_order_subjects = [
                     "scene_studio",
                     "scene_macro",
+                    "scene_wildlife",
                     "scene_action",
                     "scene_event",
                     "scene_street",
