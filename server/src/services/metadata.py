@@ -378,8 +378,10 @@ class AnalysisService:
         # ThreadPoolExecutor is safe here since LLM calls are I/O bound.
         # However, because local LLMs (LM Studio/Ollama) are extremely VRAM and
         # context-switching bound, high concurrency causes massive degradation.
-        # We cap max_workers to 2 to protect GPU throughput.
-        max_workers = max(1, min(len(uuids), 2))
+        # We cap max_workers using the STYLEAI_LLM_CONCURRENCY config to protect GPU throughput by default,
+        # while allowing power users to increase it.
+        from config import STYLEAI_LLM_CONCURRENCY
+        max_workers = max(1, min(len(uuids), STYLEAI_LLM_CONCURRENCY))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(process_single, i, uuid) for i, uuid in enumerate(uuids)

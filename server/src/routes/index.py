@@ -310,6 +310,72 @@ def generate_metadata_single():
     ), 200
 
 
+@index_bp.route("/metadata/generate_batch", methods=["POST"])
+def generate_metadata_batch():
+    """
+    Receives a request to generate metadata for a batch of images.
+    Expects a JSON body with a list of tasks, where each task has a photo_id and options.
+    Retrieves images from the in-memory cache and delegates to process_image_task.
+    """
+    logger.info("Metadata generate batch request received")
+    data = request.get_json(silent=True) or {}
+    
+    tasks = data.get("tasks", [])
+    if not tasks:
+        return jsonify({"error": "No tasks provided"}), 400
+        
+    global_options = data.get("options", {})
+    image_triplets = []
+    batch_options = []
+    
+    from services import image_cache
+    
+    for task in tasks:
+        photo_id = task.get("photo_id") or task.get("uuid")
+        filename = task.get("filename", "unknown")
+        
+        if not photo_id:
+            continue
+            
+        merged_options = dict(global_options)
+        merged_options.update(task.get("options", {}))
+        photo_options = _extract_options(merged_options)
+        
+        # Force overrides for metadata route
+        photo_options["compute_embeddings"] = False
+        photo_options["compute_metadata"] = True
+        photo_options["compute_faces"] = False
+        
+        image_bytes = image_cache.pop_image(photo_id)
+        if not image_bytes:
+            logger.warning(f"Image bytes for {photo_id} not found in cache for batch metadata generation.")
+            # We can still proceed if process_image_task handles it, but without image_bytes
+            # LLM cannot see the image.
+            continue
+            
+        image_triplets.append((image_bytes, photo_id, filename, None))
+        batch_options.append(photo_options)
+        
+    if not image_triplets:
+        return jsonify({"error": "No valid tasks with cached images found"}), 400
+        
+    success_count, failure_count, error_messages, warnings = process_image_task(
+        image_triplets, options=batch_options
+    )
+    
+    status_code = 500 if success_count == 0 else 200
+    
+    return jsonify(
+        {
+            "status": "processed",
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "error_messages": error_messages,
+            "warnings": warnings or [],
+        }
+    ), status_code
+
+
 @index_bp.route("/index_by_reference", methods=["POST"])
 def index_images_batch_by_reference():
     """

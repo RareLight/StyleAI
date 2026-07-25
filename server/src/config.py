@@ -11,6 +11,9 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
+# --- Configuration Constants ---
+STYLEAI_LLM_CONCURRENCY = int(os.environ.get("STYLEAI_LLM_CONCURRENCY", 2))
+
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser(description="StyleAI Server")
 parser.add_argument(
