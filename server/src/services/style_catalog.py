@@ -27,7 +27,7 @@ from config import logger
 from services import style_grouping as grouping
 from services import training as training_service
 
-CURRENT_GROUPING_RULE_VERSION = "18"
+CURRENT_GROUPING_RULE_VERSION = "20"
 
 # ---------------------------------------------------------------------------
 # Schema

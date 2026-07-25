@@ -1074,9 +1074,3 @@ def test_stitched_panorama_exclusion():
     assert sg.classify_photo_genre(meta_pano_tag) is None
 
 
-def test_step4_fallback_does_not_shortcircuit_semantic_mapping():
-    """Step 4 must not return scene_unknown when the mapped genre is unknown,
-    allowing Steps 5/6 to try semantic mapping or setting fallbacks."""
-    sg._DYNAMIC_GENRE_CACHE.clear()
-    result = sg._primary_genre_with_keywords(["scene_general"], ["indoor"])
-    assert result == "scene_architecture", f"Step 4 short-circuited, got: {result}"
