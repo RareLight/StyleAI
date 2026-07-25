@@ -45,7 +45,7 @@ def example_nikon_portrait():
         "camera_make": "NIKON CORPORATION",
         "camera_model": "NIKON Z 7",
         "camera_profile": "Nikon Profile B",
-        "scene_tags": '["scene_portrait", "scene_studio"]',
+        "scene_tags": '["scene_portrait", "scene_people"]',
         "canonical_settings": '{"exposure": 0.1, "contrast": 5, "temperature": 5500, "highlights": -10, "shadows": 20, "clarity": 8}',
         "exp_luminance_mean": "0.60",
     }

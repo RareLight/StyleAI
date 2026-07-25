@@ -1000,6 +1000,7 @@ def _primary_genre_with_keywords_impl(
             "scene_nature",
             "scene_wildlife",
             "scene_macro",
+            "scene_portrait",
         }:
             if (
                 first_tag == "scene_landscape"
@@ -1036,20 +1037,28 @@ def _primary_genre_with_keywords_impl(
                     "scene_studio",
                     "scene_portrait",
                 ]
+            elif primary_mapped == "scene_portrait":
+                tier_order_subjects = [
+                    "scene_studio",
+                    "scene_macro",
+                    "scene_action",
+                    "scene_event",
+                    "scene_street",
+                ]
             else:
                 tier_order_subjects = [
                     "scene_studio",
                     "scene_macro",
-                    "scene_portrait",
-                    "scene_wildlife",
                     "scene_action",
                     "scene_event",
                     "scene_astrophotography",
                     "scene_street",
+                    "scene_portrait",
+                    "scene_wildlife",
                     "scene_architecture",
                 ]
             
-            if primary_mapped in ("scene_nature", "scene_wildlife", "scene_exterior"):
+            if primary_mapped in ("scene_nature", "scene_wildlife", "scene_exterior", "scene_landscape"):
                 top_vision_tags = content_tags[:12]
             else:
                 top_vision_tags = content_tags[:6]
