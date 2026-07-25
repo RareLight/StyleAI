@@ -283,9 +283,7 @@ def generate_metadata_single():
         image_bytes = image_cache.pop_image(photo_id)
 
     if not image_bytes:
-        return jsonify(
-            {"error": "No image data provided and image not found in cache"}
-        ), 400
+        logger.warning("No image data provided and image not found in cache for single metadata generation. Proceeding for LLM text-only.")
 
     # Let process_image_task handle the robust database commit and metadata merging logic
     success_count, failure_count, error_messages, warnings = process_image_task(
@@ -351,7 +349,6 @@ def generate_metadata_batch():
             logger.warning(f"Image bytes for {photo_id} not found in cache for batch metadata generation.")
             # We can still proceed if process_image_task handles it, but without image_bytes
             # LLM cannot see the image.
-            continue
             
         image_triplets.append((image_bytes, photo_id, filename, None))
         batch_options.append(photo_options)
