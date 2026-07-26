@@ -1841,6 +1841,33 @@ function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions, pr
 	return true
 end
 
+function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOptions)
+	if type(photos) ~= "table" or #photos == 0 then
+		return nil
+	end
+	writeOptions = writeOptions or { timeout = 60 }
+	local catalog = LrApplication.activeCatalog()
+	
+	local rootSet = getOrCreateCollectionSet(catalog, "StyleAI", nil, writeOptions)
+	if not rootSet then return nil end
+	
+	local recSet = getOrCreateCollectionSet(catalog, "Training Recommendations", rootSet, writeOptions)
+	if not recSet then return nil end
+	
+	local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName or "Style")
+	local collection = getOrCreateCollection(catalog, collName, recSet, writeOptions)
+
+	if collection then
+		catalog:withWriteAccessDo("Add photos to " .. collName, function()
+			collection:addPhotos(photos)
+		end, writeOptions)
+		LrTasks.yield()
+		LrTasks.sleep(0.05)
+	end
+
+	return collection
+end
+
 function Util.addPhotosToTrainedStylesCollection(photos, profileName, styleName, writeOptions)
 	if type(photos) ~= "table" or #photos == 0 then
 		return nil
