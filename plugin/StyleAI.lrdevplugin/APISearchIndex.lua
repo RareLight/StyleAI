@@ -1816,65 +1816,23 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         return photo:getRawMetadata(key)
     end
 
+    local preparedQueue = {}
+    local activeSenderWorkers = 0
+
     local analyzeWorker = function()
         local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
-        local localBatchSize = math.min(16, batchSize)
-        local localBatch = {}
-
-        local flushLocalBatch = function()
-            if #localBatch > 0 then
-                if enableEmbeddings then
-                    options.cache_images = enableMetadata
-                    local success, err = SearchIndexAPI.enqueuePhotosBase64Batch(localBatch, options)
-                    if success then
-                        for _, batchItem in ipairs(localBatch) do
-                            if enableMetadata then
-                                batchItem.image = nil
-                                table.insert(llmQueue, batchItem)
-                            else
-                                stats.processed = stats.processed + 1
-                                stats.success = stats.success + 1
-                                table.insert(processedPhotos, batchItem.photo)
-                                if options.onPhotoAnalyzed then
-                                    LrTasks.yield()
-                                    LrTasks.sleep(0.01)
-                                    LrTasks.pcall(function()
-                                        options.onPhotoAnalyzed(batchItem.photo, batchItem.photo_id, progressScope)
-                                    end)
-                                end
-                            end
-                        end
-                        if not enableMetadata then
-                            progressScope:setPortionComplete(stats.processed, numPhotos)
-                            progressScope:setCaption(
-                                LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
-                                    stats.success, numPhotos, stats.failed)
-                            )
-                        end
-                    else
-                        for _, batchItem in ipairs(localBatch) do
-                            stats.failed = stats.failed + 1
-                            stats.processed = stats.processed + 1
-                            table.insert(errorMessages, tostring(err))
-                            log:error("Failed to enqueue photo: " .. (batchItem.filename or "") .. " Error: " .. tostring(err))
-                        end
-                    end
-                else
-                    for _, batchItem in ipairs(localBatch) do
-                        table.insert(llmQueue, batchItem)
-                    end
-                end
-                localBatch = {}
-            end
-        end
+        local maxQueueCapacity = batchSize * 3
 
         while #photoToProcessStack > 0 do
             if progressScope:isCanceled() then break end
             if not keepRunning then break end
 
-            local photo = table.remove(photoToProcessStack)
-            if photo then
-                local filename = photo:getFormattedMetadata("fileName")
+            if #preparedQueue >= maxQueueCapacity then
+                if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+            else
+                local photo = table.remove(photoToProcessStack)
+                if photo then
+                    local filename = photo:getFormattedMetadata("fileName")
                 local hashStart = LrDate.currentTime()
                 local photoId, photoIdErr = getPhotoIdForPhoto(photo, options)
                 if photoId then
@@ -2000,6 +1958,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                         local base64Image = LrStringUtils.encodeBase64(jpegData)
                         local lrUuid = photo:getRawMetadata("uuid")
                         local item = {
+                            type = "item",
                             photo_id = photoId,
                             lr_uuid = lrUuid,
                             image = base64Image,
@@ -2008,33 +1967,121 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                             photo = photo
                         }
 
-                        table.insert(localBatch, item)
-                        if #localBatch >= localBatchSize then
-                            flushLocalBatch()
-                        end
+                        table.insert(preparedQueue, item)
                     else
-                        stats.failed = stats.failed + 1
-                        stats.processed = stats.processed + 1
-                        table.insert(errorMessages, filename .. ": Could not obtain image data (preview or export failed)")
-                        log:error("Failed to extract JPEG: " .. filename)
+                        local item = {
+                            type = "error",
+                            photo = photo,
+                            filename = filename,
+                            errorMsg = "Could not obtain image data (preview or export failed)"
+                        }
+                        table.insert(preparedQueue, item)
                     end
                 else
-                    stats.failed = stats.failed + 1
-                    stats.processed = stats.processed + 1
-                    table.insert(errorMessages, filename .. ": Could not compute photo ID: " .. tostring(photoIdErr))
-                    log:error("Could not compute photo ID: " .. tostring(photoIdErr))
+                    local item = {
+                        type = "error",
+                        photo = photo,
+                        filename = filename,
+                        errorMsg = "Could not compute photo ID: " .. tostring(photoIdErr)
+                    }
+                    table.insert(preparedQueue, item)
                 end
             else
                 log:error("Photo is nil in analyze worker, probably it got deleted in the meantime.")
             end
+            end
         end
-        flushLocalBatch()
         
         activeWorkers = activeWorkers - 1
         log:trace("Analyze worker thread finished. activeWorkers=" .. tostring(activeWorkers))
         if activeWorkers == 0 then
             preparationDone = true
         end
+    end
+
+    local senderWorker = function()
+        activeSenderWorkers = activeSenderWorkers + 1
+        local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
+        
+        while keepRunning and not progressScope:isCanceled() do
+            if #preparedQueue == 0 then
+                if preparationDone then
+                    break
+                else
+                    if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
+                end
+            else
+                local batchItemsToSend = {}
+                local localFailures = {}
+                local subBatchPhotos = {}
+
+                while #batchItemsToSend + #localFailures < batchSize and #preparedQueue > 0 do
+                    local item = table.remove(preparedQueue, 1)
+                    if item.type == "item" then
+                        table.insert(batchItemsToSend, item)
+                        table.insert(subBatchPhotos, item.photo)
+                    elseif item.type == "error" then
+                        table.insert(localFailures, item)
+                        table.insert(subBatchPhotos, item.photo)
+                    end
+                end
+
+                if #localFailures > 0 then
+                    for _, failItem in ipairs(localFailures) do
+                        stats.failed = stats.failed + 1
+                        stats.processed = stats.processed + 1
+                        table.insert(errorMessages, failItem.errorMsg)
+                        log:error("Failed to prepare photo: " .. failItem.filename .. " Error: " .. failItem.errorMsg)
+                    end
+                end
+
+                if #batchItemsToSend > 0 then
+                    if enableEmbeddings then
+                        options.cache_images = enableMetadata
+                        local success, err = SearchIndexAPI.enqueuePhotosBase64Batch(batchItemsToSend, options)
+                        if success then
+                            for _, batchItem in ipairs(batchItemsToSend) do
+                                if enableMetadata then
+                                    batchItem.image = nil
+                                    table.insert(llmQueue, batchItem)
+                                else
+                                    stats.processed = stats.processed + 1
+                                    stats.success = stats.success + 1
+                                    table.insert(processedPhotos, batchItem.photo)
+                                    if options.onPhotoAnalyzed then
+                                        LrTasks.yield()
+                                        LrTasks.sleep(0.01)
+                                        LrTasks.pcall(function()
+                                            options.onPhotoAnalyzed(batchItem.photo, batchItem.photo_id, progressScope)
+                                        end)
+                                    end
+                                end
+                            end
+                            if not enableMetadata then
+                                progressScope:setPortionComplete(stats.processed, numPhotos)
+                                progressScope:setCaption(
+                                    LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
+                                        stats.success, numPhotos, stats.failed)
+                                )
+                            end
+                        else
+                            for _, failItem in ipairs(batchItemsToSend) do
+                                stats.failed = stats.failed + 1
+                                stats.processed = stats.processed + 1
+                                table.insert(errorMessages, failItem.filename .. ": " .. tostring(err))
+                                log:error("Failed to enqueue photo: " .. failItem.filename .. " Error: " .. tostring(err))
+                            end
+                        end
+                    else
+                        for _, batchItem in ipairs(batchItemsToSend) do
+                            table.insert(llmQueue, batchItem)
+                        end
+                    end
+                end
+            end
+        end
+        activeSenderWorkers = activeSenderWorkers - 1
+        log:trace("Sender worker thread finished. activeSenderWorkers=" .. tostring(activeSenderWorkers))
     end
 
     
@@ -2113,6 +2160,12 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         activeWorkers = activeWorkers + 1
     end
 
+    local maxSenderWorkers = math.ceil(maxAnalyzeWorkers / 2)
+    for i = 1, maxSenderWorkers do
+        LrTasks.startAsyncTask(senderWorker)
+        log:trace("Started sender worker #" .. tostring(i))
+    end
+
     -- Sender worker has been removed in favor of fire-and-forget in analyzeWorker
 
     local maxLlmWorkers = math.max(1, maxSenderWorkers - 2)
@@ -2132,7 +2185,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end
 
     -- Monitor workers and server availability
-    while activeWorkers > 0 or activeLlmWorkers > 0 do
+    while activeWorkers > 0 or activeSenderWorkers > 0 or activeLlmWorkers > 0 do
         if progressScope:isCanceled() then break end
         LrTasks.yield()
         LrTasks.sleep(0.1)
@@ -2141,7 +2194,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     -- Wait for workers to stop in case of server failure
     if not keepRunning then
-        while activeWorkers > 0 do
+        while activeWorkers > 0 or activeSenderWorkers > 0 do
             LrTasks.yield()
             LrTasks.sleep(0.5)
         end
