@@ -9,3 +9,5 @@ trigger: always_on
 ### The Teardown Exception (`doneFunc`):
 You MUST use native `pcall(doneFunc)` during the Lightroom teardown sequence (e.g. inside `LrShutdownFunction`). 
 During plugin teardown, the Lightroom asynchronous task scheduler becomes unreliable or is already suspended. Calling `LrTasks.pcall(doneFunc)` will cause the plugin to hang indefinitely because it waits on a scheduler that is no longer running. Because `doneFunc` is completely synchronous and never yields, native `pcall` is perfectly safe and required here.
+
+**CRITICAL RULE**: Because the teardown sequence cannot use the async scheduler, you MUST NEVER call `LrTasks.execute` inside a teardown hook (or any function that yields). If you need to make an external OS call during shutdown (e.g., pinging a server), use native `os.execute()` with a background operator (like `&` on Mac or PowerShell on Windows) to fire it synchronously without yielding.

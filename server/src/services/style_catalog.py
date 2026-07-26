@@ -200,6 +200,7 @@ def upsert_style(style: dict[str, Any]) -> None:
         )
 
         for photo_id in style.get("example_photo_ids", []):
+            conn.execute("DELETE FROM style_examples WHERE photo_id = ?", (photo_id,))
             conn.execute(
                 "INSERT INTO style_examples (style_id, photo_id) VALUES (?, ?)",
                 (style_id, photo_id),

@@ -1575,7 +1575,8 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 
 	-- Step 1: Read — look for existing set (no write access needed)
 	local collectionSet
-	local children = catalog:getChildCollections()
+	local children = nil
+	pcall(function() children = catalog:getChildCollections() end)
 	if children then
 		for _, child in ipairs(children) do
 			if child:type() == "LrCollectionSet" and child:getName() == setName then
@@ -1600,7 +1601,8 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 
 	-- Step 3: Read — look for existing collection inside the set
 	local collection
-	local collChildren = collectionSet:getChildCollections()
+	local collChildren = nil
+	pcall(function() collChildren = collectionSet:getChildCollections() end)
 	if collChildren then
 		for _, c in ipairs(collChildren) do
 			if c:type() == "LrCollection" and c:getName() == collName then
@@ -1641,7 +1643,8 @@ end
 -- @return LrCollection or nil
 local function getOrCreateCollectionSet(catalog, setName, parentSet, writeOptions)
 	local collectionSet
-	local children = parentSet and parentSet:getChildCollections() or catalog:getChildCollections()
+	local children = nil
+	pcall(function() children = parentSet and parentSet:getChildCollections() or catalog:getChildCollections() end)
 	if children then
 		for _, child in ipairs(children) do
 			if child:type() == "LrCollectionSet" and child:getName() == setName then
@@ -1663,7 +1666,8 @@ end
 
 local function getOrCreateCollection(catalog, collName, parentSet, writeOptions)
 	local collection
-	local collChildren = parentSet:getChildCollections()
+	local collChildren = nil
+	pcall(function() collChildren = parentSet:getChildCollections() end)
 	if collChildren then
 		for _, c in ipairs(collChildren) do
 			if c:type() == "LrCollection" and c:getName() == collName then
@@ -1704,7 +1708,8 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 	catalog:withWriteAccessDo("Create and Populate Style Collections", function()
 		-- Cache existing profile sets to avoid repeated C-boundary calls
 		local existingProfileSets = {}
-		local children = trainedSet:getChildCollections()
+		local children = nil
+		pcall(function() children = trainedSet:getChildCollections() end)
 		if children then
 			for _, child in ipairs(children) do
 				if child:type() == "LrCollectionSet" then
@@ -1731,7 +1736,8 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 				if not profileSet.cachedCollections then
 					profileSet.cachedCollections = {}
 					if not isNewProfileSet then
-						local collChildren = profileSet:getChildCollections()
+						local collChildren = nil
+						pcall(function() collChildren = profileSet:getChildCollections() end)
 						if collChildren then
 							for _, c in ipairs(collChildren) do
 								if c:type() == "LrCollection" then
@@ -1792,7 +1798,8 @@ function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions, pr
 	catalog:withWriteAccessDo("Create and Populate Upgrade Collections", function()
 		-- Cache existing collections to avoid repeated C-boundary calls
 		local existingCollections = {}
-		local children = recSet:getChildCollections()
+		local children = nil
+		pcall(function() children = recSet:getChildCollections() end)
 		if children then
 			for _, child in ipairs(children) do
 				if child:type() == "LrCollection" then

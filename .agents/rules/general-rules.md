@@ -11,7 +11,7 @@ Key development constraints for StyleAI. For complete architecture specification
 - **Logging**: Use configured `logger` in Python with `exc_info=True`. Log plugin events using `log:error`/`warn`/`info`/`trace`.
 
 ## 2. Lua Plugin Rules
-- **Yielding & Async**: Run long tasks in `LrTasks.startAsyncTask`. Use `LrTasks.pcall` for normal async tasks. However, Lightroom shutdown hooks (`doneFunc`) MUST use native `pcall` because the async scheduler is unreliable during teardown and `LrTasks.pcall` will hang.
+- **Yielding & Async**: Run long tasks in `LrTasks.startAsyncTask`. Use `LrTasks.pcall` for normal async tasks. However, Lightroom shutdown hooks (`doneFunc`) MUST use native `pcall` because the async scheduler is unreliable during teardown and `LrTasks.pcall` will hang. NEVER use `LrTasks.execute` inside a teardown hook because it yields; use `os.execute` for synchronous/background OS calls instead.
 - **Spin-Locks & Yielding**: NEVER call `LrTasks.yield()` inside `withWriteAccessDo` closures. On macOS, use `LrTasks.yield(); LrTasks.sleep(0.01)`.
 - **Transactions & Collections**: Wrap batch updates in a **single** `withWriteAccessDo` block. Never call `getChildCollections()` on a newly created set inside the same transaction.
 - **UI Bounds**: Avoid `share()` or `width_in_chars` on mixed UI controls. Use explicit pixel widths (e.g. `width = 600`) in centered columns.
@@ -19,12 +19,12 @@ Key development constraints for StyleAI. For complete architecture specification
 
 ## 3. Python Backend Rules
 - **Imports & Layering**: `routes/` (Blueprints), `services/` (logic), `providers/` (LLM). Relative imports inside subpackages, absolute across subpackages.
-- **Memory Optimization**: ALWAYS call `Image.thumbnail()` BEFORE `.convert("RGB")` when processing images to prevent OOM RAM spikes.
+- **Memory Optimization**: ALWAYS call `Image.thumbnail()` BEFORE `.convert("RGB")` when processing images to prevent OOM RAM spikes, even when just generating base64 payloads for the LLM.
 - **Docker**: Sync `Dockerfile` and compose files when dependencies change.
 
 ## 4. ML Architecture & Taxonomy Rules
 - **DB Isolation**: Keep ChromaDB `photos` and `training_examples` collections strictly isolated.
 - **Training Pixels**: "Train AI Style" requires JPEG exports for raw pixel metrics. Missing JPEGs during text-only metadata generation must handle gracefully without HTTP 400.
-- **LLM Batching**: Batch metadata requests to `/metadata/generate_batch`. Never call `/metadata/generate` sequentially in loops.
+- **LLM Batching & Concurrency**: Batch metadata requests to `/metadata/generate_batch`. Never call `/metadata/generate` sequentially in loops. NEVER increase `STYLEAI_LLM_CONCURRENCY` above 1 by default, as running parallel local LLM requests (Ollama/LM Studio) will stall the GPU and deadlock processing.
 - **Classifier Versioning**: Increment `CURRENT_GROUPING_RULE_VERSION` in `style_catalog.py` when changing grouping rules to purge `semantic_genre_cache`. All style routes must call `catalog_service._ensure_initialized()`.
 - **GPU Worker Sync**: Pause downstream LLM workers on `active_embeddings_uuids` gate until upstream vision workers commit embeddings.

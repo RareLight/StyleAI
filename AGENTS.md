@@ -70,7 +70,7 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 - **Multi-Catalog Isolation**: Always filter ChromaDB queries (`collection.get()`) by active `catalog_ids`.
 
 ### Lua Plugin Conventions
-- **Asynchronicity & Teardown**: Run long operations in `LrTasks.startAsyncTask`. **CRITICAL**: Use `LrTasks.pcall` for normal async tasks. However, Lightroom shutdown hooks (`doneFunc` in `LrShutdownFunction`) MUST use native `pcall` because the async scheduler is unreliable during teardown and `LrTasks.pcall` will hang.
+- **Asynchronicity & Teardown**: Run long operations in `LrTasks.startAsyncTask`. **CRITICAL**: Use `LrTasks.pcall` for normal async tasks. However, Lightroom shutdown hooks (`doneFunc` in `LrShutdownFunction`) MUST use native `pcall` because the async scheduler is unreliable during teardown and `LrTasks.pcall` will hang. NEVER use `LrTasks.execute` inside a teardown hook because it yields; use `os.execute` for synchronous/background OS calls instead.
 - **Yielding & Spin-Locks**: NEVER call `LrTasks.yield()` inside `withWriteAccessDo` closures. On macOS, use `LrTasks.yield(); LrTasks.sleep(0.01)` to prevent C-stack overflows during batching.
 - **Batch Transactions**: Consolidate loop updates into a **single** `withWriteAccessDo` block per batch. Never put `withWriteAccessDo` inside a `for` loop.
 - **SDK Collection Quirk**: Do NOT call `getChildCollections()` on a newly created `LrCollectionSet` within the same transaction; track sets in memory until committed.
@@ -79,8 +79,9 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 
 ### Python Backend Conventions
 - **Architecture**: Endpoints in `routes/`, business logic in `services/`, LLMs in `providers/`. Subpackage imports use relative form (`from .face import ...`), cross-subpackage imports use absolute form (`from services.face import ...`).
-- **Memory Optimization**: ALWAYS call `Image.thumbnail()` BEFORE `.convert("RGB")` when processing images to prevent OOM memory spikes.
+- **Memory Optimization**: ALWAYS call `Image.thumbnail()` BEFORE `.convert("RGB")` when processing images to prevent OOM memory spikes. This applies everywhere, including when generating base64 image strings for LLM payloads.
 - **Logging & Errors**: Always use configured `logger` with `exc_info=True`. Surface user errors via standard JSON envelope.
+- **LLM Concurrency & Batching**: NEVER increase `STYLEAI_LLM_CONCURRENCY` above 1 by default. Trying to force parallel local LLM requests (Ollama/LM Studio) forces the GPU to context-switch, immediately maxing out VRAM and deadlocking the process.
 
 ---
 

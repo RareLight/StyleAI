@@ -33,9 +33,9 @@ local function shutdownApp(doneFunc, progressFunc)
 	local url = "http://127.0.0.1:" .. tostring(port) .. "/shutdown"
 
 	if MAC_ENV then
-		LrTasks.execute("curl -X POST -s --max-time 1 " .. url .. " >/dev/null 2>&1")
+		os.execute("curl -X POST -s --max-time 1 " .. url .. " >/dev/null 2>&1 &")
 	else
-		LrTasks.execute('powershell -NoProfile -Command "Invoke-WebRequest -Method POST -Uri ' .. url .. ' -UseBasicParsing -TimeoutSec 1" >NUL 2>&1')
+		os.execute('powershell -NoProfile -Command "Invoke-WebRequest -Method POST -Uri ' .. url .. ' -UseBasicParsing -TimeoutSec 1" >NUL 2>&1')
 	end
 
 	safeLogTrace("ShutdownApp: Synchronous shutdown signal sent.")
