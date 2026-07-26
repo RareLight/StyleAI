@@ -32,7 +32,6 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 
 	propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck == nil and true or prefs.periodicalUpdateCheck
 	propertyTable.shutdownServerOnExit = prefs.shutdownServerOnExit == nil and true or prefs.shutdownServerOnExit
-	propertyTable.backendServerUrl = prefs.backendServerUrl or Defaults.defaultBackendServerUrl
 	propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
 	propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
 	propertyTable.indexingPerformanceProfile = tonumber(prefs.indexingPerformanceProfile) or 2
@@ -495,18 +494,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			f:group_box({
 				width = groupBoxWidth,
 				title = LOC("$$$/StyleAI/PluginInfo/AdvancedSettings=Advanced Service Settings & Maintenance"),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/BackendServerUrl=Background service URL"),
-						alignment = "right",
-						width = share("labelWidth"),
-					}),
-					f:edit_field({
-						value = bind("backendServerUrl"),
-						fill_horizontal = 1,
-					}),
-				}),
 				-- dbStoragePath UI removed
 				f:row({
 					fill_horizontal = 1,
@@ -738,12 +725,6 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 	prefs.periodicalUpdateCheck = propertyTable.periodicalUpdateCheck
 	prefs.shutdownServerOnExit = (propertyTable.shutdownServerOnExit ~= false)
 	prefs.backupRotationDays = propertyTable.backupRotationDays
-
-	if propertyTable.backendServerUrl and propertyTable.backendServerUrl:gsub("^%s*(.-)%s*$", "%1") ~= "" then
-		prefs.backendServerUrl = propertyTable.backendServerUrl:gsub("^%s*(.-)%s*$", "%1")
-	else
-		prefs.backendServerUrl = Defaults.defaultBackendServerUrl
-	end
 
 	if propertyTable.ollamaBaseUrl and propertyTable.ollamaBaseUrl:gsub("^%s*(.-)%s*$", "%1") ~= "" then
 		prefs.ollamaBaseUrl = propertyTable.ollamaBaseUrl:gsub("^%s*(.-)%s*$", "%1")

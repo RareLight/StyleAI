@@ -1,6 +1,7 @@
 import time
 from collections import deque
 import os
+import queue
 
 from flask import Blueprint, request, jsonify
 
@@ -680,9 +681,17 @@ def enqueue_photo():
     images_data = data.get("images", [])
     global_options = data.get("options", {})
 
-    from services.index import index_queue
+    from services.index import (
+        active_embeddings_uuids,
+        index_queue,
+        is_index_queue_accepting,
+    )
 
     enqueued = 0
+    rejected = 0
+    if not is_index_queue_accepting():
+        return jsonify({"status": "stopping", "enqueued": 0, "rejected": len(images_data)}), 503
+
     for item in images_data:
         image_base64 = item.get("image")
         photo_id = item.get("photo_id") or item.get("uuid")
@@ -690,6 +699,12 @@ def enqueue_photo():
         filename = item.get("filename")
 
         if not image_base64 or not photo_id or not filename:
+            continue
+
+        # Check capacity before decoding base64: decoding an image only to drop
+        # it was a major transient-memory spike under large Lightroom batches.
+        if index_queue.full():
+            rejected += 1
             continue
 
         try:
@@ -716,13 +731,17 @@ def enqueue_photo():
                 "options": photo_options,
             }
 
-            from services.index import active_embeddings_uuids
-
             active_embeddings_uuids.add(photo_id)
-
-            index_queue.put(queue_item)
+            try:
+                index_queue.put_nowait(queue_item)
+            except queue.Full:
+                active_embeddings_uuids.discard(photo_id)
+                queue_item.clear()
+                rejected += 1
+                continue
             enqueued += 1
         except Exception as e:
             logger.error(f"Error enqueueing image: {e}")
 
-    return jsonify({"status": "accepted", "enqueued": enqueued}), 202
+    status = "accepted" if rejected == 0 else "backpressure"
+    return jsonify({"status": status, "enqueued": enqueued, "rejected": rejected}), 202

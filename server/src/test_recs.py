@@ -5,9 +5,9 @@ config.DB_PATH = "/Users/anna/Pictures/Lightroom Classic/Rare Light Photography/
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-from services import style_catalog
-from services import style_upgrades
-from services import style_grouping
+from services import style_catalog  # noqa: E402
+from services import style_upgrades  # noqa: E402
+from services import style_grouping  # noqa: E402
 
 def run():
     style_catalog._ensure_initialized()

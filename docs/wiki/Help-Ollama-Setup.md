@@ -1,6 +1,6 @@
 # Setting Up Ollama with StyleAI
 
-Ollama is a command-line tool that allows you to run large language models locally on your own hardware. Using Ollama with StyleAI enables privacy-focused, offline AI tagging and image analysis without requiring a subscription to cloud API services.
+Ollama is a command-line tool that runs open-weights large language models locally on your own hardware. With StyleAI it provides privacy-focused, offline AI tagging and image analysis.
 
 ## Installation
 

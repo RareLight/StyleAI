@@ -16,7 +16,7 @@ function Util.table_contains(tbl, x)
 	return false
 end
 
--- Utility function to dump tables as JSON scrambling the API key and removing base64 strings.
+-- Utility function to dump tables as JSON while removing sensitive values and base64 strings.
 local function dumpHelper(val, indent, seen)
 	indent = indent or ""
 	seen = seen or {}
@@ -82,7 +82,7 @@ function Util.dumpTable(t)
 	-- Redact base64 data for security
 	local result = s:gsub('(data = )"([A-Za-z0-9+/=]+)"', '%1"base64 removed"')
 	result = result:gsub('(url = "data:image/jpeg;base64,)([A-Za-z0-9+/]+=?=?)"', '%1base64 removed"')
-	-- Redact common API key fields by name (prefs / options)
+	-- Redact common sensitive fields by name (prefs / options)
 	result = result:gsub('(api_key%s*=%s*)"([^"]*)"', '%1"<redacted>"')
 
 	return result
@@ -105,33 +105,6 @@ function Util.nilOrEmpty(val)
 end
 
 ---
--- Returns a stable unique identifier for the given catalog, for cross-catalog backend tracking.
--- Stored in catalog plugin properties; generated once (MD5 of path + timestamp) and reused.
--- @param catalog LrCatalog|nil Optional; defaults to LrApplication.activeCatalog().
--- @return string catalog_id (e.g. "cat_" .. 32 hex chars), or nil, error on failure.
---
-function Util.getCatalogIdentifier(catalog)
-	catalog = catalog or LrApplication.activeCatalog()
-	if not catalog then
-		return nil, "No catalog"
-	end
-	local existing = catalog:getPropertyForPlugin(_PLUGIN, "catalogIdentifier")
-	if not Util.nilOrEmpty(existing) then
-		return existing, nil
-	end
-	local path = catalog:getPath() or ""
-	local seed = path .. tostring(LrDate.currentTime())
-	local digest = LrMD5.digest(seed)
-	if Util.nilOrEmpty(digest) then
-		return nil, "Could not generate catalog identifier"
-	end
-	local catalogId = "cat_" .. digest
-	catalog:withPrivateWriteAccessDo(function()
-		catalog:setPropertyForPlugin(_PLUGIN, "catalogIdentifier", catalogId)
-	end, { timeout = 15 })
-	return catalogId, nil
-end
-
 function Util.string_split(s, delimiter)
 	local t = {}
 	for str in string.gmatch(s, "([^" .. delimiter .. "]+)") do
@@ -655,12 +628,7 @@ function Util.copyLogfilesToDesktop(extraInfo)
 	progressScope:setCaption(LOC("$$$/StyleAI/Util/FetchingServerLogs=Fetching server-side logs via API..."))
 
 	-- Use the new streaming method to download logs directly to disk, avoiding memory spikes
-	local url = tostring(prefs.backendServerUrl or "")
-	local host = (url:match("://([^:/]+)") or url:match("^([^:/]+)") or ""):lower()
 	local prefix = ""
-	if host ~= "" and host ~= "127.0.0.1" and host ~= "localhost" then
-		prefix = host .. "-"
-	end
 
 	local logFiles = {
 		{ type = "backend", filename = "styleai-server.log" },
@@ -1576,7 +1544,7 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 	-- Step 1: Read — look for existing set (no write access needed)
 	local collectionSet
 	local children = nil
-	pcall(function() children = catalog:getChildCollections() end)
+	LrTasks.pcall(function() children = catalog:getChildCollections() end)
 	if children then
 		for _, child in ipairs(children) do
 			if child:type() == "LrCollectionSet" and child:getName() == setName then
@@ -1602,7 +1570,7 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 	-- Step 3: Read — look for existing collection inside the set
 	local collection
 	local collChildren = nil
-	pcall(function() collChildren = collectionSet:getChildCollections() end)
+	LrTasks.pcall(function() collChildren = collectionSet:getChildCollections() end)
 	if collChildren then
 		for _, c in ipairs(collChildren) do
 			if c:type() == "LrCollection" and c:getName() == collName then
@@ -1644,7 +1612,7 @@ end
 local function getOrCreateCollectionSet(catalog, setName, parentSet, writeOptions)
 	local collectionSet
 	local children = nil
-	pcall(function() children = parentSet and parentSet:getChildCollections() or catalog:getChildCollections() end)
+	LrTasks.pcall(function() children = parentSet and parentSet:getChildCollections() or catalog:getChildCollections() end)
 	if children then
 		for _, child in ipairs(children) do
 			if child:type() == "LrCollectionSet" and child:getName() == setName then
@@ -1667,7 +1635,7 @@ end
 local function getOrCreateCollection(catalog, collName, parentSet, writeOptions)
 	local collection
 	local collChildren = nil
-	pcall(function() collChildren = parentSet:getChildCollections() end)
+	LrTasks.pcall(function() collChildren = parentSet:getChildCollections() end)
 	if collChildren then
 		for _, c in ipairs(collChildren) do
 			if c:type() == "LrCollection" and c:getName() == collName then
@@ -1709,7 +1677,7 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 		-- Cache existing profile sets to avoid repeated C-boundary calls
 		local existingProfileSets = {}
 		local children = nil
-		pcall(function() children = trainedSet:getChildCollections() end)
+			LrTasks.pcall(function() children = trainedSet:getChildCollections() end)
 		if children then
 			for _, child in ipairs(children) do
 				if child:type() == "LrCollectionSet" then
@@ -1737,7 +1705,7 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 					profileSet.cachedCollections = {}
 					if not isNewProfileSet then
 						local collChildren = nil
-						pcall(function() collChildren = profileSet:getChildCollections() end)
+							LrTasks.pcall(function() collChildren = profileSet:getChildCollections() end)
 						if collChildren then
 							for _, c in ipairs(collChildren) do
 								if c:type() == "LrCollection" then
@@ -1799,7 +1767,7 @@ function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions, pr
 		-- Cache existing collections to avoid repeated C-boundary calls
 		local existingCollections = {}
 		local children = nil
-		pcall(function() children = recSet:getChildCollections() end)
+		LrTasks.pcall(function() children = recSet:getChildCollections() end)
 		if children then
 			for _, child in ipairs(children) do
 				if child:type() == "LrCollection" then

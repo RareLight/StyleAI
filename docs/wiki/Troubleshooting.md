@@ -37,12 +37,12 @@ Lightroom communicates with the `styleai-server` over a local network port (defa
 - **Symptom**: "Cannot connect to server" or "Connection Refused" errors.
 - **Resolution**: 
   1. Open `File -> Plug-in Manager -> StyleAI -> Backend Server`.
-  2. Verify the server URL `http://127.0.0.1:8000` matches where your server is running.
+  2. Verify the local background service is running on `http://127.0.0.1:19819`.
   3. Ensure the server terminal/console hasn't crashed.
 
 ### 3. Local Model Timeout
 
-Local AI models (via LM Studio or Ollama) can take significantly longer to process than cloud APIs, particularly on machines without powerful GPUs.
+Local AI models (via LM Studio or Ollama) can take longer to process on machines without sufficient GPU or unified-memory capacity.
 
 - **Symptom**: Lightroom displays a timeout error during image analysis.
 - **Resolution**: Ensure your local LLM server is actually running and the model is loaded into memory before starting the batch job in Lightroom. You may also need to process smaller batches of photos at a time.

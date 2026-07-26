@@ -13,6 +13,13 @@ if sys.stderr is None:
 
 # --- Configuration Constants ---
 STYLEAI_LLM_CONCURRENCY = int(os.environ.get("STYLEAI_LLM_CONCURRENCY", 1))
+# The indexing queue owns decoded JPEG bytes, so it must be bounded.  Keep the
+# default deliberately conservative for unified-memory Macs; installations
+# with measured headroom can increase it explicitly.
+STYLEAI_INDEX_QUEUE_CAPACITY = max(
+    1, int(os.environ.get("STYLEAI_INDEX_QUEUE_CAPACITY", 48))
+)
+STYLEAI_GPU_BATCH_SIZE = max(1, int(os.environ.get("STYLEAI_GPU_BATCH_SIZE", 12)))
 
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser(description="StyleAI Server")

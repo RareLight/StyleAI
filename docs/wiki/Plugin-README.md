@@ -18,7 +18,7 @@ StyleAI adds a backend-powered AI layer to Lightroom Classic. It helps you:
 - Run image culling on selections or the current view and create result collections for fast review
 - Re-import generated metadata back into Lightroom
 
-The plugin is designed to work with local and cloud providers, while keeping Lightroom as your main workspace.
+The plugin uses locally running open-weights models through Ollama or LM Studio while keeping Lightroom as your main workspace.
 
 ---
 
@@ -76,7 +76,7 @@ The plugin is designed to work with local and cloud providers, while keeping Lig
 1. Build or download the plugin package.
 2. In Lightroom Classic, open `File -> Plug-in Manager`.
 3. Click `Add` and select the `StyleAI.lrdevplugin` folder.
-4. Configure server URL and provider settings in plugin preferences.
+4. Configure local Ollama or LM Studio provider settings in plugin preferences.
 
 ---
 
@@ -100,38 +100,9 @@ Notes:
 
 ---
 
-## Breaking Change: Cross-Catalog Backend (Soft State, No Deletion)
+## Catalog-local storage
 
-When using a **shared remote backend** with multiple Lightroom catalogs, the backend no longer deletes photo data when a photo is removed from one catalog. Instead it only marks that catalog as no longer “having” that photo (**catalog_ids**). Other catalogs that still have the photo keep seeing it.
-
-### What the plugin does
-
-- Sends a stable **catalog_id** with all index and read requests so the backend can scope data per catalog.
-- **Sync cleanup**: When you run “Remove missing photos from index” (or the equivalent), the plugin calls the backend to **disassociate** this catalog from photos that are no longer in the current catalog. It does **not** ask the backend to delete those photos.
-- **Claim photos**: So that existing indexed photos are visible to this catalog under the new behavior, the plugin runs an automatic one-time “claim” on first use: it tells the backend to add this catalog’s **catalog_id** to all photos that are currently in the catalog. This runs in the background once per catalog; no dialog.
-
-### Manual “Claim photos for this catalog”
-
-In `Plug-in Manager -> StyleAI -> Backend Server` you can click **Claim photos for this catalog** to:
-
-- Re-run the claim (e.g. after restoring a backup or re-adding many photos).
-- Manually fix visibility if automatic claim did not run or failed.
-
-This adds the current catalog’s id to the listed photos on the backend; it does not delete any data.
-
----
-
-## Identity Scope Note
-
-The current `photo_id` / hash / derived `canonicalId` strategy is more stable than Lightroom catalog UUIDs, but it is still not guaranteed to be 100% cross-catalog safe in every workflow.
-
-Treat backend identity as best-effort and primarily catalog-scoped for now, especially when:
-
-- the same files exist in multiple Lightroom catalogs
-- files were duplicated, re-exported, or rewritten outside Lightroom
-- the plugin had to fall back to partial file hashes because stable metadata IDs were unavailable
-
-If strict cross-catalog identity is important for your workflow, plan for re-indexing or migration checks when moving photos between catalogs or restoring older databases.
+Each Lightroom catalog owns its adjacent `styleai.db` directory. StyleAI does not support shared databases, remote backends, or cross-catalog record routing. Stable Lightroom UUIDs and photo IDs are retained to repair local catalog mappings.
 
 ---
 
@@ -139,7 +110,6 @@ If strict cross-catalog identity is important for your workflow, plan for re-ind
 
 In the plugin settings dialog you can configure:
 
-- Backend server URL
 - Ollama base URL
 - Export size and quality used for AI processing
 - Prompt presets
@@ -170,7 +140,7 @@ If you migrated from legacy UUID-based IDs to `photo_id`:
 
 ## Troubleshooting
 
-- Verify backend connectivity in plugin settings (`backendServerUrl`).
+- Verify the local StyleAI background service is running on loopback port `19819`.
 - Check log files from Plugin Manager (`Show logfile` / copy logs to desktop).
 - If search returns no results, confirm photos were indexed with embeddings.
 - If faces are missing, ensure face processing was enabled during indexing.

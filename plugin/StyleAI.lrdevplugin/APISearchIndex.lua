@@ -4,23 +4,13 @@
 SearchIndexAPI = {}
 
 local function getBaseUrl()
-    local url = (prefs and prefs.backendServerUrl) and prefs.backendServerUrl or ""
-    url = url:gsub("^%s*(.-)%s*$", "%1") -- trim whitespace
-    if url == "" then
-        return "http://127.0.0.1:19819"
-    end
-    -- Ensure URL has protocol
-    if not url:match("^https?://") then
-        url = "http://" .. url
-    end
-    -- Remove trailing slash for consistency
-    url = url:gsub("/+$", "")
-    return url
+    -- StyleAI is a catalog-local service.  Do not permit a remote backend:
+    -- image pixels, catalog metadata, and training data must stay on this machine.
+    return "http://127.0.0.1:19819"
 end
 
 function SearchIndexAPI.isLocalBackend()
-    local url = getBaseUrl()
-    return url:match("^https?://127%.0%.0%.1:") or url:match("^https?://localhost:")
+    return true
 end
 
 local ENDPOINTS = {
@@ -886,7 +876,6 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
         tasks = options.tasks or {},
         provider = options.provider,
         model = options.model,
-        api_key = options.api_key,
         language = options.language or (prefs and prefs.generateLanguage) or "English",
         temperature = tostring(options.temperature or (prefs and prefs.temperature) or 0.2),
         replace_ss = tostring(options.replace_ss or false),
@@ -957,6 +946,21 @@ function SearchIndexAPI.enqueuePhotosBase64Batch(batch, globalOptions)
             user_context = itemOptions.user_context,
             date_time = itemOptions.date_time,
             date_time_unix = itemOptions.date_time_unix,
+            -- Preserve the catalog facts used by training, style discovery, and
+            -- recommendations.  Dropping these here silently made queued
+            -- indexing behave differently from the synchronous endpoint.
+            raw_filepath = itemOptions.raw_filepath,
+            camera_profile = itemOptions.camera_profile,
+            camera_make = itemOptions.camera_make,
+            camera_model = itemOptions.camera_model,
+            focal_length = itemOptions.focal_length,
+            lens = itemOptions.lens,
+            iso = itemOptions.iso,
+            aperture = itemOptions.aperture,
+            shutter_speed = itemOptions.shutter_speed,
+            rating = itemOptions.rating,
+            pick_status = itemOptions.pick_status,
+            is_edited = itemOptions.is_edited,
         }
         table.insert(bodyImages, {
             image = item.image,
@@ -2105,14 +2109,14 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 end
             else
                 local waitLoops = 0
-                while #llmQueue < 32 and not preparationDone and waitLoops < 20 do
+                while #llmQueue < 12 and not preparationDone and waitLoops < 20 do
                     LrTasks.yield()
                     LrTasks.sleep(0.05)
                     waitLoops = waitLoops + 1
                 end
 
                 local batch = {}
-                while #llmQueue > 0 and #batch < 32 do
+                while #llmQueue > 0 and #batch < 12 do
                     local item = table.remove(llmQueue)
                     if item then
                         table.insert(batch, item)
@@ -2180,16 +2184,9 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         log:trace("Started sender worker #" .. tostring(i))
     end
 
-    -- Sender worker has been removed in favor of fire-and-forget in analyzeWorker
-
-    local maxLlmWorkers = math.max(1, maxSenderWorkers - 2)
-    if enableMetadata and options.model and (string.find(string.lower(options.model), "lmstudio") or string.find(string.lower(options.model), "ollama")) then
-        -- We trust LM Studio/Ollama's internal request queuing, but cap connections to 4 to prevent Waitress starvation and Lightroom HTTP timeouts
-        maxLlmWorkers = math.min(maxSenderWorkers, 4)
-        log:trace("Local LLM detected. Capping connections to " .. tostring(maxLlmWorkers) .. " to prevent Waitress thread exhaustion.")
-    else
-        log:trace("Cloud LLM detected. Using " .. tostring(maxLlmWorkers) .. " connections to reserve Waitress threads for fast embeddings.")
-    end
+    -- Local models own a single GPU/unified-memory context.  Serializing LLM
+    -- batches avoids context thrash and leaves MPS capacity for embeddings.
+    local maxLlmWorkers = 1
 
     if enableMetadata then
         for i = 1, maxLlmWorkers do
@@ -2526,11 +2523,6 @@ function SearchIndexAPI.restartBackend()
 end
 
 function SearchIndexAPI.initializeCatalog(dbPath)
-    if not SearchIndexAPI.isLocalBackend() then
-        log:info("Skipping catalog initialization for remote backend.")
-        return true
-    end
-
     if not dbPath then
         dbPath = LrPathUtils.child(getServerControlDir(), "styleai.db")
     end

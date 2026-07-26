@@ -41,12 +41,12 @@ StyleAI now uses a custom, lightweight Python migration engine to manage SQLite 
 With the shift away from generative models to mathematically robust machine learning for local edits, the architecture is now strictly bifurcated:
 
 - **Predictive ML (Core):** Powered by local `scikit-learn` algorithms (KNN, Supervised Partial Least Squares, Elastic Net Regression) operating on SigLIP2 dense embeddings, burst-curated density weights, and raw exposure pixel metrics. This is the fast, primary method for style interpolation and slider prediction.
-- **Generative LLMs (Fallback/Metadata):** LLMs are now exclusively used for zero-shot "Creative" fallback edits and generating semantic metadata (auto-tagging). The backend remains provider-agnostic. All providers inherit from `LLMProvider(ABC)`. To add a new provider (e.g. Anthropic Claude), simply subclass `LLMProvider` and implement `generate_metadata` and `test_connection`.
+- **Generative LLMs (Fallback/Metadata):** LLMs are used for zero-shot "Creative" fallback edits and generating semantic metadata (auto-tagging). Providers are restricted to locally running open-weights models through Ollama and LM Studio; do not add cloud providers, API-key storage, or remote backend support.
 
 ## 5. Security & Credentials
 
 - **Backend Binding:** In production, the Flask background service unconditionally binds to `127.0.0.1` to prevent network exposure.
-- **Keychain Storage:** We completely purged plaintext API keys from `Preferences.agprefs`. All API keys are securely retrieved via the native `LrPasswords` module in Lua. Never log or store API keys in plaintext files.
+- **Local-only providers:** Do not add API-key storage, cloud providers, remote backends, or cloud-oriented privacy workarounds.
 
 ## 6. Observability
 

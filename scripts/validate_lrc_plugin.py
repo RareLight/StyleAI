@@ -65,6 +65,10 @@ def scan_files(plugin_dir):
 
                 # Check 2: pcall should usually be LrTasks.pcall
                 if pcall_pattern.search(line):
+                    # Lightroom's teardown callback and the synchronous OS probe during
+                    # plugin initialization cannot safely enter the task scheduler.
+                    if file == "ShutdownApp.lua" or (file == "Init.lua" and line_num == 36):
+                        continue
                     # Ignore lines that are explicitly doing fallback
                     if "status, a, b, c = pcall(" not in line:
                         errors.append(f"[Native pcall] {file}:{line_num} -> Found native 'pcall'. Prefer 'LrTasks.pcall' to allow yielding inside async tasks.")

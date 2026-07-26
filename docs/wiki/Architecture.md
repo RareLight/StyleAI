@@ -11,7 +11,7 @@ StyleAI leverages a split frontend/backend architecture to deliver local-first, 
 1. **Vision Model Upgrade:** We replaced OpenCLIP with **SigLIP2** (`ViT-SO400M-16-SigLIP2-384`) for significantly better dense image understanding and zero-shot lighting classification.
 2. **Predictive ML vs. Generative LLMs:** Legacy implementations relied on LLMs to interpolate edit sliders. StyleAI shifted to mathematically robust ML logic (KNN, Supervised Partial Least Squares, and Elastic Net Regression via Scikit-Learn) for applying edits, reserving LLMs purely as a "Creative Fallback."
 3. **Asynchronous Pipelining:** The Python backend uses ThreadPoolExecutors to parallelize CPU preprocessing (decoding, hashing) and GPU/Neural Engine inference, drastically speeding up bulk indexing.
-4. **Catalog Isolation:** A single StyleAI backend can serve multiple `.lrcat` files using soft-state `catalog_ids` tags in ChromaDB.
+4. **Catalog ownership:** Each Lightroom catalog owns one adjacent `styleai.db` directory and local StyleAI backend state. Databases are never shared or routed across catalogs.
 
 ---
 
@@ -90,10 +90,10 @@ This section is for developers writing external tools or agents interacting with
 > External tools must **never** write, update, or delete records. Database population is strictly managed by the backend. Treat these endpoints as read-only to avoid corruption.
 
 ### Vector Store: ChromaDB
-Stores visual embeddings, text metadata, and face templates. Located typically at `~/.gemini/antigravity/StyleAI/db`.
+Stores visual embeddings, text metadata, and face templates in `<catalog parent>/styleai.db`.
 
 #### Key Collections
-1. `photos`: SigLIP2 embeddings for semantic search. `metadatas` contains `catalog_ids`, keywords, and tags.
+1. `photos`: SigLIP2 embeddings for semantic search. `metadatas` contains stable Lightroom identifiers, capture metadata, keywords, and tags.
 2. `faces`: InsightFace templates linked to `photo_id`.
 3. `training_examples`: **Isolated** collection of SigLIP2 embeddings mapped directly to Lightroom Develop recipes for the Predictive ML engine.
 

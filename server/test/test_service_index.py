@@ -77,7 +77,7 @@ class TestProcessImageTask(unittest.TestCase):
     def test_batch_canceled_by_watchdog(self, mock_cancel_event):
         mock_cancel_event.is_set.return_value = True
         triplets = [(b"data", "uuid-1", "test.jpg", "lr-1")]
-        options = {"provider": "gemini", "model": "gemini-1.5-flash"}
+        options = {"provider": "ollama", "model": "qwen3-vl"}
         success, failure, errors, warnings = process_image_task(triplets, options)
         self.assertEqual(success, 0)
         self.assertEqual(failure, 1)

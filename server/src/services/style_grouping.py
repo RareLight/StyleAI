@@ -1075,9 +1075,11 @@ def _primary_genre_with_keywords_impl(
         if artwork_keywords.intersection(top_5_tags):
             return "scene_unknown"
 
+        primary_tag = content_tags[0].lower()
         primary_mapped = _get_broad_genre(content_tags[0])
         
         # Pre-calculate indices
+        idx_astro = get_index_of_genre("scene_astrophotography", content_tags[:6])
         idx_macro = get_index_of_genre("scene_macro", content_tags[:5])
         has_macro_kws = has_macro(content_tags[:5])
         idx_portrait = get_index_of_genre("scene_portrait", content_tags[:5])
@@ -1087,6 +1089,13 @@ def _primary_genre_with_keywords_impl(
         idx_street = get_index_of_genre("scene_street", content_tags[:8])
         idx_arch = get_index_of_genre("scene_architecture", content_tags[:4])
         idx_wildlife = get_index_of_genre("scene_wildlife", content_tags[:6])
+        # Nature labels commonly occupy the high-confidence positions and can
+        # suppress the actual animal subject.  Only widen this horizon when the
+        # primary tag is nature; broadening it for every image revives tail
+        # noise and lets a secondary bird hijack a landscape.
+        idx_wildlife_in_nature = get_index_of_genre(
+            "scene_wildlife", content_tags[:12]
+        )
         idx_landscape = get_index_of_genre("scene_landscape", content_tags[:5])
 
         # OVERRIDING DOMINANT SUBJECTS
@@ -1095,15 +1104,31 @@ def _primary_genre_with_keywords_impl(
         if has_pet_top10:
             return "scene_portrait"
 
+        # Astrophotography is a specialized scene regime, not a landscape
+        # variant.  A top-six tag is sufficiently prominent to override a
+        # generic night or landscape label.
+        if idx_astro >= 0:
+            return "scene_astrophotography"
+
         # Macro requires explicit macro keywords or scene_macro mapping in top 5
         if idx_macro >= 0 or (has_macro_kws and primary_mapped in ("scene_nature", "scene_wildlife", "scene_unknown")):
             return "scene_macro"
 
-        # Action / Event / Street OVERRIDE Portrait if they are present!
-        if idx_action >= 0:
-            return "scene_action"
+        # An event describes the editing workflow more usefully than its
+        # incidental action tag (for example, a wedding dance floor).
         if idx_event >= 0:
             return "scene_event"
+
+        # Preserve an explicit leading landscape or architecture scene against
+        # secondary activity, street, or wildlife tags.  Specialized subjects
+        # above still take precedence.
+        if primary_tag in ("scene_landscape", "scene_architecture"):
+            return primary_tag
+
+        # Action / Street override portrait only when they are themselves
+        # prominent rather than a tail descriptor.
+        if idx_action >= 0:
+            return "scene_action"
         if idx_street >= 0:
             return "scene_street"
 
@@ -1116,7 +1141,9 @@ def _primary_genre_with_keywords_impl(
             return "scene_portrait"
 
         # Wildlife
-        if idx_wildlife >= 0:
+        if idx_wildlife >= 0 or (
+            primary_mapped == "scene_nature" and idx_wildlife_in_nature >= 0
+        ):
             return "scene_wildlife"
 
         # Architecture
@@ -2119,9 +2146,10 @@ def verify_photo_visual_membership(
         return True
     emb_norm = emb_arr / norm
 
-    # We lower the penalty for ambiguous photos. Instead of a hard 0.60 which kills
-    # legitimate candidates, we use 0.50 (slightly stricter than 0.45, but reasonable).
-    base_threshold = 0.50 if require_strict_if_ambiguous else min_similarity
+    # Ambiguous genre metadata receives a materially stricter visual gate.  It
+    # must not be admitted merely because it clears the general candidate
+    # threshold; otherwise unrelated photos leak into a training cluster.
+    base_threshold = 0.60 if require_strict_if_ambiguous else min_similarity
 
     if style_embeddings is not None and len(style_embeddings) > 0:
         E_mat = (
