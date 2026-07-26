@@ -149,6 +149,22 @@ def test_group_examples_withholds_visual_outlier_without_losing_example():
     ]
 
 
+def test_split_examples_by_visual_cohesion_only_splits_dense_components():
+    examples = [
+        {"photo_id": "a1", "embedding": [1.0, 0.0, 0.0]},
+        {"photo_id": "a2", "embedding": [0.99, 0.1, 0.0]},
+        {"photo_id": "b1", "embedding": [0.0, 1.0, 0.0]},
+        {"photo_id": "b2", "embedding": [0.1, 0.99, 0.0]},
+    ]
+
+    clusters = sg.split_examples_by_visual_cohesion(examples)
+
+    assert [[ex["photo_id"] for ex in cluster] for cluster in clusters] == [
+        ["a1", "a2"],
+        ["b1", "b2"],
+    ]
+
+
 def test_dynamic_semantic_mapping():
     # Clear cache for isolated testing
     sg._DYNAMIC_GENRE_CACHE.clear()

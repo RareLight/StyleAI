@@ -28,7 +28,7 @@ from services import style_grouping as grouping
 from services import training as training_service
 
 # Increment this when changing grouping rules (like taxonomy maps) to force a re-evaluation
-CURRENT_GROUPING_RULE_VERSION = "28"
+CURRENT_GROUPING_RULE_VERSION = "29"
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -430,57 +430,65 @@ def discover_styles_from_examples(
         if len(group_ex) < 2:
             continue  # Need at least 2 examples for a meaningful style
 
-        # 3. Aggregate all examples into a single style group
-        # We bypass subgenre splitting because Predictive ML needs pooled data
-        sg = grouping._build_subgroup(group_ex, subgenre=None)
-
-        profile = camera_profile
-        clean_genre = grouping.generate_style_name(genre, None)
-        style_name = clean_genre
-        if profile and str(profile) != "Default" and str(profile) not in style_name:
-            style_name = f"{style_name} • {profile}"
-        if "HDR" in str(profile) and "HDR" not in style_name:
-            style_name = f"{style_name} (HDR)"
-
-        style_id = _slugify(f"{profile}_{genre}")
-
-        style = {
-            "style_id": style_id,
-            "style_name": style_name,
-            "camera_make": "",
-            "camera_model": "",
-            "camera_profile": profile,
-            "genre": genre,
-            "subgenre": "",
-            "description": grouping.generate_style_description(
-                sg["mean_develop_settings"],
-                genre,
-                sg["scene_distribution"],
-                camera_profile=profile,
-            ),
-            "example_count": len(sg["example_photo_ids"]),
-            "mean_exposure_dna": sg["mean_exposure_dna"],
-            "scene_distribution": sg["scene_distribution"],
-            "develop_variance": sg["variance"],
-            "example_photo_ids": sg["example_photo_ids"],
-            "confidence_threshold": 0.45,
-            "created_at": _now(),
-        }
-
-        upsert_style(style)
-        # Update the training examples in ChromaDB with the new style label and description
-        try:
-            training_service.update_training_example_labels(
-                photo_ids=sg["example_photo_ids"],
-                label=style_name,
-                summary=style["description"],
+        visual_groups = grouping.split_examples_by_visual_cohesion(group_ex)
+        for visual_index, visual_group in enumerate(visual_groups, start=1):
+            if len(visual_group) < 2:
+                continue
+            subgenre = (
+                None if len(visual_groups) == 1 else f"visual_set_{visual_index}"
             )
-        except Exception as exc:
-            logger.warning(
-                f"Failed to propagate style labels to training examples: {exc}"
-            )
+            sg = grouping._build_subgroup(visual_group, subgenre=subgenre)
 
-        created_styles.append(style)
+            profile = camera_profile
+            clean_genre = grouping.generate_style_name(genre, subgenre)
+            style_name = clean_genre
+            if profile and str(profile) != "Default" and str(profile) not in style_name:
+                style_name = f"{style_name} • {profile}"
+            if "HDR" in str(profile) and "HDR" not in style_name:
+                style_name = f"{style_name} (HDR)"
+
+            style_key = f"{profile}_{genre}"
+            if subgenre:
+                style_key = f"{style_key}_{subgenre}"
+            style_id = _slugify(style_key)
+
+            style = {
+                "style_id": style_id,
+                "style_name": style_name,
+                "camera_make": "",
+                "camera_model": "",
+                "camera_profile": profile,
+                "genre": genre,
+                "subgenre": subgenre or "",
+                "description": grouping.generate_style_description(
+                    sg["mean_develop_settings"],
+                    genre,
+                    sg["scene_distribution"],
+                    camera_profile=profile,
+                ),
+                "example_count": len(sg["example_photo_ids"]),
+                "mean_exposure_dna": sg["mean_exposure_dna"],
+                "scene_distribution": sg["scene_distribution"],
+                "develop_variance": sg["variance"],
+                "example_photo_ids": sg["example_photo_ids"],
+                "confidence_threshold": 0.45,
+                "created_at": _now(),
+            }
+
+            upsert_style(style)
+            # Update the training examples in ChromaDB with the new style label and description
+            try:
+                training_service.update_training_example_labels(
+                    photo_ids=sg["example_photo_ids"],
+                    label=style_name,
+                    summary=style["description"],
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to propagate style labels to training examples: {exc}"
+                )
+
+            created_styles.append(style)
 
     if photo_ids is None:
         active_style_ids = {s["style_id"] for s in created_styles}

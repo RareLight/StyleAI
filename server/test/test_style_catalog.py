@@ -450,6 +450,52 @@ def test_fetch_rich_examples_includes_embeddings(monkeypatch):
     assert np.allclose(res[0]["embedding"], [0.1, 0.2])
 
 
+def test_discovery_creates_separate_styles_for_dense_visual_sets(monkeypatch):
+    examples = [
+        {
+            "photo_id": "a1",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": '["scene_landscape"]',
+            "embedding": [1.0, 0.0, 0.0],
+            "canonical_settings": '{"exposure": -0.2}',
+        },
+        {
+            "photo_id": "a2",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": '["scene_landscape"]',
+            "embedding": [0.99, 0.1, 0.0],
+            "canonical_settings": '{"exposure": -0.1}',
+        },
+        {
+            "photo_id": "b1",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": '["scene_landscape"]',
+            "embedding": [0.0, 1.0, 0.0],
+            "canonical_settings": '{"exposure": 0.3}',
+        },
+        {
+            "photo_id": "b2",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": '["scene_landscape"]',
+            "embedding": [0.1, 0.99, 0.0],
+            "canonical_settings": '{"exposure": 0.4}',
+        },
+    ]
+    monkeypatch.setattr(training_service, "list_training_examples", lambda: examples)
+    monkeypatch.setattr(sc, "_fetch_rich_examples", lambda _ids: examples)
+    monkeypatch.setattr(
+        training_service, "update_training_example_labels", lambda **_kwargs: None
+    )
+
+    styles = sc.discover_styles_from_examples()
+
+    assert {style["style_id"] for style in styles} == {
+        "adobe-standard-scene-landscape-visual-set-1",
+        "adobe-standard-scene-landscape-visual-set-2",
+    }
+    assert {style["example_count"] for style in styles} == {2}
+
+
 def test_filter_style_examples_by_genre_excludes_panoramas():
     examples = [
         {
