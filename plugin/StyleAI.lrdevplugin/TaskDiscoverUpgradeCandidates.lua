@@ -37,6 +37,7 @@ LrTasks.startAsyncTask(function()
 		props.statusMessage = ""
 
 		props.detailName = ""
+		props.detailGenre = ""
 		props.detailProfile = ""
 		props.detailTier = ""
 		props.detailNeeded = ""
@@ -77,9 +78,11 @@ LrTasks.startAsyncTask(function()
 
 			local s = props.styles[idx]
 			local sName = s.style_name or "Unknown Style"
+			local sGenre = s.genre or "Unknown"
 			local sProf = s.camera_profile or "Default"
 			
 			props.detailName = sName
+			props.detailGenre = sGenre
 			props.detailProfile = sProf
 			
 			local current = tonumber(s.current_count) or 0
@@ -454,6 +457,10 @@ LrTasks.startAsyncTask(function()
 							f:row({
 								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailName=Name:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
 								f:static_text({ title = bind("detailName"), width = 250 }),
+							}),
+							f:row({
+								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailGenre=Genre:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
+								f:static_text({ title = bind("detailGenre"), width = 250 }),
 							}),
 							f:row({
 								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailProfile=Profile:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),

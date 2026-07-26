@@ -125,8 +125,13 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	updateHealth()
 	LrTasks.startAsyncTask(function()
 		while propertyTable.keepChecksRunning do
-			LrTasks.sleep(10)
-			updateHealth()
+			for _ = 1, 20 do
+				if not propertyTable.keepChecksRunning then break end
+				LrTasks.sleep(0.5)
+			end
+			if propertyTable.keepChecksRunning then
+				updateHealth()
+			end
 		end
 	end)
 
