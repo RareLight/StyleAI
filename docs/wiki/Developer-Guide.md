@@ -58,7 +58,7 @@ Lightroom SDK plugins are prone to C-stack overflows if coroutine yields and dat
 - **NEVER yield inside a database transaction:** Do not call `LrTasks.yield()` inside `withWriteAccessDo` or `withPrivateWriteAccessDo` closures. Doing so suspends the Lua coroutine while holding a C-level SQLite transaction lock. The orphaned C-stack frames will rapidly accumulate and crash Lightroom.
 - **The macOS Spin-Lock:** Using the pattern `if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end` is a dangerous anti-pattern. On macOS, `LrTasks.yield()` without a subsequent sleep does NOT reliably return control to the Lightroom UI loop. During heavy batch processing, this causes C-stack buildup. ALWAYS use `LrTasks.yield(); LrTasks.sleep(0.01)` regardless of OS to guarantee the transaction stack flushes.
 - **Transaction Bloat:** When applying multiple edits or metadata properties to a photo, combine them into a single `withWriteAccessDo` block. Firing multiple sequential database transactions per-photo exponentially increases SQLite overhead and stack pressure during batch operations.
-- **Native `pcall` in Shutdown/Teardown:** Never use native `pcall` to wrap Lightroom's internal `doneFunc` or shutdown tasks. Lightroom's SDK teardown sequence yields under the hood. Wrapping it in native `pcall` causes a C-boundary yield error that aborts the sequence silently, hanging Lightroom indefinitely. Always use `LrTasks.pcall`.
+- **Native `pcall` in Shutdown/Teardown:** Shutdown hooks are the exception: use native `pcall` and non-yielding `os.execute` in `doneFunc`, because Lightroom's async scheduler is unreliable during teardown. Use `LrTasks.pcall` for normal asynchronous plugin work.
 
 ## 8. Python Backend Memory Efficiency
 
@@ -77,14 +77,15 @@ The Lightroom SDK `LrView` engine has several undocumented layout quirks, partic
 - **`width_in_chars` on `simple_list`:** The `simple_list` component often completely ignores the `width_in_chars` parameter, collapsing to the natural width of its text content even if `width_in_chars` is generously set.
 - **The Solution:** To guarantee perfectly aligned widths between different UI elements (e.g., centering a dropdown directly above a list), bypass dynamic text-width logic and hardcode an explicit pixel width (`width = 600`). This ensures all components stretch symmetrically regardless of their intrinsic text contents.
 
-## 11. Multi-Tiered Genre Classification & Anti-Leakage Rules
+## 11. Embedding-First Grouping and Semantic Guardrails
 
 When classifying photos or preventing cross-genre leakage (e.g., in Style Upgrade Assistant recommendations or AI Style Training):
 - **DO NOT Use Ad-Hoc Keyword Wordlists:** NEVER implement hardcoded keyword exception arrays or custom string-matching lists inside filtering functions (like `_check_genre_mismatch`) to categorize photos. Ad-hoc wordlists do not scale across genres, languages, or evolving metadata.
-- **USE the Unified Multi-Tiered Pipeline:** Always route candidate photos through the unified classification pipeline (`style_grouping._primary_genre_with_keywords`), which hierarchically evaluates:
+- **USE the Unified Multi-Tiered Pipeline as a Guardrail:** Route candidates through `style_grouping._primary_genre_with_keywords` for an interpretable label and conflict signal, but never use it as the only inclusion/exclusion decision. Dense SigLIP2 membership is authoritative for visual grouping and recommendation admission.
   1. **Tier 1 (Explicit User Keywords):** Resolves dynamic semantic mappings and domain priority hierarchy from user metadata.
   2. **Tier 2 (Vision Model Content Tags):** Evaluates all predicted scene tags (`content_tags`) in confidence order against canonical subject regimes (`scene_studio`, `scene_macro`, `scene_portrait`, `scene_landscape`, `scene_architecture`, `scene_night`).
   3. **Tier 3 (EXIF Bayesian Priors):** When text or vision tags do not resolve a canonical regime, evaluates EXIF prior distributions (`_evaluate_exif_priors`, where strong priors $\ge 0.30$ determine regime from focal length, macro lenses, flash, or exposure settings).
+- **Visual Cohesion:** Use `split_examples_by_visual_cohesion` only for stable components containing at least two examples; retain sparse or unembedded groups intact. Use leave-one-out membership to withhold clear outliers without deleting their training records.
 - **Stitched Panoramas Exclusion:** Stitched panoramas (`_is_stitched_panorama`: `-Pano`/`_Pano` filename suffix, `panorama` tags, or aspect ratio $\ge 2.2:1$) must be universally filtered out of style upgrade recommendations and style training datasets.
 
 ## 12. Automated Rule Versioning & Semantic Cache Invalidation (`CURRENT_GROUPING_RULE_VERSION`)
