@@ -1675,7 +1675,7 @@ local function getOrCreateCollection(catalog, collName, parentSet, writeOptions)
 
 	if not collection then
 		catalog:withWriteAccessDo("Create Collection " .. collName, function()
-			collection = catalog:createCollection(collName, parentSet, false)
+			collection = catalog:createCollection(collName, parentSet, true)
 		end, writeOptions)
 		LrTasks.yield()
 		LrTasks.sleep(0.05)
@@ -1745,7 +1745,7 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 				-- 2. Find or create style collection
 				local collection = profileSet.cachedCollections[styleName]
 				if not collection then
-					collection = catalog:createCollection(styleName, profileSet, false)
+					collection = catalog:createCollection(styleName, profileSet, true)
 					profileSet.cachedCollections[styleName] = collection
 				end
 
@@ -1800,16 +1800,17 @@ function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions, pr
 				end
 			end
 		end
+		recSet.cachedCollections = existingCollections
 
 		for i, data in ipairs(stylesData) do
 			if data.photos and #data.photos > 0 then
 				local styleName = data.styleName or "Style"
 				local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName)
 				
-				local collection = existingCollections[collName]
+				local collection = recSet.cachedCollections[collName]
 				if not collection then
-					collection = catalog:createCollection(collName, recSet, false)
-					existingCollections[collName] = collection
+					collection = catalog:createCollection(collName, recSet, true)
+					recSet.cachedCollections[collName] = collection
 				end
 
 				table.insert(collectionsToPopulate, { collection = collection, photos = data.photos })
