@@ -1991,14 +1991,28 @@ def group_examples_by_profile_genre(
         centroid = centroids.get(key)
         if centroid is None:
             continue
+            
+        group_embs = []
+        for ex in groups[key]:
+            e = _normalize_embedding(ex.get("embedding"))
+            if e is not None:
+                group_embs.append(e)
+        E_mat = np.array(group_embs, dtype=np.float32) if group_embs else None
+
         valid_ex: list[dict[str, Any]] = []
         for ex in groups[key]:
             emb_norm = _normalize_embedding(ex.get("embedding"))
             if emb_norm is None:
                 valid_ex.append(ex)
                 continue
-            sim = float(np.dot(centroid, emb_norm))
-            if sim >= VISUAL_MIN_SIMILARITY:
+            
+            if verify_photo_visual_membership(
+                emb_norm,
+                style_embeddings=E_mat,
+                style_centroid=centroid,
+                min_similarity=VISUAL_MIN_SIMILARITY,
+                require_strict_if_ambiguous=False,
+            ):
                 valid_ex.append(ex)
             else:
                 groups.setdefault((profile, "scene_general"), []).append(ex)
@@ -2153,6 +2167,7 @@ def verify_photo_visual_membership(
 
     Verifies whether a photo's embedding vector belongs to a style cluster by checking
     cosine similarity against the style's training embeddings matrix or visual centroid.
+    Incorporates adaptive Z-score outlier detection for established clusters.
     """
     if embedding is None:
         return True
@@ -2169,7 +2184,9 @@ def verify_photo_visual_membership(
         return True
     emb_norm = emb_arr / norm
 
-    threshold = 0.60 if require_strict_if_ambiguous else min_similarity
+    # We lower the penalty for ambiguous photos. Instead of a hard 0.60 which kills
+    # legitimate candidates, we use 0.50 (slightly stricter than 0.45, but reasonable).
+    base_threshold = 0.50 if require_strict_if_ambiguous else min_similarity
 
     if style_embeddings is not None and len(style_embeddings) > 0:
         E_mat = (
@@ -2181,7 +2198,27 @@ def verify_photo_visual_membership(
             E_mat = E_mat.reshape(1, -1)
         sims = emb_norm @ E_mat.T
         max_sim = float(np.max(sims))
-        return max_sim >= threshold
+        
+        # Adaptive Z-score Outlier Rejection
+        if len(E_mat) >= 3:
+            # We compute internal similarities of the cluster to its own centroid
+            c_internal = np.mean(E_mat, axis=0)
+            c_norm = float(np.linalg.norm(c_internal))
+            if c_norm > 1e-9:
+                c_internal = c_internal / c_norm
+                internal_sims = E_mat @ c_internal
+                mu_sim = float(np.mean(internal_sims))
+                sigma_sim = float(np.std(internal_sims))
+                
+                # If the cluster is tight (mu_sim > 0.65), we can be strict about outliers
+                if mu_sim > 0.65:
+                    sim_to_centroid = float(np.dot(emb_norm, c_internal))
+                    z_score = (sim_to_centroid - mu_sim) / (sigma_sim + 1e-5)
+                    # If it's more than 2 std devs away AND its absolute similarity isn't exceptionally high
+                    if z_score < -2.0 and max_sim < 0.70:
+                        return False
+                        
+        return max_sim >= base_threshold
 
     if style_centroid is not None and len(style_centroid) > 0:
         c_arr = (
@@ -2192,6 +2229,6 @@ def verify_photo_visual_membership(
         c_norm = float(np.linalg.norm(c_arr))
         if c_norm > 1e-9:
             sim = float(np.dot(emb_norm, c_arr / c_norm))
-            return sim >= threshold
+            return sim >= base_threshold
 
     return True
