@@ -1060,6 +1060,7 @@ def _primary_genre_with_keywords_impl(
             "scene_wildlife",
             "scene_macro",
             "scene_portrait",
+            "scene_architecture",
         }:
             if (
                 first_tag == "scene_landscape" or primary_mapped == "scene_landscape"
@@ -1075,13 +1076,15 @@ def _primary_genre_with_keywords_impl(
                 tier_order_subjects = [
                     "scene_studio",
                     "scene_macro",
+                    "scene_portrait",
                     "scene_wildlife",
                     "scene_event",
-                    "scene_portrait",
                     "scene_action",
                     "scene_astrophotography",
-                    "scene_landscape",
                 ]
+                top_mapped_nature = {_get_broad_genre(t) for t in content_tags[:3]}
+                if "scene_landscape" in top_mapped_nature:
+                    tier_order_subjects.append("scene_landscape")
             elif primary_mapped == "scene_wildlife":
                 tier_order_subjects = [
                     "scene_studio",
@@ -1105,10 +1108,10 @@ def _primary_genre_with_keywords_impl(
                 ]
             elif primary_mapped == "scene_architecture":
                 # Guard against distant buildings in landscapes
-                top_mapped_arch = {_get_broad_genre(t) for t in content_tags[:3]}
+                top_tags = content_tags[:5]
                 if (
-                    "scene_landscape" in top_mapped_arch
-                    or "scene_nature" in top_mapped_arch
+                    "scene_landscape" in top_tags
+                    or "scene_nature" in top_tags
                 ):
                     tier_order_subjects = ["scene_landscape", "scene_nature"]
                 else:
@@ -1131,6 +1134,7 @@ def _primary_genre_with_keywords_impl(
                 "scene_wildlife",
                 "scene_exterior",
                 "scene_landscape",
+                "scene_portrait",
             ):
                 top_vision_tags = content_tags[:12]
             else:
