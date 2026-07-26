@@ -28,7 +28,7 @@ from services import style_grouping as grouping
 from services import training as training_service
 
 # Increment this when changing grouping rules (like taxonomy maps) to force a re-evaluation
-CURRENT_GROUPING_RULE_VERSION = "25"
+CURRENT_GROUPING_RULE_VERSION = "26"
 
 # ---------------------------------------------------------------------------
 # Schema

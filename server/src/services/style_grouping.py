@@ -1045,179 +1045,114 @@ def _primary_genre_with_keywords_impl(
 
     # 2. VISION MODEL TAGS
     if content_tags:
+        # Helper to find first index of a broad genre
+        def get_index_of_genre(target_genre: str, tags: list[str]) -> int:
+            for i, t in enumerate(tags):
+                t_lower = t.lower()
+                if (
+                    _get_broad_genre(t) == target_genre
+                    or _get_broad_genre(t_lower) == target_genre
+                    or _BROAD_GENRE_MAP.get(t_lower) == target_genre
+                    or _BROAD_GENRE_MAP.get(t) == target_genre
+                ):
+                    return i
+                mapped = _KEYWORD_TO_GENRE.get(t_lower)
+                if mapped and _get_broad_genre(mapped) == target_genre:
+                    return i
+            return -1
+            
+        def has_pet(tags: list[str]) -> bool:
+            pet_keywords = {"dog", "cat", "pet", "domestic", "puppy", "kitten", "feline", "canine"}
+            return any(t.lower() in pet_keywords for t in tags)
+
+        def has_macro(tags: list[str]) -> bool:
+            macro_keywords = {"macro", "close up", "insect", "bug", "spider", "fly", "butterfly", "flower"}
+            return any(t.lower() in macro_keywords for t in tags)
+
+        # ARTWORK FILTER
+        artwork_keywords = {"cartoon", "illustration", "anime", "drawing", "painting", "artwork", "sketch", "comic", "art"}
+        top_5_tags = {t.lower() for t in content_tags[:5]}
+        if artwork_keywords.intersection(top_5_tags):
+            return "scene_unknown"
+
         primary_mapped = _get_broad_genre(content_tags[0])
-        background_settings = {
-            "scene_exterior",
-            "scene_interior",
-            "scene_golden_hour",
-            "scene_night",
-            "scene_unknown",
-        }
-        first_tag = content_tags[0].lower() if content_tags else ""
-        if primary_mapped in background_settings or primary_mapped in {
-            "scene_landscape",
-            "scene_nature",
-            "scene_wildlife",
-            "scene_macro",
-            "scene_portrait",
-            "scene_architecture",
-        }:
-            if (
-                first_tag == "scene_landscape" or primary_mapped == "scene_landscape"
-            ) and first_tag not in background_settings:
-                tier_order_subjects = [
-                    "scene_studio",
-                    "scene_macro",
-                    "scene_event",
-                    "scene_portrait",
-                    "scene_astrophotography",
-                ]
-            elif primary_mapped == "scene_nature":
-                tier_order_subjects = [
-                    "scene_studio",
-                    "scene_macro",
-                    "scene_portrait",
-                    "scene_wildlife",
-                    "scene_event",
-                    "scene_action",
-                    "scene_astrophotography",
-                ]
-                top_mapped_nature = {_get_broad_genre(t) for t in content_tags[:3]}
-                if "scene_landscape" in top_mapped_nature:
-                    tier_order_subjects.append("scene_landscape")
-            elif primary_mapped == "scene_wildlife":
-                tier_order_subjects = [
-                    "scene_studio",
-                    "scene_macro",
-                    "scene_portrait",
-                    "scene_event",
-                    "scene_action",
-                ]
-            elif primary_mapped == "scene_macro":
-                tier_order_subjects = [
-                    "scene_studio",
-                    "scene_portrait",
-                ]
-            elif primary_mapped == "scene_portrait":
-                tier_order_subjects = [
-                    "scene_studio",
-                    "scene_macro",
-                    "scene_action",
-                    "scene_event",
-                    "scene_street",
-                ]
-            elif primary_mapped == "scene_architecture":
-                # Guard against distant buildings in landscapes
-                top_tags = content_tags[:5]
-                if "scene_landscape" in top_tags or "scene_nature" in top_tags:
-                    tier_order_subjects = ["scene_landscape", "scene_nature"]
-                else:
-                    tier_order_subjects = []
-            else:
-                tier_order_subjects = [
-                    "scene_studio",
-                    "scene_macro",
-                    "scene_wildlife",
-                    "scene_action",
-                    "scene_event",
-                    "scene_astrophotography",
-                    "scene_street",
-                    "scene_portrait",
-                    "scene_architecture",
-                ]
+        
+        # Pre-calculate indices
+        idx_macro = get_index_of_genre("scene_macro", content_tags[:5])
+        has_macro_kws = has_macro(content_tags[:5])
+        idx_portrait = get_index_of_genre("scene_portrait", content_tags[:5])
+        has_pet_top10 = has_pet(content_tags[:10])
+        idx_event = get_index_of_genre("scene_event", content_tags[:8])
+        idx_action = get_index_of_genre("scene_action", content_tags[:8])
+        idx_street = get_index_of_genre("scene_street", content_tags[:8])
+        idx_arch = get_index_of_genre("scene_architecture", content_tags[:4])
+        idx_wildlife = get_index_of_genre("scene_wildlife", content_tags[:6])
+        idx_landscape = get_index_of_genre("scene_landscape", content_tags[:5])
 
-            if primary_mapped in (
-                "scene_nature",
-                "scene_wildlife",
-                "scene_exterior",
-                "scene_landscape",
-                "scene_portrait",
-            ):
-                top_vision_tags = content_tags[:12]
-            else:
-                top_vision_tags = content_tags[:6]
+        # OVERRIDING DOMINANT SUBJECTS
+        
+        # Pets take highest priority if present to prevent wildlife overlap
+        if has_pet_top10:
+            return "scene_portrait"
 
-            for target_genre in tier_order_subjects:
-                for t in top_vision_tags:
-                    t_lower = t.lower()
-                    if (
-                        _get_broad_genre(t) == target_genre
-                        or _get_broad_genre(t_lower) == target_genre
-                        or _BROAD_GENRE_MAP.get(t_lower) == target_genre
-                        or _BROAD_GENRE_MAP.get(t) == target_genre
-                    ):
-                        return target_genre
-                    mapped = _KEYWORD_TO_GENRE.get(t_lower)
-                    if mapped and _get_broad_genre(mapped) == target_genre:
-                        return target_genre
+        # Macro requires explicit macro keywords or scene_macro mapping in top 5
+        if idx_macro >= 0 or (has_macro_kws and primary_mapped in ("scene_nature", "scene_wildlife", "scene_unknown")):
+            return "scene_macro"
 
-            # No overriding subject found in the tag horizon — return the
-            # primary environmental regime, using EXIF macro prior to
-            # disambiguate pure scene_nature when a macro lens is present.
-            if primary_mapped == "scene_nature":
-                if priors and priors.get("scene_macro", 0.0) > 0:
-                    return "scene_macro"
-                return "scene_nature"
-            if primary_mapped == "scene_wildlife":
-                return "scene_wildlife"
+        # Action / Event / Street OVERRIDE Portrait if they are present!
+        if idx_action >= 0:
+            return "scene_action"
+        if idx_event >= 0:
+            return "scene_event"
+        if idx_street >= 0:
+            return "scene_street"
 
-        top_vision_tags = content_tags[:6]
-        if primary_mapped == "scene_action":
-            top_mapped = {_get_broad_genre(t) for t in top_vision_tags}
-            if "scene_event" in top_mapped:
-                return "scene_event"
+        # Portrait vs Event logic
+        if primary_mapped == "scene_portrait" or idx_portrait >= 0:
+            # Check if the "portrait" tag was just "people" or "crowd" without a clear portrait focus
+            if idx_portrait == -1 or idx_portrait > 3:
+                if "event" in content_tags[:8] or "crowd" in content_tags[:8]:
+                    return "scene_event"
+            return "scene_portrait"
 
+        # Wildlife
+        if idx_wildlife >= 0:
+            return "scene_wildlife"
+
+        # Architecture
+        if idx_arch >= 0:
+            return "scene_architecture"
+            
+        # Landscape
+        if idx_landscape >= 0:
+            return "scene_landscape"
+
+        # Nature fallback
+        if primary_mapped == "scene_nature":
+            if priors and priors.get("scene_macro", 0.0) > 0:
+                return "scene_macro"
+            return "scene_nature"
+
+        # Night fallback
+        if primary_mapped == "scene_night":
+            return "scene_night"
+
+        # Default to primary mapped if it's canonical
         canonical_regimes = {
-            "scene_portrait",
-            "scene_landscape",
-            "scene_architecture",
-            "scene_studio",
-            "scene_night",
-            "scene_astrophotography",
-            "scene_wildlife",
-            "scene_action",
-            "scene_event",
-            "scene_street",
-            "scene_macro",
-            "scene_nature",
-            "scene_food",
-            "scene_exterior",
-            "scene_interior",
+            "scene_portrait", "scene_landscape", "scene_architecture", "scene_studio",
+            "scene_night", "scene_astrophotography", "scene_wildlife", "scene_action",
+            "scene_event", "scene_street", "scene_macro", "scene_nature", "scene_food",
+            "scene_exterior", "scene_interior"
         }
         if primary_mapped in canonical_regimes:
             return primary_mapped
-        for t in top_vision_tags:
+
+        for t in content_tags[:6]:
             if t in canonical_regimes:
                 return t
             mapped_t = _get_broad_genre(t)
             if mapped_t in canonical_regimes:
                 return mapped_t
-            if mapped_t == "scene_nature":
-                top_mapped = {_get_broad_genre(t2) for t2 in content_tags[:12]}
-                for candidate in [
-                    "scene_studio",
-                    "scene_macro",
-                    "scene_wildlife",
-                    "scene_portrait",
-                    "scene_event",
-                    "scene_landscape",
-                ]:
-                    if candidate in top_mapped:
-                        return candidate
-                if priors and priors.get("scene_macro", 0.0) > 0:
-                    return "scene_macro"
-                return "scene_nature"
-            if mapped_t == "scene_wildlife":
-                top_mapped = {_get_broad_genre(t2) for t2 in content_tags[:12]}
-                for candidate in [
-                    "scene_portrait",
-                    "scene_event",
-                    "scene_macro",
-                    "scene_action",
-                ]:
-                    if candidate in top_mapped:
-                        return candidate
-                return "scene_wildlife"
 
     # 3. EXIF PRIORS
     if priors:
