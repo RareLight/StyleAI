@@ -1,8 +1,9 @@
 import os
 import sys
 
-sys.path.append(os.path.join(os.getcwd(), 'server', 'src'))
+sys.path.append(os.path.join(os.getcwd(), "server", "src"))
 from services import style_grouping as sg
+
 
 def test_issues():
     # 1. Architecture showing landscape elements
@@ -19,7 +20,16 @@ def test_issues():
 
     # 3. Medium focal length shots of flowers/nature as landscape
     # If primary is nature and landscape is in top 12, it should NOT override nature anymore.
-    tags3 = ["nature", "tree", "forest", "outdoors", "grass", "sun", "leaf", "landscape"]
+    tags3 = [
+        "nature",
+        "tree",
+        "forest",
+        "outdoors",
+        "grass",
+        "sun",
+        "leaf",
+        "landscape",
+    ]
     res3 = sg._primary_genre_with_keywords(tags3, [])
     print("Nature landscape test:", res3)
 
@@ -28,6 +38,7 @@ def test_issues():
     tags4 = ["person", "people", "man", "woman", "crowd", "stadium", "sports", "action"]
     res4 = sg._primary_genre_with_keywords(tags4, [])
     print("Sports portrait test:", res4)
+
 
 if __name__ == "__main__":
     test_issues()

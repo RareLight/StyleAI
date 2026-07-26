@@ -230,14 +230,23 @@ def _select_style_recommendations(
         if len(selected_ids) >= target_count:
             break
         # Suppress near-duplicate frames (similarity > 0.90) among selected photos
+        is_too_similar = False
         if selected_embs:
             # Let numpy's C backend handle the list-to-array conversion implicitly
             sims_to_selected = np.dot(selected_embs, emb)
             if float(np.max(sims_to_selected)) > 0.90:
-                continue
+                is_too_similar = True
+
+        if is_too_similar:
+            logger.debug(
+                f"Candidate {pid} rejected because it is too similar to already selected."
+            )
+            continue
+
         selected_ids.append(pid)
         selected_embs.append(emb)
 
+    logger.info(f"Selected {len(selected_ids)} recommendations for style.")
     return selected_ids
 
 
@@ -386,16 +395,21 @@ def get_style_upgrade_recommendations(
         existing_ids = all_style_examples_map.get(style_id, set())
         needed_photo_ids.update(existing_ids)
 
-        candidate_pool = list(photos_by_norm_profile.get(norm_style_profile, []))
-        if "" in photos_by_norm_profile and norm_style_profile != "":
-            candidate_pool.extend(photos_by_norm_profile[""])
-        if "default" in photos_by_norm_profile and norm_style_profile != "default":
-            candidate_pool.extend(photos_by_norm_profile["default"])
-        if (
-            "adobe standard" in photos_by_norm_profile
-            and norm_style_profile != "adobe standard"
-        ):
-            candidate_pool.extend(photos_by_norm_profile["adobe standard"])
+        if norm_style_profile in ("", "default"):
+            candidate_pool = []
+            for bucket in photos_by_norm_profile.values():
+                candidate_pool.extend(bucket)
+        else:
+            candidate_pool = list(photos_by_norm_profile.get(norm_style_profile, []))
+            if "" in photos_by_norm_profile:
+                candidate_pool.extend(photos_by_norm_profile[""])
+            if "default" in photos_by_norm_profile:
+                candidate_pool.extend(photos_by_norm_profile["default"])
+            if (
+                "adobe standard" in photos_by_norm_profile
+                and norm_style_profile != "adobe standard"
+            ):
+                candidate_pool.extend(photos_by_norm_profile["adobe standard"])
 
         candidates = []
 
@@ -412,8 +426,14 @@ def get_style_upgrade_recommendations(
                     and norm_photo_model
                 ):
                     if norm_style_model != norm_photo_model:
+                        logger.debug(
+                            f"Candidate {pid} filtered: style model {norm_style_model} != {norm_photo_model}"
+                        )
                         continue
                 if is_hdr_style and "hdr" not in norm_p_prof:
+                    logger.debug(
+                        f"Candidate {pid} filtered: HDR style requires HDR profile"
+                    )
                     continue
 
             is_compat, is_ambiguous = style_grouping.is_genre_compatible(genre, p_genre)
@@ -422,7 +442,13 @@ def get_style_upgrade_recommendations(
                 needed_photo_ids.add(pid)
                 if len(candidates) >= 250:
                     break
+            else:
+                pass
+                # logger.debug(f"Candidate {pid} filtered: incompatible genres {genre} vs {p_genre}")
 
+        logger.info(
+            f"Style {style_id}: candidate_pool={len(candidate_pool)}, valid candidates={len(candidates)}"
+        )
         style_prelim_candidates_map[style_id] = candidates
 
     # =========================================================================
