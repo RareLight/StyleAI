@@ -7,6 +7,7 @@ import os
 
 import psutil
 import subprocess
+from config import get_index_resource_limits
 
 
 def get_backend_version_info() -> dict:
@@ -63,11 +64,14 @@ def get_backend_version_info() -> dict:
         else:
             recommended = 2
 
+    index_limits = get_index_resource_limits(total_ram_gb)
     return {
         "backend_version": BACKEND_VERSION,
         "backend_release_tag": BACKEND_RELEASE_TAG,
         "backend_build": BACKEND_BUILD,
         "recommended_parallel_tasks": recommended,
+        "recommended_index_batch_size": index_limits["gpu_batch_size"],
+        "recommended_index_queue_capacity": index_limits["queue_capacity"],
         "hardware_profile": {
             "cpu_cores": cpu_cores,
             "gpu_cores": gpu_cores,

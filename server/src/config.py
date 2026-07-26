@@ -13,13 +13,62 @@ if sys.stderr is None:
 
 # --- Configuration Constants ---
 STYLEAI_LLM_CONCURRENCY = int(os.environ.get("STYLEAI_LLM_CONCURRENCY", 1))
-# The indexing queue owns decoded JPEG bytes, so it must be bounded.  Keep the
-# default deliberately conservative for unified-memory Macs; installations
-# with measured headroom can increase it explicitly.
-STYLEAI_INDEX_QUEUE_CAPACITY = max(
-    1, int(os.environ.get("STYLEAI_INDEX_QUEUE_CAPACITY", 48))
+
+
+def _physical_memory_gb() -> float:
+    """Read physical memory without importing a heavyweight runtime dependency."""
+    try:
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        page_count = os.sysconf("SC_PHYS_PAGES")
+        return float(page_size * page_count) / (1024**3)
+    except (AttributeError, OSError, ValueError):
+        return 0.0
+
+
+def get_index_resource_limits(
+    memory_gb: float | None = None,
+    platform_name: str | None = None,
+) -> dict[str, int]:
+    """Return bounded ingestion limits, tuned for unified-memory Macs.
+
+    SigLIP2, decoded JPEGs, Chroma, and a local LLM share Apple unified memory.
+    These tiers prioritize sustained throughput over short-lived batch spikes;
+    explicit ``STYLEAI_*`` environment variables remain the escape hatch for
+    measured, system-specific tuning.
+    """
+    platform_name = platform_name or sys.platform
+    memory_gb = _physical_memory_gb() if memory_gb is None else memory_gb
+
+    if platform_name == "darwin":
+        if memory_gb <= 16:
+            return {"gpu_batch_size": 8, "queue_capacity": 32, "http_threads": 8}
+        if memory_gb <= 32:
+            # M2 Max with 32 GB: enough GPU throughput without MPS/LLM swap.
+            return {"gpu_batch_size": 12, "queue_capacity": 48, "http_threads": 12}
+        return {"gpu_batch_size": 16, "queue_capacity": 64, "http_threads": 16}
+
+    # Preserve the existing conservative default on CPU/CUDA hosts. CUDA users
+    # can set explicit limits after measuring VRAM headroom for their model.
+    return {"gpu_batch_size": 12, "queue_capacity": 48, "http_threads": 12}
+
+
+def _positive_env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+_index_resource_limits = get_index_resource_limits()
+STYLEAI_INDEX_QUEUE_CAPACITY = _positive_env_int(
+    "STYLEAI_INDEX_QUEUE_CAPACITY", _index_resource_limits["queue_capacity"]
 )
-STYLEAI_GPU_BATCH_SIZE = max(1, int(os.environ.get("STYLEAI_GPU_BATCH_SIZE", 12)))
+STYLEAI_GPU_BATCH_SIZE = _positive_env_int(
+    "STYLEAI_GPU_BATCH_SIZE", _index_resource_limits["gpu_batch_size"]
+)
+STYLEAI_HTTP_THREADS = _positive_env_int(
+    "STYLEAI_HTTP_THREADS", _index_resource_limits["http_threads"]
+)
 
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser(description="StyleAI Server")

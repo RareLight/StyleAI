@@ -1646,33 +1646,35 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     if options.enableMetadata then enableMetadata = true end
     if options.enableEmbeddings then enableEmbeddings = true end
 
-    local hardwareMax = 4
-    local success, msg, versionInfo = SearchIndexAPI.ensureVersionCompatibility()
-    if success and versionInfo and versionInfo.recommended_parallel_tasks then
-        hardwareMax = tonumber(versionInfo.recommended_parallel_tasks) or 4
-    end
+	local hardwareMax = 4
+	local hardwareBatchSize = 12
+	local success, msg, versionInfo = SearchIndexAPI.ensureVersionCompatibility()
+	if success and versionInfo and versionInfo.recommended_parallel_tasks then
+		hardwareMax = tonumber(versionInfo.recommended_parallel_tasks) or 4
+		hardwareBatchSize = tonumber(versionInfo.recommended_index_batch_size) or hardwareBatchSize
+	end
 
     local profile = tonumber(prefs.indexingPerformanceProfile) or 2
     local maxSenderWorkers = 1
     local maxAnalyzeWorkers = 8
-    local calculatedBatchSize = 12
+	local calculatedBatchSize = hardwareBatchSize
 
     -- HardwareMax is typically the CPU core count (e.g., 8 to 12 on Apple Silicon)
     if profile == 1 then
         maxAnalyzeWorkers = math.max(2, math.floor(hardwareMax * 0.25))
         maxSenderWorkers = 1
-        calculatedBatchSize = 8
+		calculatedBatchSize = math.min(8, hardwareBatchSize)
     elseif profile == 2 then
         maxAnalyzeWorkers = math.max(4, math.floor(hardwareMax * 0.5))
         maxSenderWorkers = 1
-        calculatedBatchSize = 12
+		calculatedBatchSize = hardwareBatchSize
     elseif profile == 3 then
         maxAnalyzeWorkers = math.min(6, math.max(4, hardwareMax))
-        calculatedBatchSize = 12
+		calculatedBatchSize = hardwareBatchSize
     elseif profile == 4 then
         -- Optimal max performance: push Lightroom hard but cap senders to prevent backend GIL thrashing
         maxAnalyzeWorkers = math.min(8, math.floor(hardwareMax * 1.0))
-        calculatedBatchSize = 12
+		calculatedBatchSize = hardwareBatchSize
     end
 
     local maxWorkers = maxSenderWorkers
