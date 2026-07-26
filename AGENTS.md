@@ -84,6 +84,7 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 - **Logging & Errors**: Always use configured `logger` with `exc_info=True`. Surface user errors via standard JSON envelope.
 - **LLM Concurrency & Batching**: NEVER increase `STYLEAI_LLM_CONCURRENCY` above 1 by default. Trying to force parallel local LLM requests (Ollama/LM Studio) forces the GPU to context-switch, immediately maxing out VRAM and deadlocking the process.
 - **Bounded pipeline**: The server owns job admission, image-byte budgets, per-item completion state, and cancellation. Lua must not create unbounded producer queues or multiple long-running LLM requests. Metadata generation may begin only after the corresponding embedding state is terminal.
+- **Hardware tiers**: Use `config.get_index_resource_limits()` rather than hard-coded queue, GPU batch, or Waitress thread counts. Apple Silicon defaults are bounded by unified memory (16 GB: 8/32/8; 32 GB: 12/48/12; 64 GB+: 16/64/16 for GPU batch/queue/HTTP threads); only explicit `STYLEAI_*` environment overrides may exceed them.
 
 ---
 
@@ -101,13 +102,13 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 - **WB Threshold**: Categorical WB (`is_custom`) requires a 0.7 probability threshold to override "As Shot". Normalize crops via `avg_dim = (width + height) / 2.0`.
 
 ### Genre Taxonomy & Classification Pipeline
-Classification MUST use the multi-tiered pipeline (`style_grouping._primary_genre_with_keywords`). NEVER use ad-hoc keyword exception lists or early return short-circuits.
+Classification uses the multi-tiered pipeline (`style_grouping._primary_genre_with_keywords`) only as an interpretable label and guardrail. NEVER use ad-hoc keyword exception lists or early return short-circuits.
 1. **Keywords & Semantic Vectors**: Explicit dictionary keywords take precedence. SentenceTransformer vector mapping (cosine distance $\le 0.45$) overrides vision scene tags ONLY if mapping to a Specialized Subject Regime (astrophotography, macro, event). Broad regimes act as fallbacks.
 2. **Vision Scene Tags**: Evaluate top 6 tags (`content_tags[:6]`). For suppressed subjects (`dog`, `pet`, `insect` masked by `nature`/`outdoors`), evaluate up to index 12 (`[:12]`). Map domestic tags (`domestic`, `dog`, `mammal`) to `scene_portrait`.
 3. **EXIF Bayesian Priors**: Evaluated via `_evaluate_exif_priors`. `scene_night` (0.40) and `scene_macro` (0.35) can independently trigger classification (floor $\ge 0.30$). Other priors (`scene_portrait`, `scene_landscape`, `scene_studio` 0.15–0.20) act as disambiguation signals.
 4. **Sensor Crop Factors**: Evaluate focal lengths against 35mm full-frame equivalents via `_get_35mm_equivalent_focal_length` (parsing crop factors for Sony, Canon, Nikon, Fuji, OM System, Leica).
 5. **Strict Macro Verification**: `scene_macro` requires explicit lens string check (`macro`, `micro`, `mc`).
-6. **Regime Fallbacks & Verification**: Include ALL primary regimes (including `scene_macro`, `scene_nature`) in `canonical_regimes`. Enforce visual-semantic compatibility via `is_genre_compatible` and `verify_photo_visual_membership` (threshold $\ge 0.60$ for ambiguous categories). View-time queries trust database `style_id` linkage.
+6. **Embedding-first verification**: Dense SigLIP2 neighborhoods control recommendation admission and visual-cohesion splitting. Text/EXIF disagreement is a stronger-evidence guardrail, not a hard retrieval gate. Split a profile/genre group only into stable components of at least two examples (`split_examples_by_visual_cohesion`); retain sparse or unembedded groups intact. View-time queries trust database `style_id` linkage.
 7. **Cache Invalidation & Rule Versioning**: Increment `CURRENT_GROUPING_RULE_VERSION` in `style_catalog.py` when modifying grouping rules to purge `semantic_genre_cache` and set `NEEDS_REDISCOVERY = '1'`. Backend routes MUST invoke `catalog_service._ensure_initialized()` at entry points.
 
 ### LLM Batching & GPU Synchronization

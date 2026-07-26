@@ -22,8 +22,8 @@ Builds the foundational search index and metadata repository.
 
 1. **Lightroom (Client) - Fast Embeddings Phase:** `analyzeWorker` renders proxy JPEGs, extracts EXIF/keywords, and enqueues them asynchronously to `/index_queue`.
 2. **CPU Preprocessing & Embeddings:** Python's `DynamicGPUWorker` batches these JPEGs, decodes them, and extracts 1152-dimensional SigLIP2 embeddings and InsightFace templates on the GPU. The embeddings are stored in ChromaDB and the raw images are cached in RAM.
-3. **Lightroom (Client) - Metadata Phase:** `llmWorker` pulls batches of up to 32 photos and POSTs them to `/metadata/generate_batch`.
-4. **Semantic Clustering & Inference:** The Python backend clusters the batch to deduplicate visually identical bursts, drastically reducing LLM calls. The surviving representative images are processed concurrently by the ThreadPool using the selected LLM. Results are instantly propagated back to all photos in the batch.
+3. **Lightroom (Client) - Metadata Phase:** A single local-LLM worker sends bounded batches only after each photo's embedding reaches a terminal state.
+4. **Semantic Clustering & Inference:** The Python backend clusters the batch to deduplicate visually identical bursts, reducing LLM calls. Local LLM inference remains serialized to avoid GPU/unified-memory context thrash.
 
 ### B. Style Training Pipeline
 Allows the system to mathematically learn your personal grading style without distortion from burst shooting or missing metadata.
@@ -46,26 +46,24 @@ Applies predictive edits to new photos using dynamic regression architecture.
    - **Style Override:** Users can explicitly force a specific style profile, bypassing similarity searches.
    - **Generative Fallback:** If the ML engine has zero confidence, the system falls back to an LLM (if enabled) for a zero-shot creative edit.
 
-### D. Unified Visual-Semantic Verification Pipeline
-Ensures visual consistency across catalog search recommendations and style training collections (preventing cross-genre pollution like macro shots in `portrait` or landscape in `street`).
+### D. Embedding-First Style Verification Pipeline
+Ensures visual consistency across discovery and upgrade recommendations without allowing noisy tags to become hard gates.
 
-1. **Top-3 Vision Tag Confidence Horizon (`content_tags[:3]`)**:
-   - SigLIP2 returns up to 10 scene tags per image sorted by probability.
-   - To prevent noisy tail predictions (ranks 4–10) from overriding strong primary tags (`scene_event`, `scene_landscape`, `scene_exterior`), all subject override tiers and fallback lookups are strictly bounded to the top 3 highest-confidence vision predictions (`content_tags[:3]`).
-2. **Semantic Filter (`is_genre_compatible`)**: Evaluates broad-genre compatibility between a style's target genre and a photo's detected scene tags/keywords. Flags ambiguous tags (`scene_unknown`, `scene_general`).
-3. **Visual Verification (`verify_photo_visual_membership`)**: Computes SigLIP2 cosine similarity against the style's training embeddings matrix or centroid.
-   - Enforces a baseline threshold (`min_similarity = 0.45`).
-   - Elevates the threshold to strict visual similarity (`>= 0.60`) if the photo's text genre was flagged as ambiguous.
-4. **Strict Parity Across "Show All" & "Find All" Pipelines**:
-   - **Trained Styles Index ("Show All")**: Uses `classify_photo_genre(ex)` and `is_genre_compatible` during catalog rendering (`style_catalog.py`) to maintain clean, visually unified collections.
-   - **Upgrade Recommendations ("Find All")**: Uses the exact same `classify_photo_genre(meta)` and `is_genre_compatible` logic (`style_upgrades.py`) prior to Farthest Point Culling, guaranteeing identical categorization boundaries across both features.
+1. **Semantic labels and EXIF:** `_primary_genre_with_keywords` supplies an interpretable regime label, camera/profile filters, and a contradiction signal. It never independently admits a recommendation.
+2. **Visual membership:** `verify_photo_visual_membership` evaluates normalized SigLIP2 similarity against training examples, with leave-one-out verification for discovery outliers and stricter evidence for semantic contradictions.
+3. **Visual-cohesion splitting:** `split_examples_by_visual_cohesion` creates a distinct style only when a profile/genre group contains two or more dense components, each with at least two examples. Sparse and unembedded groups remain pooled.
+4. **Diversity and burst curation:** Recommendation selection removes near-duplicate/burst frames, then ranks the remaining visual neighbors using hero quality and edited-state priority.
 
-### E. Hardware-Aware EXIF Evaluation Pipeline
+### E. Unified-Memory Resource Tiers
+
+Indexing is bounded by physical-memory tiers to sustain throughput without MPS/LLM swap pressure. On Apple Silicon the defaults are GPU batch/queue/HTTP threads: 16 GB = `8/32/8`, 32 GB = `12/48/12`, and 64 GB+ = `16/64/16`. Explicit `STYLEAI_GPU_BATCH_SIZE`, `STYLEAI_INDEX_QUEUE_CAPACITY`, and `STYLEAI_HTTP_THREADS` overrides are reserved for measured tuning.
+
+### F. Hardware-Aware EXIF Evaluation Pipeline
 To accurately assign Bayesian priors, the system relies on hardware nomenclature translation rather than raw EXIF values.
 1. **Sensor Crop Factor Conversion**: Because the plugin exports raw focal lengths (e.g. 45mm), the backend uses `_get_35mm_equivalent_focal_length` to parse `camera_make` and `camera_model`. This ensures OM System, Fuji, APS-C, and Medium Format shooters are evaluated fairly against full-frame boundaries (e.g. `85-135mm` for portraits).
 2. **Strict Macro Lens Verification**: Photos categorized as `scene_macro` must pass an explicit regex check (`\b(macro|micro|mc)\b`) against their EXIF `lens` string. If a non-macro lens is detected, the category is stripped and the photo falls back to a secondary genre (e.g. `scene_nature`).
 
-### F. Automated Semantic Caching & Rule Version Invalidation Pipeline
+### G. Automated Semantic Caching & Rule Version Invalidation Pipeline
 To prevent repetitive SigLIP2 embedding lookups for unknown user keywords during large catalog scans, `style_grouping._dynamic_semantic_mapping` caches closest semantic bucket matches inside the `semantic_genre_cache` table (`styles.sqlite`).
 
 1. **Troubleshooting History & Why Cache Management is Critical**:
