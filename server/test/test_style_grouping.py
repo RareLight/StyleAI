@@ -800,8 +800,8 @@ def test_nature_swallowing_precedence():
     assert sg._primary_genre(["scene_nature", "mountain vista"]) == "scene_landscape"
 
 
-def test_landscape_hijacked_by_wildlife():
-    assert sg._primary_genre(["scene_landscape", "bird"]) == "scene_wildlife"
+def test_landscape_not_hijacked_by_wildlife():
+    assert sg._primary_genre(["scene_landscape", "bird"]) == "scene_landscape"
 
 
 # ---------------------------------------------------------------------------
