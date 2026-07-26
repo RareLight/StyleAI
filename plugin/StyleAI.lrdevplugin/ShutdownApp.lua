@@ -1,4 +1,3 @@
-local LrTasks = import("LrTasks")
 local LrPrefs = import("LrPrefs")
 
 -- Removed redundant getIsMac() function since MAC_ENV is globally available.
@@ -16,37 +15,40 @@ pcall(function()
 end)
 
 local function shutdownApp(doneFunc, progressFunc)
-	-- Gracefully shut down the entire backend server when Lightroom exits.
-	-- The server will be restarted automatically the next time Lightroom opens.
-	-- Do a completely synchronous, non-yielding OS call to shut down the backend.
-	-- LrHttp and LrTasks.startAsyncTask yield or wait on the scheduler, which causes deadlocks during Lightroom's teardown sequence.
+	-- Lightroom's teardown callback must acknowledge completion immediately. Never
+	-- use LrHttp, LrTasks, polling, or a synchronous backend request here.
+	-- The backend owns its own bounded shutdown after receiving this signal.
 	local port = 19819
+	local shutdownOnExit = true
 	if _G.prefs and _G.prefs.serverPort then
 		port = _G.prefs.serverPort
+		shutdownOnExit = _G.prefs.shutdownServerOnExit ~= false
 	else
 		local pcallOk, pcallPrefs = pcall(LrPrefs.prefsForPlugin)
-		if pcallOk and pcallPrefs and pcallPrefs.serverPort then
-			port = pcallPrefs.serverPort
+		if pcallOk and pcallPrefs then
+			port = pcallPrefs.serverPort or port
+			shutdownOnExit = pcallPrefs.shutdownServerOnExit ~= false
 		end
 	end
 
-	local url = "http://127.0.0.1:" .. tostring(port) .. "/shutdown"
-
-	if MAC_ENV then
-		os.execute("nohup curl -X POST -s --max-time 1 " .. url .. " </dev/null >/dev/null 2>&1 &")
+	if shutdownOnExit then
+		local url = "http://127.0.0.1:" .. tostring(port) .. "/shutdown"
+		if MAC_ENV then
+			-- The outer shell exits immediately; the detached curl has a strict
+			-- sub-second budget even if the local backend is already unhealthy.
+			os.execute("(nohup /usr/bin/curl -X POST -s --connect-timeout 0.1 --max-time 0.25 " .. url .. " </dev/null >/dev/null 2>&1 &) >/dev/null 2>&1")
+		else
+			os.execute('start /B powershell -NoProfile -Command "Invoke-WebRequest -Method POST -Uri ' .. url .. ' -UseBasicParsing -TimeoutSec 1" >NUL 2>&1')
+		end
+		safeLogTrace("ShutdownApp: Detached backend shutdown signal launched.")
 	else
-		os.execute('start /B powershell -NoProfile -Command "Invoke-WebRequest -Method POST -Uri ' .. url .. ' -UseBasicParsing -TimeoutSec 1" >NUL 2>&1')
+		safeLogTrace("ShutdownApp: Backend shutdown disabled by preference.")
 	end
 
-	safeLogTrace("ShutdownApp: Synchronous shutdown signal sent.")
-
 	if type(doneFunc) == "function" then
-		safeLogTrace("ShutdownApp: Calling doneFunc()")
-		-- Reverted to native pcall. doneFunc does NOT yield. LrTasks.pcall uses the async scheduler,
-		-- which is unreliable during teardown and causes Lightroom to hang.
+		-- Native pcall does not involve Lightroom's task scheduler. This must be
+		-- the final teardown operation and must never wait for the backend.
 		pcall(doneFunc)
-	else
-		safeLogTrace("ShutdownApp: doneFunc is " .. type(doneFunc) .. ", skipping")
 	end
 end
 

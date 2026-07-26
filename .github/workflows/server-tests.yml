@@ -27,6 +27,6 @@ jobs:
         run: uv sync --locked
       - name: Run pytest
         working-directory: server
-        run: uv run pytest test/ -v
+        run: uv run pytest test/ -v --cov-fail-under=50
       - name: Validate Lightroom plugin
         run: python3 scripts/validate_lrc_plugin.py
