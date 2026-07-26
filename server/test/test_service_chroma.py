@@ -3,6 +3,7 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 import numpy as np
+import pytest
 
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
@@ -209,6 +210,18 @@ class TestChromaServiceCRUD(unittest.TestCase):
         res = chroma_service.query_images([[0.1] * 1152], n_results=5)
         self.assertEqual(res["ids"][0], ["p1", "p2"])
         self.mock_collection.query.assert_called_once()
+
+
+def test_ensure_db_path_rejects_cross_catalog_switch(monkeypatch, tmp_path):
+    import config
+
+    original_path = str(tmp_path / "catalog-a" / "styleai.db")
+    foreign_path = str(tmp_path / "catalog-b" / "styleai.db")
+    monkeypatch.setattr(config, "DB_PATH", original_path)
+    monkeypatch.setattr(chroma_service, "chroma_client", object())
+
+    with pytest.raises(chroma_service.CatalogOwnershipError):
+        chroma_service.ensure_db_path(foreign_path)
 
 
 if __name__ == "__main__":

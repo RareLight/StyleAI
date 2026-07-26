@@ -129,6 +129,7 @@ def initialize():
         return jsonify({"error": "db_path is required"}), 400
 
     from services import chroma as service_chroma
+    from services.chroma import CatalogOwnershipError
     from core.migrations import run_migrations
 
     try:
@@ -136,6 +137,9 @@ def initialize():
         # Run migrations on the catalog's database path immediately after binding
         if switched:
             run_migrations(db_path)
+    except CatalogOwnershipError as e:
+        logger.warning("Rejected catalog switch: %s", e)
+        return jsonify({"error": str(e)}), 409
     except Exception as e:
         logger.error(f"Failed to initialize database at {db_path}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
