@@ -134,6 +134,26 @@ def _now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _schedule_post_discovery_tasks() -> None:
+    """Run optional summaries and model fitting without blocking discovery."""
+
+    def _run() -> None:
+        try:
+            from services import style_summary
+
+            style_summary.summarize_catalog_styles()
+        except Exception as exc:
+            logger.warning(f"Failed to generate catalog style summaries: {exc}")
+        try:
+            from services import predictive_engine
+
+            predictive_engine.train_style_models()
+        except Exception as exc:
+            logger.warning(f"Failed to train predictive ML models: {exc}")
+
+    threading.Thread(target=_run, name="StyleDiscoveryBG", daemon=True).start()
+
+
 def _slugify(text: str) -> str:
     """Create a URL-safe style_id slug."""
     safe = text.lower().replace(" ", "-").replace("_", "-")
@@ -505,27 +525,7 @@ def discover_styles_from_examples(
         "Discovered %d styles from %d examples", len(created_styles), len(examples)
     )
 
-    def _run_post_discovery_bg_tasks():
-        try:
-            from services import style_summary
-
-            style_summary.summarize_catalog_styles()
-        except Exception as exc:
-            logger.warning(f"Failed to generate catalog style summaries: {exc}")
-        try:
-            from services import predictive_engine
-
-            predictive_engine.train_style_models()
-        except Exception as exc:
-            logger.warning(f"Failed to train predictive ML models: {exc}")
-
-    import threading
-
-    threading.Thread(
-        target=_run_post_discovery_bg_tasks,
-        name="StyleDiscoveryBG",
-        daemon=True,
-    ).start()
+    _schedule_post_discovery_tasks()
 
     return created_styles
 
