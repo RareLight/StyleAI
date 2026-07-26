@@ -46,6 +46,13 @@ LrTasks.startAsyncTask(function()
 		props.detailButtonEnabled = false
 		props.detailRecommendedIds = {}
 		props.findAllEnabled = false
+		props.selectedActionEnabled = false
+		props.allActionEnabled = false
+
+		local function refreshActionState()
+			props.selectedActionEnabled = props.detailButtonEnabled and not props.isLoading
+			props.allActionEnabled = props.findAllEnabled and not props.isLoading
+		end
 
 		local function updateDetailView()
 			local rawIdx = props.selectedStyleIndex
@@ -129,6 +136,9 @@ LrTasks.startAsyncTask(function()
 
 		props:addObserver("selectedStyleIndex", updateDetailView)
 		props:addObserver("styles", updateDetailView)
+		props:addObserver("isLoading", refreshActionState)
+		props:addObserver("detailButtonEnabled", refreshActionState)
+		props:addObserver("findAllEnabled", refreshActionState)
 
 		local function updateListItems()
 			local items = {}
@@ -252,7 +262,13 @@ LrTasks.startAsyncTask(function()
 					title = LOC("$$$/StyleAI/UpgradeAssistant/SelectingProgress=Selecting photos in Lightroom Library...")
 				})
 				local photos = SearchIndexAPI.findPhotosByPhotoIds(recIds, selectProgress)
+				local wasCanceled = selectProgress:isCanceled()
 				selectProgress:done()
+				if wasCanceled then
+				props.statusMessage = LOC("$$$/StyleAI/common/Canceled=Canceled.")
+				props.isLoading = false
+				return
+			end
 
 				if #photos > 0 then
 					local catalog = LrApplication.activeCatalog()
@@ -325,6 +341,7 @@ LrTasks.startAsyncTask(function()
 				})
 				local styleEntries = {}
 				for _, s in ipairs(props.styles or {}) do
+					if findAllProgress:isCanceled() then break end
 					local recIds = s.recommended_photo_ids or {}
 					if #recIds > 0 then
 						local sName = s.style_name or "Unknown Style"
@@ -339,6 +356,7 @@ LrTasks.startAsyncTask(function()
 				local batchedResults = SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, findAllProgress)
 				local stylesData = {}
 				for _, entry in ipairs(batchedResults) do
+					if findAllProgress:isCanceled() then break end
 					if #(entry.photos or {}) > 0 then
 						table.insert(stylesData, { styleName = entry.fullName, photos = entry.photos })
 						totalPhotosAdded = totalPhotosAdded + #entry.photos
@@ -346,11 +364,17 @@ LrTasks.startAsyncTask(function()
 					end
 				end
 				
-				if #stylesData > 0 then
+				if not findAllProgress:isCanceled() and #stylesData > 0 then
 					Util.addMultipleUpgradePhotosToCollections(stylesData, nil, findAllProgress)
 				end
 				
+				local wasCanceled = findAllProgress:isCanceled()
 				findAllProgress:done()
+				if wasCanceled then
+					props.statusMessage = LOC("$$$/StyleAI/common/Canceled=Canceled.")
+					props.isLoading = false
+					return
+				end
 				if stylesProcessed > 0 then
 					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/FindAllSuccessStatus=Created upgrade collections for all candidate styles.")
 					LrDialogs.message(
@@ -400,19 +424,13 @@ LrTasks.startAsyncTask(function()
 						title = LOC("$$$/StyleAI/UpgradeAssistant/ShowPhotos=Show Candidate Photos"),
 						action = showSelectedPhotos,
 						width = share("toolbarButton"),
-						enabled = bind({
-							key = "detailButtonEnabled",
-							transform = function(v) return v and not props.isLoading end,
-						}),
+						enabled = bind("selectedActionEnabled"),
 					}),
 					f:push_button({
 						title = LOC("$$$/StyleAI/UpgradeAssistant/ShowAllPhotos=Show All Candidate Photos"),
 						action = showAllPhotos,
 						width = share("toolbarButton"),
-						enabled = bind({
-							key = "findAllEnabled",
-							transform = function(v) return v and not props.isLoading end,
-						}),
+						enabled = bind("allActionEnabled"),
 					}),
 				}),
 

@@ -1676,8 +1676,7 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 	catalog:withWriteAccessDo("Create and Populate Style Collections", function()
 		-- Cache existing profile sets to avoid repeated C-boundary calls
 		local existingProfileSets = {}
-		local children = nil
-			LrTasks.pcall(function() children = trainedSet:getChildCollections() end)
+			local children = trainedSet:getChildCollections()
 		if children then
 			for _, child in ipairs(children) do
 				if child:type() == "LrCollectionSet" then
@@ -1704,8 +1703,7 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 				if not profileSet.cachedCollections then
 					profileSet.cachedCollections = {}
 					if not isNewProfileSet then
-						local collChildren = nil
-							LrTasks.pcall(function() collChildren = profileSet:getChildCollections() end)
+							local collChildren = profileSet:getChildCollections()
 						if collChildren then
 							for _, c in ipairs(collChildren) do
 								if c:type() == "LrCollection" then
@@ -1766,8 +1764,7 @@ function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions, pr
 	catalog:withWriteAccessDo("Create and Populate Upgrade Collections", function()
 		-- Cache existing collections to avoid repeated C-boundary calls
 		local existingCollections = {}
-		local children = nil
-		LrTasks.pcall(function() children = recSet:getChildCollections() end)
+			local children = recSet:getChildCollections()
 		if children then
 			for _, child in ipairs(children) do
 				if child:type() == "LrCollection" then

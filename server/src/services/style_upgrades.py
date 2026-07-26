@@ -371,7 +371,13 @@ def get_style_upgrade_recommendations(
 
     needed_photo_ids: set[str] = set()
     already_recommended_pids: set[str] = set()
-    style_prelim_candidates_map: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    # Text-derived genre is deliberately retained only as a confidence signal.
+    # It must not be the retrieval gate: vision tags and keyword taxonomies are
+    # noisy, while the style's training embeddings directly represent the visual
+    # neighborhood that recommendations must match.
+    style_prelim_candidates_map: dict[
+        str, list[tuple[str, dict[str, Any], bool, bool]]
+    ] = {}
 
     for style in styles:
         style_id = style.get("style_id", "")
@@ -429,15 +435,14 @@ def get_style_upgrade_recommendations(
                     )
                     continue
 
-            is_compat, is_ambiguous = style_grouping.is_genre_compatible(genre, p_genre)
-            if is_compat:
-                candidates.append((pid, meta, is_ambiguous))
-                needed_photo_ids.add(pid)
-                if len(candidates) >= 250:
-                    break
-            else:
-                pass
-                # logger.debug(f"Candidate {pid} filtered: incompatible genres {genre} vs {p_genre}")
+            is_compat, is_ambiguous = style_grouping.is_genre_compatible(
+                genre, p_genre
+            )
+            semantic_conflict = not is_compat and not is_ambiguous
+            candidates.append((pid, meta, is_ambiguous, semantic_conflict))
+            needed_photo_ids.add(pid)
+            if len(candidates) >= 250:
+                break
 
         logger.info(
             f"Style {style_id}: candidate_pool={len(candidate_pool)}, valid candidates={len(candidates)}"
@@ -538,11 +543,19 @@ def get_style_upgrade_recommendations(
                     E_mat = E_mat.reshape(1, -1)
 
             # Hydrate candidates with embeddings
-            prelim_candidates: list[tuple[str, Any, dict[str, Any], bool]] = []
-            for pid, meta, is_ambiguous in prelim_candidates_tuples:
+            prelim_candidates: list[
+                tuple[str, Any, dict[str, Any], bool, bool]
+            ] = []
+            for pid, meta, is_ambiguous, semantic_conflict in prelim_candidates_tuples:
                 if pid in pool_emb_map and pid not in already_recommended_pids:
                     prelim_candidates.append(
-                        (pid, pool_emb_map[pid], meta, is_ambiguous)
+                        (
+                            pid,
+                            pool_emb_map[pid],
+                            meta,
+                            is_ambiguous,
+                            semantic_conflict,
+                        )
                     )
 
             valid_candidates: list[tuple[str, Any, dict[str, Any]]] = []
@@ -553,10 +566,21 @@ def get_style_upgrade_recommendations(
                 sim_matrix = C_mat @ E_mat.T
                 max_sims = np.max(sim_matrix, axis=1)
 
-                for i, (pid, emb, meta, is_ambiguous) in enumerate(prelim_candidates):
+                for i, (
+                    pid,
+                    emb,
+                    meta,
+                    is_ambiguous,
+                    semantic_conflict,
+                ) in enumerate(prelim_candidates):
                     max_sim = float(max_sims[i])
                     # Reject exact duplicates / burst shots
                     if (1.0 - max_sim) <= BURST_COSINE_DISTANCE:
+                        continue
+                    # Metadata disagreements are a guardrail, not a hard
+                    # retrieval filter.  Require stronger visual evidence for
+                    # a contradiction, but let a genuinely close neighbor win.
+                    if semantic_conflict and max_sim < 0.80:
                         continue
                     # Reject candidate if it is visually/semantically unrelated to the style
                     if not style_grouping.verify_photo_visual_membership(
@@ -569,12 +593,13 @@ def get_style_upgrade_recommendations(
                     valid_candidates.append((pid, emb, meta))
             else:
                 centroid = genre_centroids.get(genre)
-                for pid, emb, meta, is_ambiguous in prelim_candidates:
+                for pid, emb, meta, is_ambiguous, semantic_conflict in prelim_candidates:
                     if centroid is not None and len(centroid) > 0:
+                        min_similarity = 0.80 if semantic_conflict else 0.45
                         if not style_grouping.verify_photo_visual_membership(
                             emb,
                             style_centroid=centroid,
-                            min_similarity=0.45,
+                            min_similarity=min_similarity,
                             require_strict_if_ambiguous=is_ambiguous,
                         ):
                             continue
@@ -648,7 +673,7 @@ def get_style_upgrade_recommendations(
 
             already_recommended_pids.update(recommended_ids)
 
-        meta_map = {pid: meta for pid, meta, _ in prelim_candidates_tuples}
+        meta_map = {pid: meta for pid, meta, _, _ in prelim_candidates_tuples}
         recommended_objects = [
             {
                 "globalPhotoId": pid,

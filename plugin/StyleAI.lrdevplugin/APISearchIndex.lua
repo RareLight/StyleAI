@@ -34,6 +34,7 @@ local ENDPOINTS = {
     CLIP_STATUS = "/clip/status",
     CANCEL_ALL_TASKS = "/cancel_all_tasks",
     CLEAR_CANCEL_TASKS = "/clear_cancel_tasks",
+    INDEX_QUEUE_STATUS = "/index_queue/status",
     CHECK_UNPROCESSED = "/index/check-unprocessed",
     DB_BACKUP = "/db/backup",
     DB_PRUNE = "/db/prune",
@@ -983,12 +984,16 @@ function SearchIndexAPI.enqueuePhotosBase64Batch(batch, globalOptions)
         return false, err or "Unknown error"
     end
 
-    if response.status == "accepted" then
+    if response.status == "accepted" or response.status == "backpressure" then
         return true, response
     else
         log:error("Unexpected enqueue response status: " .. tostring(response.status))
         return false, response.error or "Enqueue failed"
     end
+end
+
+function SearchIndexAPI.getIndexQueueStatus()
+    return _request('GET', getBaseUrl() .. ENDPOINTS.INDEX_QUEUE_STATUS, nil, 3)
 end
 
 
@@ -1648,28 +1653,26 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end
 
     local profile = tonumber(prefs.indexingPerformanceProfile) or 2
-    local maxSenderWorkers = 2
+    local maxSenderWorkers = 1
     local maxAnalyzeWorkers = 8
-    local calculatedBatchSize = 16
+    local calculatedBatchSize = 12
 
     -- HardwareMax is typically the CPU core count (e.g., 8 to 12 on Apple Silicon)
     if profile == 1 then
         maxAnalyzeWorkers = math.max(2, math.floor(hardwareMax * 0.25))
         maxSenderWorkers = 1
-        calculatedBatchSize = 16
+        calculatedBatchSize = 8
     elseif profile == 2 then
         maxAnalyzeWorkers = math.max(4, math.floor(hardwareMax * 0.5))
         maxSenderWorkers = 1
-        calculatedBatchSize = 32
+        calculatedBatchSize = 12
     elseif profile == 3 then
-        maxAnalyzeWorkers = math.max(4, hardwareMax)
-        maxSenderWorkers = 2
-        calculatedBatchSize = 32
+        maxAnalyzeWorkers = math.min(6, math.max(4, hardwareMax))
+        calculatedBatchSize = 12
     elseif profile == 4 then
         -- Optimal max performance: push Lightroom hard but cap senders to prevent backend GIL thrashing
-        maxAnalyzeWorkers = math.min(16, math.floor(hardwareMax * 1.25))
-        maxSenderWorkers = 2
-        calculatedBatchSize = 32
+        maxAnalyzeWorkers = math.min(8, math.floor(hardwareMax * 1.0))
+        calculatedBatchSize = 12
     end
 
     local maxWorkers = maxSenderWorkers
@@ -1825,7 +1828,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     local analyzeWorker = function()
         local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
-        local maxQueueCapacity = batchSize * 3
+        local maxQueueCapacity = math.min(batchSize * 2, 24)
 
         while #photoToProcessStack > 0 do
             if progressScope:isCanceled() then break end
@@ -2049,9 +2052,20 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 if #batchItemsToSend > 0 then
                     if enableEmbeddings then
                         options.cache_images = enableMetadata
-                        local success, err = SearchIndexAPI.enqueuePhotosBase64Batch(batchItemsToSend, options)
+                        local success, enqueueResponse = SearchIndexAPI.enqueuePhotosBase64Batch(batchItemsToSend, options)
                         if success then
-                            for _, batchItem in ipairs(batchItemsToSend) do
+                            local acceptedCount = math.min(
+                                tonumber(enqueueResponse and enqueueResponse.enqueued) or 0,
+                                #batchItemsToSend
+                            )
+                            -- The backend accepts queue items in request order. Keep
+                            -- backpressured items for retry rather than treating a
+                            -- 202 response as proof that every item was accepted.
+                            for i = #batchItemsToSend, acceptedCount + 1, -1 do
+                                table.insert(preparedQueue, 1, batchItemsToSend[i])
+                            end
+                            for i = 1, acceptedCount do
+                                local batchItem = batchItemsToSend[i]
                                 if enableMetadata then
                                     batchItem.image = nil
                                     table.insert(llmQueue, batchItem)
@@ -2068,6 +2082,13 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                                     end
                                 end
                             end
+                            if acceptedCount < #batchItemsToSend then
+                                local queueStatus = SearchIndexAPI.getIndexQueueStatus()
+                                local queued = queueStatus and queueStatus.queued or "?"
+                                local capacity = queueStatus and queueStatus.capacity or "?"
+                                log:trace("Backend index queue backpressure (" .. tostring(queued) .. "/" .. tostring(capacity) .. "); retrying " .. tostring(#batchItemsToSend - acceptedCount) .. " photo(s).")
+                                LrTasks.sleep(0.15)
+                            end
                             if not enableMetadata then
                                 progressScope:setPortionComplete(stats.processed, numPhotos)
                                 progressScope:setCaption(
@@ -2079,8 +2100,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                             for _, failItem in ipairs(batchItemsToSend) do
                                 stats.failed = stats.failed + 1
                                 stats.processed = stats.processed + 1
-                                table.insert(errorMessages, failItem.filename .. ": " .. tostring(err))
-                                log:error("Failed to enqueue photo: " .. failItem.filename .. " Error: " .. tostring(err))
+                                table.insert(errorMessages, failItem.filename .. ": " .. tostring(enqueueResponse))
+                                log:error("Failed to enqueue photo: " .. failItem.filename .. " Error: " .. tostring(enqueueResponse))
                             end
                         end
                     else
@@ -2178,7 +2199,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         activeWorkers = activeWorkers + 1
     end
 
-    local maxSenderWorkers = math.ceil(maxAnalyzeWorkers / 2)
+    maxSenderWorkers = 1
     for i = 1, maxSenderWorkers do
         LrTasks.startAsyncTask(senderWorker)
         log:trace("Started sender worker #" .. tostring(i))

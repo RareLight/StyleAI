@@ -703,6 +703,7 @@
 "$$$/StyleAI/common/BackendWarning" = "Backend Warning"
 "$$$/StyleAI/common/BackendWarnings" = "Warnings: ^1"
 "$$$/StyleAI/common/Cancel" = "Cancel"
+"$$$/StyleAI/common/Canceled" = "Canceled."
 "$$$/StyleAI/common/Close" = "Close"
 "$$$/StyleAI/common/Context" = "Context"
 "$$$/StyleAI/common/Continue" = "Continue"

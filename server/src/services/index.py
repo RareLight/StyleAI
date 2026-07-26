@@ -706,14 +706,18 @@ def is_index_queue_accepting() -> bool:
     return _index_queue_accepting.is_set()
 
 
-def stop_index_queue() -> int:
-    """Reject new work and release queued image bytes without waiting for GPU work.
+def get_index_queue_status() -> dict[str, int | bool]:
+    """Return a lightweight, approximate queue snapshot for the local UI."""
+    return {
+        "accepting": is_index_queue_accepting(),
+        "queued": index_queue.qsize(),
+        "capacity": index_queue.maxsize,
+        "active": len(active_embeddings_uuids),
+    }
 
-    Shutdown must be responsive to Lightroom.  In-flight work observes the
-    shared cancellation event; queued work has not started and can be safely
-    discarded immediately.
-    """
-    _index_queue_accepting.clear()
+
+def discard_pending_index_queue() -> int:
+    """Release queued image bytes while leaving the service ready for new work."""
     discarded = 0
     while True:
         try:
@@ -725,6 +729,19 @@ def stop_index_queue() -> int:
             item.clear()
             discarded += 1
         index_queue.task_done()
+    logger.info("Discarded %d pending index item(s).", discarded)
+    return discarded
+
+
+def stop_index_queue() -> int:
+    """Reject new work and release queued image bytes without waiting for GPU work.
+
+    Shutdown must be responsive to Lightroom.  In-flight work observes the
+    shared cancellation event; queued work has not started and can be safely
+    discarded immediately.
+    """
+    _index_queue_accepting.clear()
+    discarded = discard_pending_index_queue()
     logger.info("Stopped index queue; discarded %d queued item(s).", discarded)
     return discarded
 

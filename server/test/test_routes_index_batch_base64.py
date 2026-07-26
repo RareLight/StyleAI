@@ -163,3 +163,22 @@ def test_stop_index_queue_releases_pending_images(monkeypatch):
     assert "queued" not in index_service.active_embeddings_uuids
     assert index_service.is_index_queue_accepting() is False
     index_service._index_queue_accepting.set()
+
+
+def test_index_queue_status_reports_capacity(client, monkeypatch):
+    bounded_queue = queue.Queue(maxsize=3)
+    bounded_queue.put({"uuid": "queued"})
+    monkeypatch.setattr(index_service, "index_queue", bounded_queue)
+    index_service._index_queue_accepting.set()
+    index_service.active_embeddings_uuids.add("active")
+
+    response = client.get("/index_queue/status")
+
+    assert response.status_code == 200
+    assert response.get_json()["results"] == {
+        "accepting": True,
+        "queued": 1,
+        "capacity": 3,
+        "active": 1,
+    }
+    index_service.active_embeddings_uuids.discard("active")

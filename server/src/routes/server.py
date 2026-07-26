@@ -28,7 +28,10 @@ def cancel_all_tasks():
     """Immediately flags any running backend tasks to abort their processing loops."""
     logger.info("Cancel request received: Aborting all ongoing backend tasks.")
     server_lifecycle.GLOBAL_CANCEL_EVENT.set()
-    return jsonify({"status": "Canceled active tasks."})
+    from services.index import discard_pending_index_queue
+
+    discarded = discard_pending_index_queue()
+    return jsonify({"status": "Canceled active tasks.", "discarded": discarded})
 
 
 @server_bp.route("/clear_cancel_tasks", methods=["POST"])

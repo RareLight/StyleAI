@@ -115,6 +115,40 @@ def test_group_examples_handles_unknown_genre():
     assert len(groups[key]) == 1
 
 
+def test_group_examples_withholds_visual_outlier_without_losing_example():
+    """A taxonomy match alone cannot let a visual outlier pollute training."""
+    examples = [
+        {
+            "photo_id": "coherent-a",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": '["scene_landscape"]',
+            "embedding": [1.0, 0.0, 0.0],
+        },
+        {
+            "photo_id": "coherent-b",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": '["scene_landscape"]',
+            "embedding": [0.99, 0.1, 0.0],
+        },
+        {
+            "photo_id": "outlier",
+            "camera_profile": "Adobe Standard",
+            "scene_tags": '["scene_landscape"]',
+            "embedding": [0.0, 1.0, 0.0],
+        },
+    ]
+
+    groups = sg.group_examples_by_profile_genre(examples)
+
+    assert [ex["photo_id"] for ex in groups[("Adobe Standard", "scene_landscape")]] == [
+        "coherent-a",
+        "coherent-b",
+    ]
+    assert [ex["photo_id"] for ex in groups[("Adobe Standard", "scene_general")]] == [
+        "outlier"
+    ]
+
+
 def test_dynamic_semantic_mapping():
     # Clear cache for isolated testing
     sg._DYNAMIC_GENRE_CACHE.clear()

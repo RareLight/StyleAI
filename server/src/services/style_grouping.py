@@ -1851,16 +1851,10 @@ def group_examples_by_profile_genre(
         if count >= 2:
             profiles_with_multiple_groups.add(profile)
 
-    if not profiles_with_multiple_groups:
-        return groups
-
     # ------------------------------------------------------------------
     # Pass 2: Compute visual centroids per group
     # ------------------------------------------------------------------
     centroids = _compute_group_centroids(groups)
-
-    if not centroids:
-        return groups
 
     # ------------------------------------------------------------------
     # Pass 3: Cross-group visual re-assignment
@@ -1944,35 +1938,35 @@ def group_examples_by_profile_genre(
 
         groups[amb_key] = remaining
 
-    # Final visual verification: move any visual outlier (similarity < VISUAL_MIN_SIMILARITY)
-    # out of specific genre groups into scene_general so it does not pollute style profiles.
+    # Final visual verification evaluates each example against *other* examples
+    # in its group. Including the candidate in its own reference matrix gives
+    # every photo a similarity of 1.0 and silently defeats the outlier check.
+    # Withhold only clear outliers from groups with at least two visual peers;
+    # keep them under scene_general instead of deleting user data.
     for key in list(groups.keys()):
         profile, genre = key
         if genre in ambiguous_key_genre:
             continue
-        centroid = centroids.get(key)
-        if centroid is None:
+        normalized_examples = [
+            (ex, _normalize_embedding(ex.get("embedding"))) for ex in groups[key]
+        ]
+        visual_examples = [pair for pair in normalized_examples if pair[1] is not None]
+        if len(visual_examples) < 3:
             continue
-            
-        group_embs = []
-        for ex in groups[key]:
-            e = _normalize_embedding(ex.get("embedding"))
-            if e is not None:
-                group_embs.append(e)
-        E_mat = np.array(group_embs, dtype=np.float32) if group_embs else None
 
         valid_ex: list[dict[str, Any]] = []
-        for ex in groups[key]:
-            emb_norm = _normalize_embedding(ex.get("embedding"))
+        for ex, emb_norm in normalized_examples:
             if emb_norm is None:
                 valid_ex.append(ex)
                 continue
-            
+            peer_embeddings = np.array(
+                [peer_emb for peer_ex, peer_emb in visual_examples if peer_ex is not ex],
+                dtype=np.float32,
+            )
             if verify_photo_visual_membership(
                 emb_norm,
-                style_embeddings=E_mat,
-                style_centroid=centroid,
-                min_similarity=VISUAL_MIN_SIMILARITY,
+                style_embeddings=peer_embeddings,
+                min_similarity=VISUAL_STRICT_SIMILARITY,
                 require_strict_if_ambiguous=False,
             ):
                 valid_ex.append(ex)
