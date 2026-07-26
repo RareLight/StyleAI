@@ -387,16 +387,15 @@ def get_style_upgrade_recommendations(
         needed_photo_ids.update(existing_ids)
 
         candidate_pool = list(photos_by_norm_profile.get(norm_style_profile, []))
-        if norm_style_profile != "default":
-            if "" in photos_by_norm_profile:
-                candidate_pool.extend(photos_by_norm_profile[""])
-            if "default" in photos_by_norm_profile:
-                candidate_pool.extend(photos_by_norm_profile["default"])
-            if (
-                "adobe standard" in photos_by_norm_profile
-                and norm_style_profile != "adobe standard"
-            ):
-                candidate_pool.extend(photos_by_norm_profile["adobe standard"])
+        if "" in photos_by_norm_profile and norm_style_profile != "":
+            candidate_pool.extend(photos_by_norm_profile[""])
+        if "default" in photos_by_norm_profile and norm_style_profile != "default":
+            candidate_pool.extend(photos_by_norm_profile["default"])
+        if (
+            "adobe standard" in photos_by_norm_profile
+            and norm_style_profile != "adobe standard"
+        ):
+            candidate_pool.extend(photos_by_norm_profile["adobe standard"])
 
         candidates = []
 
