@@ -19,12 +19,38 @@ find_server_pid() {
     lsof -sTCP:LISTEN -ti:"$SERVER_PORT" 2>/dev/null || true
 }
 
+is_styleai_process() {
+    local pid="$1"
+    local command
+    command=$(ps -p "$pid" -o command= 2>/dev/null || true)
+    [[ "$command" == *"styleai_server.py"* || "$command" == *"styleai-server"* ]]
+}
+
+post_control_request() {
+    local endpoint="$1"
+    curl --silent --show-error --fail --max-time 2 \
+        --request POST "http://127.0.0.1:${SERVER_PORT}${endpoint}" >/dev/null
+}
+
+wait_for_port_release() {
+    local timeout_seconds="$1"
+    local elapsed=0
+    while port_in_use; do
+        if (( elapsed >= timeout_seconds )); then
+            return 1
+        fi
+        sleep 1
+        ((elapsed += 1))
+    done
+    return 0
+}
+
 print_usage() {
     echo "Usage:"
     echo "  $(basename "$0") start     — Start the backend server in the foreground"
     echo "  $(basename "$0") stop      — Stop the backend server"
     echo "  $(basename "$0") status    — Check the backend server status"
-    echo "  $(basename "$0") reset-db  — Reset StyleAI databases (requires server stop)"
+    echo "  $(basename "$0") reset-db <catalog-path>  — Reset one catalog's StyleAI database"
     echo ""
 }
 
@@ -71,29 +97,51 @@ cmd_start() {
 cmd_stop() {
     echo "=== Stopping StyleAI Backend Server ==="
     echo ""
-    PID=$(find_server_pid)
-    if [ -n "$PID" ]; then
-        echo "Stopping backend server on port $SERVER_PORT (PID: $PID)..."
-        kill "$PID" 2>/dev/null || true
-        
-        # Wait up to 5 seconds for it to exit
-        for i in {1..5}; do
-            if ! port_in_use; then
-                break
-            fi
-            sleep 1
-        done
-        
-        # If still running, force kill
-        if port_in_use; then
-            echo "Server did not exit gracefully; sending SIGKILL..."
-            kill -9 "$PID" 2>/dev/null || true
-            sleep 1
-        fi
-        echo "Server stopped successfully."
-    else
+    local pids
+    pids=$(find_server_pid)
+    if [ -z "$pids" ]; then
         echo "No running server detected on port $SERVER_PORT."
+        return 0
     fi
+
+    local pid
+    for pid in $pids; do
+        if ! is_styleai_process "$pid"; then
+            echo "ERROR: PID $pid owns port $SERVER_PORT but is not a recognized StyleAI backend."
+            echo "Refusing to terminate an unrelated process."
+            return 1
+        fi
+    done
+
+    echo "Requesting cancellation and graceful shutdown for StyleAI (PID(s): $pids)..."
+    post_control_request "/cancel_all_tasks" || \
+        echo "WARNING: Backend did not acknowledge task cancellation; continuing with shutdown."
+    post_control_request "/shutdown" || \
+        echo "WARNING: Backend did not acknowledge graceful shutdown; using process termination if needed."
+
+    if wait_for_port_release 6; then
+        echo "Server stopped successfully."
+        return 0
+    fi
+
+    echo "Server did not stop within 6 seconds; sending SIGTERM..."
+    for pid in $pids; do
+        kill "$pid" 2>/dev/null || true
+    done
+    if wait_for_port_release 3; then
+        echo "Server stopped successfully."
+        return 0
+    fi
+
+    echo "Server did not exit after SIGTERM; sending SIGKILL..."
+    for pid in $pids; do
+        kill -9 "$pid" 2>/dev/null || true
+    done
+    if ! wait_for_port_release 2; then
+        echo "ERROR: Port $SERVER_PORT remains in use after forced shutdown."
+        return 1
+    fi
+    echo "Server stopped successfully."
 }
 
 cmd_status() {
@@ -117,14 +165,21 @@ cmd_status() {
 cmd_reset_db() {
     echo "=== Resetting StyleAI Databases ==="
     echo ""
-    if port_in_use; then
-        PID=$(find_server_pid)
-        echo "Stopping server (PID $PID) before resetting DB..."
-        kill "$PID" 2>/dev/null || true
-        sleep 2
+    local catalog_path="${1:-}"
+    if [ -z "$catalog_path" ] || [ ! -f "$catalog_path" ]; then
+        echo "ERROR: Provide the path to the one Lightroom catalog whose database should be reset."
+        echo "Example: $(basename "$0") reset-db \"$HOME/Pictures/Lightroom/My Catalog.lrcat\""
+        return 1
     fi
-    find "${HOME}/Pictures" -type d -name "styleai.db" -prune -exec rm -rf {} +
-    echo "All styleai.db directories in ~/Pictures have been deleted."
+    cmd_stop
+    local db_path
+    db_path="$(dirname "$catalog_path")/styleai.db"
+    if [ ! -d "$db_path" ]; then
+        echo "No StyleAI database exists for: $catalog_path"
+        return 0
+    fi
+    rm -rf "$db_path"
+    echo "Deleted catalog-local StyleAI database: $db_path"
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────
@@ -148,7 +203,7 @@ case "$COMMAND" in
         cmd_status
         ;;
     reset-db)
-        cmd_reset_db
+        cmd_reset_db "$@"
         ;;
     *)
         echo "Unknown command: $COMMAND"

@@ -93,9 +93,8 @@ if [ $MISSING -gt 0 ] || [ $CONFLICTS -gt 0 ] || [ $UNREADABLE -gt 0 ]; then
     echo ""
     echo "Please run a clean reinstall:"
     echo "  1. Quit Lightroom Classic completely"
-    echo "  2. Run: bash scripts/styleai-installer.sh uninstall"
-    echo "  3. Run: bash scripts/styleai-installer.sh install"
-    echo "  4. Start Lightroom Classic"
+    echo "  2. Run: bash scripts/styleai-installer.sh redeploy"
+    echo "  3. Start Lightroom Classic"
     exit 1
 else
     echo "  DIAGNOSTIC PASSED"
@@ -105,9 +104,8 @@ else
     echo ""
     echo "If Lightroom still shows a schema error:"
     echo "  1. QUIT Lightroom Classic completely"
-    echo "  2. Run: bash scripts/styleai-installer.sh uninstall"
-    echo "  3. Run: bash scripts/styleai-installer.sh install"
-    echo "  4. Start Lightroom Classic"
+    echo "  2. Run: bash scripts/styleai-installer.sh redeploy"
+    echo "  3. Start Lightroom Classic"
     echo ""
     echo "The most common cause of schema errors is installing"
     echo "while Lightroom is running. Always quit Lightroom first."
