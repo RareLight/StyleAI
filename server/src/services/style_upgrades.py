@@ -101,8 +101,6 @@ def _is_stitched_panorama(meta: dict[str, Any]) -> bool:
     return style_grouping.is_stitched_panorama(meta)
 
 
-
-
 def _select_style_recommendations(
     candidates: list[tuple[str, Any, dict[str, Any]]],
     existing_embeddings: list[Any],
@@ -419,9 +417,9 @@ def get_style_upgrade_recommendations(
                 if is_hdr_style and "hdr" not in norm_p_prof:
                     continue
 
-            is_compat, _ = style_grouping.is_genre_compatible(genre, p_genre)
+            is_compat, is_ambiguous = style_grouping.is_genre_compatible(genre, p_genre)
             if is_compat:
-                candidates.append((pid, meta))
+                candidates.append((pid, meta, is_ambiguous))
                 needed_photo_ids.add(pid)
                 if len(candidates) >= 250:
                     break
@@ -522,10 +520,12 @@ def get_style_upgrade_recommendations(
                     E_mat = E_mat.reshape(1, -1)
 
             # Hydrate candidates with embeddings
-            prelim_candidates: list[tuple[str, Any, dict[str, Any]]] = []
-            for pid, meta in prelim_candidates_tuples:
+            prelim_candidates: list[tuple[str, Any, dict[str, Any], bool]] = []
+            for pid, meta, is_ambiguous in prelim_candidates_tuples:
                 if pid in pool_emb_map and pid not in already_recommended_pids:
-                    prelim_candidates.append((pid, pool_emb_map[pid], meta))
+                    prelim_candidates.append(
+                        (pid, pool_emb_map[pid], meta, is_ambiguous)
+                    )
 
             valid_candidates: list[tuple[str, Any, dict[str, Any]]] = []
             if E_mat is not None and len(E_mat) > 0 and prelim_candidates:
@@ -535,21 +535,30 @@ def get_style_upgrade_recommendations(
                 sim_matrix = C_mat @ E_mat.T
                 max_sims = np.max(sim_matrix, axis=1)
 
-                for i, (pid, emb, meta) in enumerate(prelim_candidates):
+                for i, (pid, emb, meta, is_ambiguous) in enumerate(prelim_candidates):
                     max_sim = float(max_sims[i])
                     # Reject exact duplicates / burst shots
                     if (1.0 - max_sim) <= BURST_COSINE_DISTANCE:
                         continue
                     # Reject candidate if it is visually/semantically unrelated to the style
-                    if max_sim < 0.60:
+                    if not style_grouping.verify_photo_visual_membership(
+                        emb,
+                        style_embeddings=E_mat,
+                        min_similarity=0.45,
+                        require_strict_if_ambiguous=is_ambiguous,
+                    ):
                         continue
                     valid_candidates.append((pid, emb, meta))
             else:
                 centroid = genre_centroids.get(genre)
-                for pid, emb, meta in prelim_candidates:
+                for pid, emb, meta, is_ambiguous in prelim_candidates:
                     if centroid is not None and len(centroid) > 0:
-                        sim = float(np.dot(centroid, emb))
-                        if sim < 0.60:
+                        if not style_grouping.verify_photo_visual_membership(
+                            emb,
+                            style_centroid=centroid,
+                            min_similarity=0.45,
+                            require_strict_if_ambiguous=is_ambiguous,
+                        ):
                             continue
                     valid_candidates.append((pid, emb, meta))
 

@@ -1150,7 +1150,7 @@ def _primary_genre_with_keywords_impl(
                 "scene_exterior",
                 "scene_landscape",
             ):
-                top_vision_tags = content_tags[:12]
+                top_vision_tags = content_tags[:24]
             else:
                 top_vision_tags = content_tags[:6]
 
@@ -2196,7 +2196,7 @@ def verify_photo_visual_membership(
         return True
     emb_norm = emb_arr / norm
 
-    threshold = 0.60 if require_strict_if_ambiguous else min_similarity
+    threshold = 0.65 if require_strict_if_ambiguous else min_similarity
 
     if style_embeddings is not None and len(style_embeddings) > 0:
         E_mat = (
