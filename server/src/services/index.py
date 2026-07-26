@@ -9,7 +9,7 @@ dedicated GPU thread) exclusively handles SigLIP2 and InsightFace model inferenc
 eliminating UI blocking and massive pipeline stalls during bulk catalog indexing.
 """
 
-from config import logger, get_torch_device
+from config import logger
 from . import chroma as chroma_service
 from .chroma import DatabaseNotReadyError
 from .metadata import get_analysis_service
@@ -22,7 +22,6 @@ from datetime import datetime as time
 from PIL import Image
 import io
 import numpy as np
-import torch
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import queue
@@ -32,6 +31,7 @@ from typing import Any
 
 # Track UUIDs that are currently queued or being processed by the GPU worker
 active_embeddings_uuids = set()
+
 
 def _to_bool(val: Any, default: bool = False) -> bool:
     """Safely convert boolean or string representation to a bool."""
@@ -463,7 +463,13 @@ def process_image_task(
                     main_metadata["uuid"] = lr_uuid or existing.get("uuid", uuid)
                     # Only wipe LLM metadata if the user explicitly requested it
                     if regenerate_metadata and compute_metadata:
-                        for key in ["title", "caption", "alt_text", "keywords", "flattened_keywords"]:
+                        for key in [
+                            "title",
+                            "caption",
+                            "alt_text",
+                            "keywords",
+                            "flattened_keywords",
+                        ]:
                             main_metadata.pop(key, None)
                 else:
                     main_metadata = {

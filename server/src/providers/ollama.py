@@ -84,7 +84,11 @@ class OllamaProvider(LLMProviderBase):
             client = self._get_client(getattr(request, "ollama_base_url", None))
 
             # Convert image to base64
-            image_b64 = self._image_to_base64(request.image_data) if request.image_data else None
+            image_b64 = (
+                self._image_to_base64(request.image_data)
+                if request.image_data
+                else None
+            )
 
             # Prepare prompts and JSON schema
             system_prompt = self._prepare_system_prompt(request)
@@ -96,7 +100,7 @@ class OllamaProvider(LLMProviderBase):
 
             # Call Ollama via Python SDK
             logger.debug("Sending chat request to Ollama via SDK")
-            
+
             message_content = {
                 "role": "user",
                 "content": user_prompt,
@@ -104,7 +108,9 @@ class OllamaProvider(LLMProviderBase):
             if request.image_data is not None:
                 if isinstance(request.image_data, list):
                     message_content["images"] = [
-                        self._image_to_base64(img) for img in request.image_data if img is not None
+                        self._image_to_base64(img)
+                        for img in request.image_data
+                        if img is not None
                     ]
                 elif image_b64 is not None:
                     message_content["images"] = [image_b64]

@@ -423,9 +423,6 @@ def test_profiles_and_models_compatibility():
     assert not style_upgrades._models_compatible("Nikon Z7", "Nikon Z8")
 
 
-
-
-
 def test_is_stitched_panorama():
     assert style_upgrades._is_stitched_panorama({"filename": "DSC0123-Pano.dng"})
     assert style_upgrades._is_stitched_panorama({"filename": "photo_panorama.jpg"})

@@ -491,17 +491,6 @@ local function scanCatalogForGlobalPhotoIds(catalog, allPhotos, idSet, targetCou
                 foundCount = foundCount + 1
                 matched = true
             end
-
-            if not matched then
-                local stableId = Util.computeStableMetadataPhotoId(photo)
-                if stableId and idSet[stableId] and not photoById[stableId] then
-                    if lrUuid and lrUuid ~= "" then photoById[lrUuid] = photo end
-                    if cachedId and cachedId ~= "" then photoById[cachedId] = photo end
-                    photoById[stableId] = photo
-                    foundCount = foundCount + 1
-                    matched = true
-                end
-            end
         end
 
         if foundCount >= targetCount then

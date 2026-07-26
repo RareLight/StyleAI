@@ -222,7 +222,9 @@ class LMStudioProvider(LLMProviderBase):
                     image_handles = []
                 elif isinstance(request.image_data, list):
                     image_handles = [
-                        client.files.prepare_image(img) for img in request.image_data if img is not None
+                        client.files.prepare_image(img)
+                        for img in request.image_data
+                        if img is not None
                     ]
                 else:
                     image_handles = [client.files.prepare_image(request.image_data)]

@@ -184,6 +184,37 @@ class AnalysisService:
             # Group visually similar photos to avoid redundant LLM calls
             import numpy as np
             from . import chroma as chroma_service
+            from .index import active_embeddings_uuids
+            import time
+
+            # Wait for any in-flight embeddings for this batch to complete
+            for uid in uuids:
+                if uid in active_embeddings_uuids:
+                    for _ in range(60):  # Wait up to 15 seconds
+                        if uid not in active_embeddings_uuids:
+                            break
+                        time.sleep(0.25)
+
+            # Bulk fetch missing embeddings from ChromaDB
+            fetched_embeddings = {}
+            missing_uids = [
+                uid
+                for i, uid in enumerate(uuids)
+                if (not embeddings or embeddings[i] is None)
+                and uid not in uuids_needing_embeddings
+            ]
+            if missing_uids and chroma_service.collection is not None:
+                try:
+                    res = chroma_service.collection.get(
+                        ids=missing_uids, include=["embeddings"]
+                    )
+                    e_ids = res.get("ids", [])
+                    e_embs = res.get("embeddings", [])
+                    for i, eid in enumerate(e_ids):
+                        if i < len(e_embs) and e_embs[i] is not None:
+                            fetched_embeddings[eid] = e_embs[i]
+                except Exception as e:
+                    logger.warning(f"Failed bulk fetch for clustering: {e}")
 
             cluster_mapping = {}  # maps uuid -> representative_uuid
             clusters = []  # list of dicts: {'rep_uid': uid, 'rep_emb': np.array, 'members': [uid]}
@@ -192,26 +223,7 @@ class AnalysisService:
             def get_embedding(idx, uid):
                 if embeddings and embeddings[idx] is not None:
                     return embeddings[idx]
-                if uid not in uuids_needing_embeddings:
-                    # Attempt to fetch existing embedding from ChromaDB
-                    from .index import active_embeddings_uuids
-                    import time
-                    
-                    # If the embedding was requested and is still processing, wait for it
-                    if "embeddings" in opt.get("tasks", []) and uid in active_embeddings_uuids:
-                        for _ in range(60): # Wait up to 15 seconds
-                            if uid not in active_embeddings_uuids:
-                                break
-                            time.sleep(0.25)
-
-                    res = chroma_service.get_image(uid)
-                    if (
-                        res
-                        and res.get("embeddings") is not None
-                        and len(res["embeddings"]) > 0
-                    ):
-                        return res["embeddings"][0]
-                return None
+                return fetched_embeddings.get(uid)
 
             for i, uid in enumerate(uuids):
                 if uid not in uuids_needing_metadata:
@@ -351,7 +363,7 @@ class AnalysisService:
                 exc_info=True,
             )
         finally:
-            pass # Removed empty_cache() to prevent concurrent spin locks on MPS
+            pass  # Removed empty_cache() to prevent concurrent spin locks on MPS
 
         return embeddings
 
@@ -391,6 +403,7 @@ class AnalysisService:
         # We cap max_workers using the STYLEAI_LLM_CONCURRENCY config to protect GPU throughput by default,
         # while allowing power users to increase it.
         from config import STYLEAI_LLM_CONCURRENCY
+
         max_workers = max(1, min(len(uuids), STYLEAI_LLM_CONCURRENCY))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [

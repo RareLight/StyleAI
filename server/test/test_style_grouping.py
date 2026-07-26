@@ -128,7 +128,9 @@ def test_dynamic_semantic_mapping():
     # Semantic mapping tests (these simulate unknown keywords)
     # Deep sky astrophotography -> astrophotography
     assert (
-        sg._primary_genre_with_keywords(["scene_unknown"], ["deep_sky_astrophotography"])
+        sg._primary_genre_with_keywords(
+            ["scene_unknown"], ["deep_sky_astrophotography"]
+        )
         == "scene_astrophotography"
     )
 
@@ -144,7 +146,9 @@ def test_dynamic_semantic_mapping():
 
     # Test caching (should be instantaneous and read from dict)
     assert "deep_sky_astrophotography" in sg._DYNAMIC_GENRE_CACHE
-    assert sg._DYNAMIC_GENRE_CACHE["deep_sky_astrophotography"] == "scene_astrophotography"
+    assert (
+        sg._DYNAMIC_GENRE_CACHE["deep_sky_astrophotography"] == "scene_astrophotography"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -883,7 +887,7 @@ def test_dynamic_buckets_wildlife_not_in_nature():
     # not land in scene_nature
     mapped = sg._dynamic_semantic_mapping("bird watching")
     assert mapped != "scene_nature", (
-        f"'bird watching' mapped to scene_nature instead of a wildlife/portrait bucket"
+        "'bird watching' mapped to scene_nature instead of a wildlife/portrait bucket"
     )
 
 
@@ -973,32 +977,53 @@ def test_focal_length_crop_factors_fuji():
 
 
 def test_focal_length_crop_factors_mft():
-    assert sg._get_35mm_equivalent_focal_length("OM Digital Solutions", "OM-1", 45) == 90.0
+    assert (
+        sg._get_35mm_equivalent_focal_length("OM Digital Solutions", "OM-1", 45) == 90.0
+    )
     assert sg._get_35mm_equivalent_focal_length("Olympus", "E-M1 Mark III", 25) == 50.0
     assert sg._get_35mm_equivalent_focal_length("Panasonic", "DC-G9", 25) == 50.0
     assert sg._get_35mm_equivalent_focal_length("Panasonic", "DC-S5", 50) == 50.0
 
 
 def test_focal_length_crop_factors_nikon():
-    assert sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON Z 8", 50) == 50.0
-    assert sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON Z 50", 50) == 75.0
-    assert sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON D850", 50) == 50.0
-    assert sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON D500", 50) == 75.0
+    assert (
+        sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON Z 8", 50)
+        == 50.0
+    )
+    assert (
+        sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON Z 50", 50)
+        == 75.0
+    )
+    assert (
+        sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON D850", 50)
+        == 50.0
+    )
+    assert (
+        sg._get_35mm_equivalent_focal_length("NIKON CORPORATION", "NIKON D500", 50)
+        == 75.0
+    )
 
 
 def test_focal_length_crop_factors_canon():
     assert sg._get_35mm_equivalent_focal_length("Canon", "Canon EOS R5", 50) == 50.0
     assert sg._get_35mm_equivalent_focal_length("Canon", "Canon EOS R7", 50) == 80.0
-    assert sg._get_35mm_equivalent_focal_length("Canon", "Canon EOS 5D Mark IV", 50) == 50.0
+    assert (
+        sg._get_35mm_equivalent_focal_length("Canon", "Canon EOS 5D Mark IV", 50)
+        == 50.0
+    )
     assert sg._get_35mm_equivalent_focal_length("Canon", "Canon EOS 80D", 50) == 80.0
 
 
 def test_exif_priors_use_35mm_equivalent():
     # 45mm on MFT = 90mm -> portrait (should be 0.15)
-    priors = sg._evaluate_exif_priors({"camera_make": "Olympus", "camera_model": "E-M1", "focal_length": 45})
+    priors = sg._evaluate_exif_priors(
+        {"camera_make": "Olympus", "camera_model": "E-M1", "focal_length": 45}
+    )
     assert priors.get("scene_portrait") == 0.15
     # 12mm on MFT = 24mm -> landscape/architecture
-    priors = sg._evaluate_exif_priors({"camera_make": "Olympus", "camera_model": "E-M1", "focal_length": 12})
+    priors = sg._evaluate_exif_priors(
+        {"camera_make": "Olympus", "camera_model": "E-M1", "focal_length": 12}
+    )
     assert priors.get("scene_landscape") == 0.15
 
 
@@ -1043,10 +1068,14 @@ def test_step6_substring_no_false_positives():
     assert result != "scene_architecture", f"'groom' falsely matched 'room' -> {result}"
 
     result = sg._primary_genre_with_keywords(["scene_unknown"], ["mushroom"])
-    assert result != "scene_architecture", f"'mushroom' falsely matched 'room' -> {result}"
+    assert result != "scene_architecture", (
+        f"'mushroom' falsely matched 'room' -> {result}"
+    )
 
     result = sg._primary_genre_with_keywords(["scene_unknown"], ["greenhouse"])
-    assert result != "scene_architecture", f"'greenhouse' falsely matched 'house' -> {result}"
+    assert result != "scene_architecture", (
+        f"'greenhouse' falsely matched 'house' -> {result}"
+    )
 
     # Legitimate exact matches should still work
     result = sg._primary_genre_with_keywords(["scene_unknown"], ["room"])
@@ -1058,8 +1087,14 @@ def test_step6_substring_no_false_positives():
 def test_buried_wildlife_subject_deep_horizon():
     """Wildlife subject tags buried under nature noise at rank 8+ should still be found."""
     tags = [
-        "scene_nature", "tree", "grass", "outdoors",
-        "vegetation", "wilderness", "green", "bird",
+        "scene_nature",
+        "tree",
+        "grass",
+        "outdoors",
+        "vegetation",
+        "wilderness",
+        "green",
+        "bird",
     ]
     result = sg._primary_genre_with_keywords(tags, [])
     assert result == "scene_wildlife", f"Buried 'bird' at rank 8 not found: {result}"
@@ -1067,10 +1102,11 @@ def test_buried_wildlife_subject_deep_horizon():
 
 def test_stitched_panorama_exclusion():
     """Stitched panoramas must be filtered out by classify_photo_genre."""
-    meta_pano_suffix = {"filename": "DSC_1234-Pano.jpg", "scene_tags": ["scene_landscape"]}
+    meta_pano_suffix = {
+        "filename": "DSC_1234-Pano.jpg",
+        "scene_tags": ["scene_landscape"],
+    }
     assert sg.classify_photo_genre(meta_pano_suffix) is None
 
     meta_pano_tag = {"scene_tags": ["scene_landscape", "panorama"]}
     assert sg.classify_photo_genre(meta_pano_tag) is None
-
-

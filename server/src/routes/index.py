@@ -283,7 +283,9 @@ def generate_metadata_single():
         image_bytes = image_cache.pop_image(photo_id)
 
     if not image_bytes:
-        logger.warning("No image data provided and image not found in cache for single metadata generation. Proceeding for LLM text-only.")
+        logger.warning(
+            "No image data provided and image not found in cache for single metadata generation. Proceeding for LLM text-only."
+        )
 
     # Let process_image_task handle the robust database commit and metadata merging logic
     success_count, failure_count, error_messages, warnings = process_image_task(
@@ -317,51 +319,53 @@ def generate_metadata_batch():
     """
     logger.info("Metadata generate batch request received")
     data = request.get_json(silent=True) or {}
-    
+
     tasks = data.get("tasks", [])
     if not tasks:
         return jsonify({"error": "No tasks provided"}), 400
-        
+
     global_options = data.get("options", {})
     image_triplets = []
     batch_options = []
-    
+
     from services import image_cache
-    
+
     for task in tasks:
         photo_id = task.get("photo_id") or task.get("uuid")
         filename = task.get("filename", "unknown")
-        
+
         if not photo_id:
             continue
-            
+
         merged_options = dict(global_options)
         merged_options.update(task.get("options", {}))
         photo_options = _extract_options(merged_options)
-        
+
         # Force overrides for metadata route
         photo_options["compute_embeddings"] = False
         photo_options["compute_metadata"] = True
         photo_options["compute_faces"] = False
-        
+
         image_bytes = image_cache.pop_image(photo_id)
         if not image_bytes:
-            logger.warning(f"Image bytes for {photo_id} not found in cache for batch metadata generation.")
+            logger.warning(
+                f"Image bytes for {photo_id} not found in cache for batch metadata generation."
+            )
             # We can still proceed if process_image_task handles it, but without image_bytes
             # LLM cannot see the image.
-            
+
         image_triplets.append((image_bytes, photo_id, filename, None))
         batch_options.append(photo_options)
-        
+
     if not image_triplets:
         return jsonify({"error": "No valid tasks with cached images found"}), 400
-        
+
     success_count, failure_count, error_messages, warnings = process_image_task(
         image_triplets, options=batch_options
     )
-    
+
     status_code = 500 if success_count == 0 else 200
-    
+
     return jsonify(
         {
             "status": "processed",
@@ -711,10 +715,11 @@ def enqueue_photo():
                 "lr_uuid": lr_uuid,
                 "options": photo_options,
             }
-            
+
             from services.index import active_embeddings_uuids
+
             active_embeddings_uuids.add(photo_id)
-            
+
             index_queue.put(queue_item)
             enqueued += 1
         except Exception as e:
