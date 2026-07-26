@@ -27,7 +27,8 @@ from config import logger
 from services import style_grouping as grouping
 from services import training as training_service
 
-CURRENT_GROUPING_RULE_VERSION = "24"
+# Increment this when changing grouping rules (like taxonomy maps) to force a re-evaluation
+CURRENT_GROUPING_RULE_VERSION = "25"
 
 # ---------------------------------------------------------------------------
 # Schema

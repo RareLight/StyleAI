@@ -172,8 +172,8 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "cats": "scene_portrait",
     "puppy": "scene_portrait",
     "kitten": "scene_portrait",
-    "animal": "scene_portrait",
-    "animals": "scene_portrait",
+    "animal": "scene_wildlife",
+    "animals": "scene_wildlife",
     "tabby": "scene_portrait",
     "shorthair": "scene_portrait",
     "spaniel": "scene_portrait",
@@ -227,15 +227,15 @@ _KEYWORD_TO_GENRE: dict[str, str] = {
     "american shorthair": "scene_portrait",
     "scottish fold": "scene_portrait",
     "russian blue": "scene_portrait",
-    "horse": "scene_portrait",
-    "equine": "scene_portrait",
+    "horse": "scene_wildlife",
+    "equine": "scene_wildlife",
     "equestrian": "scene_portrait",
-    "pony": "scene_portrait",
+    "pony": "scene_wildlife",
     "rabbit": "scene_portrait",
     "bunny": "scene_portrait",
     "hamster": "scene_portrait",
-    "reptile": "scene_portrait",
-    "mammal": "scene_portrait",
+    "reptile": "scene_wildlife",
+    "mammal": "scene_wildlife",
     "furry": "scene_portrait",
     "fur": "scene_portrait",
     "domestic animal": "scene_portrait",
@@ -732,10 +732,10 @@ def _get_35mm_equivalent_focal_length(make: str, model: str, focal: float) -> fl
     """Convert focal length to 35mm full-frame equivalent based on camera make and model."""
     if focal <= 0:
         return 0.0
-    
+
     make_lower = make.lower()
     model_lower = model.lower()
-    
+
     crop = 1.0
     if make_lower in ("olympus", "om digital solutions", "panasonic"):
         if "dc-s" in model_lower:
@@ -748,24 +748,55 @@ def _get_35mm_equivalent_focal_length(make: str, model: str, focal: float) -> fl
         else:
             crop = 1.5
     elif "sony" in make_lower:
-        if any(x in model_lower for x in ("ilce-6", "ilce-5", "ilce-3", "nex", "zv-e10", "a6", "a5", "a3")):
+        if any(
+            x in model_lower
+            for x in ("ilce-6", "ilce-5", "ilce-3", "nex", "zv-e10", "a6", "a5", "a3")
+        ):
             crop = 1.5
     elif "nikon" in make_lower:
-        dx_models = ("z 50", "z fc", "z 30", "d3000", "d3100", "d3200", "d3300", "d3400", "d3500", 
-                     "d5000", "d5100", "d5200", "d5300", "d5500", "d5600", 
-                     "d7000", "d7100", "d7200", "d7500", "d500", "d300", "d200", 
-                     "d90", "d80", "d70", "d60", "d40")
+        dx_models = (
+            "z 50",
+            "z fc",
+            "z 30",
+            "d3000",
+            "d3100",
+            "d3200",
+            "d3300",
+            "d3400",
+            "d3500",
+            "d5000",
+            "d5100",
+            "d5200",
+            "d5300",
+            "d5500",
+            "d5600",
+            "d7000",
+            "d7100",
+            "d7200",
+            "d7500",
+            "d500",
+            "d300",
+            "d200",
+            "d90",
+            "d80",
+            "d70",
+            "d60",
+            "d40",
+        )
         if any(x in model_lower for x in dx_models):
             crop = 1.5
     elif "canon" in make_lower:
-        if any(x in model_lower for x in ("eos m", "r7", "r10", "r50", "r100", "rebel", "kiss", "7d")):
+        if any(
+            x in model_lower
+            for x in ("eos m", "r7", "r10", "r50", "r100", "rebel", "kiss", "7d")
+        ):
             crop = 1.6
-        elif re.search(r'\b\d{2,4}d\b', model_lower):
+        elif re.search(r"\b\d{2,4}d\b", model_lower):
             crop = 1.6
     elif "leica" in make_lower:
         if any(x in model_lower for x in (" t", " tl", " cl", "t (", "tl (", "cl (")):
             crop = 1.5
-        elif re.search(r'\bs\b', model_lower):
+        elif re.search(r"\bs\b", model_lower):
             crop = 0.8
 
     return focal * crop
@@ -789,7 +820,7 @@ def _evaluate_exif_priors(exif_metadata: dict[str, Any] | None) -> dict[str, flo
 
     if shutter >= 10.0 and iso >= 3200:
         priors["scene_night"] = 0.4
-    if re.search(r'\b(macro|micro|mc)\b', lens):
+    if re.search(r"\b(macro|micro|mc)\b", lens):
         priors["scene_macro"] = priors.get("scene_macro", 0.0) + 0.35
     elif 85.0 <= focal_35mm <= 135.0:
         priors["scene_portrait"] = priors.get("scene_portrait", 0.0) + 0.15
@@ -898,12 +929,26 @@ def _primary_genre_with_keywords(
         if exif_metadata and isinstance(exif_metadata, dict):
             lens = str(exif_metadata.get("lens") or "").strip().lower()
             if lens and lens not in ("none", "unknown", "null"):
-                if not re.search(r'\b(macro|micro|mc)\b', lens):
+                if not re.search(r"\b(macro|micro|mc)\b", lens):
                     # Filter out macro keywords and tags and re-evaluate
-                    filtered_tags = [t for t in _extract_keyword_strings(scene_tags) if _get_broad_genre(t) != "scene_macro"]
-                    filtered_kws = [k for k in _extract_keyword_strings(user_keywords) if _get_broad_genre(k) != "scene_macro"]
-                    new_genre = _primary_genre_with_keywords_impl(filtered_tags, filtered_kws, exif_metadata)
-                    return "scene_nature" if new_genre in ("scene_macro", "scene_unknown", "") else new_genre
+                    filtered_tags = [
+                        t
+                        for t in _extract_keyword_strings(scene_tags)
+                        if _get_broad_genre(t) != "scene_macro"
+                    ]
+                    filtered_kws = [
+                        k
+                        for k in _extract_keyword_strings(user_keywords)
+                        if _get_broad_genre(k) != "scene_macro"
+                    ]
+                    new_genre = _primary_genre_with_keywords_impl(
+                        filtered_tags, filtered_kws, exif_metadata
+                    )
+                    return (
+                        "scene_nature"
+                        if new_genre in ("scene_macro", "scene_unknown", "")
+                        else new_genre
+                    )
     return genre
 
 
@@ -922,9 +967,9 @@ def _primary_genre_with_keywords_impl(
     if kw_list:
         tier_order = [
             "scene_studio",
+            "scene_portrait",
             "scene_macro",
             "scene_event",
-            "scene_portrait",
             "scene_wildlife",
             "scene_astrophotography",
             "scene_night",
@@ -957,13 +1002,10 @@ def _primary_genre_with_keywords_impl(
                             ):
                                 matched_target = target_genre
                                 break
-                
+
                 if matched_target:
                     if matched_target == "scene_wildlife":
-                        top_mapped = {
-                            _get_broad_genre(vt)
-                            for vt in content_tags[:12]
-                        }
+                        top_mapped = {_get_broad_genre(vt) for vt in content_tags[:12]}
                         if "scene_macro" in top_mapped:
                             return "scene_macro"
                         if "scene_portrait" in top_mapped:
@@ -1020,8 +1062,7 @@ def _primary_genre_with_keywords_impl(
             "scene_portrait",
         }:
             if (
-                first_tag == "scene_landscape"
-                or primary_mapped == "scene_landscape"
+                first_tag == "scene_landscape" or primary_mapped == "scene_landscape"
             ) and first_tag not in background_settings:
                 tier_order_subjects = [
                     "scene_studio",
@@ -1034,9 +1075,9 @@ def _primary_genre_with_keywords_impl(
                 tier_order_subjects = [
                     "scene_studio",
                     "scene_macro",
+                    "scene_wildlife",
                     "scene_event",
                     "scene_portrait",
-                    "scene_wildlife",
                     "scene_action",
                     "scene_astrophotography",
                     "scene_landscape",
@@ -1046,13 +1087,11 @@ def _primary_genre_with_keywords_impl(
                     "scene_studio",
                     "scene_macro",
                     "scene_event",
-                    "scene_portrait",
                     "scene_action",
                 ]
             elif primary_mapped == "scene_macro":
                 tier_order_subjects = [
                     "scene_studio",
-                    "scene_portrait",
                 ]
             elif primary_mapped == "scene_portrait":
                 tier_order_subjects = [
@@ -1062,20 +1101,35 @@ def _primary_genre_with_keywords_impl(
                     "scene_event",
                     "scene_street",
                 ]
+            elif primary_mapped == "scene_architecture":
+                # Guard against distant buildings in landscapes
+                top_mapped_arch = {_get_broad_genre(t) for t in content_tags[:3]}
+                if (
+                    "scene_landscape" in top_mapped_arch
+                    or "scene_nature" in top_mapped_arch
+                ):
+                    tier_order_subjects = ["scene_landscape", "scene_nature"]
+                else:
+                    tier_order_subjects = []
             else:
                 tier_order_subjects = [
                     "scene_studio",
                     "scene_macro",
+                    "scene_wildlife",
                     "scene_action",
                     "scene_event",
                     "scene_astrophotography",
                     "scene_street",
                     "scene_portrait",
-                    "scene_wildlife",
                     "scene_architecture",
                 ]
-            
-            if primary_mapped in ("scene_nature", "scene_wildlife", "scene_exterior", "scene_landscape"):
+
+            if primary_mapped in (
+                "scene_nature",
+                "scene_wildlife",
+                "scene_exterior",
+                "scene_landscape",
+            ):
                 top_vision_tags = content_tags[:12]
             else:
                 top_vision_tags = content_tags[:6]
@@ -1138,12 +1192,12 @@ def _primary_genre_with_keywords_impl(
             if mapped_t == "scene_nature":
                 top_mapped = {_get_broad_genre(t2) for t2 in content_tags[:12]}
                 for candidate in [
-                    "scene_portrait",
-                    "scene_event",
                     "scene_studio",
                     "scene_macro",
-                    "scene_landscape",
                     "scene_wildlife",
+                    "scene_portrait",
+                    "scene_event",
+                    "scene_landscape",
                 ]:
                     if candidate in top_mapped:
                         return candidate
@@ -1152,7 +1206,12 @@ def _primary_genre_with_keywords_impl(
                 return "scene_nature"
             if mapped_t == "scene_wildlife":
                 top_mapped = {_get_broad_genre(t2) for t2 in content_tags[:12]}
-                for candidate in ["scene_portrait", "scene_event", "scene_macro", "scene_action"]:
+                for candidate in [
+                    "scene_portrait",
+                    "scene_event",
+                    "scene_macro",
+                    "scene_action",
+                ]:
                     if candidate in top_mapped:
                         return candidate
                 return "scene_wildlife"
@@ -1209,17 +1268,36 @@ def _primary_genre_with_keywords_impl(
     # 6. SETTING FALLBACKS
     if kw_list:
         setting_arch_words = {
-            "indoor", "interior", "room", "living room", "bedroom", "dining room",
-            "home", "hallway", "house", "structure", "building", "real estate",
+            "indoor",
+            "interior",
+            "room",
+            "living room",
+            "bedroom",
+            "dining room",
+            "home",
+            "hallway",
+            "house",
+            "structure",
+            "building",
+            "real estate",
         }
         setting_land_words = {
-            "outdoor", "exterior", "outdoors", "outside", "scenery", "vista",
+            "outdoor",
+            "exterior",
+            "outdoors",
+            "outside",
+            "scenery",
+            "vista",
         }
         for t in kw_list:
             t_lower = t.lower()
-            if any(f" {w} " in f" {t_lower} " or t_lower == w for w in setting_arch_words):
+            if any(
+                f" {w} " in f" {t_lower} " or t_lower == w for w in setting_arch_words
+            ):
                 return "scene_architecture"
-            if any(f" {w} " in f" {t_lower} " or t_lower == w for w in setting_land_words):
+            if any(
+                f" {w} " in f" {t_lower} " or t_lower == w for w in setting_land_words
+            ):
                 return "scene_landscape"
 
     return "scene_unknown"
