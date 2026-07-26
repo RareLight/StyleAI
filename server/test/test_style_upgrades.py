@@ -282,7 +282,7 @@ def test_chromadb_numpy_array_return_handling(mocker):
 
 
 def test_embedding_first_recommendations_over_text_divergence(mocker):
-    """Verify that diffuse scene_general candidate photos with high visual similarity are admitted, but distinct conflicting regimes are excluded."""
+    """High-confidence visual neighbors outrank noisy text-derived genres."""
     mock_style = [
         {
             "style_id": "style-embed",
@@ -304,10 +304,11 @@ def test_embedding_first_recommendations_over_text_divergence(mocker):
     mock_collection = mocker.MagicMock()
     # photo-ex is the training example [1.0, 0.0, 0.0]
     # photo-cand-diffuse has high similarity [0.85, 0.5, 0.0] with diffuse tag 'scene_general'
-    # photo-cand-conflict has high similarity [0.85, 0.5, 0.0] but conflicting regime 'scene_studio'
+    # photo-cand-conflict has comparably high visual similarity but a conflicting
+    # scene tag.  Embeddings are authoritative; genre is only a guardrail.
     mock_collection.get.return_value = {
         "ids": ["photo-ex", "photo-cand-diffuse", "photo-cand-conflict"],
-        "embeddings": [[1.0, 0.0, 0.0], [0.85, 0.5, 0.0], [0.85, 0.5, 0.0]],
+        "embeddings": [[1.0, 0.0, 0.0], [0.85, 0.5, 0.0], [0.85, -0.5, 0.0]],
         "metadatas": [
             {"camera_profile": "Adobe Standard", "scene_tags": '["scene_landscape"]'},
             {
@@ -330,7 +331,7 @@ def test_embedding_first_recommendations_over_text_divergence(mocker):
         for r in res["styles"][0]["recommended_photo_ids"]
     ]
     assert "photo-cand-diffuse" in recs
-    assert "photo-cand-conflict" not in recs
+    assert "photo-cand-conflict" in recs
 
 
 def test_dual_gated_screening_rejects_moderate_similarity_cross_talk(mocker):

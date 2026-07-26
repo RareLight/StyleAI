@@ -745,3 +745,11 @@ def enqueue_photo():
 
     status = "accepted" if rejected == 0 else "backpressure"
     return jsonify({"status": status, "enqueued": enqueued, "rejected": rejected}), 202
+
+
+@index_bp.route("/index_queue/status", methods=["GET"])
+def index_queue_status():
+    """Expose bounded-queue capacity so the plugin can pace extraction."""
+    from services.index import get_index_queue_status
+
+    return jsonify(get_index_queue_status())
