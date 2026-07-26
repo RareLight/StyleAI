@@ -82,3 +82,29 @@ def test_cancel_discards_pending_queue_work(client, mocker):
     assert server_lifecycle.GLOBAL_CANCEL_EVENT.is_set()
     mock_discard.assert_called_once()
     server_lifecycle.GLOBAL_CANCEL_EVENT.clear()
+
+
+def test_shutdown_delegates_to_bounded_lifecycle(client, mocker):
+    request_shutdown = mocker.patch("routes.server.server_lifecycle.request_shutdown")
+
+    response = client.post("/shutdown")
+
+    assert response.status_code == 200
+    assert response.get_json()["results"] == {"status": "Server is shutting down..."}
+    request_shutdown.assert_called_once()
+
+
+def test_initialize_rejects_switching_to_a_second_catalog(client, mocker, tmp_path):
+    from services.chroma import CatalogOwnershipError
+
+    mocker.patch(
+        "services.chroma.ensure_db_path",
+        side_effect=CatalogOwnershipError("already bound to a different catalog"),
+    )
+
+    response = client.post(
+        "/initialize", json={"db_path": str(tmp_path / "styleai.db")}
+    )
+
+    assert response.status_code == 409
+    assert "already bound" in response.get_json()["error"]

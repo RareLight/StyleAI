@@ -43,6 +43,10 @@ class DatabaseNotReadyError(Exception):
     pass
 
 
+class CatalogOwnershipError(RuntimeError):
+    """Raised when a running backend is asked to switch Lightroom catalogs."""
+
+
 # InsightFace embeddings are 512-dimensional
 FACE_EMBEDDING_DIM = 512
 
@@ -130,10 +134,9 @@ def ensure_db_path(db_path: str) -> bool:
     Returns True if any switch/init happened, False if the path was already active.
 
     Acts as the recovery path used by the per-request middleware: if the
-    process restarted (config.DB_PATH lost) the next request that carries a
-    db_path re-binds the backend transparently. If `db_path` differs from
-    the currently-active one, the chroma client is reset and re-opened
-    against the new location (same semantics as the /initialize route).
+    process restarted without a database binding, the first request binds it.
+    A live backend is intentionally owned by exactly one Lightroom catalog;
+    it must never switch to a different catalog database in-process.
     """
     if not db_path:
         return False
@@ -149,8 +152,10 @@ def ensure_db_path(db_path: str) -> bool:
             return False
 
         if config.DB_PATH and config.DB_PATH != db_path:
-            logger.info("Switching catalog database: %s -> %s", config.DB_PATH, db_path)
-            reset_chroma_client()
+            raise CatalogOwnershipError(
+                "This backend is already bound to a different Lightroom catalog. "
+                "Stop it before opening another catalog."
+            )
         elif not config.DB_PATH:
             logger.info("Binding backend to db_path from request: %s", db_path)
 
