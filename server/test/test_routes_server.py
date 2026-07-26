@@ -19,7 +19,11 @@ def test_ping_returns_pong(client):
     assert response.get_data(as_text=True) == "pong"
 
 
-def test_version_returns_backend_version(client):
+def test_version_returns_backend_version(client, mocker):
+    mocker.patch(
+        "routes.server.service_version.get_backend_version_info",
+        return_value={"backend_version": "0.8.1-test", "hardware_profile": {}},
+    )
     response = client.get("/version")
     assert response.status_code == 200
     _json = response.get_json()

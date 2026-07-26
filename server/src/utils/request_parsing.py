@@ -100,7 +100,16 @@ def _extract_options(data) -> dict[str, Any]:
     options["submit_folder_names"] = _bool_from_data(data, "submit_folder_names", False)
 
     # Existing keywords
-    raw_existing = _parse_json_field(data.get("existing_keywords"))
+    existing_keywords_value = data.get("existing_keywords")
+    # Multipart callers commonly send a plain CSV string. Preserve that input
+    # instead of treating failed JSON decoding as an absent field; JSON arrays
+    # and JSON-quoted strings remain supported for structured callers.
+    if isinstance(existing_keywords_value, str) and not existing_keywords_value.lstrip().startswith(
+        ("[", "{", '"')
+    ):
+        raw_existing = existing_keywords_value
+    else:
+        raw_existing = _parse_json_field(existing_keywords_value)
     if raw_existing is None:
         options["existing_keywords"] = None
     elif isinstance(raw_existing, str):

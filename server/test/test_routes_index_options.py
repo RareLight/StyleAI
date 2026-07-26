@@ -79,13 +79,9 @@ class ExtractOptionsTests(unittest.TestCase):
         opts = _extract_options({"generate_keywords": "yes"})
         self.assertFalse(opts["generate_keywords"])
 
-    def test_existing_keywords_raw_csv_string_dropped_to_none(self):
-        # Pin current behavior: a raw CSV string is fed through json.loads
-        # first; since "Alpha,Beta" isn't valid JSON, it falls back to None
-        # and existing_keywords becomes None. Likely a latent bug — the
-        # in-source comment claims CSVs are normalized to a list.
+    def test_existing_keywords_raw_csv_string_split(self):
         opts = _extract_options({"existing_keywords": "Alpha,Beta,Gamma"})
-        self.assertIsNone(opts["existing_keywords"])
+        self.assertEqual(opts["existing_keywords"], ["Alpha", "Beta", "Gamma"])
 
     def test_existing_keywords_json_quoted_csv_string_split(self):
         # When the client JSON-encodes a CSV string, the inner string is
