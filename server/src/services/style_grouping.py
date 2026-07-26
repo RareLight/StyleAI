@@ -938,29 +938,46 @@ def _primary_genre_with_keywords_impl(
         for target_genre in tier_order:
             for t in kw_list:
                 t_lower = t.lower()
+                matched_target = None
                 if (
                     _BROAD_GENRE_MAP.get(t_lower) == target_genre
                     or _BROAD_GENRE_MAP.get(t) == target_genre
                 ):
-                    return target_genre
-                mapped = _KEYWORD_TO_GENRE.get(t_lower)
-                if mapped and _get_broad_genre(mapped) == target_genre:
-                    return target_genre
-                for k, genre_val in _KEYWORD_TO_GENRE.items():
-                    if _get_broad_genre(genre_val) == target_genre and len(k) >= 3:
-                        if (
-                            f" {k} " in f" {t_lower} "
-                            or t_lower.startswith(f"{k} ")
-                            or t_lower.endswith(f" {k}")
-                        ):
-                            return target_genre
+                    matched_target = target_genre
+                elif mapped := _KEYWORD_TO_GENRE.get(t_lower):
+                    if _get_broad_genre(mapped) == target_genre:
+                        matched_target = target_genre
+                else:
+                    for k, genre_val in _KEYWORD_TO_GENRE.items():
+                        if _get_broad_genre(genre_val) == target_genre and len(k) >= 3:
+                            if (
+                                f" {k} " in f" {t_lower} "
+                                or t_lower.startswith(f"{k} ")
+                                or t_lower.endswith(f" {k}")
+                            ):
+                                matched_target = target_genre
+                                break
+                
+                if matched_target:
+                    if matched_target == "scene_wildlife":
+                        top_mapped = {
+                            _get_broad_genre(vt)
+                            for vt in content_tags[:12]
+                        }
+                        if "scene_macro" in top_mapped:
+                            return "scene_macro"
+                        if "scene_portrait" in top_mapped:
+                            return "scene_portrait"
+                    return matched_target
 
         for t in kw_list:
             mapped = _get_broad_genre(t)
             if mapped != "scene_unknown":
-                if mapped == "scene_nature":
+                if mapped in ("scene_nature", "scene_landscape", "scene_exterior"):
                     specialized = {_get_broad_genre(k) for k in kw_list} - {
                         "scene_nature",
+                        "scene_landscape",
+                        "scene_exterior",
                         "scene_unknown",
                     }
                     if specialized:
@@ -1000,6 +1017,7 @@ def _primary_genre_with_keywords_impl(
             "scene_nature",
             "scene_wildlife",
             "scene_macro",
+            "scene_portrait",
         }:
             if (
                 first_tag == "scene_landscape"
@@ -1036,20 +1054,28 @@ def _primary_genre_with_keywords_impl(
                     "scene_studio",
                     "scene_portrait",
                 ]
+            elif primary_mapped == "scene_portrait":
+                tier_order_subjects = [
+                    "scene_studio",
+                    "scene_macro",
+                    "scene_action",
+                    "scene_event",
+                    "scene_street",
+                ]
             else:
                 tier_order_subjects = [
                     "scene_studio",
                     "scene_macro",
-                    "scene_portrait",
-                    "scene_wildlife",
                     "scene_action",
                     "scene_event",
                     "scene_astrophotography",
                     "scene_street",
+                    "scene_portrait",
+                    "scene_wildlife",
                     "scene_architecture",
                 ]
             
-            if primary_mapped in ("scene_nature", "scene_wildlife", "scene_exterior"):
+            if primary_mapped in ("scene_nature", "scene_wildlife", "scene_exterior", "scene_landscape"):
                 top_vision_tags = content_tags[:12]
             else:
                 top_vision_tags = content_tags[:6]
