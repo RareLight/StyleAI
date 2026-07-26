@@ -397,26 +397,30 @@ class AnalysisService:
                 uuid, image_data[i], per_image_options
             )
 
-        # ThreadPoolExecutor is safe here since LLM calls are I/O bound.
-        # However, because local LLMs (LM Studio/Ollama) are extremely VRAM and
-        # context-switching bound, high concurrency causes massive degradation.
         # We cap max_workers using the STYLEAI_LLM_CONCURRENCY config to protect GPU throughput by default,
         # while allowing power users to increase it.
+        # Use a global executor to properly limit concurrency ACROSS multiple concurrent Waitress batch requests,
+        # which pipelines Python GPU processing with downstream Lua SQLite catalog writes.
         from config import STYLEAI_LLM_CONCURRENCY
 
-        max_workers = max(1, min(len(uuids), STYLEAI_LLM_CONCURRENCY))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(process_single, i, uuid) for i, uuid in enumerate(uuids)
-            ]
-            for future in futures:
-                try:
-                    idx, response = future.result()
-                    results[idx] = response
-                except Exception as e:
-                    logger.error(
-                        f"Error in concurrent metadata generation: {e}", exc_info=True
-                    )
+        global _global_llm_executor
+        if "_global_llm_executor" not in globals():
+            _global_llm_executor = ThreadPoolExecutor(
+                max_workers=STYLEAI_LLM_CONCURRENCY
+            )
+
+        futures = [
+            _global_llm_executor.submit(process_single, i, uuid)
+            for i, uuid in enumerate(uuids)
+        ]
+        for future in futures:
+            try:
+                idx, response = future.result()
+                results[idx] = response
+            except Exception as e:
+                logger.error(
+                    f"Error in concurrent metadata generation: {e}", exc_info=True
+                )
 
         return results
 
