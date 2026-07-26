@@ -1,6 +1,7 @@
 import os
 import sys
-sys.path.append(os.path.join(os.getcwd(), 'src'))
+
+sys.path.append(os.path.join(os.getcwd(), "src"))
 from services import style_grouping as sg
 
 tags = ["building", "architecture", "city", "sky", "landscape"]

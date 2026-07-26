@@ -1109,10 +1109,7 @@ def _primary_genre_with_keywords_impl(
             elif primary_mapped == "scene_architecture":
                 # Guard against distant buildings in landscapes
                 top_tags = content_tags[:5]
-                if (
-                    "scene_landscape" in top_tags
-                    or "scene_nature" in top_tags
-                ):
+                if "scene_landscape" in top_tags or "scene_nature" in top_tags:
                     tier_order_subjects = ["scene_landscape", "scene_nature"]
                 else:
                     tier_order_subjects = []

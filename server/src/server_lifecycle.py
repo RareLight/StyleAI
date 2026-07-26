@@ -237,16 +237,12 @@ def unload_model():
             tokenizer = None
             _last_used = None
 
-            # Best-effort free memory for CUDA and MPS
+            # Best-effort free memory for CUDA
             try:
                 import torch
 
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                elif (
-                    hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-                ):
-                    torch.mps.empty_cache()
             except Exception:
                 pass
 

@@ -265,25 +265,25 @@ def process_image_task(
             f"compute_metadata={compute_metadata}, compute_faces={compute_faces}"
         )
 
-        # Check existing records if regenerate_metadata is False
+        # Always check existing records to preserve fields (like scene_tags, has_embedding)
+        # even when regenerating specific metadata.
         existing_records = {}
-        if not regenerate_metadata:
-            logger.info(
-                "Checking existing records to determine what needs generation..."
+        logger.info(
+            "Checking existing records to determine what needs generation and preserve fields..."
+        )
+        uuids_to_check = [uuid for _, uuid, _, _ in image_triplets]
+        try:
+            # Use bulk get query to dramatically reduce DB latency
+            raw = chroma_service.collection.get(
+                ids=uuids_to_check, include=["metadatas"]
             )
-            uuids_to_check = [uuid for _, uuid, _, _ in image_triplets]
-            try:
-                # Use bulk get query to dramatically reduce DB latency
-                raw = chroma_service.collection.get(
-                    ids=uuids_to_check, include=["metadatas"]
-                )
-                if raw and raw.get("ids"):
-                    for idx, pid in enumerate(raw["ids"]):
-                        metas = raw.get("metadatas") or [{}] * len(raw["ids"])
-                        meta = metas[idx] if idx < len(metas) else {}
-                        existing_records[pid] = meta
-            except Exception as e:
-                logger.warning(f"Bulk ChromaDB get failed: {e}")
+            if raw and raw.get("ids"):
+                for idx, pid in enumerate(raw["ids"]):
+                    metas = raw.get("metadatas") or [{}] * len(raw["ids"])
+                    meta = metas[idx] if idx < len(metas) else {}
+                    existing_records[pid] = meta
+        except Exception as e:
+            logger.warning(f"Bulk ChromaDB get failed: {e}")
 
         # Determine what actually needs to be computed for each image.
         # Sets (not lists) because downstream code does `uuid in ...` membership
@@ -443,7 +443,9 @@ def process_image_task(
                     )
                     error_messages.append(f"{filename}: {error_txt}")
                     failure_count += 1
-                    continue
+                    # Do not discard a successfully generated embedding just because metadata failed
+                    if not (need_embedding and embedding is not None):
+                        continue
 
                 if metadata_data and metadata_data.warning:
                     warnings.append(f"{filename}: {metadata_data.warning}")
@@ -716,6 +718,7 @@ def _dynamic_gpu_worker():
 
         # Wait a tiny bit (50ms) to allow the rest of the batch to arrive over the network
         import time
+
         time.sleep(0.05)
 
         batch = [first_item]
