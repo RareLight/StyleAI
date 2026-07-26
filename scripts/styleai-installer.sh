@@ -19,7 +19,10 @@ echo ""
 # ── Helper functions ────────────────────────────────────────────────────────
 
 ensure_lightroom_is_stopped() {
-    if pgrep -f '[L]ightroom Classic' >/dev/null 2>&1; then
+    # Adobe crash-reporting and Creative Cloud helper processes live below the
+    # Lightroom app bundle even after Lightroom exits. Match only LrC's main
+    # executable, not every process whose path happens to mention the app.
+    if pgrep -f '/Adobe Lightroom Classic\.app/Contents/MacOS/Adobe Lightroom Classic([[:space:]]|$)' >/dev/null 2>&1; then
         echo "ERROR: Lightroom Classic is running."
         echo "Quit Lightroom completely before installing or redeploying StyleAI so it cannot retain old plugin code."
         return 1
