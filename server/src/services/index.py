@@ -9,6 +9,7 @@ dedicated GPU thread) exclusively handles SigLIP2 and InsightFace model inferenc
 eliminating UI blocking and massive pipeline stalls during bulk catalog indexing.
 """
 
+import config
 from config import logger
 from . import chroma as chroma_service
 from .chroma import DatabaseNotReadyError
@@ -695,13 +696,43 @@ def process_image_task(
 
 
 # Dynamic Batching Queue
-index_queue = queue.Queue()
+index_queue = queue.Queue(maxsize=config.STYLEAI_INDEX_QUEUE_CAPACITY)
+_index_queue_accepting = threading.Event()
+_index_queue_accepting.set()
+
+
+def is_index_queue_accepting() -> bool:
+    """Whether the background worker can safely accept more JPEG payloads."""
+    return _index_queue_accepting.is_set()
+
+
+def stop_index_queue() -> int:
+    """Reject new work and release queued image bytes without waiting for GPU work.
+
+    Shutdown must be responsive to Lightroom.  In-flight work observes the
+    shared cancellation event; queued work has not started and can be safely
+    discarded immediately.
+    """
+    _index_queue_accepting.clear()
+    discarded = 0
+    while True:
+        try:
+            item = index_queue.get_nowait()
+        except queue.Empty:
+            break
+        if item is not None:
+            active_embeddings_uuids.discard(item["uuid"])
+            item.clear()
+            discarded += 1
+        index_queue.task_done()
+    logger.info("Stopped index queue; discarded %d queued item(s).", discarded)
+    return discarded
 
 
 def _dynamic_gpu_worker():
     """
     Background daemon thread that dynamically batches incoming images and runs GPU inference.
-    Pulls up to 32 images at a time from the queue.
+    Pulls a bounded hardware-tunable batch from the queue.
     """
     logger.info("Starting dynamic GPU batching worker thread...")
     while True:
@@ -723,7 +754,7 @@ def _dynamic_gpu_worker():
 
         batch = [first_item]
         # Pull up to 31 more images if available instantly
-        while len(batch) < 32:
+        while len(batch) < config.STYLEAI_GPU_BATCH_SIZE:
             try:
                 item = index_queue.get_nowait()
                 if item is not None:

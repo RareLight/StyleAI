@@ -254,7 +254,6 @@ _farthest_point_sampling = _select_style_recommendations
 
 
 def get_style_upgrade_recommendations(
-    catalog_ids: list[str] | None = None,
     top_styles_limit: int = 100,
 ) -> dict[str, Any]:
     """Generate candidate photo recommendations to upgrade styles to higher ML tiers.
@@ -264,7 +263,7 @@ def get_style_upgrade_recommendations(
         and recommended candidate photo_ids.
     """
     global _recs_cache, _recs_cache_timestamp
-    cache_key = f"{catalog_ids}:{top_styles_limit}"
+    cache_key = str(top_styles_limit)
     with _recs_cache_lock:
         if (
             _recs_cache_timestamp > 0
@@ -333,12 +332,6 @@ def get_style_upgrade_recommendations(
                 p_metas = []
             for i, pid in enumerate(p_ids):
                 meta = dict(p_metas[i]) if i < len(p_metas) and p_metas[i] else {}
-                if catalog_ids:
-                    cat_str = str(
-                        meta.get("catalog_id") or meta.get("catalog_ids") or ""
-                    )
-                    if cat_str and not any(cid in cat_str for cid in catalog_ids):
-                        continue
                 if not meta.get("has_embedding", True):
                     continue
                 if style_grouping.is_stitched_panorama(meta):

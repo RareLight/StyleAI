@@ -1178,7 +1178,7 @@ function AiEditAction.run(editMode)
 						font = "<system/bold>",
 					}),
 					f:static_text({
-						title = "You can export a detailed log of the ML styles and confidence metrics applied to these photos.",
+						title = LOC("$$$/StyleAI/AiEdit/ExportLogHint=You can export a detailed log of the ML styles and confidence metrics applied to these photos."),
 						size = "small"
 					})
 				})
@@ -1192,7 +1192,7 @@ function AiEditAction.run(editMode)
 				
 				if res == "cancel" then
 					local exportDir = LrDialogs.runOpenPanel({
-						title = "Choose Export Folder for ML Edit Log",
+						title = LOC("$$$/StyleAI/AiEdit/ChooseLogFolder=Choose Export Folder for ML Edit Log"),
 						canChooseFiles = false,
 						canChooseDirectories = true,
 						canCreateDirectories = true,

@@ -1,5 +1,4 @@
 local LrPrefs = import("LrPrefs")
-local LrPasswords = import("LrPasswords")
 local Defaults = require("Defaults")
 
 SettingsManager = {}
@@ -36,7 +35,6 @@ function SettingsManager.initializeDefaults()
         editPrompt = Defaults.defaultEditPromptName,
         ollamaBaseUrl = Defaults.defaultOllamaBaseUrl,
         lmstudioBaseUrl = Defaults.defaultLmStudioBaseUrl,
-        backendServerUrl = Defaults.defaultBackendServerUrl,
         periodicalUpdateCheck = false,
         submitFolderName = false,
         useGlobalPhotoId = true,
@@ -84,11 +82,6 @@ function SettingsManager.initializeDefaults()
         end
     end
     
-    -- Special handling for empty backend url
-    if prefs.backendServerUrl == "" then
-        prefs.backendServerUrl = Defaults.defaultBackendServerUrl
-    end
-
 end
 
 --- Get a preference

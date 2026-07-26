@@ -40,6 +40,7 @@ _resources_unloaded = False
 _model_lock = threading.RLock()
 _unloader_thread = None
 GLOBAL_CANCEL_EVENT = threading.Event()
+GLOBAL_SHUTDOWN_EVENT = threading.Event()
 
 
 def _get_open_clip_tokenizer(local_files_only=False):
@@ -396,10 +397,23 @@ def request_shutdown():
     waitress's signal handler and shell job control can swallow/intercept SIGINT
     in background processes, leaving a zombie server on port 19819.
     """
+    if GLOBAL_SHUTDOWN_EVENT.is_set():
+        return
     logger.info("Shutdown request received")
+    GLOBAL_SHUTDOWN_EVENT.set()
+    GLOBAL_CANCEL_EVENT.set()
+    try:
+        from services.index import stop_index_queue
+
+        stop_index_queue()
+    except Exception:
+        logger.exception("Unable to discard queued indexing work during shutdown")
 
     def _exit_after_delay():
-        time.sleep(1)  # Allow the /shutdown HTTP response to flush
+        # Give Waitress just enough time to flush the already-returned response.
+        # Do not wait for a GPU/LLM task: cancellation and os._exit prevent the
+        # historical shutdown hang from blocking Lightroom teardown.
+        time.sleep(0.25)
         remove_pid_file()
         remove_ok_file()
         logger.info("Bye.")

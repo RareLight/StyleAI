@@ -65,9 +65,10 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 ## 3. Core Architecture & Conventions
 
 ### Communication & Photo Identity
+- **Local-only boundary**: REST is fixed to loopback port `19819`. The plugin must not support remote backend URLs, cloud model providers, API keys, or network egress of catalog images/metadata. LLM providers are limited to locally running open-weights models through Ollama or LM Studio.
 - **API Envelope**: REST on default port `19819`. All responses return `{"results": {...}, "error": null, "warning": null}`.
 - **Photo Identity**: Use stable metadata/MD5 `globalPhotoId` (`Util.getGlobalPhotoIdForPhoto`).
-- **Multi-Catalog Isolation**: Always filter ChromaDB queries (`collection.get()`) by active `catalog_ids`.
+- **Catalog ownership**: A backend process and its `<catalog parent>/styleai.db` belong to exactly one Lightroom catalog. Do not implement `catalog_id`/`catalog_ids`, cross-catalog claims, or shared-database routing. Validate that all stored records retain the active catalog's stable Lightroom UUID/global ID.
 
 ### Lua Plugin Conventions
 - **Asynchronicity & Teardown**: Run long operations in `LrTasks.startAsyncTask`. **CRITICAL**: Use `LrTasks.pcall` for normal async tasks. However, Lightroom shutdown hooks (`doneFunc` in `LrShutdownFunction`) MUST use native `pcall` because the async scheduler is unreliable during teardown and `LrTasks.pcall` will hang. NEVER use `LrTasks.execute` inside a teardown hook because it yields; use `os.execute` for synchronous/background OS calls instead.
@@ -82,6 +83,7 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 - **Memory Optimization**: ALWAYS call `Image.thumbnail()` BEFORE `.convert("RGB")` when processing images to prevent OOM memory spikes. This applies everywhere, including when generating base64 image strings for LLM payloads.
 - **Logging & Errors**: Always use configured `logger` with `exc_info=True`. Surface user errors via standard JSON envelope.
 - **LLM Concurrency & Batching**: NEVER increase `STYLEAI_LLM_CONCURRENCY` above 1 by default. Trying to force parallel local LLM requests (Ollama/LM Studio) forces the GPU to context-switch, immediately maxing out VRAM and deadlocking the process.
+- **Bounded pipeline**: The server owns job admission, image-byte budgets, per-item completion state, and cancellation. Lua must not create unbounded producer queues or multiple long-running LLM requests. Metadata generation may begin only after the corresponding embedding state is terminal.
 
 ---
 
@@ -112,3 +114,8 @@ Classification MUST use the multi-tiered pipeline (`style_grouping._primary_genr
 - **LLM Batching Protocol**: Lua plugin MUST send batch requests to `/metadata/generate_batch` (never call single `/metadata/generate` sequentially in loops).
 - **Dynamic Port & Runner Prefixes**: Auto-discover local LLM hosts (`find_default_local_api_host()`); use explicit runner prefixes (`ollama::`, `lmstudio::`).
 - **GPU Pipeline Synchronization**: Downstream LLM workers must pause on `active_embeddings_uuids` gate until upstream vision embedding workers commit output to the database.
+
+### Embedding-first Style Discovery and Recommendations
+- **Do not use taxonomy as the primary gate**: Genre labels, tags, and EXIF are probabilistic priors and review aids. They must not be hard-coded exception ladders that decide visual membership before embeddings are evaluated.
+- **Component membership**: Within hard camera/profile/HDR partitions, represent a style using dense visual/editing components (medoids and calibrated membership distributions), not a single centroid or a global cosine threshold. Reject candidates that are ambiguous between competing styles.
+- **Recommendation selection**: Retrieve visual neighbors through Chroma, then re-rank by component membership, quality, burst deduplication, and coverage of underrepresented components. Maintain labelled regression fixtures and measure precision/leakage before changing membership logic.

@@ -1,7 +1,9 @@
 import base64
+import queue
 import pytest
 
 from styleai_server import app
+from services import index as index_service
 
 
 @pytest.fixture
@@ -25,11 +27,25 @@ def test_index_base64_batch_returns_envelope(client, mocker):
                     "image": img_b64,
                     "photo_id": "a",
                     "filename": "a.jpg",
-                    "options": {"date_time_unix": 12345},
+                    "options": {
+                        "date_time_unix": 12345,
+                        "raw_filepath": "/catalog/a.raw",
+                        "camera_profile": "Adobe Landscape",
+                        "camera_make": "Canon",
+                        "camera_model": "EOS R5",
+                        "focal_length": "35",
+                        "lens": "RF 35mm F1.8",
+                        "iso": "400",
+                        "aperture": "2.8",
+                        "shutter_speed": "1/125",
+                        "rating": "5",
+                        "pick_status": "1",
+                        "is_edited": "true",
+                    },
                 },
                 {"image": img_b64, "photo_id": "b", "filename": "b.jpg"},
             ],
-            "options": {"provider": "gemini", "model": "gemini-1.5-flash"},
+            "options": {"provider": "ollama", "model": "qwen3-vl"},
         },
     )
     assert response.status_code == 200
@@ -54,13 +70,27 @@ def test_index_base64_batch_merges_options(client, mocker):
                     "image": img_b64,
                     "photo_id": "a",
                     "filename": "a.jpg",
-                    "options": {"date_time_unix": 12345},
+                        "options": {
+                            "date_time_unix": 12345,
+                            "raw_filepath": "/catalog/a.raw",
+                            "camera_profile": "Adobe Landscape",
+                            "camera_make": "Canon",
+                            "camera_model": "EOS R5",
+                            "focal_length": "35",
+                            "lens": "RF 35mm F1.8",
+                            "iso": "400",
+                            "aperture": "2.8",
+                            "shutter_speed": "1/125",
+                            "rating": "5",
+                            "pick_status": "1",
+                            "is_edited": "true",
+                        },
                 },
                 {"image": img_b64, "photo_id": "b", "filename": "b.jpg"},
             ],
             "options": {
-                "provider": "gemini",
-                "model": "gemini-1.5-flash",
+                "provider": "ollama",
+                "model": "qwen3-vl",
                 "tasks": ["metadata"],
             },
         },
@@ -74,10 +104,62 @@ def test_index_base64_batch_merges_options(client, mocker):
 
     # Image A options
     assert per_image_options[0]["date_time_unix"] == 12345
-    assert per_image_options[0]["provider"] == "gemini"
+    assert per_image_options[0]["provider"] == "ollama"
     assert per_image_options[0]["compute_metadata"] is True
+    assert per_image_options[0]["raw_filepath"] == "/catalog/a.raw"
+    assert per_image_options[0]["camera_profile"] == "Adobe Landscape"
+    assert per_image_options[0]["camera_make"] == "Canon"
+    assert per_image_options[0]["camera_model"] == "EOS R5"
+    assert per_image_options[0]["focal_length"] == 35.0
+    assert per_image_options[0]["lens"] == "RF 35mm F1.8"
+    assert per_image_options[0]["iso"] == 400.0
+    assert per_image_options[0]["aperture"] == 2.8
+    assert per_image_options[0]["shutter_speed"] == "1/125"
+    assert per_image_options[0]["rating"] == 5
+    assert per_image_options[0]["pick_status"] == 1
+    assert per_image_options[0]["is_edited"] is True
 
     # Image B options
     assert per_image_options[1]["date_time_unix"] is None
-    assert per_image_options[1]["provider"] == "gemini"
+    assert per_image_options[1]["provider"] == "ollama"
     assert per_image_options[1]["compute_metadata"] is True
+
+
+def test_index_queue_rejects_before_decoding_when_full(client, monkeypatch):
+    bounded_queue = queue.Queue(maxsize=1)
+    bounded_queue.put({"uuid": "already-queued"})
+    monkeypatch.setattr(index_service, "index_queue", bounded_queue)
+    index_service._index_queue_accepting.set()
+
+    response = client.post(
+        "/index_queue",
+        json={
+            "images": [
+                {
+                    "image": "not-valid-base64-because-it-must-not-be-decoded",
+                    "photo_id": "rejected",
+                    "filename": "rejected.jpg",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.get_json()["results"]
+    assert payload == {"status": "backpressure", "enqueued": 0, "rejected": 1}
+
+
+def test_stop_index_queue_releases_pending_images(monkeypatch):
+    bounded_queue = queue.Queue(maxsize=2)
+    item = {"uuid": "queued", "image_bytes": b"image"}
+    bounded_queue.put(item)
+    monkeypatch.setattr(index_service, "index_queue", bounded_queue)
+    index_service.active_embeddings_uuids.add("queued")
+    index_service._index_queue_accepting.set()
+
+    assert index_service.stop_index_queue() == 1
+    assert bounded_queue.empty()
+    assert item == {}
+    assert "queued" not in index_service.active_embeddings_uuids
+    assert index_service.is_index_queue_accepting() is False
+    index_service._index_queue_accepting.set()

@@ -43,6 +43,24 @@ def _bool_from_data(data, key: str, default: bool = False) -> bool:
     return str(data.get(key, default)).lower() == "true"
 
 
+def _optional_float(data, key: str) -> float | None:
+    """Return a finite numeric request field, or ``None`` when absent/invalid."""
+    value = data.get(key)
+    if value is None or value == "":
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if result == result and abs(result) != float("inf") else None
+
+
+def _optional_int(data, key: str) -> int | None:
+    """Return an integer request field, or ``None`` when absent/invalid."""
+    value = _optional_float(data, key)
+    return int(value) if value is not None else None
+
+
 def _extract_options(data) -> dict[str, Any]:
     """Extracts options from request data (form or json)."""
     options: dict[str, Any] = {}
@@ -58,7 +76,6 @@ def _extract_options(data) -> dict[str, Any]:
     # Provider / model basics
     options["provider"] = data.get("provider")
     options["model"] = data.get("model")
-    options["api_key"] = data.get("api_key")
     options["language"] = data.get("language", "German")
 
     # Temperature
@@ -129,14 +146,6 @@ def _extract_options(data) -> dict[str, Any]:
     options["ollama_base_url"] = data.get("ollama_base_url") or None
     options["lmstudio_base_url"] = data.get("lmstudio_base_url") or None
 
-    # Privacy options
-    options["blurFacesForCloud"] = _bool_from_data(data, "blurFacesForCloud", False)
-    if options["blurFacesForCloud"]:
-        options["faceBlurSensitivity"] = data.get("faceBlurSensitivity", "balanced")
-    else:
-        # Ignore sub-options if blur faces is turned off
-        options["faceBlurSensitivity"] = "balanced"
-
     raw_current_settings = _parse_json_field(data.get("current_settings"))
     options["current_settings"] = (
         raw_current_settings if isinstance(raw_current_settings, dict) else None
@@ -195,6 +204,27 @@ def _extract_options(data) -> dict[str, Any]:
     # Capture time
     options["date_time"] = data.get("date_time")
     options["date_time_unix"] = data.get("date_time_unix")
+
+    # Catalog facts travel with every queued image.  They are deliberately
+    # parsed once at the boundary so downstream services see the same types for
+    # batch and single-image requests.
+    for key, max_length in (
+        ("raw_filepath", 4096),
+        ("camera_profile", 128),
+        ("camera_make", 64),
+        ("camera_model", 64),
+        ("lens", 128),
+        ("shutter_speed", 16),
+    ):
+        value = data.get(key)
+        options[key] = str(value)[:max_length] if value not in (None, "") else None
+    for key in ("focal_length", "iso", "aperture"):
+        options[key] = _optional_float(data, key)
+    for key in ("rating", "pick_status"):
+        options[key] = _optional_int(data, key)
+    options["is_edited"] = (
+        _bool_from_data(data, "is_edited") if data.get("is_edited") is not None else None
+    )
 
     # Tasks list (indexing-specific, kept for backwards compatibility)
     tasks_raw = data.get("tasks")

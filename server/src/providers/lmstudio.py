@@ -234,7 +234,7 @@ class LMStudioProvider(LLMProviderBase):
                 system_prompt = self._prepare_system_prompt(request)
                 user_prompt = self._prepare_user_prompt(request)
 
-                # Prepare OpenAI-style response format
+                # Normalize the compatible response shape returned by LM Studio.
                 response_schema = self._prepare_response_structure(request)
 
                 # Make request to LM Studio

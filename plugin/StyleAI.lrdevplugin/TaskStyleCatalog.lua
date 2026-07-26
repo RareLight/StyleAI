@@ -17,7 +17,7 @@ LrTasks.startAsyncTask(function()
 		props.listItems = {}
 		props.selectedStyleIndex = 0
 		props.selectedProfileFilter = "All Profiles"
-		props.profileFilters = { { title = "All Profiles", value = "All Profiles" } }
+		props.profileFilters = { { title = LOC("$$$/StyleAI/StyleCatalog/AllProfiles=All Profiles"), value = "All Profiles" } }
 		props.isLoading = false
 
 		props.detailName = ""
@@ -159,7 +159,7 @@ LrTasks.startAsyncTask(function()
 						return a.count > b.count
 					end)
 
-					local profileList = { { title = "All Profiles", value = "All Profiles" } }
+			local profileList = { { title = LOC("$$$/StyleAI/StyleCatalog/AllProfiles=All Profiles"), value = "All Profiles" } }
 					for _, item in ipairs(sortedProfiles) do
 						table.insert(profileList, { 
 							title = string.format("%s (%d)", item.profile, item.count), 

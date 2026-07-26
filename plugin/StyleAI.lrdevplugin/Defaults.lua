@@ -50,8 +50,6 @@ Defaults.exportSizes = {
 Defaults.defaultOllamaBaseUrl = "http://localhost:11434"
 Defaults.defaultLmStudioBaseUrl = "localhost:1234"
 
-Defaults.defaultBackendServerUrl = "http://127.0.0.1:19819"
-
 Defaults.defaultExportQuality = 50
 Defaults.defaultExportSize = "3072"
 
@@ -175,8 +173,6 @@ Defaults.credits = {
 	{ name = "NumPy", author = "NumPy Developers", url = "https://numpy.org/" },
 	{ name = "Pandas", author = "Pandas Development Team", url = "https://pandas.pydata.org/" },
 	{ name = "Transformers", author = "Hugging Face", url = "https://huggingface.co/transformers/" },
-	{ name = "Google GenAI SDK", author = "Google", url = "https://ai.google.dev/" },
-	{ name = "OpenAI SDK", author = "OpenAI", url = "https://github.com/openai/openai-python" },
 	{ name = "Ollama SDK", author = "Ollama", url = "https://github.com/ollama/ollama-python" },
 	{ name = "LM Studio SDK", author = "LM Studio", url = "https://lmstudio.ai/" },
 	{ name = "InsightFace", author = "DeepInsight", url = "https://github.com/deepinsight/insightface" },

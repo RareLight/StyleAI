@@ -10,7 +10,7 @@
 
 ## 📖 Our Philosophy
 
-StyleAI was built with a simple goal: to provide powerful AI tools for photographers without compromising their privacy. We understand that your photo library is personal, and your creative "DNA" (editing style) is your intellectual property. Our architecture reflects this by prioritizing local processing over cloud-based workflows.
+StyleAI was built with a simple goal: to provide powerful AI tools for photographers without compromising their privacy. We understand that your photo library is personal, and your creative "DNA" (editing style) is your intellectual property. Images, metadata, embeddings, and local-model requests remain on the same machine as Lightroom; StyleAI does not support cloud model providers or remote backends.
 
 ---
 

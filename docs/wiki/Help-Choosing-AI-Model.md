@@ -18,7 +18,7 @@ Choose based on:
 
 Local providers run on your own machine, so privacy is the strongest argument
 for using them. Quality of small open-weights vision models has improved
-significantly, but cloud frontier models still lead on tricky scenes.
+significantly; choose a capable local vision model that fits your available unified memory or VRAM.
 
 ### Ollama
 

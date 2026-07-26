@@ -1,6 +1,6 @@
 import config
 config.DB_PATH = "/Users/anna/Pictures/Lightroom Classic/Rare Light Photography/styleai.db"
-from services.style_grouping import _KEYWORD_TO_GENRE, _BROAD_GENRE_MAP, _get_broad_genre
+from services.style_grouping import _KEYWORD_TO_GENRE, _BROAD_GENRE_MAP, _get_broad_genre  # noqa: E402
 
 def new_vision_model_tags_logic(content_tags, priors):
     if not content_tags:

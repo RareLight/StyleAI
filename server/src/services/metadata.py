@@ -187,13 +187,17 @@ class AnalysisService:
             from .index import active_embeddings_uuids
             import time
 
-            # Wait for any in-flight embeddings for this batch to complete
+            # Metadata clustering must observe committed embeddings.  A fixed
+            # 15-second deadline races slow MPS batches and produces results
+            # from an incomplete index, so wait until the producer finishes or
+            # the operation is explicitly cancelled.
+            from server_lifecycle import GLOBAL_CANCEL_EVENT
+
             for uid in uuids:
-                if uid in active_embeddings_uuids:
-                    for _ in range(60):  # Wait up to 15 seconds
-                        if uid not in active_embeddings_uuids:
-                            break
-                        time.sleep(0.25)
+                while uid in active_embeddings_uuids:
+                    if GLOBAL_CANCEL_EVENT.is_set():
+                        raise RuntimeError("Batch canceled while waiting for embeddings.")
+                    time.sleep(0.10)
 
             # Bulk fetch missing embeddings from ChromaDB
             fetched_embeddings = {}

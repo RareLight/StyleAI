@@ -49,7 +49,7 @@ LrTasks.startAsyncTask(function()
 
 		local results = {}
 		local progressScope = LrDialogs.showModalProgressDialog({
-			title = "Running Performance Benchmark...",
+			title = LOC("$$$/StyleAI/TaskBenchmark/Running=Running Performance Benchmark..."),
 			functionContext = ctx
 		})
 
