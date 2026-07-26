@@ -537,7 +537,14 @@ class LLMProviderBase(ABC):
                 return base64.b64encode(image_data).decode("utf-8")
 
             # For non-JPEGs (PNG, WEBP, etc.), convert to JPEG
-            image = Image.open(io.BytesIO(image_data)).convert("RGB")
+            image = Image.open(io.BytesIO(image_data))
+
+            # Optimization: Resize extremely large images before conversion to prevent OOM
+            max_dim = 2048
+            if max(image.size) > max_dim:
+                image.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+
+            image = image.convert("RGB")
 
             buffer = io.BytesIO()
             # Keep high quality for conversion

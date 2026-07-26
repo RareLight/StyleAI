@@ -2011,6 +2011,13 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end
                 end
             else
+                local waitLoops = 0
+                while #preparedQueue < batchSize and not preparationDone and waitLoops < 20 do
+                    LrTasks.yield()
+                    LrTasks.sleep(0.05)
+                    waitLoops = waitLoops + 1
+                end
+
                 local batchItemsToSend = {}
                 local localFailures = {}
                 local subBatchPhotos = {}
@@ -2097,6 +2104,13 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     LrTasks.sleep(0.1)
                 end
             else
+                local waitLoops = 0
+                while #llmQueue < 32 and not preparationDone and waitLoops < 20 do
+                    LrTasks.yield()
+                    LrTasks.sleep(0.05)
+                    waitLoops = waitLoops + 1
+                end
+
                 local batch = {}
                 while #llmQueue > 0 and #batch < 32 do
                     local item = table.remove(llmQueue)
