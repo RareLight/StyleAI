@@ -336,43 +336,68 @@ LrTasks.startAsyncTask(function()
 			LrTasks.startAsyncTask(function()
 				local totalPhotosAdded = 0
 				local stylesProcessed = 0
-				local findAllProgress = LrProgressScope({
-					title = LOC("$$$/StyleAI/UpgradeAssistant/FindAllProgress=Creating upgrade collections for all styles...")
-				})
-				local styleEntries = {}
-				for _, s in ipairs(props.styles or {}) do
-					if findAllProgress:isCanceled() then break end
-					local recIds = s.recommended_photo_ids or {}
-					if #recIds > 0 then
-						local sName = s.style_name or "Unknown Style"
-						local sProf = s.camera_profile or ""
-						local fullName = sName
-						if sProf ~= "" and sProf ~= "Default" and not string.find(string.lower(sName), string.lower(sProf), 1, true) then
-							fullName = string.format("%s (%s)", sName, sProf)
+				local findAllProgress = nil
+				local wasCanceled = false
+				local ok, err = LrTasks.pcall(function()
+					findAllProgress = LrProgressScope({
+						title = LOC("$$$/StyleAI/UpgradeAssistant/FindAllProgress=Creating upgrade collections for all styles...")
+					})
+					local styleEntries = {}
+					for _, s in ipairs(props.styles or {}) do
+						if findAllProgress:isCanceled() then break end
+						local recIds = s.recommended_photo_ids or {}
+						if #recIds > 0 then
+							local sName = s.style_name or "Unknown Style"
+							local sProf = s.camera_profile or ""
+							local fullName = sName
+							if sProf ~= "" and sProf ~= "Default" and not string.find(string.lower(sName), string.lower(sProf), 1, true) then
+								fullName = string.format("%s (%s)", sName, sProf)
+							end
+							table.insert(styleEntries, { fullName = fullName, photoIds = recIds })
 						end
-						table.insert(styleEntries, { fullName = fullName, photoIds = recIds })
+					end
+					local batchedResults = SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, findAllProgress)
+					local stylesData = {}
+					for _, entry in ipairs(batchedResults) do
+						if findAllProgress:isCanceled() then break end
+						if #(entry.photos or {}) > 0 then
+							table.insert(stylesData, { styleName = entry.fullName, photos = entry.photos })
+							totalPhotosAdded = totalPhotosAdded + #entry.photos
+							stylesProcessed = stylesProcessed + 1
+						end
+					end
+
+					if not findAllProgress:isCanceled() and #stylesData > 0 then
+						Util.addMultipleUpgradePhotosToCollections(stylesData, nil, findAllProgress)
+					end
+					wasCanceled = findAllProgress:isCanceled()
+				end)
+
+				-- Always close the progress scope and unlock the dialog, including API and catalog-write failures.
+				if findAllProgress then
+					local progressOk, progressErr = LrTasks.pcall(function()
+						findAllProgress:done()
+					end)
+					if not progressOk and ok then
+						ok = false
+						err = progressErr
 					end
 				end
-				local batchedResults = SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, findAllProgress)
-				local stylesData = {}
-				for _, entry in ipairs(batchedResults) do
-					if findAllProgress:isCanceled() then break end
-					if #(entry.photos or {}) > 0 then
-						table.insert(stylesData, { styleName = entry.fullName, photos = entry.photos })
-						totalPhotosAdded = totalPhotosAdded + #entry.photos
-						stylesProcessed = stylesProcessed + 1
-					end
+				props.isLoading = false
+
+				if not ok then
+					log:error("Show All Candidate Photos failed: " .. tostring(err))
+					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/FindAllErrorStatus=Could not create all upgrade collections.")
+					LrDialogs.message(
+						LOC("$$$/StyleAI/UpgradeAssistant/FindAllErrorTitle=Unable to Create Upgrade Collections"),
+						LOC("$$$/StyleAI/UpgradeAssistant/FindAllErrorMsg=StyleAI stopped creating upgrade collections. Any completed collection changes were preserved; see the plugin log for details."),
+						"critical"
+					)
+					return
 				end
-				
-				if not findAllProgress:isCanceled() and #stylesData > 0 then
-					Util.addMultipleUpgradePhotosToCollections(stylesData, nil, findAllProgress)
-				end
-				
-				local wasCanceled = findAllProgress:isCanceled()
-				findAllProgress:done()
+
 				if wasCanceled then
 					props.statusMessage = LOC("$$$/StyleAI/common/Canceled=Canceled.")
-					props.isLoading = false
 					return
 				end
 				if stylesProcessed > 0 then
@@ -391,7 +416,6 @@ LrTasks.startAsyncTask(function()
 						"warning"
 					)
 				end
-				props.isLoading = false
 			end)
 		end
 
