@@ -11,7 +11,7 @@ Key development constraints for StyleAI. For complete architecture specification
 - **Logging**: Use configured `logger` in Python with `exc_info=True`. Log plugin events using `log:error`/`warn`/`info`/`trace`.
 
 ## 2. Lua Plugin Rules
-- **Yielding & Async**: Run long tasks in `LrTasks.startAsyncTask`. Use `LrTasks.pcall` (NEVER native `pcall`, especially wrapping shutdown `doneFunc`).
+- **Yielding & Async**: Run long tasks in `LrTasks.startAsyncTask`. Use `LrTasks.pcall` for normal async tasks. However, Lightroom shutdown hooks (`doneFunc`) MUST use native `pcall` because the async scheduler is unreliable during teardown and `LrTasks.pcall` will hang.
 - **Spin-Locks & Yielding**: NEVER call `LrTasks.yield()` inside `withWriteAccessDo` closures. On macOS, use `LrTasks.yield(); LrTasks.sleep(0.01)`.
 - **Transactions & Collections**: Wrap batch updates in a **single** `withWriteAccessDo` block. Never call `getChildCollections()` on a newly created set inside the same transaction.
 - **UI Bounds**: Avoid `share()` or `width_in_chars` on mixed UI controls. Use explicit pixel widths (e.g. `width = 600`) in centered columns.

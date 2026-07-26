@@ -42,9 +42,9 @@ local function shutdownApp(doneFunc, progressFunc)
 
 	if type(doneFunc) == "function" then
 		safeLogTrace("ShutdownApp: Calling doneFunc()")
-		-- Reverted to LrTasks.pcall. Native pcall causes a C-boundary yield error which aborts doneFunc,
-		-- causing Lightroom to hang indefinitely waiting for the plugin to finish shutting down.
-		LrTasks.pcall(doneFunc)
+		-- Reverted to native pcall. doneFunc does NOT yield. LrTasks.pcall uses the async scheduler,
+		-- which is unreliable during teardown and causes Lightroom to hang.
+		pcall(doneFunc)
 	else
 		safeLogTrace("ShutdownApp: doneFunc is " .. type(doneFunc) .. ", skipping")
 	end

@@ -70,7 +70,7 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 - **Multi-Catalog Isolation**: Always filter ChromaDB queries (`collection.get()`) by active `catalog_ids`.
 
 ### Lua Plugin Conventions
-- **Asynchronicity & Teardown**: Run long operations in `LrTasks.startAsyncTask`. **CRITICAL**: Use `LrTasks.pcall` instead of native `pcall`. Never wrap Lightroom shutdown hooks (`doneFunc`) in native `pcall` (causes C-boundary yield crashes).
+- **Asynchronicity & Teardown**: Run long operations in `LrTasks.startAsyncTask`. **CRITICAL**: Use `LrTasks.pcall` for normal async tasks. However, Lightroom shutdown hooks (`doneFunc` in `LrShutdownFunction`) MUST use native `pcall` because the async scheduler is unreliable during teardown and `LrTasks.pcall` will hang.
 - **Yielding & Spin-Locks**: NEVER call `LrTasks.yield()` inside `withWriteAccessDo` closures. On macOS, use `LrTasks.yield(); LrTasks.sleep(0.01)` to prevent C-stack overflows during batching.
 - **Batch Transactions**: Consolidate loop updates into a **single** `withWriteAccessDo` block per batch. Never put `withWriteAccessDo` inside a `for` loop.
 - **SDK Collection Quirk**: Do NOT call `getChildCollections()` on a newly created `LrCollectionSet` within the same transaction; track sets in memory until committed.

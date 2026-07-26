@@ -714,6 +714,10 @@ def _dynamic_gpu_worker():
             index_queue.task_done()
             continue
 
+        # Wait a tiny bit (50ms) to allow the rest of the batch to arrive over the network
+        import time
+        time.sleep(0.05)
+
         batch = [first_item]
         # Pull up to 31 more images if available instantly
         while len(batch) < 32:
