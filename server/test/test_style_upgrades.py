@@ -407,6 +407,38 @@ def test_vectorized_select_style_recommendations_near_duplicates():
     assert "c1_dup" not in selected
 
 
+def test_select_style_recommendations_keeps_only_the_burst_hero():
+    """Burst duplicates must collapse before relevance and diversity ranking."""
+    import numpy as np
+
+    existing = [np.array([1.0, 0.0, 0.0], dtype=np.float32)]
+    candidates = [
+        (
+            "burst-low-quality",
+            np.array([0.99, 0.1, 0.0], dtype=np.float32),
+            {"capture_time": 1000, "rating": 2},
+        ),
+        (
+            "burst-hero",
+            np.array([0.995, 0.05, 0.0], dtype=np.float32),
+            {"capture_time": 1005, "rating": 5, "is_edited": True},
+        ),
+        (
+            "separate-frame",
+            np.array([0.7, 0.71, 0.0], dtype=np.float32),
+            {"capture_time": 2000, "rating": 4},
+        ),
+    ]
+
+    selected = style_upgrades._select_style_recommendations(
+        candidates, existing, target_count=2
+    )
+
+    assert "burst-hero" in selected
+    assert "burst-low-quality" not in selected
+    assert "separate-frame" in selected
+
+
 def test_profiles_and_models_compatibility():
     # Minor name variations
     assert style_upgrades._profiles_compatible("Adobe Standard", "Adobe Standard (v2)")
