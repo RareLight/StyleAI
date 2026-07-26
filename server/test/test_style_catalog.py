@@ -18,6 +18,7 @@ def reset_catalog_state(monkeypatch):
     """Reset the lazy SQLite connection before every test."""
     sc._connection = None
     sc._db_path = None
+    monkeypatch.setattr(sc, "_schedule_post_discovery_tasks", lambda: None)
 
 
 @pytest.fixture
@@ -486,7 +487,6 @@ def test_discovery_creates_separate_styles_for_dense_visual_sets(monkeypatch):
     monkeypatch.setattr(
         training_service, "update_training_example_labels", lambda **_kwargs: None
     )
-
     styles = sc.discover_styles_from_examples()
 
     assert {style["style_id"] for style in styles} == {

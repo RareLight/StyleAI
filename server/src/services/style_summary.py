@@ -60,7 +60,12 @@ def summarize_catalog_styles() -> str | None:
                 "prompt": system_prompt,
                 "stream": False,
             }
-            resp = requests.post("http://localhost:11434/api/generate", json=payload)
+            # A signature summary is optional background enrichment. Keep a
+            # stopped or unhealthy local runner from leaving a discovery task
+            # blocked indefinitely.
+            resp = requests.post(
+                "http://localhost:11434/api/generate", json=payload, timeout=30
+            )
             if resp.status_code == 200:
                 summary_text = resp.json().get("response", "").strip()
 
