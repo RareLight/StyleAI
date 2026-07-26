@@ -106,3 +106,10 @@ To speed up classification across massive catalogs, dynamic semantic mappings (`
 
 - **Sequential Processing:** Never iterate over items and call `/metadata/generate` sequentially in plugins or scripts. This bypasses the backend's semantic deduplication pipeline (Semantic Clustering) and bottlenecks the GPU, as the LLM processes every image individually. Always batch requests and send them to `/metadata/generate_batch`.
 - **Hard-Failing on Missing Image Cache:** The plugin supports "LLM-only" batch generation, where it relies on existing vision tags in the database to generate metadata, explicitly skipping the expensive JPEG export to the backend cache to save time. The backend endpoints (`/metadata/generate_batch`, `/metadata/generate`) MUST NOT fail with HTTP 400 errors when `image_bytes` are `None`. They must gracefully proceed and generate text-only metadata.
+
+## 14. Test Discipline and Lightroom Smoke Checks
+
+- **Isolated backend tests:** `server/test/conftest.py` assigns every pytest-xdist worker its own temporary catalog database. Tests must never use an actual catalog path or contact Ollama, LM Studio, or any HTTP service; mock provider and network boundaries explicitly.
+- **Required local checks:** Run `uv run pytest test/`, `uv run ruff check src test`, and `python scripts/validate_lrc_plugin.py` before handing off a change.
+- **Grouping and recommendation changes:** Preserve labelled visual-cluster fixtures, including expected members and expected rejections. Measure precision and cross-style leakage rather than adding unstructured keyword exceptions.
+- **Required Lightroom smoke check:** After changes to Upgrade Assistant, open a real catalog and verify one-style candidate selection, **Show All Candidate Photos**, cancellation, absent/deleted photos, and repeated collection creation. Confirm the Lightroom UI stays responsive and no write transaction yields.
