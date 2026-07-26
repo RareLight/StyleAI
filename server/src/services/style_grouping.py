@@ -73,6 +73,11 @@ VISUAL_MIN_SIMILARITY = 0.45
 VISUAL_STRICT_SIMILARITY = 0.60
 BURST_COSINE_DISTANCE = 0.05
 VISUAL_REASSIGN_MARGIN = 0.05
+# A style split is only justified when two dense visual neighborhoods are
+# genuinely separate.  This deliberately avoids fragmenting sparse training
+# sets, while preventing one broad taxonomy label from pooling incompatible
+# subjects into the same regression model.
+VISUAL_CLUSTER_SIMILARITY = 0.72
 
 
 # ---------------------------------------------------------------------------
@@ -1803,6 +1808,59 @@ def _normalize_embedding(emb: Any) -> np.ndarray | None:
     if norm <= 1e-9:
         return None
     return emb_arr / norm
+
+
+def split_examples_by_visual_cohesion(
+    examples: list[dict[str, Any]],
+    similarity_threshold: float = VISUAL_CLUSTER_SIMILARITY,
+    min_cluster_size: int = 2,
+) -> list[list[dict[str, Any]]]:
+    """Split a semantic group only when embeddings form dense, usable components.
+
+    The graph is intentionally small and deterministic: training groups are
+    normally tens of examples, so an O(n²) cosine matrix is both faster and
+    more transparent than a parameter-sensitive general clustering package.
+    Examples lacking embeddings keep their original group, preventing a
+    transient indexing gap from changing a user's training membership.
+    """
+    if len(examples) < min_cluster_size * 2:
+        return [examples]
+
+    normalized = [_normalize_embedding(ex.get("embedding")) for ex in examples]
+    if any(emb is None for emb in normalized):
+        return [examples]
+
+    matrix = np.asarray(normalized, dtype=np.float32)
+    similarities = matrix @ matrix.T
+    parent = list(range(len(examples)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root, right_root = find(left), find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    for i in range(len(examples)):
+        for j in range(i + 1, len(examples)):
+            if float(similarities[i, j]) >= similarity_threshold:
+                union(i, j)
+
+    components: dict[int, list[dict[str, Any]]] = {}
+    for index, example in enumerate(examples):
+        components.setdefault(find(index), []).append(example)
+
+    clusters = list(components.values())
+    if len(clusters) == 1 or any(len(cluster) < min_cluster_size for cluster in clusters):
+        return [examples]
+
+    # Stable ordering keeps generated style IDs unchanged across discoveries.
+    clusters.sort(key=lambda cluster: min(str(ex.get("photo_id", "")) for ex in cluster))
+    return clusters
 
 
 def group_examples_by_profile_genre(
