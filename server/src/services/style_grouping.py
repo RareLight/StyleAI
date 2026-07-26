@@ -967,8 +967,8 @@ def _primary_genre_with_keywords_impl(
     if kw_list:
         tier_order = [
             "scene_studio",
-            "scene_portrait",
             "scene_macro",
+            "scene_portrait",
             "scene_event",
             "scene_wildlife",
             "scene_astrophotography",
@@ -1086,12 +1086,14 @@ def _primary_genre_with_keywords_impl(
                 tier_order_subjects = [
                     "scene_studio",
                     "scene_macro",
+                    "scene_portrait",
                     "scene_event",
                     "scene_action",
                 ]
             elif primary_mapped == "scene_macro":
                 tier_order_subjects = [
                     "scene_studio",
+                    "scene_portrait",
                 ]
             elif primary_mapped == "scene_portrait":
                 tier_order_subjects = [
