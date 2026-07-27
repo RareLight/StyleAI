@@ -1256,7 +1256,12 @@ def list_training_examples_with_embeddings() -> list[dict[str, Any]]:
     for page in _iter_training_pages(["metadatas", "embeddings"]):
         ids = page.get("ids") or []
         metadatas = page.get("metadatas") or []
-        embeddings = page.get("embeddings") or []
+        # Chroma returns embeddings as a NumPy array in current releases.
+        # Boolean-coercing a multi-row array raises an ambiguous truth-value
+        # error, so only substitute the empty fallback for an absent field.
+        embeddings = page.get("embeddings")
+        if embeddings is None:
+            embeddings = []
         _enrich_and_sync_metadatas_from_main_index(ids, metadatas)
         for index, photo_id in enumerate(ids):
             metadata = (
