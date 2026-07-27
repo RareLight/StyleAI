@@ -10,7 +10,9 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 from PIL import Image
 
+from services import index as index_service
 from services.index import (
+    _decode_worker_count,
     _flatten_keywords,
     _load_analysis_grayscale,
     _decode_image,
@@ -53,6 +55,27 @@ class TestFlattenKeywords(unittest.TestCase):
 
 
 class TestImageDecodingAndGrayscale(unittest.TestCase):
+    @patch("services.index.config.STYLEAI_HTTP_THREADS", 12)
+    @patch("services.index.config.STYLEAI_GPU_BATCH_SIZE", 12)
+    def test_decode_workers_follow_ingestion_budget(self):
+        self.assertEqual(_decode_worker_count(1), 1)
+        self.assertEqual(_decode_worker_count(8), 8)
+        self.assertEqual(_decode_worker_count(48), 12)
+
+    @patch("services.index.gc.collect")
+    @patch("services.index.monotonic_time.monotonic")
+    def test_forced_gc_is_rate_limited(self, mock_monotonic, mock_collect):
+        previous = index_service._last_forced_gc_at
+        try:
+            index_service._last_forced_gc_at = 0.0
+            mock_monotonic.side_effect = [100.0, 110.0, 131.0]
+            self.assertTrue(index_service._maybe_collect_garbage())
+            self.assertFalse(index_service._maybe_collect_garbage())
+            self.assertTrue(index_service._maybe_collect_garbage())
+            self.assertEqual(mock_collect.call_count, 2)
+        finally:
+            index_service._last_forced_gc_at = previous
+
     def test_load_analysis_grayscale_downscales(self):
         image_bytes = make_dummy_jpeg(1600, 1200)
         gray = _load_analysis_grayscale(image_bytes, max_side=512)
