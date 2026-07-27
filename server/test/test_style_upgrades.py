@@ -4,6 +4,34 @@ import pytest
 from services import style_upgrades
 
 
+class RetrievalCollection:
+    """Small Chroma double with separate embedding hydration and ANN results."""
+
+    def __init__(self, records, query_ids):
+        self.records = records
+        self.query_ids = query_ids
+        self.query_calls = []
+        self.get_calls = []
+
+    def get(self, ids=None, include=None, **_kwargs):
+        self.get_calls.append((ids, include))
+        selected = list(self.records) if ids is None else list(ids)
+        return {
+            "ids": selected,
+            "embeddings": [self.records[pid][0] for pid in selected],
+            "metadatas": [self.records[pid][1] for pid in selected],
+        }
+
+    def query(self, query_embeddings, n_results, include=None, **_kwargs):
+        self.query_calls.append((query_embeddings, n_results, include))
+        ids = self.query_ids[:n_results]
+        return {
+            "ids": [ids],
+            "metadatas": [[self.records[pid][1] for pid in ids]],
+            "distances": [[0.1 for _ in ids]],
+        }
+
+
 @pytest.fixture(autouse=True)
 def clear_upgrade_recs_cache():
     style_upgrades.invalidate_upgrade_recommendations_cache()
@@ -133,20 +161,14 @@ def test_edited_vs_unedited_priority(mocker):
     mocker.patch("services.chroma._ensure_initialized")
 
     # Mock collection with 3 candidates: 1 edited, 2 unedited
-    mock_collection = mocker.MagicMock()
-    mock_collection.get.return_value = {
-        "ids": ["unedited-1", "edited-1", "unedited-2"],
-        "embeddings": [
-            [0.8, 0.6, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.7, 0.0, 0.71414],
-        ],
-        "metadatas": [
-            {"camera_profile": "Adobe Standard", "is_edited": False, "rating": 5},
-            {"camera_profile": "Adobe Standard", "is_edited": True, "rating": 4},
-            {"camera_profile": "Adobe Standard", "is_edited": False, "rating": 4},
-        ],
-    }
+    mock_collection = RetrievalCollection(
+        {
+            "unedited-1": ([0.8, 0.6, 0.0], {"camera_profile": "Adobe Standard", "is_edited": False, "rating": 5}),
+            "edited-1": ([1.0, 0.0, 0.0], {"camera_profile": "Adobe Standard", "is_edited": True, "rating": 4}),
+            "unedited-2": ([0.7, 0.0, 0.71414], {"camera_profile": "Adobe Standard", "is_edited": False, "rating": 4}),
+        },
+        ["edited-1", "unedited-1", "unedited-2"],
+    )
     mocker.patch("services.chroma.collection", mock_collection)
 
     res = style_upgrades.get_style_upgrade_recommendations()
@@ -263,17 +285,13 @@ def test_chromadb_numpy_array_return_handling(mocker):
     mocker.patch("services.chroma._ensure_initialized")
 
     # Mock ChromaDB returning real numpy arrays instead of Python lists
-    mock_collection = mocker.MagicMock()
-    mock_collection.get.return_value = {
-        "ids": np.array(["photo-1", "photo-2"]),
-        "embeddings": np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32),
-        "metadatas": np.array(
-            [
-                {"camera_profile": "Adobe Standard", "rating": 4},
-                {"camera_profile": "Adobe Standard", "rating": 5},
-            ]
-        ),
-    }
+    mock_collection = RetrievalCollection(
+        {
+            "photo-1": (np.array([1.0, 0.0, 0.0], dtype=np.float32), {"camera_profile": "Adobe Standard", "rating": 4}),
+            "photo-2": (np.array([0.0, 1.0, 0.0], dtype=np.float32), {"camera_profile": "Adobe Standard", "rating": 5}),
+        },
+        ["photo-1", "photo-2"],
+    )
     mocker.patch("services.chroma.collection", mock_collection)
 
     res = style_upgrades.get_style_upgrade_recommendations()
@@ -301,28 +319,18 @@ def test_embedding_first_recommendations_over_text_divergence(mocker):
     mocker.patch("services.style_catalog._ensure_initialized", return_value=mock_conn)
     mocker.patch("services.chroma._ensure_initialized")
 
-    mock_collection = mocker.MagicMock()
+    mock_collection = RetrievalCollection(
+        {
+            "photo-ex": ([1.0, 0.0, 0.0], {"camera_profile": "Adobe Standard", "scene_tags": '["scene_landscape"]'}),
+            "photo-cand-diffuse": ([0.85, 0.5, 0.0], {"camera_profile": "Adobe Standard", "scene_tags": '["scene_general"]', "rating": 5}),
+            "photo-cand-conflict": ([0.85, -0.5, 0.0], {"camera_profile": "Adobe Standard", "scene_tags": '["scene_studio"]', "rating": 5}),
+        },
+        ["photo-cand-diffuse", "photo-cand-conflict"],
+    )
     # photo-ex is the training example [1.0, 0.0, 0.0]
     # photo-cand-diffuse has high similarity [0.85, 0.5, 0.0] with diffuse tag 'scene_general'
     # photo-cand-conflict has comparably high visual similarity but a conflicting
     # scene tag.  Embeddings are authoritative; genre is only a guardrail.
-    mock_collection.get.return_value = {
-        "ids": ["photo-ex", "photo-cand-diffuse", "photo-cand-conflict"],
-        "embeddings": [[1.0, 0.0, 0.0], [0.85, 0.5, 0.0], [0.85, -0.5, 0.0]],
-        "metadatas": [
-            {"camera_profile": "Adobe Standard", "scene_tags": '["scene_landscape"]'},
-            {
-                "camera_profile": "Adobe Standard",
-                "scene_tags": '["scene_general"]',
-                "rating": 5,
-            },
-            {
-                "camera_profile": "Adobe Standard",
-                "scene_tags": '["scene_studio"]',
-                "rating": 5,
-            },
-        ],
-    }
     mocker.patch("services.chroma.collection", mock_collection)
 
     res = style_upgrades.get_style_upgrade_recommendations()
@@ -353,11 +361,17 @@ def test_dual_gated_screening_rejects_moderate_similarity_cross_talk(mocker):
     mocker.patch("services.style_catalog._ensure_initialized", return_value=mock_conn)
     mocker.patch("services.chroma._ensure_initialized")
 
-    mock_collection = mocker.MagicMock()
+    mock_collection = RetrievalCollection(
+        {
+            "photo-ex": ([1.0, 0.0, 0.0], {"camera_profile": "Adobe Standard", "scene_tags": '["scene_landscape"]'}),
+            "photo-cand": ([0.70, 0.71, 0.0], {"camera_profile": "Adobe Standard", "scene_tags": '["scene_studio"]', "rating": 5}),
+        },
+        ["photo-cand"],
+    )
     # photo-ex is [1.0, 0.0, 0.0]
     # photo-cand has moderate similarity [0.70, 0.71, 0.0] (sim ~0.70, which is >= 0.60 but < 0.80)
     # and conflicting text tag 'scene_studio'
-    mock_collection.get.return_value = {
+    """mock_collection.get.return_value = {
         "ids": ["photo-ex", "photo-cand"],
         "embeddings": [[1.0, 0.0, 0.0], [0.70, 0.71, 0.0]],
         "metadatas": [
@@ -368,7 +382,7 @@ def test_dual_gated_screening_rejects_moderate_similarity_cross_talk(mocker):
                 "rating": 5,
             },
         ],
-    }
+    }"""
     mocker.patch("services.chroma.collection", mock_collection)
 
     res = style_upgrades.get_style_upgrade_recommendations()
