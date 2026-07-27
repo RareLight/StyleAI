@@ -826,7 +826,10 @@ def _evaluate_exif_priors(exif_metadata: dict[str, Any] | None) -> dict[str, flo
     if shutter >= 10.0 and iso >= 3200:
         priors["scene_night"] = 0.4
     if re.search(r"\b(macro|micro|mc)\b", lens):
-        priors["scene_macro"] = priors.get("scene_macro", 0.0) + 0.35
+        # A macro-capable lens is routinely used at ordinary focus distances.
+        # Treat it only as corroboration for visual subject evidence; it must
+        # never classify a photo as macro by itself.
+        priors["scene_macro"] = priors.get("scene_macro", 0.0) + 0.10
     elif 85.0 <= focal_35mm <= 135.0:
         priors["scene_portrait"] = priors.get("scene_portrait", 0.0) + 0.15
     if 0.0 < focal_35mm <= 24.0:
@@ -1190,8 +1193,6 @@ def _primary_genre_with_keywords_impl(
 
         # Nature fallback
         if primary_mapped == "scene_nature":
-            if priors and priors.get("scene_macro", 0.0) > 0:
-                return "scene_macro"
             return "scene_nature"
 
         # Night fallback
@@ -1244,20 +1245,6 @@ def _primary_genre_with_keywords_impl(
                     return best_prior_regime
             else:
                 return best_prior_regime
-        if best_prior_regime == "scene_macro" and best_prior_score >= 0.35:
-            top_mapped_tags = {_get_broad_genre(t) for t in content_tags[:6]}
-            if not top_mapped_tags.intersection(
-                {
-                    "scene_portrait",
-                    "scene_wildlife",
-                    "scene_studio",
-                    "scene_event",
-                }
-            ) and not (
-                "scene_landscape" in top_mapped_tags
-                and "scene_macro" not in content_tags
-            ):
-                return "scene_macro"
         if best_prior_score >= 0.30:
             return best_prior_regime
 
@@ -2037,17 +2024,23 @@ def group_examples_by_profile_genre(
                 remaining.append(ex)
                 continue
 
-            best_key: tuple[str, str] | None = None
-            best_sim = -1.0
+            ranked_matches: list[tuple[float, tuple[str, str]]] = []
             for other_key, centroid in centroids.items():
                 if other_key[0] != profile or other_key[1] in ambiguous_key_genre:
                     continue
+                if len(groups.get(other_key, [])) < 2:
+                    continue
                 sim = float(np.dot(centroid, emb_norm))
-                if sim > best_sim:
-                    best_sim = sim
-                    best_key = other_key
+                ranked_matches.append((sim, other_key))
 
-            if best_key is not None and best_sim >= VISUAL_MIN_SIMILARITY:
+            ranked_matches.sort(key=lambda item: item[0], reverse=True)
+            best_sim, best_key = ranked_matches[0] if ranked_matches else (-1.0, None)
+            second_sim = ranked_matches[1][0] if len(ranked_matches) > 1 else -1.0
+            if (
+                best_key is not None
+                and best_sim >= VISUAL_STRICT_SIMILARITY
+                and best_sim >= second_sim + VISUAL_REASSIGN_MARGIN
+            ):
                 groups.setdefault(best_key, []).append(ex)
             else:
                 remaining.append(ex)

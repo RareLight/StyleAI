@@ -66,6 +66,49 @@ def test_recover_catalog_session_marks_derived_state_stale(mocker, tmp_path):
     assert json.loads(marker_path.read_text(encoding="utf-8"))["state"] == "running"
 
 
+def test_tokenizer_fallback_does_not_reload_vision_model(mocker, tmp_path):
+    cached_dir = tmp_path / "model"
+    cached_dir.mkdir()
+    weights = cached_dir / "open_clip_model.safetensors"
+    config_file = cached_dir / "open_clip_config.json"
+    weights.write_bytes(b"weights")
+    config_file.write_text("{}", encoding="utf-8")
+
+    model_obj = MagicMock()
+    processor = MagicMock()
+    fallback_tokenizer = MagicMock()
+    create_model = mocker.patch(
+        "open_clip.create_model_and_transforms",
+        return_value=(model_obj, None, processor),
+    )
+    mocker.patch.object(server_lifecycle, "hf_hub_download", return_value=str(weights))
+    mocker.patch.object(
+        server_lifecycle,
+        "_get_open_clip_tokenizer",
+        side_effect=RuntimeError("built-in tokenizer lookup failed"),
+    )
+    fallback = mocker.patch("open_clip.get_tokenizer", return_value=fallback_tokenizer)
+    mocker.patch(
+        "utils.open_clip_compat.wrap_tokenizer", side_effect=lambda value: value
+    )
+    mocker.patch.object(server_lifecycle, "get_torch_device", return_value="cpu")
+    server_lifecycle.model = None
+    server_lifecycle.processor = None
+    server_lifecycle.tokenizer = None
+
+    server_lifecycle.load_model()
+
+    create_model.assert_called_once()
+    fallback.assert_called_once()
+    assert server_lifecycle.model is model_obj
+    assert server_lifecycle.processor is processor
+    assert server_lifecycle.tokenizer is fallback_tokenizer
+
+    server_lifecycle.model = None
+    server_lifecycle.processor = None
+    server_lifecycle.tokenizer = None
+
+
 def test_scheduled_shutdown_removes_markers_before_forced_exit(mocker):
     mocker.patch("services.index.stop_index_queue")
     captured_target = {}

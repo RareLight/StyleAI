@@ -42,18 +42,65 @@ EMBEDDING_DIM = (
 # Scene-type probe texts for CLIP zero-shot classification
 # ---------------------------------------------------------------------------
 
-_CANONICAL_EDITING_REGIMES: dict[str, str] = {
-    "scene_portrait": "a portrait photograph of a human face, person, couple, family, or pet where skin tones and face lighting govern the edit",
-    "scene_landscape": "a scenic landscape or outdoor nature photograph where natural environment dominates the frame, including mountains, countryside, farmland, open fields, valleys, coastlines, oceans, forests, or wide natural scenery",
-    "scene_architecture": "a dedicated architectural photograph where a building facade, interior room, house, real estate property, or bridge geometry dominates the entire frame as the primary subject",
-    "scene_studio": "a commercial studio tabletop photograph of a product, food dish, lego, or toy shot against a seamless studio backdrop under artificial studio flash lighting",
-    "scene_macro": "an extreme close-up macro photograph of a tiny insect, bug, beetle, spider, flower stamen, or water droplet showing high magnification detail",
-    "scene_night": "an astrophotography photograph of the night sky, milky way, stars, aurora borealis, or extreme low-light night scene",
-    "scene_action": "an action, sports, or athletics photograph showing fast motion, dynamic movement, extreme sports, motorsport, aviation, or racing",
-    "scene_street": "a street photography or urban documentary photograph capturing candid moments, city life, pedestrians, or everyday urban environments",
-    "scene_event": "an event, wedding, concert, or photojournalism photograph capturing a gathering, ceremony, performance, or stage with varied or ambient lighting",
-    "scene_wildlife": "a wildlife photograph of a wild animal, bird in flight, or mammal in its natural habitat, distinct from a standard pet portrait",
-    "scene_nature": "a nature photograph focusing on detailed flora, fauna, foliage, or botanical elements that are not wide landscapes or extreme macros",
+_CANONICAL_EDITING_REGIMES: dict[str, tuple[str, ...]] = {
+    "scene_portrait": (
+        "a close portrait photograph of one person where the face is the main subject",
+        "a posed portrait photograph of a couple or family looking at the camera",
+        "a close pet portrait photograph of a domestic dog or cat looking at the camera",
+        "a candid family photograph centered on a child, parent, couple, or pet",
+    ),
+    "scene_landscape": (
+        "a wide scenic natural landscape photograph with mountains, valleys, forest, or countryside",
+        "a wide seascape or coastal landscape photograph with a broad natural vista",
+        "an outdoor scenic landscape photograph where terrain, sky, and the horizon dominate",
+        "a forest landscape photograph showing a broad woodland scene",
+    ),
+    "scene_architecture": (
+        "an architectural photograph where a building facade dominates the frame",
+        "a real estate photograph of an interior room or house",
+        "an architectural detail photograph emphasizing structural geometry",
+    ),
+    "scene_studio": (
+        "a commercial studio photograph of a product on a controlled background",
+        "a tabletop food or still-life photograph under controlled lighting",
+        "a studio photograph of a toy or small manufactured object",
+    ),
+    "scene_macro": (
+        "a true high-magnification macro photograph showing a tiny subject extremely close",
+        "an extreme close-up photograph of an insect with fine detail filling the frame",
+        "an extreme close-up photograph of a flower stamen, water droplet, or tiny texture",
+    ),
+    "scene_night": (
+        "an astrophotography photograph of the milky way, stars, or aurora",
+        "a nightscape photograph made outdoors after dark",
+        "an extreme low-light photograph where the night environment dominates",
+    ),
+    "scene_action": (
+        "a sports photograph of athletes actively competing",
+        "an action photograph showing fast movement or peak athletic motion",
+        "a motorsport, aviation, racing, or extreme sports photograph",
+    ),
+    "scene_street": (
+        "a candid street photography image visibly set on a city street",
+        "an urban documentary photograph with storefronts, sidewalks, or city traffic",
+        "an outdoor urban street scene where the city environment dominates",
+    ),
+    "scene_event": (
+        "a candid event photograph of people interacting at an indoor or outdoor gathering",
+        "a wedding photograph of a ceremony, reception, or dance floor",
+        "a concert, festival, performance, conference, or celebration photograph",
+        "a candid family celebration, birthday party, reunion, or social gathering",
+    ),
+    "scene_wildlife": (
+        "a wildlife photograph of a wild animal in its natural habitat",
+        "a bird photography image of a wild bird perched or in flight",
+        "a photograph of a wild mammal, reptile, or amphibian outdoors, not a pet",
+    ),
+    "scene_nature": (
+        "a medium close botanical photograph of leaves and plant stems filling the frame",
+        "a photograph of a single flower or foliage at ordinary scale",
+        "a woodland detail photograph of moss, bark, or undergrowth with no visible horizon",
+    ),
 }
 
 _AESTHETIC_PROBES: dict[str, str] = {
@@ -65,28 +112,12 @@ _AESTHETIC_PROBES: dict[str, str] = {
     "style_neon": "a cyberpunk or neon-lit photograph",
 }
 
-_SCENE_PROBES: dict[str, str] = {**_CANONICAL_EDITING_REGIMES, **_AESTHETIC_PROBES}
+_SCENE_PROBES: dict[str, str] = {
+    **{name: prompts[0] for name, prompts in _CANONICAL_EDITING_REGIMES.items()},
+    **_AESTHETIC_PROBES,
+}
 
 _SCENE_THRESHOLD = 0.15  # cosine similarity threshold for a tag to be "present"
-
-# Regime-specific confidence floors for Softmax regime selection.
-# More specific regimes require stronger evidence to avoid misclassifying
-# incidental elements (e.g. a distant barn triggering "architecture" in a
-# landscape).  Walk the Softmax ranking and accept the first regime whose
-# probability meets its floor; fall back to scene_general if none pass.
-_REGIME_CONFIDENCE_FLOORS: dict[str, float] = {
-    "scene_macro": 0.55,
-    "scene_studio": 0.55,
-    "scene_architecture": 0.55,
-    "scene_night": 0.50,
-    "scene_action": 0.50,
-    "scene_street": 0.50,
-    "scene_event": 0.50,
-    "scene_wildlife": 0.50,
-    "scene_nature": 0.50,
-    "scene_portrait": 0.45,
-    "scene_landscape": 0.40,
-}
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -489,11 +520,13 @@ _cached_probe_vectors: dict[str, Any] = {}
 
 
 def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
-    """Return list of scene-type tag strings present in the image.
+    """Return the best relative scene regime plus independent aesthetic tags.
 
-    Uses the image CLIP embedding compared against pre-computed text embeddings
-    for each scene probe.  Returns tags whose cosine similarity exceeds
-    ``_SCENE_THRESHOLD``.  Gracefully returns [] if CLIP is unavailable.
+    Each regime is represented by an ensemble of normalized text prompts. The
+    ensemble reduces prompt sensitivity, and relative ranking always supplies a
+    primary regime when an embedding exists. An absolute Softmax floor is not
+    meaningful across catalogs and previously left most photos as
+    ``scene_general``, allowing weak EXIF priors to become de-facto labels.
     """
     if image_embedding is None:
         return []
@@ -523,47 +556,47 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
             return []
 
         with torch.no_grad():
-            canonical_names = list(_CANONICAL_EDITING_REGIMES.keys())
+            canonical_names = list(_CANONICAL_EDITING_REGIMES)
 
-            # Cache the text embeddings globally to avoid O(17N) forward passes
+            # Cache one normalized prototype per regime. Batch text encoding is
+            # substantially faster than one model invocation per prompt.
             global _cached_probe_vectors
             if not _cached_probe_vectors:
-                for name, text in _CANONICAL_EDITING_REGIMES.items():
-                    tokens = tokenize_fn([text]).to(get_torch_device())
-                    _cached_probe_vectors[name] = F.normalize(
-                        clip_model.encode_text(tokens), p=2, dim=1
-                    )
+                prompt_names: list[str] = []
+                prompt_texts: list[str] = []
+                for name, prompts in _CANONICAL_EDITING_REGIMES.items():
+                    for prompt in prompts:
+                        prompt_names.append(name)
+                        prompt_texts.append(prompt)
                 for name, text in _AESTHETIC_PROBES.items():
-                    tokens = tokenize_fn([text]).to(get_torch_device())
-                    _cached_probe_vectors[name] = F.normalize(
-                        clip_model.encode_text(tokens), p=2, dim=1
-                    )
+                    prompt_names.append(name)
+                    prompt_texts.append(text)
+
+                tokens = tokenize_fn(prompt_texts).to(get_torch_device())
+                encoded = F.normalize(clip_model.encode_text(tokens), p=2, dim=1)
+                for name in canonical_names:
+                    indices = [
+                        i
+                        for i, prompt_name in enumerate(prompt_names)
+                        if prompt_name == name
+                    ]
+                    prototype = encoded[indices].mean(dim=0, keepdim=True)
+                    _cached_probe_vectors[name] = F.normalize(prototype, p=2, dim=1)
+                for name in _AESTHETIC_PROBES:
+                    index = prompt_names.index(name)
+                    _cached_probe_vectors[name] = encoded[index : index + 1]
 
             sims: list[float] = []
             for name in canonical_names:
                 text_vec = _cached_probe_vectors[name]
                 sims.append(float((img_vec * text_vec).sum().cpu()))
 
-            tau = 0.05
-            sims_tensor = torch.tensor(sims, dtype=torch.float32)
-            probs = F.softmax(sims_tensor / tau, dim=0).tolist()
-
             ranked = sorted(
-                zip(probs, canonical_names, strict=False),
+                zip(sims, canonical_names, strict=False),
                 key=lambda x: x[0],
                 reverse=True,
             )
-
-            chosen_regime: str | None = None
-            if ranked:
-                top_prob, top_regime = ranked[0]
-                floor = _REGIME_CONFIDENCE_FLOORS.get(top_regime, 0.45)
-                if top_prob >= floor or top_prob >= 0.35:
-                    chosen_regime = top_regime
-
-            result_tags: list[str] = (
-                [chosen_regime] if chosen_regime else ["scene_general"]
-            )
+            result_tags: list[str] = [ranked[0][1]] if ranked else ["scene_general"]
 
             for style_tag in _AESTHETIC_PROBES.keys():
                 text_vec = _cached_probe_vectors[style_tag]
@@ -878,7 +911,7 @@ def add_training_example(
             }
         ),
     }
-    if not user_keywords or not filename:
+    if not filename:
         try:
             from services import chroma as chroma_service
 
@@ -889,27 +922,6 @@ def add_training_example(
                 )
                 if res and res.get("metadatas") and res["metadatas"][0]:
                     mm = res["metadatas"][0]
-                    if not user_keywords or user_keywords in (
-                        "",
-                        "[]",
-                        "null",
-                        "None",
-                    ):
-                        for k in ("user_keywords", "keywords", "flattened_keywords"):
-                            kw_val = mm.get(k)
-                            if kw_val and kw_val not in ("", "[]", "null", "None"):
-                                if isinstance(kw_val, str):
-                                    try:
-                                        user_keywords = json.loads(kw_val)
-                                    except Exception:
-                                        user_keywords = [
-                                            s.strip()
-                                            for s in kw_val.split(",")
-                                            if s.strip()
-                                        ]
-                                elif isinstance(kw_val, (list, tuple, set)):
-                                    user_keywords = [str(s) for s in kw_val]
-                                break
                     if not filename and mm.get("filename"):
                         filename = mm.get("filename")
         except Exception as exc:
@@ -931,6 +943,8 @@ def add_training_example(
     # EXIF categorical fields
     metadata["focal_length_bucket"] = focal_length_bucket(focal_length)
     metadata["time_of_day_bucket"] = time_of_day_bucket(capture_unix=capture_time_unix)
+    if focal_length is not None:
+        metadata["focal_length"] = float(focal_length)
     if lens:
         metadata["lens"] = str(lens)[:128]
     if capture_time_unix is not None:
@@ -1091,10 +1105,11 @@ def get_training_count() -> int:
 def _enrich_and_sync_metadatas_from_main_index(
     ids: list[str], metadatas: list[Any]
 ) -> None:
-    """Check if training example metadata dicts are missing keywords, tags, or filename.
+    """Backfill missing identity/EXIF fields from the searchable image index.
 
-    If so, look them up in the main searchable index (image_embeddings collection)
-    and backfill them into both the in-memory dicts and the edit_training collection.
+    Generated captions, keywords, and scene labels are deliberately excluded:
+    they are not user-authored evidence and must not overwrite the independent
+    training analysis.
     """
     if not ids or not metadatas:
         return
@@ -1115,6 +1130,23 @@ def _enrich_and_sync_metadatas_from_main_index(
 
         updated_ids = []
         updated_metas = []
+        enrichment_keys = {
+            "filename",
+            "lr_uuid",
+            "uuid",
+            "width",
+            "height",
+            "aspect_ratio",
+            "camera_make",
+            "camera_model",
+            "camera_profile",
+            "lens",
+            "focal_length",
+            "capture_time",
+            "iso",
+            "aperture",
+            "shutter_speed",
+        }
         for i, pid in enumerate(ids):
             if pid in main_map and i < len(metadatas) and metadatas[i]:
                 mm = main_map[pid]
@@ -1124,18 +1156,21 @@ def _enrich_and_sync_metadatas_from_main_index(
                     else metadatas[i]
                 )
                 changed = False
-                for k, val_main in mm.items():
-                    if k in ("label", "summary", "style_name", "photo_id"):
-                        continue
-                    if val_main is not None and val_main not in (
-                        "",
-                        "[]",
-                        "null",
-                        "None",
+                for k in enrichment_keys:
+                    val_main = mm.get(k)
+                    if (
+                        val_main is not None
+                        and val_main
+                        not in (
+                            "",
+                            "[]",
+                            "null",
+                            "None",
+                        )
+                        and meta.get(k) in (None, "", "unknown")
                     ):
-                        if meta.get(k) != val_main:
-                            meta[k] = val_main
-                            changed = True
+                        meta[k] = val_main
+                        changed = True
                 if changed:
                     metadatas[i] = meta
                     updated_ids.append(pid)
@@ -1186,10 +1221,7 @@ def list_training_examples() -> list[dict[str, Any]]:
                 "focal_length_bucket": meta.get("focal_length_bucket", "unknown"),
                 "time_of_day_bucket": meta.get("time_of_day_bucket", "unknown"),
                 "scene_tags": meta.get("scene_tags") or meta.get("tags") or "[]",
-                "user_keywords": meta.get("user_keywords")
-                or meta.get("keywords")
-                or meta.get("flattened_keywords")
-                or "[]",
+                "user_keywords": meta.get("user_keywords") or "[]",
                 "camera_make": meta.get("camera_make", ""),
                 "camera_model": meta.get("camera_model", ""),
                 "camera_profile": meta.get("camera_profile", ""),

@@ -59,6 +59,85 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
             with patch("server_lifecycle.get_processor", return_value=None):
                 self.assertEqual(compute_scene_tags([0.1] * 512), [])
 
+    def test_generated_index_keywords_are_not_promoted_to_user_keywords(self):
+        from unittest.mock import MagicMock, patch
+        from services import training
+
+        training_collection = MagicMock()
+        training_collection.get.return_value = {"ids": []}
+        main_collection = MagicMock()
+        main_collection.get.return_value = {
+            "metadatas": [
+                {
+                    "filename": "example.nef",
+                    "keywords": '["macro", "wildlife"]',
+                    "flattened_keywords": "macro, wildlife",
+                }
+            ]
+        }
+
+        with (
+            patch.object(training, "_training_collection", training_collection),
+            patch("services.chroma._ensure_initialized"),
+            patch("services.chroma.collection", main_collection),
+            patch.object(
+                training, "compute_scene_tags", return_value=["scene_portrait"]
+            ),
+        ):
+            training.add_training_example(
+                photo_id="photo-1",
+                develop_settings={},
+                embedding=[0.1] * training.EMBEDDING_DIM,
+                filename=None,
+                user_keywords=None,
+                focal_length=105.0,
+                skip_discovery=True,
+            )
+
+        stored = training_collection.add.call_args.kwargs["metadatas"][0]
+        self.assertEqual(stored["filename"], "example.nef")
+        self.assertEqual(stored["focal_length"], 105.0)
+        self.assertNotIn("user_keywords", stored)
+
+    def test_training_enrichment_only_backfills_missing_identity_and_exif(self):
+        from unittest.mock import MagicMock, patch
+        from services import training
+
+        training_collection = MagicMock()
+        main_collection = MagicMock()
+        main_collection.get.return_value = {
+            "ids": ["photo-1"],
+            "metadatas": [
+                {
+                    "filename": "example.nef",
+                    "lens": "index lens",
+                    "keywords": '["macro"]',
+                    "flattened_keywords": "macro",
+                    "scene_tags": '["scene_macro"]',
+                    "caption": "generated caption",
+                }
+            ],
+        }
+        metadatas = [
+            {
+                "lens": "training lens",
+                "scene_tags": '["scene_portrait"]',
+            }
+        ]
+
+        with (
+            patch.object(training, "_training_collection", training_collection),
+            patch("services.chroma._ensure_initialized"),
+            patch("services.chroma.collection", main_collection),
+        ):
+            training._enrich_and_sync_metadatas_from_main_index(["photo-1"], metadatas)
+
+        self.assertEqual(metadatas[0]["filename"], "example.nef")
+        self.assertEqual(metadatas[0]["lens"], "training lens")
+        self.assertEqual(metadatas[0]["scene_tags"], '["scene_portrait"]')
+        self.assertNotIn("keywords", metadatas[0])
+        self.assertNotIn("caption", metadatas[0])
+
 
 def make_dummy_jpeg(width=100, height=100, color=(128, 128, 128)) -> bytes:
     import io
