@@ -157,15 +157,32 @@ def test_edited_vs_unedited_priority(mocker):
         }
     ]
     mocker.patch("services.style_catalog.list_styles", return_value=mock_style)
-    mocker.patch("services.style_catalog.get_style_examples", return_value=[])
+    mock_conn = mocker.MagicMock()
+    mock_conn.execute.return_value.fetchall.return_value = [
+        {"style_id": "style-a", "photo_id": "style-anchor"}
+    ]
+    mocker.patch("services.style_catalog._ensure_initialized", return_value=mock_conn)
     mocker.patch("services.chroma._ensure_initialized")
 
     # Mock collection with 3 candidates: 1 edited, 2 unedited
     mock_collection = RetrievalCollection(
         {
-            "unedited-1": ([0.8, 0.6, 0.0], {"camera_profile": "Adobe Standard", "is_edited": False, "rating": 5}),
-            "edited-1": ([1.0, 0.0, 0.0], {"camera_profile": "Adobe Standard", "is_edited": True, "rating": 4}),
-            "unedited-2": ([0.7, 0.0, 0.71414], {"camera_profile": "Adobe Standard", "is_edited": False, "rating": 4}),
+            "style-anchor": (
+                [0.9, 0.3, 0.0],
+                {"camera_profile": "Adobe Standard"},
+            ),
+            "unedited-1": (
+                [0.8, 0.6, 0.0],
+                {"camera_profile": "Adobe Standard", "is_edited": False, "rating": 5},
+            ),
+            "edited-1": (
+                [1.0, 0.0, 0.0],
+                {"camera_profile": "Adobe Standard", "is_edited": True, "rating": 4},
+            ),
+            "unedited-2": (
+                [0.7, 0.0, 0.71414],
+                {"camera_profile": "Adobe Standard", "is_edited": False, "rating": 4},
+            ),
         },
         ["edited-1", "unedited-1", "unedited-2"],
     )
@@ -281,14 +298,28 @@ def test_chromadb_numpy_array_return_handling(mocker):
         }
     ]
     mocker.patch("services.style_catalog.list_styles", return_value=mock_style)
-    mocker.patch("services.style_catalog.get_style_examples", return_value=[])
+    mock_conn = mocker.MagicMock()
+    mock_conn.execute.return_value.fetchall.return_value = [
+        {"style_id": "style-numpy", "photo_id": "style-anchor"}
+    ]
+    mocker.patch("services.style_catalog._ensure_initialized", return_value=mock_conn)
     mocker.patch("services.chroma._ensure_initialized")
 
     # Mock ChromaDB returning real numpy arrays instead of Python lists
     mock_collection = RetrievalCollection(
         {
-            "photo-1": (np.array([1.0, 0.0, 0.0], dtype=np.float32), {"camera_profile": "Adobe Standard", "rating": 4}),
-            "photo-2": (np.array([0.0, 1.0, 0.0], dtype=np.float32), {"camera_profile": "Adobe Standard", "rating": 5}),
+            "style-anchor": (
+                np.array([0.707, 0.707, 0.0], dtype=np.float32),
+                {"camera_profile": "Adobe Standard"},
+            ),
+            "photo-1": (
+                np.array([1.0, 0.0, 0.0], dtype=np.float32),
+                {"camera_profile": "Adobe Standard", "rating": 4},
+            ),
+            "photo-2": (
+                np.array([0.0, 1.0, 0.0], dtype=np.float32),
+                {"camera_profile": "Adobe Standard", "rating": 5},
+            ),
         },
         ["photo-1", "photo-2"],
     )
@@ -321,9 +352,29 @@ def test_embedding_first_recommendations_over_text_divergence(mocker):
 
     mock_collection = RetrievalCollection(
         {
-            "photo-ex": ([1.0, 0.0, 0.0], {"camera_profile": "Adobe Standard", "scene_tags": '["scene_landscape"]'}),
-            "photo-cand-diffuse": ([0.85, 0.5, 0.0], {"camera_profile": "Adobe Standard", "scene_tags": '["scene_general"]', "rating": 5}),
-            "photo-cand-conflict": ([0.85, -0.5, 0.0], {"camera_profile": "Adobe Standard", "scene_tags": '["scene_studio"]', "rating": 5}),
+            "photo-ex": (
+                [1.0, 0.0, 0.0],
+                {
+                    "camera_profile": "Adobe Standard",
+                    "scene_tags": '["scene_landscape"]',
+                },
+            ),
+            "photo-cand-diffuse": (
+                [0.85, 0.5, 0.0],
+                {
+                    "camera_profile": "Adobe Standard",
+                    "scene_tags": '["scene_general"]',
+                    "rating": 5,
+                },
+            ),
+            "photo-cand-conflict": (
+                [0.85, -0.5, 0.0],
+                {
+                    "camera_profile": "Adobe Standard",
+                    "scene_tags": '["scene_studio"]',
+                    "rating": 5,
+                },
+            ),
         },
         ["photo-cand-diffuse", "photo-cand-conflict"],
     )
@@ -340,6 +391,9 @@ def test_embedding_first_recommendations_over_text_divergence(mocker):
     ]
     assert "photo-cand-diffuse" in recs
     assert "photo-cand-conflict" in recs
+    assert mock_collection.query_calls
+    assert all(ids is not None for ids, _include in mock_collection.get_calls)
+    assert all(call[1] <= 300 for call in mock_collection.query_calls)
 
 
 def test_dual_gated_screening_rejects_moderate_similarity_cross_talk(mocker):
@@ -363,26 +417,27 @@ def test_dual_gated_screening_rejects_moderate_similarity_cross_talk(mocker):
 
     mock_collection = RetrievalCollection(
         {
-            "photo-ex": ([1.0, 0.0, 0.0], {"camera_profile": "Adobe Standard", "scene_tags": '["scene_landscape"]'}),
-            "photo-cand": ([0.70, 0.71, 0.0], {"camera_profile": "Adobe Standard", "scene_tags": '["scene_studio"]', "rating": 5}),
+            "photo-ex": (
+                [1.0, 0.0, 0.0],
+                {
+                    "camera_profile": "Adobe Standard",
+                    "scene_tags": '["scene_landscape"]',
+                },
+            ),
+            "photo-cand": (
+                [0.70, 0.71, 0.0],
+                {
+                    "camera_profile": "Adobe Standard",
+                    "scene_tags": '["scene_studio"]',
+                    "rating": 5,
+                },
+            ),
         },
         ["photo-cand"],
     )
     # photo-ex is [1.0, 0.0, 0.0]
     # photo-cand has moderate similarity [0.70, 0.71, 0.0] (sim ~0.70, which is >= 0.60 but < 0.80)
     # and conflicting text tag 'scene_studio'
-    """mock_collection.get.return_value = {
-        "ids": ["photo-ex", "photo-cand"],
-        "embeddings": [[1.0, 0.0, 0.0], [0.70, 0.71, 0.0]],
-        "metadatas": [
-            {"camera_profile": "Adobe Standard", "scene_tags": '["scene_landscape"]'},
-            {
-                "camera_profile": "Adobe Standard",
-                "scene_tags": '["scene_studio"]',
-                "rating": 5,
-            },
-        ],
-    }"""
     mocker.patch("services.chroma.collection", mock_collection)
 
     res = style_upgrades.get_style_upgrade_recommendations()
@@ -496,39 +551,47 @@ def test_get_style_upgrade_recommendations_partitioned_profile_indexing(mocker):
         }
     ]
     mocker.patch("services.style_catalog.list_styles", return_value=mock_style)
-    mocker.patch("services.style_catalog.get_style_examples", return_value=[])
+    mock_conn = mocker.MagicMock()
+    mock_conn.execute.return_value.fetchall.return_value = [
+        {"style_id": "style-profile-opt", "photo_id": "style-anchor"}
+    ]
+    mocker.patch("services.style_catalog._ensure_initialized", return_value=mock_conn)
     mocker.patch("services.chroma._ensure_initialized")
 
-    mock_collection = mocker.MagicMock()
-    mock_collection.get.side_effect = [
-        # Pass 1: metadata scan
+    mock_collection = RetrievalCollection(
         {
-            "ids": ["p1", "p2", "p_pano"],
-            "metadatas": [
+            "style-anchor": (
+                [1.0, 0.0, 0.0],
+                {"camera_profile": "Adobe Standard", "scene_tags": ["scene_landscape"]},
+            ),
+            "p1": (
+                [0.8, 0.6, 0.0],
                 {
                     "camera_profile": "Adobe Standard",
                     "rating": 5,
                     "scene_tags": ["scene_landscape"],
                 },
+            ),
+            "p2": (
+                [0.8, 0.6, 0.0],
                 {
                     "camera_profile": "Nikon Standard",
                     "rating": 5,
                     "scene_tags": ["scene_landscape"],
                 },
+            ),
+            "p_pano": (
+                [0.8, 0.6, 0.0],
                 {
                     "camera_profile": "Adobe Standard",
                     "filename": "pano-stitch.jpg",
                     "width": 6000,
                     "height": 2000,
                 },
-            ],
+            ),
         },
-        # Pass 2: embedding fetch for matching candidates only (p1 matches profile & genre; p2 profile mismatch; p_pano is stitched panorama)
-        {
-            "ids": ["p1"],
-            "embeddings": [[1.0, 0.0, 0.0]],
-        },
-    ]
+        ["p1", "p2", "p_pano"],
+    )
     mocker.patch("services.chroma.collection", mock_collection)
 
     res = style_upgrades.get_style_upgrade_recommendations()
