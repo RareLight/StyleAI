@@ -1309,61 +1309,105 @@ def predict_absolute_edit(
     policy_override: str | None = None,
 ) -> PolicyPrediction | None:
     artifacts = _load_active_artifacts()
-    artifact = artifacts.get(hard_partition_key(metadata))
-    if artifact is None:
+    if not artifacts:
         return None
-    source, feature_names = _source_row(metadata, embedding)
-    if feature_names != artifact.feature_names:
-        logger.warning("Policy feature schema/dimension mismatch during inference")
-        return None
-    assignments = artifact.mixture.assignments(source[np.newaxis, :])
-    assignment = assignments[0]
-    if policy_override in artifact.policy_ids:
-        policy_index = artifact.policy_ids.index(policy_override)
-        confidence = assignment.responsibilities[policy_index]
-        if confidence < 0.40:
-            return None
+
+    profile = _normalized_profile(metadata.get("camera_profile"))
+    is_hdr = bool(metadata.get("is_hdr")) or "hdr" in profile.casefold()
+    target_hdr_prefix = "hdr|" if is_hdr else "sdr|"
+    
+    candidate_artifacts = []
+    if policy_override:
+        for art in artifacts.values():
+            if policy_override in art.policy_ids:
+                candidate_artifacts = [art]
+                break
     else:
-        if assignment.ambiguous or assignment.policy_index is None:
-            return None
-        policy_index = assignment.policy_index
-        confidence = assignment.confidence
-    predicted = artifact.calibrators[policy_index].predict(
-        source[np.newaxis, :],
-        categories=[_categories(metadata)],
-    )[0]
-    flat_prediction: dict[str, float] = {}
-    for target_index, key in enumerate(artifact.target_keys):
-        lower, upper = artifact.slider_bounds[policy_index][key]
-        flat_prediction[key] = float(np.clip(predicted[target_index], lower, upper))
-    target = unflatten_absolute_target(flat_prediction)
-    absolute_target = AbsoluteTarget(
-        schema_version=TARGET_SCHEMA_VERSION,
-        process_version=str(metadata.get("process_version") or "Version 6"),
-        values=target,
-        modeled_paths=artifact.target_keys,
-    )
-    absolute_target.validate()
-    canonical_current = training_service.normalize_develop_settings_for_style(
-        current_settings or {}
-    )
-    applied = interpolate_absolute_target(
-        canonical_current,
-        absolute_target,
-        strength=strength,
-    )
-    return PolicyPrediction(
-        policy_id=artifact.policy_ids[policy_index],
-        policy_name=_custom_policy_names().get(
-            artifact.policy_ids[policy_index],
-            artifact.policy_names[policy_index],
-        ),
-        confidence=float(confidence),
-        entropy=assignment.entropy,
-        target=target,
-        applied=applied,
-        example_count=len(artifact.example_photo_ids[policy_index]),
-    )
+        candidate_artifacts = [
+            art for art in artifacts.values()
+            if art.partition_key.startswith(target_hdr_prefix)
+        ]
+
+    if not candidate_artifacts:
+        return None
+
+    best_prediction: PolicyPrediction | None = None
+    best_confidence = -1.0
+
+    for artifact in candidate_artifacts:
+        source, feature_names = _source_row(metadata, embedding)
+        if feature_names != artifact.feature_names:
+            logger.warning("Policy feature schema/dimension mismatch during inference")
+            continue
+            
+        assignments = artifact.mixture.assignments(source[np.newaxis, :])
+        assignment = assignments[0]
+        
+        if policy_override and policy_override in artifact.policy_ids:
+            policy_index = artifact.policy_ids.index(policy_override)
+            confidence = assignment.responsibilities[policy_index]
+            if confidence < 0.40:
+                continue
+        else:
+            if assignment.ambiguous or assignment.policy_index is None:
+                continue
+            policy_index = assignment.policy_index
+            confidence = assignment.confidence
+
+        if confidence > best_confidence:
+            best_confidence = confidence
+            
+            predicted = artifact.calibrators[policy_index].predict(
+                source[np.newaxis, :],
+                categories=[_categories(metadata)],
+            )[0]
+            
+            flat_prediction: dict[str, float] = {}
+            for target_index, key in enumerate(artifact.target_keys):
+                lower, upper = artifact.slider_bounds[policy_index][key]
+                flat_prediction[key] = float(np.clip(predicted[target_index], lower, upper))
+                
+            target = unflatten_absolute_target(flat_prediction)
+            
+            if artifact.camera_profile and artifact.camera_profile.casefold() != "default":
+                target["CameraProfile"] = artifact.camera_profile
+                
+            absolute_target = AbsoluteTarget(
+                schema_version=TARGET_SCHEMA_VERSION,
+                process_version=str(metadata.get("process_version") or "Version 6"),
+                values=target,
+                modeled_paths=artifact.target_keys,
+            )
+            
+            try:
+                absolute_target.validate()
+            except ValueError as e:
+                logger.error(f"Target validation failed: {e}")
+                continue
+                
+            canonical_current = training_service.normalize_develop_settings_for_style(
+                current_settings or {}
+            )
+            applied = interpolate_absolute_target(
+                canonical_current,
+                absolute_target,
+                strength=strength,
+            )
+            
+            best_prediction = PolicyPrediction(
+                policy_id=artifact.policy_ids[policy_index],
+                policy_name=_custom_policy_names().get(
+                    artifact.policy_ids[policy_index],
+                    artifact.policy_names[policy_index],
+                ),
+                confidence=float(confidence),
+                entropy=assignment.entropy,
+                target=target,
+                applied=applied,
+                example_count=len(artifact.example_photo_ids[policy_index]),
+            )
+
+    return best_prediction
 
 
 def request_rebuild() -> dict[str, Any]:
