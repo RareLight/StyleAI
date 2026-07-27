@@ -308,6 +308,34 @@ class TestColorAndHistogramFeatures(unittest.TestCase):
                     self.assertEqual(ex["focal_length"], 105.0)
                     self.assertEqual(ex["rating"], 5)
 
+    def test_policy_training_reader_accepts_chroma_numpy_embeddings(self):
+        from unittest.mock import MagicMock, patch
+        from services import training
+
+        embedding_rows = np.asarray(
+            [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+            dtype=np.float32,
+        )
+        page = {
+            "ids": ["photo-1", "photo-2"],
+            "metadatas": [{"filename": "one.dng"}, {"filename": "two.dng"}],
+            "embeddings": embedding_rows,
+        }
+
+        with (
+            patch.object(training, "_ensure_initialized"),
+            patch.object(training, "_training_collection", MagicMock()),
+            patch.object(training, "_iter_training_pages", return_value=[page]),
+            patch.object(training, "_enrich_and_sync_metadatas_from_main_index"),
+        ):
+            examples = training.list_training_examples_with_embeddings()
+
+        self.assertEqual(
+            [item["photo_id"] for item in examples], ["photo-1", "photo-2"]
+        )
+        self.assertEqual(examples[0]["embedding"], embedding_rows[0].tolist())
+        self.assertEqual(examples[1]["embedding"], embedding_rows[1].tolist())
+
 
 if __name__ == "__main__":
     unittest.main()
