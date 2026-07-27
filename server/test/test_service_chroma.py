@@ -162,9 +162,11 @@ class TestChromaServiceCRUD(unittest.TestCase):
 
     @patch("services.chroma._ensure_initialized")
     def test_get_image_count(self, mock_init):
-        self.mock_collection.get.return_value = {"ids": ["p1", "p2", "p3"]}
+        self.mock_collection.count.return_value = 3
         count = chroma_service.get_image_count()
         self.assertEqual(count, 3)
+        self.mock_collection.count.assert_called_once()
+        self.mock_collection.get.assert_not_called()
 
     @patch("services.chroma._ensure_initialized")
     def test_get_all_image_ids_filtering(self, mock_init):
@@ -181,6 +183,20 @@ class TestChromaServiceCRUD(unittest.TestCase):
 
         self.assertEqual(with_emb, ["p1"])
         self.assertEqual(without_emb, ["p2"])
+
+    @patch("services.chroma.COLLECTION_PAGE_SIZE", 2)
+    @patch("services.chroma._ensure_initialized")
+    def test_get_all_image_ids_paginates(self, mock_init):
+        self.mock_collection.get.side_effect = [
+            {"ids": ["p1", "p2"]},
+            {"ids": ["p3"]},
+        ]
+
+        self.assertEqual(chroma_service.get_all_image_ids(), ["p1", "p2", "p3"])
+        self.assertEqual(
+            [call.kwargs["offset"] for call in self.mock_collection.get.call_args_list],
+            [0, 2],
+        )
 
     @patch("services.chroma._ensure_initialized")
     def test_get_image_metadata_stats(self, mock_init):

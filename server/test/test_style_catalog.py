@@ -7,6 +7,7 @@ import pytest
 from services import style_catalog as sc
 from services import training as training_service
 
+_real_schedule_post_discovery_tasks = sc._schedule_post_discovery_tasks
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -574,3 +575,24 @@ def test_filter_style_examples_by_genre_only_removes_panoramas():
     filtered_ids = [ex["photo_id"] for ex in filtered]
     # All pass except the panorama — text genre mismatch is NOT filtered
     assert filtered_ids == ["land1", "macro1", "port1"]
+
+
+def test_post_discovery_tasks_are_coalesced(mocker):
+    worker = mocker.Mock()
+    worker.is_alive.return_value = True
+    thread_factory = mocker.patch.object(sc.threading, "Thread", return_value=worker)
+    previous_worker = sc._post_discovery_worker
+    previous_generation = sc._post_discovery_generation
+    try:
+        sc._post_discovery_worker = None
+        sc._post_discovery_generation = 0
+
+        _real_schedule_post_discovery_tasks()
+        _real_schedule_post_discovery_tasks()
+
+        thread_factory.assert_called_once()
+        worker.start.assert_called_once()
+        assert sc._post_discovery_generation == 2
+    finally:
+        sc._post_discovery_worker = previous_worker
+        sc._post_discovery_generation = previous_generation
