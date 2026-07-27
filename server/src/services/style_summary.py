@@ -1,82 +1,110 @@
 import json
 import os
-from config import logger, DEFAULT_METADATA_PROVIDER, DB_PATH
+
+import config
+from config import logger
 from . import style_catalog as catalog_service
 
-SUMMARY_FILE = os.path.join(DB_PATH or ".", "signature_style.json")
+
+def _summary_file() -> str:
+    return os.path.join(config.DB_PATH or ".", "signature_style.json")
 
 
 def get_signature_style_summary() -> str | None:
-    if os.path.exists(SUMMARY_FILE):
+    path = _summary_file()
+    if os.path.exists(path):
         try:
-            with open(SUMMARY_FILE, "r") as f:
-                return json.load(f).get("summary")
-        except Exception:
-            pass
+            with open(path, encoding="utf-8") as summary_file:
+                return json.load(summary_file).get("summary")
+        except (OSError, ValueError):
+            logger.warning("Could not read signature style summary", exc_info=True)
     return None
 
 
+def _configured_summary_runner() -> tuple[str, str] | None:
+    """Return an explicitly configured local provider/model pair."""
+    configured = os.environ.get("STYLEAI_SUMMARY_MODEL", "").strip()
+    if not configured:
+        return None
+    if "::" in configured:
+        provider, model = configured.split("::", 1)
+    else:
+        provider, model = config.DEFAULT_METADATA_PROVIDER, configured
+    provider = provider.strip().lower()
+    model = model.strip()
+    if provider not in ("ollama", "lmstudio") or not model:
+        logger.warning("Ignoring invalid STYLEAI_SUMMARY_MODEL=%s", configured)
+        return None
+    return provider, model
+
+
 def summarize_catalog_styles() -> str | None:
-    """
-    Summarize all discovered styles in the catalog using an LLM.
-    Returns a 'Signature Style' summary string.
-    """
+    """Generate optional signature prose through the configured local provider."""
     styles = catalog_service.list_styles()
     if not styles:
         return "No editing styles discovered yet."
 
-    # Build prompt
     prompt_lines = [
-        "You are an expert photography analyst and photo editor. "
-        "Review the following editing styles automatically clustered from the user's Lightroom catalog, "
-        "and write a cohesive, 2-3 paragraph 'Signature Style Summary'.",
-        "This summary will be injected into future AI editing prompts to guide the AI to match the user's personal aesthetic.",
-        "Focus on recurring patterns in contrast, exposure, color grading, tone curves, and overall mood.",
-        "Do not list the styles one by one; synthesize them into a unified 'Signature Style'.",
+        "Synthesize the Lightroom editing styles below into a concise 2-3 paragraph "
+        "Signature Style Summary.",
+        "Focus on recurring contrast, exposure, color grading, tone curves, and mood.",
+        "Return the prose in the JSON caption field.",
         "",
-        "## User's Discovered Styles:",
     ]
-
     for style in styles:
-        name = style.get("style_name", "Unknown")
-        genre = style.get("genre", "Unknown")
-        desc = style.get("description", "")
-        prompt_lines.append(f"- Style: {name} (Genre: {genre})")
-        prompt_lines.append(f"  Description: {desc}")
-        prompt_lines.append("")
+        prompt_lines.append(
+            f"- {style.get('style_name', 'Unknown')} "
+            f"({style.get('genre', 'Unknown')}): {style.get('description', '')}"
+        )
 
-    system_prompt = "\n".join(prompt_lines)
+    runner = _configured_summary_runner()
+    if runner is None:
+        logger.info(
+            "Signature summary skipped; STYLEAI_SUMMARY_MODEL is not configured."
+        )
+        return None
 
-    provider = DEFAULT_METADATA_PROVIDER.lower()
-
-    summary_text = None
+    provider, model = runner
     try:
-        if provider == "ollama":
-            import requests
+        from services.metadata import get_analysis_service
 
-            # Assume local ollama
-            payload = {
-                "model": "llama3",  # default fallback
-                "prompt": system_prompt,
-                "stream": False,
-            }
-            # A signature summary is optional background enrichment. Keep a
-            # stopped or unhealthy local runner from leaving a discovery task
-            # blocked indefinitely.
-            resp = requests.post(
-                "http://localhost:11434/api/generate", json=payload, timeout=30
-            )
-            if resp.status_code == 200:
-                summary_text = resp.json().get("response", "").strip()
-
+        response = get_analysis_service().generate_metadata_single(
+            "catalog-style-summary",
+            b"",
+            {
+                "provider": provider,
+                "model": model,
+                "generate_keywords": False,
+                "generate_caption": True,
+                "generate_title": False,
+                "generate_alt_text": False,
+                "language": "English",
+                "temperature": 0.2,
+                "max_tokens": 700,
+                "user_prompt": "\n".join(prompt_lines),
+                "prompt": "You are an expert photography analyst and photo editor.",
+                "submit_keywords": False,
+                "submit_folder_names": False,
+            },
+        )
+        summary_text = (response.caption or "").strip() if response.success else ""
         if not summary_text:
-            summary_text = "Signature Style (LLM Summary unavailable. Relying on individual style matching)."
+            logger.warning(
+                "Local signature summary generation failed: %s", response.error
+            )
+            return None
 
-        with open(SUMMARY_FILE, "w") as f:
-            json.dump({"summary": summary_text}, f)
-
+        path = _summary_file()
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        tmp_path = path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as summary_file:
+            json.dump({"summary": summary_text}, summary_file)
+        os.replace(tmp_path, path)
         return summary_text
-
-    except Exception as e:
-        logger.error(f"Failed to generate LLM signature style summary: {e}")
+    except Exception as exc:
+        logger.error(
+            "Failed to generate local signature style summary: %s",
+            exc,
+            exc_info=True,
+        )
         return None

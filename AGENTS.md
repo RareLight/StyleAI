@@ -85,6 +85,9 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 - **LLM Concurrency & Batching**: NEVER increase `STYLEAI_LLM_CONCURRENCY` above 1 by default. Trying to force parallel local LLM requests (Ollama/LM Studio) forces the GPU to context-switch, immediately maxing out VRAM and deadlocking the process.
 - **Bounded pipeline**: The server owns job admission, image-byte budgets, per-item completion state, and cancellation. Lua must not create unbounded producer queues or multiple long-running LLM requests. Metadata generation may begin only after the corresponding embedding state is terminal.
 - **Hardware tiers**: Use `config.get_index_resource_limits()` rather than hard-coded queue, GPU batch, or Waitress thread counts. Apple Silicon defaults are bounded by unified memory (16 GB: 8/32/8; 32 GB: 12/48/12; 64 GB+: 16/64/16 for GPU batch/queue/HTTP threads); only explicit `STYLEAI_*` environment overrides may exceed them.
+- **Catalog traversal**: Use Chroma `count()` for totals and bounded `limit`/`offset` pages for collection-wide maintenance. Never introduce fixed million-record loads or silent catalog-size ceilings.
+- **Shutdown recovery**: Keep Lightroom teardown non-blocking. Persist the catalog session marker before forced backend exit; interrupted sessions must pass SQLite integrity checking and invalidate derived discovery/recommendation state at startup.
+- **Post-discovery work**: Coalesce repeated discovery follow-up jobs. Predictive fitting runs before optional prose summarization; signature summaries are disabled unless `STYLEAI_SUMMARY_MODEL` explicitly selects a local `ollama::<model>` or `lmstudio::<model>`.
 
 ---
 
@@ -120,3 +123,4 @@ Classification uses the multi-tiered pipeline (`style_grouping._primary_genre_wi
 - **Do not use taxonomy as the primary gate**: Genre labels, tags, and EXIF are probabilistic priors and review aids. They must not be hard-coded exception ladders that decide visual membership before embeddings are evaluated.
 - **Component membership**: Within hard camera/profile/HDR partitions, represent a style using dense visual/editing components (medoids and calibrated membership distributions), not a single centroid or a global cosine threshold. Reject candidates that are ambiguous between competing styles.
 - **Recommendation selection**: Retrieve visual neighbors through Chroma, then re-rank by component membership, quality, burst deduplication, and coverage of underrepresented components. Maintain labelled regression fixtures and measure precision/leakage before changing membership logic.
+- **Cohesion scaling**: Exact full cosine matrices are acceptable only for small groups. Large groups must use deterministic blockwise or bounded-neighbor graph construction so memory does not grow as `N²`.

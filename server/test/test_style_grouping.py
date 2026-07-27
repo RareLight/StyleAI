@@ -165,6 +165,23 @@ def test_split_examples_by_visual_cohesion_only_splits_dense_components():
     ]
 
 
+def test_split_examples_by_visual_cohesion_large_group_is_stable():
+    examples = [
+        {"photo_id": f"a-{index:03d}", "embedding": [1.0, 0.0, 0.0]}
+        for index in range(150)
+    ]
+    examples.extend(
+        {"photo_id": f"b-{index:03d}", "embedding": [0.0, 1.0, 0.0]}
+        for index in range(150)
+    )
+
+    clusters = sg.split_examples_by_visual_cohesion(examples)
+
+    assert [len(cluster) for cluster in clusters] == [150, 150]
+    assert clusters[0][0]["photo_id"] == "a-000"
+    assert clusters[1][0]["photo_id"] == "b-000"
+
+
 def test_dynamic_semantic_mapping():
     # Clear cache for isolated testing
     sg._DYNAMIC_GENRE_CACHE.clear()

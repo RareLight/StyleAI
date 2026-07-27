@@ -50,8 +50,8 @@ class CatalogOwnershipError(RuntimeError):
 # InsightFace embeddings are 512-dimensional
 FACE_EMBEDDING_DIM = 512
 
-# Max limit for get() when counting; Chroma may apply a default limit otherwise
 STATS_GET_LIMIT = 2_000_000
+COLLECTION_PAGE_SIZE = 1000
 
 PHOTO_ID_FIELD = "photo_id"
 LEGACY_UUID_FIELD = "uuid"
@@ -370,7 +370,27 @@ def get_image_count():
     _ensure_initialized()
     if collection is None:
         return 0
-    return len(collection.get(include=[], limit=STATS_GET_LIMIT)["ids"])
+    return collection.count()
+
+
+def _iter_collection_pages(include):
+    """Yield bounded Chroma pages without imposing a catalog-size ceiling."""
+    if collection is None:
+        return
+    offset = 0
+    while True:
+        page = collection.get(
+            include=include, limit=COLLECTION_PAGE_SIZE, offset=offset
+        )
+        ids = page.get("ids")
+        if ids is None:
+            ids = []
+        if not ids:
+            break
+        yield page
+        offset += len(ids)
+        if len(ids) < COLLECTION_PAGE_SIZE:
+            break
 
 
 def get_image_metadata_stats():
@@ -386,23 +406,25 @@ def get_image_metadata_stats():
             "with_caption": 0,
             "with_keywords": 0,
         }
-    result = collection.get(include=["metadatas"], limit=STATS_GET_LIMIT)
-    metadatas = result.get("metadatas", []) or []
     total = 0
     with_embedding = 0
     with_title = 0
     with_caption = 0
     with_keywords = 0
-    for idx, m in enumerate(metadatas):
-        total += 1
-        if m.get("has_embedding", True):
-            with_embedding += 1
-        if (m.get("title") or "").strip():
-            with_title += 1
-        if (m.get("caption") or "").strip():
-            with_caption += 1
-        if (m.get("keywords") or m.get("flattened_keywords") or "").strip():
-            with_keywords += 1
+    for page in _iter_collection_pages(["metadatas"]):
+        for metadata in page.get("metadatas") or []:
+            metadata = metadata or {}
+            total += 1
+            if metadata.get("has_embedding", True):
+                with_embedding += 1
+            if (metadata.get("title") or "").strip():
+                with_title += 1
+            if (metadata.get("caption") or "").strip():
+                with_caption += 1
+            if (
+                metadata.get("keywords") or metadata.get("flattened_keywords") or ""
+            ).strip():
+                with_keywords += 1
     return {
         "total": total,
         "with_embedding": with_embedding,
@@ -423,18 +445,20 @@ def get_all_image_ids(has_embedding=None):
     _ensure_initialized()
     if collection is None:
         return []
-    need_metadata = has_embedding is not None
-    if not need_metadata:
-        result = collection.get(include=[], limit=STATS_GET_LIMIT)
-        return result["ids"]
-    result = collection.get(include=["metadatas"], limit=STATS_GET_LIMIT)
     filtered_ids = []
-    for i, metadata in enumerate(result["metadatas"]):
-        if has_embedding is not None:
+    include = ["metadatas"] if has_embedding is not None else []
+    for page in _iter_collection_pages(include):
+        ids = page.get("ids") or []
+        metadatas = page.get("metadatas") or []
+        for index, photo_id in enumerate(ids):
+            if has_embedding is None:
+                filtered_ids.append(photo_id)
+                continue
+            metadata = metadatas[index] if index < len(metadatas) else {}
             has_emb = metadata.get("has_embedding", True) if metadata else True
             if has_emb != has_embedding:
                 continue
-        filtered_ids.append(result["ids"][i])
+            filtered_ids.append(photo_id)
     return filtered_ids
 
 

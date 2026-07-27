@@ -1065,24 +1065,52 @@ def _primary_genre_with_keywords_impl(
                 if mapped and _get_broad_genre(mapped) == target_genre:
                     return i
             return -1
-            
+
         def has_pet(tags: list[str]) -> bool:
-            pet_keywords = {"dog", "cat", "pet", "domestic", "puppy", "kitten", "feline", "canine"}
+            pet_keywords = {
+                "dog",
+                "cat",
+                "pet",
+                "domestic",
+                "puppy",
+                "kitten",
+                "feline",
+                "canine",
+            }
             return any(t.lower() in pet_keywords for t in tags)
 
         def has_macro(tags: list[str]) -> bool:
-            macro_keywords = {"macro", "close up", "insect", "bug", "spider", "fly", "butterfly", "flower"}
+            macro_keywords = {
+                "macro",
+                "close up",
+                "insect",
+                "bug",
+                "spider",
+                "fly",
+                "butterfly",
+                "flower",
+            }
             return any(t.lower() in macro_keywords for t in tags)
 
         # ARTWORK FILTER
-        artwork_keywords = {"cartoon", "illustration", "anime", "drawing", "painting", "artwork", "sketch", "comic", "art"}
+        artwork_keywords = {
+            "cartoon",
+            "illustration",
+            "anime",
+            "drawing",
+            "painting",
+            "artwork",
+            "sketch",
+            "comic",
+            "art",
+        }
         top_5_tags = {t.lower() for t in content_tags[:5]}
         if artwork_keywords.intersection(top_5_tags):
             return "scene_unknown"
 
         primary_tag = content_tags[0].lower()
         primary_mapped = _get_broad_genre(content_tags[0])
-        
+
         # Pre-calculate indices
         idx_astro = get_index_of_genre("scene_astrophotography", content_tags[:6])
         idx_macro = get_index_of_genre("scene_macro", content_tags[:5])
@@ -1098,13 +1126,11 @@ def _primary_genre_with_keywords_impl(
         # suppress the actual animal subject.  Only widen this horizon when the
         # primary tag is nature; broadening it for every image revives tail
         # noise and lets a secondary bird hijack a landscape.
-        idx_wildlife_in_nature = get_index_of_genre(
-            "scene_wildlife", content_tags[:12]
-        )
+        idx_wildlife_in_nature = get_index_of_genre("scene_wildlife", content_tags[:12])
         idx_landscape = get_index_of_genre("scene_landscape", content_tags[:5])
 
         # OVERRIDING DOMINANT SUBJECTS
-        
+
         # Pets take highest priority if present to prevent wildlife overlap
         if has_pet_top10:
             return "scene_portrait"
@@ -1116,7 +1142,10 @@ def _primary_genre_with_keywords_impl(
             return "scene_astrophotography"
 
         # Macro requires explicit macro keywords or scene_macro mapping in top 5
-        if idx_macro >= 0 or (has_macro_kws and primary_mapped in ("scene_nature", "scene_wildlife", "scene_unknown")):
+        if idx_macro >= 0 or (
+            has_macro_kws
+            and primary_mapped in ("scene_nature", "scene_wildlife", "scene_unknown")
+        ):
             return "scene_macro"
 
         # An event describes the editing workflow more usefully than its
@@ -1154,7 +1183,7 @@ def _primary_genre_with_keywords_impl(
         # Architecture
         if idx_arch >= 0:
             return "scene_architecture"
-            
+
         # Landscape
         if idx_landscape >= 0:
             return "scene_landscape"
@@ -1171,10 +1200,21 @@ def _primary_genre_with_keywords_impl(
 
         # Default to primary mapped if it's canonical
         canonical_regimes = {
-            "scene_portrait", "scene_landscape", "scene_architecture", "scene_studio",
-            "scene_night", "scene_astrophotography", "scene_wildlife", "scene_action",
-            "scene_event", "scene_street", "scene_macro", "scene_nature", "scene_food",
-            "scene_exterior", "scene_interior"
+            "scene_portrait",
+            "scene_landscape",
+            "scene_architecture",
+            "scene_studio",
+            "scene_night",
+            "scene_astrophotography",
+            "scene_wildlife",
+            "scene_action",
+            "scene_event",
+            "scene_street",
+            "scene_macro",
+            "scene_nature",
+            "scene_food",
+            "scene_exterior",
+            "scene_interior",
         }
         if primary_mapped in canonical_regimes:
             return primary_mapped
@@ -1817,9 +1857,9 @@ def split_examples_by_visual_cohesion(
 ) -> list[list[dict[str, Any]]]:
     """Split a semantic group only when embeddings form dense, usable components.
 
-    The graph is intentionally small and deterministic: training groups are
-    normally tens of examples, so an O(n²) cosine matrix is both faster and
-    more transparent than a parameter-sensitive general clustering package.
+    Small groups use one exact cosine matrix. Large groups use exact blockwise
+    comparisons, retaining deterministic membership without allocating an
+    unbounded N-by-N matrix.
     Examples lacking embeddings keep their original group, preventing a
     transient indexing gap from changing a user's training membership.
     """
@@ -1831,7 +1871,6 @@ def split_examples_by_visual_cohesion(
         return [examples]
 
     matrix = np.asarray(normalized, dtype=np.float32)
-    similarities = matrix @ matrix.T
     parent = list(range(len(examples)))
 
     def find(index: int) -> int:
@@ -1845,21 +1884,40 @@ def split_examples_by_visual_cohesion(
         if left_root != right_root:
             parent[right_root] = left_root
 
-    for i in range(len(examples)):
-        for j in range(i + 1, len(examples)):
-            if float(similarities[i, j]) >= similarity_threshold:
-                union(i, j)
+    exact_matrix_limit = 256
+    if len(examples) <= exact_matrix_limit:
+        similarities = matrix @ matrix.T
+        for i in range(len(examples)):
+            neighbors = np.flatnonzero(similarities[i, i + 1 :] >= similarity_threshold)
+            for relative_index in neighbors:
+                union(i, i + 1 + int(relative_index))
+    else:
+        block_size = 128
+        for start in range(0, len(examples), block_size):
+            stop = min(start + block_size, len(examples))
+            similarities = matrix[start:stop] @ matrix.T
+            for local_index, global_index in enumerate(range(start, stop)):
+                neighbors = np.flatnonzero(
+                    similarities[local_index, global_index + 1 :]
+                    >= similarity_threshold
+                )
+                for relative_index in neighbors:
+                    union(global_index, global_index + 1 + int(relative_index))
 
     components: dict[int, list[dict[str, Any]]] = {}
     for index, example in enumerate(examples):
         components.setdefault(find(index), []).append(example)
 
     clusters = list(components.values())
-    if len(clusters) == 1 or any(len(cluster) < min_cluster_size for cluster in clusters):
+    if len(clusters) == 1 or any(
+        len(cluster) < min_cluster_size for cluster in clusters
+    ):
         return [examples]
 
     # Stable ordering keeps generated style IDs unchanged across discoveries.
-    clusters.sort(key=lambda cluster: min(str(ex.get("photo_id", "")) for ex in cluster))
+    clusters.sort(
+        key=lambda cluster: min(str(ex.get("photo_id", "")) for ex in cluster)
+    )
     return clusters
 
 
@@ -2018,7 +2076,11 @@ def group_examples_by_profile_genre(
                 valid_ex.append(ex)
                 continue
             peer_embeddings = np.array(
-                [peer_emb for peer_ex, peer_emb in visual_examples if peer_ex is not ex],
+                [
+                    peer_emb
+                    for peer_ex, peer_emb in visual_examples
+                    if peer_ex is not ex
+                ],
                 dtype=np.float32,
             )
             if verify_photo_visual_membership(
@@ -2213,7 +2275,7 @@ def verify_photo_visual_membership(
             E_mat = E_mat.reshape(1, -1)
         sims = emb_norm @ E_mat.T
         max_sim = float(np.max(sims))
-        
+
         # Adaptive Z-score Outlier Rejection
         if len(E_mat) >= 3:
             # We compute internal similarities of the cluster to its own centroid
@@ -2224,7 +2286,7 @@ def verify_photo_visual_membership(
                 internal_sims = E_mat @ c_internal
                 mu_sim = float(np.mean(internal_sims))
                 sigma_sim = float(np.std(internal_sims))
-                
+
                 # If the cluster is tight (mu_sim > 0.65), we can be strict about outliers
                 if mu_sim > 0.65:
                     sim_to_centroid = float(np.dot(emb_norm, c_internal))
@@ -2232,7 +2294,7 @@ def verify_photo_visual_membership(
                     # If it's more than 2 std devs away AND its absolute similarity isn't exceptionally high
                     if z_score < -2.0 and max_sim < 0.70:
                         return False
-                        
+
         return max_sim >= base_threshold
 
     if style_centroid is not None and len(style_centroid) > 0:

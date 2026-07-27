@@ -33,6 +33,7 @@ _chroma_client = None
 _training_collection = None
 
 COLLECTION_NAME = "edit_training"
+TRAINING_PAGE_SIZE = 1000
 EMBEDDING_DIM = (
     1152  # CLIP ViT-L/14 dimension used by the main image_embeddings collection
 )
@@ -119,6 +120,26 @@ def _ensure_initialized() -> None:
 
 def _dummy_embedding() -> list[float]:
     return np.zeros(EMBEDDING_DIM, dtype=np.float32).tolist()
+
+
+def _iter_training_pages(include):
+    """Yield bounded Chroma pages without a fixed collection-size ceiling."""
+    if _training_collection is None:
+        return
+    offset = 0
+    while True:
+        page = _training_collection.get(
+            include=include, limit=TRAINING_PAGE_SIZE, offset=offset
+        )
+        ids = page.get("ids")
+        if ids is None:
+            ids = []
+        if not ids:
+            break
+        yield page
+        offset += len(ids)
+        if len(ids) < TRAINING_PAGE_SIZE:
+            break
 
 
 def _safe_unit(value: float) -> float:
@@ -1064,11 +1085,7 @@ def get_training_count() -> int:
     _ensure_initialized()
     if _training_collection is None:
         return 0
-    try:
-        result = _training_collection.get(include=[], limit=1_000_000)
-    except _ChromaInternalError:
-        return 0
-    return len(result.get("ids") or [])
+    return _training_collection.count()
 
 
 def _enrich_and_sync_metadatas_from_main_index(
@@ -1144,12 +1161,14 @@ def list_training_examples() -> list[dict[str, Any]]:
     _ensure_initialized()
     if _training_collection is None:
         return []
+    ids: list[str] = []
+    metadatas: list[Any] = []
     try:
-        result = _training_collection.get(include=["metadatas"], limit=1_000_000)
+        for page in _iter_training_pages(["metadatas"]):
+            ids.extend(page.get("ids") or [])
+            metadatas.extend(page.get("metadatas") or [])
     except _ChromaInternalError:
         return []
-    ids = result.get("ids") or []
-    metadatas = result.get("metadatas") or []
     _enrich_and_sync_metadatas_from_main_index(ids, metadatas)
     examples = []
     for i, pid in enumerate(ids):
@@ -1218,13 +1237,7 @@ def get_training_stats() -> dict[str, Any]:
             "camera_distribution": {},
             "exposure": {},
         }
-    try:
-        result = _training_collection.get(include=["metadatas"], limit=1_000_000)
-    except _ChromaInternalError:
-        result = {}
-    ids = result.get("ids") or []
-    metadatas = result.get("metadatas") or []
-    count = len(ids)
+    count = get_training_count()
 
     scene_dist: dict[str, int] = {}
     focal_dist: dict[str, int] = {}
@@ -1234,28 +1247,32 @@ def get_training_stats() -> dict[str, Any]:
     exp_contrasts: list[float] = []
     exp_colorfulness: list[float] = []
 
-    for meta in metadatas:
-        if not isinstance(meta, dict):
-            continue
-        tags = _safe_json_list(meta.get("scene_tags", "[]"))
-        for tag in tags:
-            scene_dist[tag] = scene_dist.get(tag, 0) + 1
+    try:
+        for page in _iter_training_pages(["metadatas"]):
+            for meta in page.get("metadatas") or []:
+                if not isinstance(meta, dict):
+                    continue
+                tags = _safe_json_list(meta.get("scene_tags", "[]"))
+                for tag in tags:
+                    scene_dist[tag] = scene_dist.get(tag, 0) + 1
 
-        fb = meta.get("focal_length_bucket", "unknown")
-        focal_dist[fb] = focal_dist.get(fb, 0) + 1
+                fb = meta.get("focal_length_bucket", "unknown")
+                focal_dist[fb] = focal_dist.get(fb, 0) + 1
 
-        tod = meta.get("time_of_day_bucket", "unknown")
-        tod_dist[tod] = tod_dist.get(tod, 0) + 1
+                tod = meta.get("time_of_day_bucket", "unknown")
+                tod_dist[tod] = tod_dist.get(tod, 0) + 1
 
-        cam = meta.get("camera_model", meta.get("camera_make", "unknown"))
-        camera_dist[cam] = camera_dist.get(cam, 0) + 1
+                cam = meta.get("camera_model", meta.get("camera_make", "unknown"))
+                camera_dist[cam] = camera_dist.get(cam, 0) + 1
 
-        if "exp_luminance_mean" in meta:
-            exp_means.append(float(meta["exp_luminance_mean"]))
-        if "exp_contrast" in meta:
-            exp_contrasts.append(float(meta["exp_contrast"]))
-        if "exp_colorfulness" in meta:
-            exp_colorfulness.append(float(meta["exp_colorfulness"]))
+                if "exp_luminance_mean" in meta:
+                    exp_means.append(float(meta["exp_luminance_mean"]))
+                if "exp_contrast" in meta:
+                    exp_contrasts.append(float(meta["exp_contrast"]))
+                if "exp_colorfulness" in meta:
+                    exp_colorfulness.append(float(meta["exp_colorfulness"]))
+    except _ChromaInternalError:
+        logger.warning("Training statistics scan stopped on a Chroma error")
 
     if count == 0:
         readiness = "cold_start"
@@ -1393,22 +1410,27 @@ def clear_all_training_examples() -> int:
     _ensure_initialized()
     if _training_collection is None:
         return 0
-    try:
-        result = _training_collection.get(include=[], limit=1_000_000)
-    except _ChromaInternalError:
-        return 0
-    ids = result.get("ids") or []
-    if not ids:
-        return 0
-    _training_collection.delete(ids=ids)
-    logger.info("Cleared all %d training examples.", len(ids))
+    removed = 0
+    while True:
+        try:
+            result = _training_collection.get(
+                include=[], limit=TRAINING_PAGE_SIZE, offset=0
+            )
+        except _ChromaInternalError:
+            break
+        ids = result.get("ids") or []
+        if not ids:
+            break
+        _training_collection.delete(ids=ids)
+        removed += len(ids)
+    logger.info("Cleared all %d training examples.", removed)
     try:
         from services import style_upgrades
 
         style_upgrades.invalidate_upgrade_recommendations_cache()
     except Exception:
         pass
-    return len(ids)
+    return removed
 
 
 # ---------------------------------------------------------------------------

@@ -20,6 +20,7 @@ import json
 import os
 import sqlite3
 import threading
+import time
 from datetime import datetime
 from typing import Any
 
@@ -44,6 +45,10 @@ _db_path: str | None = None
 _local = threading.local()
 _schema_init_lock = threading.Lock()
 _schema_initialized = False
+_post_discovery_lock = threading.Lock()
+_post_discovery_generation = 0
+_post_discovery_worker: threading.Thread | None = None
+_POST_DISCOVERY_DEBOUNCE_SECONDS = 1.0
 
 
 def _get_db_file() -> str:
@@ -135,23 +140,48 @@ def _now() -> str:
 
 
 def _schedule_post_discovery_tasks() -> None:
-    """Run optional summaries and model fitting without blocking discovery."""
+    """Coalesce optional follow-up work without blocking discovery."""
+    global _post_discovery_generation, _post_discovery_worker
+    with _post_discovery_lock:
+        _post_discovery_generation += 1
+        if _post_discovery_worker is not None and _post_discovery_worker.is_alive():
+            return
+        _post_discovery_worker = threading.Thread(
+            target=_run_post_discovery_tasks,
+            name="StyleDiscoveryBG",
+            daemon=True,
+        )
+        _post_discovery_worker.start()
 
-    def _run() -> None:
-        try:
-            from services import style_summary
 
-            style_summary.summarize_catalog_styles()
-        except Exception as exc:
-            logger.warning(f"Failed to generate catalog style summaries: {exc}")
+def _run_post_discovery_tasks() -> None:
+    """Process the newest discovery generation and discard superseded work."""
+    global _post_discovery_worker
+    while True:
+        with _post_discovery_lock:
+            generation = _post_discovery_generation
+        time.sleep(_POST_DISCOVERY_DEBOUNCE_SECONDS)
+        with _post_discovery_lock:
+            if generation != _post_discovery_generation:
+                continue
+
         try:
             from services import predictive_engine
 
             predictive_engine.train_style_models()
         except Exception as exc:
             logger.warning(f"Failed to train predictive ML models: {exc}")
+        try:
+            from services import style_summary
 
-    threading.Thread(target=_run, name="StyleDiscoveryBG", daemon=True).start()
+            style_summary.summarize_catalog_styles()
+        except Exception as exc:
+            logger.warning(f"Failed to generate catalog style summaries: {exc}")
+
+        with _post_discovery_lock:
+            if generation == _post_discovery_generation:
+                _post_discovery_worker = None
+                return
 
 
 def _slugify(text: str) -> str:
@@ -454,9 +484,7 @@ def discover_styles_from_examples(
         for visual_index, visual_group in enumerate(visual_groups, start=1):
             if len(visual_group) < 2:
                 continue
-            subgenre = (
-                None if len(visual_groups) == 1 else f"visual_set_{visual_index}"
-            )
+            subgenre = None if len(visual_groups) == 1 else f"visual_set_{visual_index}"
             sg = grouping._build_subgroup(visual_group, subgenre=subgenre)
 
             profile = camera_profile
