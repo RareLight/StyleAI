@@ -165,6 +165,7 @@ def _run_single_style_edit(
                 "error": llm_response.error or "LLM edit generation failed",
             }
 
+        _filter_recipe_crop_rotate(llm_response.recipe, options)
         _persist_edit_recipe(photo_id, filename, llm_response.recipe, options)
         payload = _success_payload(
             photo_id, llm_response.recipe, options, warning=llm_response.warning
@@ -225,6 +226,7 @@ def _run_single_style_edit(
             "error": "Style engine returned an empty recipe.",
         }
 
+    _filter_recipe_crop_rotate(result.recipe, options)
     _persist_edit_recipe(photo_id, filename, result.recipe, options)
     payload = _success_payload(photo_id, result.recipe, options, warning=result.warning)
     payload["engine"] = result.engine
@@ -232,6 +234,22 @@ def _run_single_style_edit(
     payload["matched_examples"] = result.matched_count
     payload["matched_filenames"] = result.matched_filenames
     return payload
+
+
+def _filter_recipe_crop_rotate(recipe: dict, options: dict) -> None:
+    if not isinstance(recipe, dict) or "global" not in recipe:
+        return
+    crop_settings = recipe["global"].get("crop")
+    if not isinstance(crop_settings, dict):
+        return
+    if not options.get("allow_auto_crop", True):
+        for k in ("left", "right", "top", "bottom", "x", "y", "width", "height"):
+            crop_settings.pop(k, None)
+    if not options.get("allow_auto_rotate", True):
+        for k in ("angle", "rotation"):
+            crop_settings.pop(k, None)
+    if not crop_settings:
+        recipe["global"].pop("crop", None)
 
 
 @style_edit_bp.route("/style_edit", methods=["POST"])

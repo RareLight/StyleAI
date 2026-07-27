@@ -200,6 +200,7 @@ def _extract_options(data) -> dict[str, Any]:
         data, "adjust_lens_corrections", True
     )
     options["allow_auto_crop"] = _bool_from_data(data, "allow_auto_crop", True)
+    options["allow_auto_rotate"] = _bool_from_data(data, "allow_auto_rotate", True)
 
     # Composition mode
     composition_mode = str(data.get("composition_mode", "subtle")).lower().strip()
