@@ -9,6 +9,7 @@ to free GPU resources after a period of inactivity.
 
 import os
 import time
+import json
 import config
 from config import logger, IMAGE_MODEL_ID, CLIP_MODEL_NAME, get_torch_device
 import threading
@@ -41,6 +42,69 @@ _model_lock = threading.RLock()
 _unloader_thread = None
 GLOBAL_CANCEL_EVENT = threading.Event()
 GLOBAL_SHUTDOWN_EVENT = threading.Event()
+_SESSION_MARKER_NAME = "styleai-session.json"
+
+
+def _session_marker_path() -> str | None:
+    if not config.DB_PATH:
+        return None
+    return os.path.join(config.DB_PATH, _SESSION_MARKER_NAME)
+
+
+def _write_session_state(state: str, active_work: bool = False) -> None:
+    path = _session_marker_path()
+    if not path:
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp_path = path + ".tmp"
+    payload = {
+        "state": state,
+        "active_work": bool(active_work),
+        "pid": os.getpid(),
+        "updated_at": time.time(),
+    }
+    with open(tmp_path, "w", encoding="utf-8") as marker:
+        json.dump(payload, marker)
+    os.replace(tmp_path, path)
+
+
+def recover_catalog_session() -> bool:
+    """Validate and invalidate derived state after an interrupted server session."""
+    path = _session_marker_path()
+    if not path:
+        return False
+    previous: dict = {}
+    try:
+        with open(path, encoding="utf-8") as marker:
+            previous = json.load(marker)
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError):
+        logger.warning("Could not read catalog session marker", exc_info=True)
+        previous = {"state": "unknown", "active_work": True}
+
+    needs_recovery = previous.get("state") not in (None, "clean")
+    if needs_recovery:
+        logger.warning(
+            "Recovering catalog after incomplete backend session (state=%s)",
+            previous.get("state", "unknown"),
+        )
+        from services import style_catalog, style_upgrades
+
+        conn = style_catalog._ensure_initialized()
+        integrity = conn.execute("PRAGMA quick_check").fetchone()
+        if not integrity or str(integrity[0]).lower() != "ok":
+            raise RuntimeError("Style catalog integrity check failed")
+        conn.execute(
+            "INSERT OR REPLACE INTO grouping_rule_state "
+            "(rule_key, rule_value, updated_at) "
+            "VALUES ('NEEDS_REDISCOVERY', '1', datetime('now'))"
+        )
+        conn.commit()
+        style_upgrades.invalidate_upgrade_recommendations_cache()
+
+    _write_session_state("running")
+    return needs_recovery
 
 
 def _get_open_clip_tokenizer(local_files_only=False):
@@ -402,12 +466,20 @@ def request_shutdown():
     logger.info("Shutdown request received")
     GLOBAL_SHUTDOWN_EVENT.set()
     GLOBAL_CANCEL_EVENT.set()
+    active_work = False
     try:
-        from services.index import stop_index_queue
+        from services.index import active_embeddings_uuids, stop_index_queue
 
-        stop_index_queue()
+        active_work = bool(active_embeddings_uuids)
+        discarded = stop_index_queue()
+        active_work = (isinstance(discarded, int) and discarded > 0) or active_work
     except Exception:
         logger.exception("Unable to discard queued indexing work during shutdown")
+        active_work = True
+    try:
+        _write_session_state("interrupted" if active_work else "clean", active_work)
+    except Exception:
+        logger.exception("Unable to persist catalog shutdown state")
 
     def _exit_after_delay():
         # Give Waitress just enough time to flush the already-returned response.
