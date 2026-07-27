@@ -27,6 +27,69 @@ _recs_cache: dict[str, Any] = {}
 _recs_cache_timestamp: float = 0.0
 _recs_cache_lock = threading.Lock()
 _CACHE_TTL_SECONDS = 300.0  # 5 minutes safety fallback
+_MAX_RETRIEVAL_ANCHORS = 3
+_RETRIEVAL_RESULTS_PER_ANCHOR = 300
+_EMBEDDING_FETCH_CHUNK_SIZE = 1000
+
+
+def _normalized_embedding(value: Any) -> np.ndarray | None:
+    if value is None:
+        return None
+    array = np.asarray(value, dtype=np.float32)
+    if array.size == 0:
+        return None
+    norm = float(np.linalg.norm(array))
+    if norm <= 0:
+        return None
+    return array / norm
+
+
+def _fetch_normalized_embeddings(photo_ids: set[str]) -> dict[str, np.ndarray]:
+    """Fetch only requested embeddings, in bounded chunks."""
+    result: dict[str, np.ndarray] = {}
+    if chroma_service.collection is None or not photo_ids:
+        return result
+    ordered_ids = sorted(photo_ids)
+    for start in range(0, len(ordered_ids), _EMBEDDING_FETCH_CHUNK_SIZE):
+        chunk = ordered_ids[start : start + _EMBEDDING_FETCH_CHUNK_SIZE]
+        data = chroma_service.collection.get(ids=chunk, include=["embeddings"])
+        ids = data.get("ids")
+        embeddings = data.get("embeddings")
+        if ids is None:
+            ids = []
+        if embeddings is None:
+            embeddings = []
+        for index, photo_id in enumerate(ids):
+            if index >= len(embeddings):
+                continue
+            normalized = _normalized_embedding(embeddings[index])
+            if normalized is not None:
+                result[photo_id] = normalized
+    return result
+
+
+def _select_retrieval_anchors(
+    embeddings: list[np.ndarray], max_anchors: int = _MAX_RETRIEVAL_ANCHORS
+) -> list[np.ndarray]:
+    """Choose deterministic representative anchors with greedy visual coverage."""
+    if not embeddings:
+        return []
+    matrix = np.asarray(embeddings, dtype=np.float32)
+    centroid = _normalized_embedding(np.mean(matrix, axis=0))
+    if centroid is None:
+        return []
+    first_index = int(np.argmax(matrix @ centroid))
+    selected_indices = [first_index]
+    minimum_similarities = matrix @ matrix[first_index]
+    while len(selected_indices) < min(max_anchors, len(matrix)):
+        next_index = int(np.argmin(minimum_similarities))
+        if next_index in selected_indices:
+            break
+        selected_indices.append(next_index)
+        minimum_similarities = np.maximum(
+            minimum_similarities, matrix @ matrix[next_index]
+        )
+    return [matrix[index] for index in selected_indices]
 
 
 def invalidate_upgrade_recommendations_cache() -> None:
@@ -314,186 +377,166 @@ def get_style_upgrade_recommendations(
         logger.warning(f"Failed to batch pre-fetch style examples: {e}", exc_info=True)
 
     # =========================================================================
-    # PASS 1: Pre-fetch ALL metadata (fast) and filter candidates by profile
+    # PASS 1: Fetch training embeddings and build bounded visual query anchors.
     # =========================================================================
     chroma_service._ensure_initialized()
-    photos_by_norm_profile: dict[
-        str, list[tuple[str, dict[str, Any], str, str, float]]
-    ] = {}
-
-    if chroma_service.collection is not None:
-        try:
-            res = chroma_service.collection.get(include=["metadatas"], limit=50_000)
-            p_ids = res.get("ids")
-            if p_ids is None:
-                p_ids = []
-            p_metas = res.get("metadatas")
-            if p_metas is None:
-                p_metas = []
-            for i, pid in enumerate(p_ids):
-                meta = dict(p_metas[i]) if i < len(p_metas) and p_metas[i] else {}
-                if not meta.get("has_embedding", True):
-                    continue
-                if style_grouping.is_stitched_panorama(meta):
-                    continue
-                # Quality cutoff: reject low-quality candidates
-                try:
-                    pick = int(meta.get("pick_status", 0) or 0)
-                except (TypeError, ValueError):
-                    pick = 0
-                if pick == -1:
-                    continue  # Rejected photos are never recommended
-                try:
-                    rating = int(meta.get("rating", 0) or 0)
-                except (TypeError, ValueError):
-                    rating = 0
-                if 1 <= rating <= 3:
-                    continue  # Low-rated photos are never recommended
-                p_genre = (
-                    style_grouping.classify_photo_genre(meta, None) or "scene_unknown"
-                )
-                photo_profile = (meta.get("camera_profile") or "").strip()
-                norm_profile = style_grouping._profile_name(photo_profile).lower()
-                photo_model = (meta.get("camera_model") or "").strip()
-                norm_model = re.sub(r"[^a-zA-Z0-9]", "", photo_model).lower()
-                h_score = _hero_score(meta)
-
-                photos_by_norm_profile.setdefault(norm_profile, []).append(
-                    (pid, meta, p_genre, norm_model, h_score)
-                )
-
-            for bucket in photos_by_norm_profile.values():
-                bucket.sort(key=lambda x: x[4], reverse=True)
-        except Exception as e:
-            logger.warning(
-                f"Failed to pre-fetch image metadata pool: {e}", exc_info=True
-            )
-
-    needed_photo_ids: set[str] = set()
-    already_recommended_pids: set[str] = set()
-    # Text-derived genre is deliberately retained only as a confidence signal.
-    # It must not be the retrieval gate: vision tags and keyword taxonomies are
-    # noisy, while the style's training embeddings directly represent the visual
-    # neighborhood that recommendations must match.
-    style_prelim_candidates_map: dict[
-        str, list[tuple[str, dict[str, Any], bool, bool]]
-    ] = {}
-
-    for style in styles:
-        style_id = style.get("style_id", "")
-        current_count = int(style.get("example_count", 0))
-        camera_profile = (style.get("camera_profile") or "Default").strip()
-        camera_model = (style.get("camera_model") or "").strip()
-        genre = (style.get("genre") or "").strip()
-
-        norm_style_profile = style_grouping._profile_name(camera_profile).lower()
-        norm_style_model = re.sub(r"[^a-zA-Z0-9]", "", camera_model).lower()
-        is_hdr_style = "HDR" in camera_profile
-
-        # Add existing examples to the fetch list so we can compute centroids/E_mat
-        existing_ids = all_style_examples_map.get(style_id, set())
-        needed_photo_ids.update(existing_ids)
-
-        if norm_style_profile in ("", "default"):
-            candidate_pool = []
-            for bucket in photos_by_norm_profile.values():
-                candidate_pool.extend(bucket)
-        else:
-            candidate_pool = list(photos_by_norm_profile.get(norm_style_profile, []))
-            if "" in photos_by_norm_profile:
-                candidate_pool.extend(photos_by_norm_profile[""])
-            if "default" in photos_by_norm_profile:
-                candidate_pool.extend(photos_by_norm_profile["default"])
-            if (
-                "adobe standard" in photos_by_norm_profile
-                and norm_style_profile != "adobe standard"
-            ):
-                candidate_pool.extend(photos_by_norm_profile["adobe standard"])
-
-        candidates = []
-
-        for pid, meta, p_genre, norm_photo_model, _ in candidate_pool:
-            if pid in existing_ids or pid in already_recommended_pids:
-                continue
-
-            photo_profile = (meta.get("camera_profile") or "").strip()
-            norm_p_prof = style_grouping._profile_name(photo_profile).lower()
-            if not photo_profile or norm_p_prof in ("default", "adobe standard", ""):
-                if (
-                    camera_profile != "Default"
-                    and norm_style_model
-                    and norm_photo_model
-                ):
-                    if norm_style_model != norm_photo_model:
-                        logger.debug(
-                            f"Candidate {pid} filtered: style model {norm_style_model} != {norm_photo_model}"
-                        )
-                        continue
-                if is_hdr_style and "hdr" not in norm_p_prof:
-                    logger.debug(
-                        f"Candidate {pid} filtered: HDR style requires HDR profile"
-                    )
-                    continue
-
-            is_compat, is_ambiguous = style_grouping.is_genre_compatible(
-                genre, p_genre
-            )
-            semantic_conflict = not is_compat and not is_ambiguous
-            candidates.append((pid, meta, is_ambiguous, semantic_conflict))
-            needed_photo_ids.add(pid)
-            if len(candidates) >= 250:
-                break
-
-        logger.info(
-            f"Style {style_id}: candidate_pool={len(candidate_pool)}, valid candidates={len(candidates)}"
+    training_photo_ids = {
+        photo_id
+        for example_ids in all_style_examples_map.values()
+        for photo_id in example_ids
+    }
+    try:
+        pool_emb_map = _fetch_normalized_embeddings(training_photo_ids)
+    except Exception as e:
+        logger.warning(
+            "Failed to fetch style training embeddings: %s", e, exc_info=True
         )
-        style_prelim_candidates_map[style_id] = candidates
+        pool_emb_map = {}
 
-    # =========================================================================
-    # PASS 2: Fetch only the necessary embeddings (lazy, minimal memory footprint)
-    # =========================================================================
-    pool_emb_map: dict[str, np.ndarray] = {}
-    if chroma_service.collection is not None and needed_photo_ids:
-        try:
-            needed_list = list(needed_photo_ids)
-            chunk_size = 5000
-            for i in range(0, len(needed_list), chunk_size):
-                chunk = needed_list[i : i + chunk_size]
-                res = chroma_service.collection.get(ids=chunk, include=["embeddings"])
-                e_ids = res.get("ids")
-                if e_ids is None:
-                    e_ids = []
-                e_embs = res.get("embeddings")
-                if e_embs is None:
-                    e_embs = []
-                for j, pid in enumerate(e_ids):
-                    if j < len(e_embs) and e_embs[j] is not None:
-                        arr = np.asarray(e_embs[j], dtype=np.float32)
-                        norm = float(np.linalg.norm(arr))
-                        if norm > 0:
-                            pool_emb_map[pid] = arr / norm
-        except Exception as e:
-            logger.warning(
-                f"Failed to fetch lazy image embeddings pool: {e}", exc_info=True
-            )
-
-    # Compute genre_centroids exclusively from established training examples
     genre_emb_lists: dict[str, list[np.ndarray]] = {}
     for style_id, existing_ids in all_style_examples_map.items():
         style_genre = style_genre_map.get(style_id, "")
-        if style_genre and style_genre != "scene_unknown":
-            for pid in existing_ids:
-                if pid in pool_emb_map:
-                    genre_emb_lists.setdefault(style_genre, []).append(
-                        pool_emb_map[pid]
-                    )
+        if not style_genre or style_genre == "scene_unknown":
+            continue
+        for photo_id in existing_ids:
+            embedding = pool_emb_map.get(photo_id)
+            if embedding is not None:
+                genre_emb_lists.setdefault(style_genre, []).append(embedding)
 
     genre_centroids: dict[str, np.ndarray] = {}
-    for g, embs in genre_emb_lists.items():
-        c = np.mean(embs, axis=0)
-        norm = float(np.linalg.norm(c))
-        if norm > 0:
-            genre_centroids[g] = c / norm
+    for genre_name, embeddings in genre_emb_lists.items():
+        centroid = _normalized_embedding(np.mean(embeddings, axis=0))
+        if centroid is not None:
+            genre_centroids[genre_name] = centroid
+
+    already_recommended_pids: set[str] = set()
+    style_prelim_candidates_map: dict[
+        str, list[tuple[str, dict[str, Any], bool, bool]]
+    ] = {}
+    retrieved_photo_ids: set[str] = set()
+
+    for style in styles:
+        style_id = style.get("style_id", "")
+        camera_profile = (style.get("camera_profile") or "Default").strip()
+        camera_model = (style.get("camera_model") or "").strip()
+        genre = (style.get("genre") or "").strip()
+        norm_style_model = re.sub(r"[^a-zA-Z0-9]", "", camera_model).lower()
+        existing_ids = all_style_examples_map.get(style_id, set())
+        existing_embeddings = [
+            pool_emb_map[photo_id]
+            for photo_id in sorted(existing_ids)
+            if photo_id in pool_emb_map
+        ]
+        anchors = _select_retrieval_anchors(existing_embeddings)
+        if not anchors and genre in genre_centroids:
+            anchors = [genre_centroids[genre]]
+        if chroma_service.collection is None:
+            style_prelim_candidates_map[style_id] = []
+            continue
+
+        candidate_metadata: dict[str, dict[str, Any]] = {}
+        for anchor in anchors:
+            try:
+                query_result = chroma_service.collection.query(
+                    query_embeddings=[anchor.tolist()],
+                    n_results=_RETRIEVAL_RESULTS_PER_ANCHOR,
+                    include=["metadatas", "distances"],
+                )
+            except Exception as e:
+                logger.warning(
+                    "Visual candidate query failed for style %s: %s",
+                    style_id,
+                    e,
+                    exc_info=True,
+                )
+                continue
+            nested_ids = query_result.get("ids")
+            nested_metadatas = query_result.get("metadatas")
+            query_ids = (
+                nested_ids[0] if nested_ids is not None and len(nested_ids) else []
+            )
+            query_metadatas = (
+                nested_metadatas[0]
+                if nested_metadatas is not None and len(nested_metadatas)
+                else []
+            )
+            for index, photo_id in enumerate(query_ids):
+                if photo_id in existing_ids or photo_id in candidate_metadata:
+                    continue
+                metadata = (
+                    dict(query_metadatas[index])
+                    if index < len(query_metadatas) and query_metadatas[index]
+                    else {}
+                )
+                candidate_metadata[photo_id] = metadata
+
+        candidates: list[tuple[str, dict[str, Any], bool, bool]] = []
+        for photo_id, metadata in candidate_metadata.items():
+            if not metadata.get("has_embedding", True):
+                continue
+            if style_grouping.is_stitched_panorama(metadata):
+                continue
+            try:
+                pick_status = int(metadata.get("pick_status", 0) or 0)
+                rating = int(metadata.get("rating", 0) or 0)
+            except (TypeError, ValueError):
+                pick_status = 0
+                rating = 0
+            if pick_status == -1 or 1 <= rating <= 3:
+                continue
+
+            photo_profile = (metadata.get("camera_profile") or "").strip()
+            norm_photo_profile = style_grouping._profile_name(photo_profile).lower()
+            photo_model = re.sub(
+                r"[^a-zA-Z0-9]", "", (metadata.get("camera_model") or "")
+            ).lower()
+            if (
+                photo_profile
+                and norm_photo_profile not in ("", "default", "adobe standard")
+                and not _profiles_compatible(camera_profile, photo_profile)
+            ):
+                continue
+            if (
+                not photo_profile
+                and camera_profile != "Default"
+                and norm_style_model
+                and photo_model
+                and norm_style_model != photo_model
+            ):
+                continue
+            if "HDR" in camera_profile and "hdr" not in norm_photo_profile:
+                continue
+
+            photo_genre = (
+                style_grouping.classify_photo_genre(metadata, None) or "scene_unknown"
+            )
+            compatible, ambiguous = style_grouping.is_genre_compatible(
+                genre, photo_genre
+            )
+            candidates.append(
+                (photo_id, metadata, ambiguous, not compatible and not ambiguous)
+            )
+            retrieved_photo_ids.add(photo_id)
+        style_prelim_candidates_map[style_id] = candidates
+        logger.info(
+            "Style %s: anchors=%d retrieved=%d validated=%d",
+            style_id,
+            len(anchors),
+            len(candidate_metadata),
+            len(candidates),
+        )
+
+    # =========================================================================
+    # PASS 2: Hydrate only the bounded candidate neighborhoods.
+    # =========================================================================
+    try:
+        pool_emb_map.update(_fetch_normalized_embeddings(retrieved_photo_ids))
+    except Exception as e:
+        logger.warning(
+            "Failed to fetch recommendation candidate embeddings: %s",
+            e,
+            exc_info=True,
+        )
 
     # =========================================================================
     # PASS 3: Generate recommendations per style
@@ -543,9 +586,7 @@ def get_style_upgrade_recommendations(
                     E_mat = E_mat.reshape(1, -1)
 
             # Hydrate candidates with embeddings
-            prelim_candidates: list[
-                tuple[str, Any, dict[str, Any], bool, bool]
-            ] = []
+            prelim_candidates: list[tuple[str, Any, dict[str, Any], bool, bool]] = []
             for pid, meta, is_ambiguous, semantic_conflict in prelim_candidates_tuples:
                 if pid in pool_emb_map and pid not in already_recommended_pids:
                     prelim_candidates.append(
@@ -593,7 +634,13 @@ def get_style_upgrade_recommendations(
                     valid_candidates.append((pid, emb, meta))
             else:
                 centroid = genre_centroids.get(genre)
-                for pid, emb, meta, is_ambiguous, semantic_conflict in prelim_candidates:
+                for (
+                    pid,
+                    emb,
+                    meta,
+                    is_ambiguous,
+                    semantic_conflict,
+                ) in prelim_candidates:
                     if centroid is not None and len(centroid) > 0:
                         min_similarity = 0.80 if semantic_conflict else 0.45
                         if not style_grouping.verify_photo_visual_membership(
