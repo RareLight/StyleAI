@@ -26,12 +26,40 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import queue
+import time as monotonic_time
 
 
 from typing import Any
 
 # Track UUIDs that are currently queued or being processed by the GPU worker
 active_embeddings_uuids = set()
+_gc_lock = threading.Lock()
+_last_forced_gc_at = 0.0
+_FORCED_GC_INTERVAL_SECONDS = 30.0
+
+
+def _decode_worker_count(batch_size: int) -> int:
+    """Keep JPEG decoding inside the same hardware budget as ingestion."""
+    return max(
+        1,
+        min(
+            batch_size,
+            config.STYLEAI_GPU_BATCH_SIZE,
+            config.STYLEAI_HTTP_THREADS,
+        ),
+    )
+
+
+def _maybe_collect_garbage() -> bool:
+    """Rate-limit full cyclic GC; Pillow buffers are explicitly closed."""
+    global _last_forced_gc_at
+    now = monotonic_time.monotonic()
+    with _gc_lock:
+        if now - _last_forced_gc_at < _FORCED_GC_INTERVAL_SECONDS:
+            return False
+        _last_forced_gc_at = now
+    gc.collect()
+    return True
 
 
 def _to_bool(val: Any, default: bool = False) -> bool:
@@ -375,7 +403,9 @@ def process_image_task(
                 exif_location_by_uuid[uuid] = None
 
         # Decode each image to PIL concurrently
-        with ThreadPoolExecutor(max_workers=min(32, len(image_triplets))) as executor:
+        with ThreadPoolExecutor(
+            max_workers=_decode_worker_count(len(image_triplets))
+        ) as executor:
             pil_images = list(
                 executor.map(
                     _decode_image, [img_bytes for img_bytes, _, _, _ in image_triplets]
@@ -692,7 +722,7 @@ def process_image_task(
                 except Exception:
                     pass
 
-        gc.collect()
+        _maybe_collect_garbage()
 
 
 # Dynamic Batching Queue
@@ -814,7 +844,7 @@ def _dynamic_gpu_worker():
             del batch, image_triplets, options, first_item
         except NameError:
             pass
-        gc.collect()
+        _maybe_collect_garbage()
 
 
 # Start the daemon thread immediately
