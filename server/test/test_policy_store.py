@@ -19,13 +19,13 @@ def _add_model(connection, generation_id, policy_id="policy-1"):
         policy_id=policy_id,
         hard_partition_key="sdr",
         expert_index=0,
-        estimator_type="weighted_pls",
+        estimator_type="hierarchical_reduced_rank_ridge",
         artifact_name=f"{generation_id}/{policy_id}.json",
         effective_sample_count=24.5,
     )
 
 
-def test_v2_schema_is_created_without_removing_legacy_tables(store):
+def test_clean_policy_schema_is_created_without_legacy_style_tables(store):
     tables = {
         row[0]
         for row in store.execute(
@@ -33,7 +33,8 @@ def test_v2_schema_is_created_without_removing_legacy_tables(store):
         ).fetchall()
     }
     assert set(policy_store.V2_TABLES).issubset(tables)
-    assert {"styles", "style_examples"}.issubset(tables)
+    assert "styles" not in tables
+    assert "style_examples" not in tables
 
 
 def test_generation_activation_is_atomic_and_unique(store):
@@ -64,6 +65,26 @@ def test_generation_activation_is_atomic_and_unique(store):
         ).fetchall()
     )
     assert statuses == {"generation-1": "retired", "generation-2": "active"}
+
+
+def test_custom_policy_name_is_persisted_for_active_policy(store):
+    generation = policy_store.create_generation(
+        store,
+        algorithm_version="policy-v2",
+        feature_schema_version="features-v1",
+        target_schema_version="targets-v1",
+    )
+    _add_model(store, generation)
+    policy_store.activate_generation(store, generation)
+
+    assert policy_store.rename_policy(
+        store,
+        policy_id="policy-1",
+        custom_name="My Soft Contrast",
+    )
+    assert policy_store.list_policy_custom_names(store) == {
+        "policy-1": "My Soft Contrast"
+    }
 
 
 def test_activation_failure_preserves_existing_active_generation(store):
@@ -116,7 +137,7 @@ def test_recovery_fails_only_interrupted_builds(store):
     assert status == "failed"
 
 
-def test_reset_removes_only_v2_state(store):
+def test_reset_removes_all_derived_policy_state(store):
     store.execute(
         """
         INSERT INTO policy_v2_examples (
@@ -128,8 +149,8 @@ def test_reset_removes_only_v2_state(store):
     )
     store.execute(
         """
-        INSERT INTO styles (style_id, style_name, genre)
-        VALUES ('legacy', 'Legacy Style', 'scene_general')
+        INSERT INTO policy_v2_custom_names (policy_id, custom_name, updated_at)
+        VALUES ('policy-1', 'Custom', 'now')
         """
     )
     store.commit()
@@ -150,10 +171,7 @@ def test_reset_removes_only_v2_state(store):
         "memberships": 0,
     }
     assert (
-        store.execute(
-            "SELECT COUNT(*) FROM styles WHERE style_id = 'legacy'"
-        ).fetchone()[0]
-        == 1
+        store.execute("SELECT COUNT(*) FROM policy_v2_custom_names").fetchone()[0] == 0
     )
 
 

@@ -5,6 +5,7 @@ LM Studio Provider for metadata generation using the lmstudio-python library
 import json
 import os
 import re
+from urllib.parse import urlsplit
 from typing import Any
 import lmstudio as lms
 from .base import (
@@ -38,8 +39,7 @@ class LMStudioProvider(LLMProviderBase):
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
-        raw_host = config.get("base_url") if "base_url" in config else LMSTUDIO_HOST
-        self.host = self._normalize_host(raw_host) if raw_host else ""
+        self.host = self._normalize_host(LMSTUDIO_HOST)
         self.timeout = config.get("timeout", 720)
         # lmstudio-python's synchronous API defaults to timing out after ~60s of
         # inactivity when waiting for a response/stream event. Wire our configured
@@ -64,7 +64,7 @@ class LMStudioProvider(LLMProviderBase):
     def _normalize_host(host: str | None) -> str:
         """
         Normalize LM Studio host string by stripping http(s):// protocols and path suffixes.
-        LM Studio SDK expects 'host:port' format (e.g. '192.168.1.207:12042' or 'localhost:1234').
+        LM Studio SDK expects ``host:port`` format.
         """
         if not host:
             return ""
@@ -72,45 +72,37 @@ class LMStudioProvider(LLMProviderBase):
         h = re.sub(r"^https?://", "", h, flags=re.IGNORECASE)
         return h.split("/")[0].strip()
 
-    def _resolve_host(self, host_override: str | None = None) -> str:
-        """
-        Resolve active LM Studio host using host override, specified default host,
-        or automatic discovery via the LM Studio SDK (for dynamic port binding).
-        """
-        if host_override == "":
-            return ""
+    @staticmethod
+    def _is_loopback_host(host: str) -> bool:
+        hostname = urlsplit(f"//{host}").hostname
+        return hostname == "localhost" or bool(
+            hostname and (hostname == "::1" or hostname.startswith("127."))
+        )
 
-        raw_candidate = host_override if host_override is not None else self.host
-        candidate = self._normalize_host(raw_candidate)
+    def _resolve_host(self) -> str:
+        """
+        Resolve the loopback LM Studio host, including dynamic local API ports.
+        """
+        candidate = self._normalize_host(self.host)
 
-        if not candidate:
+        if not candidate or not self._is_loopback_host(candidate):
             return ""
 
         # Cheap pre-check short-circuit: host without colon is invalid
         if ":" not in candidate:
             return candidate
 
-        # If an explicit custom host was specified (e.g. 192.168.1.207:12042 or custom port),
-        # validate it first before falling back to discovery.
-        if candidate != self._normalize_host(LMSTUDIO_HOST):
-            try:
-                if lms.Client.is_valid_api_host(candidate):
-                    self.host = candidate
-                    return candidate
-            except Exception as e:
-                logger.debug(
-                    f"Validation for custom LM Studio host {candidate} failed: {e}"
-                )
-
-        # Attempt auto-discovery via lmstudio SDK for dynamically assigned local API ports (e.g. 127.0.0.1:41343)
+        # LM Studio can assign a dynamic loopback API port.
         try:
             find_host = getattr(lms.Client, "find_default_local_api_host", None)
             if callable(find_host):
                 discovered = find_host()
                 if discovered:
                     norm_discovered = self._normalize_host(discovered)
-                    if norm_discovered and lms.Client.is_valid_api_host(
+                    if (
                         norm_discovered
+                        and self._is_loopback_host(norm_discovered)
+                        and lms.Client.is_valid_api_host(norm_discovered)
                     ):
                         self.host = norm_discovered
                         return norm_discovered
@@ -211,9 +203,7 @@ class LMStudioProvider(LLMProviderBase):
             MetadataGenerationResponse with generated metadata
         """
         try:
-            # Resolve host: request override -> provider default -> auto-discovery
-            host_override = getattr(request, "lmstudio_base_url", None)
-            effective_host = self._resolve_host(host_override)
+            effective_host = self._resolve_host()
 
             # Use a scoped client for this host instead of global default client
             with lms.Client(effective_host) as client:

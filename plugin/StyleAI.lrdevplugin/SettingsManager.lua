@@ -33,8 +33,6 @@ function SettingsManager.initializeDefaults()
         prompt = Defaults.defaultPromptName,
         editPrompts = { Default = Defaults.defaultEditSystemInstruction },
         editPrompt = Defaults.defaultEditPromptName,
-        ollamaBaseUrl = Defaults.defaultOllamaBaseUrl,
-        lmstudioBaseUrl = Defaults.defaultLmStudioBaseUrl,
         periodicalUpdateCheck = false,
         submitFolderName = false,
         useGlobalPhotoId = true,

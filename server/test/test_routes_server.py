@@ -73,7 +73,9 @@ def test_health_reports_no_error_when_healthy(client, mocker):
 def test_cancel_discards_pending_queue_work(client, mocker):
     import server_lifecycle
 
-    mock_discard = mocker.patch("services.index.discard_pending_index_queue", return_value=3)
+    mock_discard = mocker.patch(
+        "services.index.discard_pending_index_queue", return_value=3
+    )
     server_lifecycle.GLOBAL_CANCEL_EVENT.clear()
 
     response = client.post("/cancel_all_tasks")

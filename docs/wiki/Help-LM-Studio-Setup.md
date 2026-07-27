@@ -26,10 +26,9 @@ Check the server settings on the right panel. Ensure the server is configured to
 
 If you plan to switch between models frequently, you can enable the just-in-time model loading option in LM Studio's settings, which allows StyleAI to request a specific model to load automatically.
 
-## Configuring StyleAI
+## Using LM Studio with StyleAI
 
-Leave LM Studio running in the background and open Lightroom Classic. Navigate to the StyleAI Plugin Manager.
-
-Under the AI Provider Configuration section, locate the LM Studio Base URL field. If LM Studio is running on the same computer, the default value (`http://localhost:1234/v1`) is correct. If you are hosting LM Studio on another computer, replace localhost with the appropriate IP address.
-
-Close the Plugin Manager to save your settings. When you use the StyleAI tools, the plugin will now route vision analysis requests through LM Studio.
+Leave LM Studio running on the same computer as Lightroom Classic. StyleAI
+automatically discovers LM Studio's loopback API port and lists compatible
+models in its model selector. Remote and LAN-hosted LM Studio instances are not
+supported.

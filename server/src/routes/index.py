@@ -690,7 +690,9 @@ def enqueue_photo():
     enqueued = 0
     rejected = 0
     if not is_index_queue_accepting():
-        return jsonify({"status": "stopping", "enqueued": 0, "rejected": len(images_data)}), 503
+        return jsonify(
+            {"status": "stopping", "enqueued": 0, "rejected": len(images_data)}
+        ), 503
 
     for item in images_data:
         image_base64 = item.get("image")

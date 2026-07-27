@@ -51,8 +51,9 @@ def sync_translations(lua_dir, target_path, base_strings=None):
     if base_strings:
         keys_to_use = sorted(list(base_strings.keys()))
     else:
-        # For EN, we use union of extracted and existing
-        keys_to_use = sorted(list(set(extracted_keys.keys()) | set(existing_strings.keys())))
+        # Lua source is authoritative; stale keys from removed features must not
+        # survive indefinitely in every localization file.
+        keys_to_use = sorted(extracted_keys.keys())
     
     new_content = []
     for key in keys_to_use:

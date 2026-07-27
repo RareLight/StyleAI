@@ -331,21 +331,38 @@ def _validated_prediction_array(source_features: np.ndarray) -> np.ndarray:
 EstimatorFactory = Callable[[], WeightedMultiOutputEstimator]
 
 
+def make_default_reduced_rank_ridge() -> ReducedRankRidge:
+    """Pickle-safe production factory for the default linear expert."""
+    return ReducedRankRidge(alpha=1.0, rank=6)
+
+
+def make_weighted_pls() -> WeightedPLS:
+    """Pickle-safe factory for the latent-factor candidate."""
+    return WeightedPLS(n_components=6)
+
+
+def make_multitask_elastic_net() -> WeightedMultiTaskElasticNet:
+    """Pickle-safe factory for the sparse multi-output candidate."""
+    return WeightedMultiTaskElasticNet(alpha=0.01, l1_ratio=0.2)
+
+
+def make_random_feature_ridge() -> RandomFeatureRidge:
+    """Pickle-safe factory for the bounded nonlinear challenger."""
+    return RandomFeatureRidge(
+        alpha=1.0,
+        gamma=0.05,
+        n_components=128,
+        seed=17,
+    )
+
+
 def default_estimator_factories() -> dict[str, EstimatorFactory]:
     """Return fresh, deterministic candidates for each validation fold."""
     return {
-        "reduced_rank_ridge": lambda: ReducedRankRidge(alpha=1.0, rank=6),
-        "weighted_pls": lambda: WeightedPLS(n_components=6),
-        "multitask_elastic_net": lambda: WeightedMultiTaskElasticNet(
-            alpha=0.01,
-            l1_ratio=0.2,
-        ),
-        "random_feature_ridge": lambda: RandomFeatureRidge(
-            alpha=1.0,
-            gamma=0.05,
-            n_components=128,
-            seed=17,
-        ),
+        "reduced_rank_ridge": make_default_reduced_rank_ridge,
+        "weighted_pls": make_weighted_pls,
+        "multitask_elastic_net": make_multitask_elastic_net,
+        "random_feature_ridge": make_random_feature_ridge,
     }
 
 

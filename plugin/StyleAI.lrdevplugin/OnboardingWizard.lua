@@ -175,46 +175,23 @@ function OnboardingWizard.show(manualTrigger)
 						wrap = true,
 					}),
 					f:spacer({ height = 10 }),
-					f:row({
-						fill_horizontal = 1,
-						f:static_text({
-							title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaBaseUrl=Ollama Base URL"),
-							alignment = "right",
-							width = share("apiKeyLabelWidth"),
-						}),
-						f:edit_field({
-							value = bind({ bind_to_object = prefs, key = "ollamaBaseUrl" }),
+						f:row({
 							fill_horizontal = 1,
-						}),
-						f:push_button({
-							title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
-							tooltip = LOC("$$$/StyleAI/PluginInfo/OllamaTooltip=Opens the setup guide for Ollama integration."),
+							f:push_button({
+								title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
+								tooltip = LOC("$$$/StyleAI/PluginInfo/OllamaTooltip=Opens the setup guide for Ollama integration."),
 							action = function(button)
 								LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-Ollama-Setup")
 							end,
-							width = share("apiKeyButtonWidth"),
-						}),
-					}),
-					f:row({
-						fill_horizontal = 1,
-						f:static_text({
-							title = LOC("$$$/StyleAI/PluginInfo/LmStudioUrl=LM Studio Base URL"),
-							alignment = "right",
-							width = share("apiKeyLabelWidth"),
-						}),
-						f:edit_field({
-							value = bind({ bind_to_object = prefs, key = "lmstudioBaseUrl" }),
-							fill_horizontal = 1,
-						}),
-						f:push_button({
-							title = LOC("$$$/StyleAI/PluginInfo/SetupLmStudio=Setup LM Studio"),
+							}),
+							f:push_button({
+								title = LOC("$$$/StyleAI/PluginInfo/SetupLmStudio=Setup LM Studio"),
 							tooltip = LOC("$$$/StyleAI/PluginInfo/LmStudioTooltip=Opens the setup guide for LM Studio integration."),
 							action = function(button)
 								LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-LM-Studio-Setup")
 							end,
-							width = share("apiKeyButtonWidth"),
+							}),
 						}),
-					}),
 				}),
 
 				f:group_box({

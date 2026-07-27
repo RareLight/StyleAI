@@ -90,92 +90,52 @@ LrTasks.startAsyncTask(function()
 
 			local s = props.styles[idx]
 			local sName = s.style_name or s.policy_name or "Unknown Style"
-			local sGenre = s.genre or "Unknown"
 			local sProf = s.camera_profile or "Default"
-			local isPolicyV2 = s.recommendation_version == "policy-v2" or s.policy_id ~= nil
 			
 			props.detailName = sName
 			props.detailProfile = sProf
-			if isPolicyV2 then
-				props.showPolicyDetails = true
-				props.detailDescriptorLabel = LOC("$$$/StyleAI/UpgradeAssistant/PolicyCuesLabel=Policy cues:")
-				local cueNames = {}
-				for _, cue in ipairs(s.policy_descriptors or {}) do
-					local cueName = type(cue) == "table" and cue.descriptor or cue
-					if cueName and cueName ~= "" then
-						table.insert(cueNames, tostring(cueName))
-						if #cueNames >= 4 then break end
-					end
+			props.showPolicyDetails = true
+			props.detailDescriptorLabel = LOC("$$$/StyleAI/UpgradeAssistant/PolicyCuesLabel=Policy cues:")
+			local cueNames = {}
+			for _, cue in ipairs(s.policy_descriptors or {}) do
+				local cueName = type(cue) == "table" and cue.descriptor or cue
+				if cueName and cueName ~= "" then
+					table.insert(cueNames, tostring(cueName))
+					if #cueNames >= 4 then break end
 				end
-				props.detailGenre = #cueNames > 0 and table.concat(cueNames, ", ")
-					or LOC("$$$/StyleAI/UpgradeAssistant/PolicyCuesPending=Learned visual/editing policy")
-			else
-				props.showPolicyDetails = false
-				props.detailDescriptorLabel = LOC("$$$/StyleAI/StyleCatalog/DetailGenre=Genre:")
-				props.detailGenre = sGenre
 			end
+			props.detailGenre = #cueNames > 0 and table.concat(cueNames, ", ")
+				or LOC("$$$/StyleAI/UpgradeAssistant/PolicyCuesPending=Learned visual/editing policy")
 			
 			local current = tonumber(s.current_count) or 0
-			local tierName
-			if isPolicyV2 then
-				tierName = s.training_status or LOC("$$$/StyleAI/UpgradeAssistant/PolicyModelStatus=Conditional editing policy")
-			else
-				tierName = "🔴 Undertrained / Pillar 1 (PCA Baseline)"
-				if current >= 50 then
-					tierName = "🌟 ML Predictive (Best) / Pillar 3 (Elastic Net)"
-				elseif current >= 15 then
-					tierName = "⭐️ ML Predictive (Good) / Pillar 2 (Supervised PLS)"
-				elseif current >= 3 then
-					tierName = "🟡 Basic / Pillar 1 (PCA Baseline)"
-				end
-			end
+			local tierName = s.training_status
+				or LOC("$$$/StyleAI/UpgradeAssistant/PolicyModelStatus=Conditional editing policy")
 			props.detailTier = string.format("%s (%d examples)", tierName, current)
 
 			props.detailRecommendedIds = s.recommended_photo_ids or {}
 			local recCount = #props.detailRecommendedIds
 
-			if isPolicyV2 then
-				local admitted = tonumber(s.admitted_candidate_count) or recCount
-				local ambiguous = tonumber(s.ambiguous_candidate_count) or 0
-				local rejected = tonumber(s.rejected_candidate_count) or 0
-				local coverageLabel = s.coverage_summary
-					or string.format(LOC("$$$/StyleAI/UpgradeAssistant/CoverageSummaryFmt=%d coverage-focused recommendations"), recCount)
-				props.detailCoverage = coverageLabel
-				props.detailNeeded = s.target_summary
-					or string.format(LOC("$$$/StyleAI/UpgradeAssistant/MoreExamplesFmt=Additional examples requested: %d"), tonumber(s.needed_count) or recCount)
-				if recCount > 0 then
-					props.detailExplanation = string.format(
-						LOC("$$$/StyleAI/UpgradeAssistant/PolicyRecsFoundFmt=%d high-confidence candidates were selected after policy membership, ambiguity, burst, and quality checks. %d candidates were admissible; %d were ambiguous and %d were rejected."),
-						recCount, admitted, ambiguous, rejected
-					)
-					props.detailButtonTitle = string.format(LOC("$$$/StyleAI/UpgradeAssistant/BtnSelectFmt=Select %d Recommended Photos in Library"), recCount)
-					props.detailButtonEnabled = true
-				else
-					props.detailExplanation = string.format(
-						LOC("$$$/StyleAI/UpgradeAssistant/PolicyNoRecsFmt=No high-confidence candidates are currently available. %d were ambiguous and %d failed policy or quality safeguards."),
-						ambiguous, rejected
-					)
-					props.detailButtonTitle = LOC("$$$/StyleAI/UpgradeAssistant/BtnNoRecs=No Candidate Photos Found")
-					props.detailButtonEnabled = false
-				end
-			elseif s.is_highest_tier or current >= 50 then
-				props.detailCoverage = ""
-				props.detailNeeded = LOC("$$$/StyleAI/UpgradeAssistant/FullyUpgraded=Status: Fully Upgraded! (50+ training examples)")
-				props.detailExplanation = LOC("$$$/StyleAI/UpgradeAssistant/HighestTierExpl=This style has reached the highest ML tier (Pillar 3 Elastic Net with L1 sparsity). No further upgrade is required!")
-				props.detailButtonTitle = LOC("$$$/StyleAI/UpgradeAssistant/BtnHighest=Highest Tier Reached")
-				props.detailButtonEnabled = false
+			local admitted = tonumber(s.admitted_candidate_count) or recCount
+			local ambiguous = tonumber(s.ambiguous_candidate_count) or 0
+			local rejected = tonumber(s.rejected_candidate_count) or 0
+			props.detailCoverage = s.coverage_summary
+				or string.format(LOC("$$$/StyleAI/UpgradeAssistant/CoverageSummaryFmt=%d coverage-focused recommendations"), recCount)
+			props.detailNeeded = s.target_summary
+				or string.format(LOC("$$$/StyleAI/UpgradeAssistant/MoreExamplesFmt=Additional examples requested: %d"), tonumber(s.needed_count) or recCount)
+			if recCount > 0 then
+				props.detailExplanation = string.format(
+					LOC("$$$/StyleAI/UpgradeAssistant/PolicyRecsFoundFmt=%d high-confidence candidates were selected after policy membership, ambiguity, burst, and quality checks. %d candidates were admissible; %d were ambiguous and %d were rejected."),
+					recCount, admitted, ambiguous, rejected
+				)
+				props.detailButtonTitle = string.format(LOC("$$$/StyleAI/UpgradeAssistant/BtnSelectFmt=Select %d Recommended Photos in Library"), recCount)
+				props.detailButtonEnabled = true
 			else
-				props.detailCoverage = ""
-				props.detailNeeded = string.format(LOC("$$$/StyleAI/UpgradeAssistant/NextTierFmt=Target: %s (needs %d more)"), s.target_tier or "", tonumber(s.needed_count) or 0)
-				if recCount > 0 then
-					props.detailExplanation = string.format(LOC("$$$/StyleAI/UpgradeAssistant/RecsFoundExpl=Found %d recommended candidate photos in your search index using Farthest Point Sampling (Max-Min diversity) and Star Rating quality scoring! Click 'Show Candidate Photos' in toolbar to select them in Lightroom Library."), recCount)
-					props.detailButtonTitle = string.format(LOC("$$$/StyleAI/UpgradeAssistant/BtnSelectFmt=Select %d Recommended Photos in Library"), recCount)
-					props.detailButtonEnabled = true
-				else
-					props.detailExplanation = LOC("$$$/StyleAI/UpgradeAssistant/NoRecsExpl=We need more examples for this style, but no suitable candidate photos matching this camera profile were found in your database. Try indexing more photos in Lightroom!")
-					props.detailButtonTitle = LOC("$$$/StyleAI/UpgradeAssistant/BtnNoRecs=No Candidate Photos Found")
-					props.detailButtonEnabled = false
-				end
+				props.detailExplanation = string.format(
+					LOC("$$$/StyleAI/UpgradeAssistant/PolicyNoRecsFmt=No high-confidence candidates are currently available. %d were ambiguous and %d failed policy or quality safeguards."),
+					ambiguous, rejected
+				)
+				props.detailButtonTitle = LOC("$$$/StyleAI/UpgradeAssistant/BtnNoRecs=No Candidate Photos Found")
+				props.detailButtonEnabled = false
 			end
 
 			local hasAnyRecs = false

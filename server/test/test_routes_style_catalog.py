@@ -13,7 +13,7 @@ def client():
 
 def test_list_styles(client, mocker):
     mocker.patch(
-        "routes.style_catalog.catalog_service.list_styles",
+        "routes.style_catalog.policy_runtime.list_active_policies",
         return_value=[{"id": "style-1", "name": "Cinematic"}],
     )
 
@@ -27,7 +27,7 @@ def test_list_styles(client, mocker):
 
 
 def test_get_style_found_and_not_found(client, mocker):
-    mock_get = mocker.patch("routes.style_catalog.catalog_service.get_style")
+    mock_get = mocker.patch("routes.style_catalog.policy_runtime.get_active_policy")
     mock_get.return_value = {"id": "style-1", "name": "Cinematic"}
 
     res_ok = client.get("/styles/style-1")
@@ -40,7 +40,7 @@ def test_get_style_found_and_not_found(client, mocker):
 
 def test_get_upgrade_recommendations(client, mocker):
     mocker.patch(
-        "routes.style_catalog.style_upgrades.get_style_upgrade_recommendations",
+        "routes.style_catalog.policy_runtime.get_upgrade_recommendations",
         return_value=[{"style_id": "style-1", "upgrade_score": 0.95}],
     )
 
@@ -57,7 +57,11 @@ def test_get_upgrade_recommendations(client, mocker):
 
 def test_discover_styles(client, mocker):
     mocker.patch(
-        "routes.style_catalog.catalog_service.discover_styles_from_examples",
+        "routes.style_catalog.policy_runtime.rebuild_active_generation",
+        return_value={"generation_id": "generation-1"},
+    )
+    mocker.patch(
+        "routes.style_catalog.policy_runtime.list_active_policies",
         return_value=[{"id": "s1", "name": "Discovered"}],
     )
 

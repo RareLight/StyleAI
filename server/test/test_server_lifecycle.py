@@ -1,7 +1,6 @@
 """Regression tests for bounded backend shutdown."""
 
 import json
-import sqlite3
 from unittest.mock import MagicMock
 
 import server_lifecycle
@@ -37,32 +36,28 @@ def test_request_shutdown_is_idempotent(mocker):
     thread.assert_not_called()
 
 
-def test_recover_catalog_session_marks_derived_state_stale(mocker, tmp_path):
+def test_recover_catalog_session_recovers_incomplete_policy_builds(mocker, tmp_path):
     db_path = tmp_path / "styleai.db"
     db_path.mkdir()
     marker_path = db_path / "styleai-session.json"
     marker_path.write_text(
         json.dumps({"state": "running", "active_work": True}), encoding="utf-8"
     )
-    connection = sqlite3.connect(":memory:")
-    connection.execute(
-        "CREATE TABLE grouping_rule_state ("
-        "rule_key TEXT PRIMARY KEY, rule_value TEXT, updated_at TEXT)"
-    )
+    connection = MagicMock()
+    connection.execute.return_value.fetchone.return_value = ("ok",)
     mocker.patch.object(server_lifecycle.config, "DB_PATH", str(db_path))
-    mocker.patch("services.style_catalog._ensure_initialized", return_value=connection)
-    invalidate = mocker.patch(
-        "services.style_upgrades.invalidate_upgrade_recommendations_cache"
+    mocker.patch(
+        "services.policy_store.connect_policy_store",
+        return_value=connection,
     )
+    recover = mocker.patch("services.policy_store.recover_incomplete_generations")
+    invalidate = mocker.patch("services.policy_runtime.invalidate_runtime_cache")
 
     assert server_lifecycle.recover_catalog_session() is True
 
-    value = connection.execute(
-        "SELECT rule_value FROM grouping_rule_state "
-        "WHERE rule_key = 'NEEDS_REDISCOVERY'"
-    ).fetchone()
-    assert value == ("1",)
+    recover.assert_called_once_with(connection)
     invalidate.assert_called_once()
+    connection.close.assert_called_once()
     assert json.loads(marker_path.read_text(encoding="utf-8"))["state"] == "running"
 
 

@@ -213,12 +213,6 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None):
             collection.upsert(
                 embeddings=[embedding], metadatas=[metadata], ids=[photo_id]
             )
-        try:
-            from services import style_upgrades
-
-            style_upgrades.invalidate_upgrade_recommendations_cache()
-        except Exception:
-            pass
     except Exception as e:
         # Surface a helpful log message and re-raise so callers can decide what to do.
         logger.error(
@@ -243,12 +237,6 @@ def update_image(photo_id, metadata, embedding=None, *, legacy_uuid=None):
         collection.update(ids=[photo_id], metadatas=[metadata], embeddings=[embedding])
     else:
         collection.update(ids=[photo_id], metadatas=[metadata])
-    try:
-        from services import style_upgrades
-
-        style_upgrades.invalidate_upgrade_recommendations_cache()
-    except Exception:
-        pass
 
 
 def get_image(photo_id, *, legacy_uuid=None):
@@ -280,12 +268,6 @@ def delete_image(photo_id, *, legacy_uuid=None):
     if not photo_id:
         return
     collection.delete(ids=[photo_id])
-    try:
-        from services import style_upgrades
-
-        style_upgrades.invalidate_upgrade_recommendations_cache()
-    except Exception:
-        pass
 
 
 # Keys that hold AI-generated metadata; cleared by clear_image_metadata so the photo stays indexed.

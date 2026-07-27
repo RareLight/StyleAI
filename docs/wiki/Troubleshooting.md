@@ -47,11 +47,13 @@ Local AI models (via LM Studio or Ollama) can take longer to process on machines
 - **Symptom**: Lightroom displays a timeout error during image analysis.
 - **Resolution**: Ensure your local LLM server is actually running and the model is loaded into memory before starting the batch job in Lightroom. You may also need to process smaller batches of photos at a time.
 
-### 5. Stale Genre Categorization or Recommendations After Code Updates
+### 5. Missing or Outdated Editing Policies
 
-When categorization logic or keyword rules are upgraded, you might wonder why photos still appear under old genres or recommendations until caches refresh.
-
-- **Symptom**: After updating backend logic, existing photos or recommendations still display outdated genre groupings (such as generic nature keywords mapped under `wildlife`).
-- **Why This Happens**: To prevent re-running SigLIP2 semantic embeddings on every catalog scan, the backend caches loose keyword lookups inside the `semantic_genre_cache` SQLite table (`styles.sqlite`).
-- **Automated Resolution**: StyleAI automatically tracks code rule versions via `CURRENT_GROUPING_RULE_VERSION`. Whenever rules are updated, starting the server or connecting via the plugin automatically purges stale cache entries (`DELETE FROM semantic_genre_cache`) and schedules a background rediscovery across your catalog.
-- **Manual Synchronization**: You can also force a synchronous update anytime in Lightroom by opening **StyleAI** $\rightarrow$ **Styles Index** and clicking **"Discover"**.
+- **Symptom**: The Styles Index is empty, an edit reports no active policy, or
+  recommendations still reflect an older training run.
+- **Resolution**: Open **StyleAI → Styles Index** and choose **Reset & Discover**,
+  or rerun **Train AI Style**. Policy training builds a complete inactive
+  generation and activates it atomically, so the prior generation remains
+  usable if a rebuild fails.
+- **Minimum support**: Each compatible HDR/profile partition needs at least 12
+  valid, non-panorama burst-curated examples.

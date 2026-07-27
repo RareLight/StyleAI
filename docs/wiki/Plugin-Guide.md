@@ -17,7 +17,10 @@ Passes the image files, metadata, and optional context directly to the backend t
 Learns your personal editing style. Select your manually edited photos and run this task. The system will extract your Lightroom develop settings and calculate a pure-math visual embedding (SigLIP2) without needing an LLM or slowing down for keyword generation. You do **not** need to run "Analyze and Index" on these photos first.
 
 ### 3. AI Edit Photos
-Predicts and applies edits to unedited photos based on your trained styles. This is a lightning-fast, LLM-free process that runs locally on your machine, using Scikit-Learn predictive math and K-Nearest Neighbors to match the new photo's exposure and scene to your historical grading choices.
+Predicts and applies absolute edits from your trained editing policies. This is
+a fast, LLM-free local process: an embedding-only source gate selects a
+high-confidence policy, and a burst-validated conditional regressor predicts
+the Lightroom targets. Ambiguous photos are left unchanged for safety.
 
 ### 4. Advanced Search
 Invokes semantic search. Unlike keyword search, semantic search translates natural language queries (e.g. "red sports car in a dark alley") into vectors that are compared against the visual embeddings of your images. Matches are grouped into a new Lightroom Collection, sorted by relevance.
@@ -32,7 +35,8 @@ Instead of manually comparing bursts of similar photos, the culling workflow ana
 ### 7. Error Management
 Errors no longer fail silently into log files. If a batch indexing task encounters issues (like a network timeout or an API authentication failure), the plugin provides a **Task Completion Dialog**. This aggregates the successes and details exactly what went wrong for any omitted files, making troubleshooting immediate and straightforward. For more info, see the [Troubleshooting](Troubleshooting) guide.
 
-## One-Time Upgrade Path
+## Catalog-local identity
 
-`photo_id` migration is a required, one-time step for databases upgrading from older releases that utilized catalog UUIDs. This enables better cross-catalog stability.
-- **To perform the migration:** Open the Plug-in Manager dialog -> Backend Server -> Click **Migrate existing DB IDs to photo_id**.
+Stable `globalPhotoId` values are scoped to the active Lightroom catalog.
+StyleAI does not migrate, claim, or route records between catalogs; each
+catalog owns its adjacent `styleai.db`.

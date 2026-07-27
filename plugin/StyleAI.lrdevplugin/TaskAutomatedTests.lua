@@ -197,7 +197,7 @@ LrTasks.startAsyncTask(function()
 					Contrast = 10,
 				},
 				confidence = 0.85,
-				source = "ml_predictive",
+					source = "policy_v2",
 			}
 			local details = DevelopEditManager.formatRecipeDetails(response)
 			assertTrue(details ~= nil and details ~= "", "Formatted recipe details should not be empty")

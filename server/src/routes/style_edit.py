@@ -249,8 +249,8 @@ def style_edit():
         camera_profile    (string, optional)
         user_keywords     (string, comma-separated — optional)
 
-    Standard options passed through ``_extract_options``:
-        provider, model, api_key, language, temperature, etc.
+    Standard options passed through ``_extract_options`` include the selected
+    local provider/model, language, and temperature.
     """
     logger.info("Style edit request received")
 

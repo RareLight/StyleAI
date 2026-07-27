@@ -60,22 +60,23 @@ LrTasks.startAsyncTask(function()
 			
 			local s = props.styles[idx]
 			props.detailName = s.style_name or ""
-			props.detailGenre = s.genre or ""
+			local cueNames = {}
+			for _, cue in ipairs(s.policy_descriptors or {}) do
+				if cue.descriptor and #cueNames < 4 then
+					table.insert(cueNames, cue.descriptor)
+				end
+			end
+			props.detailGenre = #cueNames > 0 and table.concat(cueNames, ", ") or
+				LOC("$$$/StyleAI/StyleCatalog/NoCues=No explanatory cues yet")
 			props.detailProfile = s.camera_profile or ""
 			
 			local count = tonumber(s.example_count) or 0
 			props.detailCount = tostring(count)
-			if count >= 50 then
-				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthML=🌟 ML Predictive (Best)")
-			elseif count >= 15 then
-				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthMLPCA=⭐️ ML Predictive (Good)")
-			elseif count >= 3 then
-				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthGood=🟡 Basic")
-			else
-				props.detailStrengthText = LOC("$$$/StyleAI/StyleCatalog/StrengthWeak=🔴 Undertrained")
-			end
+			props.detailStrengthText = s.training_status or
+				LOC("$$$/StyleAI/StyleCatalog/ConditionalPolicy=Conditional editing policy")
 			
-			props.detailDesc = s.description or ""
+			props.detailDesc = s.description or
+				LOC("$$$/StyleAI/StyleCatalog/PolicyDescription=Source-conditioned absolute Lightroom targets with ambiguity-aware matching.")
 		end
 
 		props:addObserver("selectedStyleIndex", updateDetailView)
@@ -91,14 +92,7 @@ LrTasks.startAsyncTask(function()
 					local count = style.example_count or 0
 					local cleanName = name
 					
-					local strength = "🔴 Undertrained"
-					if count >= 50 then
-						strength = "🌟 ML Predictive (Best)"
-					elseif count >= 15 then
-						strength = "⭐️ ML Predictive (Good)"
-					elseif count >= 3 then
-						strength = "🟡 Basic"
-					end
+					local strength = LOC("$$$/StyleAI/StyleCatalog/PolicyShort=Editing Policy")
 					
 					local label = string.format("%s • %s • %d • %s", profile, cleanName, count, strength)
 					table.insert(items, { title = label, value = i })
@@ -505,7 +499,7 @@ LrTasks.startAsyncTask(function()
 								f:static_text({ title = bind("detailName"), width = 250 }),
 							}),
 							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailGenre=Genre:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
+									f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailGenre=Evidence cues:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
 								f:static_text({ title = bind("detailGenre"), width = 250 }),
 							}),
 

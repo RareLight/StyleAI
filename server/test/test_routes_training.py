@@ -82,3 +82,44 @@ def test_training_stats_endpoint(client, mocker):
     assert json_data.get("error") is None
     res = json_data["results"]
     assert res["total_examples"] == 5
+
+
+def test_batch_can_defer_policy_rebuild_until_all_chunks_are_saved(client, mocker):
+    mocker.patch("routes.training.training_service.add_training_example")
+    mocker.patch("routes.training.training_service.get_training_count", return_value=1)
+    rebuild = mocker.patch(
+        "services.policy_runtime.rebuild_active_generation",
+        return_value={"generation_id": "unused"},
+    )
+
+    response = client.post(
+        "/training/add-batch",
+        json={
+            "examples": [{"photo_id": "p1", "develop_settings": {}}],
+            "rebuild_policies": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["results"]["policy_generation"] is None
+    assert response.get_json()["results"]["policy_warning"] is None
+    rebuild.assert_not_called()
+
+
+def test_batch_surfaces_policy_rebuild_failure(client, mocker):
+    mocker.patch("routes.training.training_service.add_training_example")
+    mocker.patch("routes.training.training_service.get_training_count", return_value=1)
+    mocker.patch(
+        "services.policy_runtime.rebuild_active_generation",
+        side_effect=ValueError("at least 12 examples are required"),
+    )
+
+    response = client.post(
+        "/training/add-batch",
+        json={"examples": [{"photo_id": "p1", "develop_settings": {}}]},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()["results"]
+    assert payload["policy_generation"] is None
+    assert payload["policy_warning"] == "at least 12 examples are required"

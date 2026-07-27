@@ -1059,27 +1059,10 @@ function AiEditAction.run(editMode)
 							if response.engine and response.engine ~= "llm" and response.engine ~= "none" then
 								local conf = response.confidence and math.floor(response.confidence * 100) or 0
 								local styleName = (response.matched_filenames and response.matched_filenames[1]) or "Unknown Style"
-								local tier = response.engine
-								local examples = response.matched_examples or 0
-								
-								local tierLabel = "🔴 Undertrained"
-								if examples >= 50 then
-									tierLabel = "🌟 ML Predictive (Best)"
-								elseif examples >= 15 then
-									tierLabel = "⭐️ ML Predictive (Good)"
-								elseif examples >= 3 then
-									tierLabel = "🟡 Basic"
-								end
-								
-								local execution = "Basic Model Fallback"
-								if tier == "ml_direct" then
-									execution = "ML Direct Predicted"
-								elseif tier == "ml_pca" then
-									execution = "ML PCA Predicted"
-								end
+									local examples = response.matched_examples or 0
 
-								local strength = options.style_strength or "normal"
-								styleInfo = string.format("%s: %s [%s] (%d%% conf, %s strength)", tierLabel, styleName, execution, conf, strength)
+									local strength = options.style_strength or "normal"
+									styleInfo = string.format("Editing Policy: %s (%d examples, %d%% conf, %s strength)", styleName, examples, conf, strength)
 							end
 							table.insert(runLog, string.format("- %s: %s", fileName, styleInfo))
 						else

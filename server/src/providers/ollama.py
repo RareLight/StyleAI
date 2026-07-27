@@ -27,7 +27,7 @@ class OllamaProvider(LLMProviderBase):
     @override
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
-        self.base_url = config.get("base_url", OLLAMA_BASE_URL)
+        self.base_url = OLLAMA_BASE_URL
         self.timeout = config.get("timeout", 120)
         # Initialize Ollama client targeting the configured host
         try:
@@ -56,11 +56,6 @@ class OllamaProvider(LLMProviderBase):
             logger.warning(f"Ollama not available at {self.base_url}: {e}")
             return False
 
-    def _get_client(self, base_url_override: str | None = None):
-        """Get Ollama client, using base_url_override when provided (e.g. from request)."""
-        url = base_url_override or self.base_url
-        return Client(host=url, timeout=self.timeout) if Client else None
-
     @override
     def generate_metadata(
         self, request: MetadataGenerationRequest
@@ -81,7 +76,9 @@ class OllamaProvider(LLMProviderBase):
                     success=False,
                     error="Ollama SDK not installed. Please install the 'ollama' Python package.",
                 )
-            client = self._get_client(getattr(request, "ollama_base_url", None))
+            client = (
+                Client(host=self.base_url, timeout=self.timeout) if Client else None
+            )
 
             # Convert image to base64
             image_b64 = (

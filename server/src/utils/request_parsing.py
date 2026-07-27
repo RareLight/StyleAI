@@ -104,9 +104,9 @@ def _extract_options(data) -> dict[str, Any]:
     # Multipart callers commonly send a plain CSV string. Preserve that input
     # instead of treating failed JSON decoding as an absent field; JSON arrays
     # and JSON-quoted strings remain supported for structured callers.
-    if isinstance(existing_keywords_value, str) and not existing_keywords_value.lstrip().startswith(
-        ("[", "{", '"')
-    ):
+    if isinstance(
+        existing_keywords_value, str
+    ) and not existing_keywords_value.lstrip().startswith(("[", "{", '"')):
         raw_existing = existing_keywords_value
     else:
         raw_existing = _parse_json_field(existing_keywords_value)
@@ -152,9 +152,6 @@ def _extract_options(data) -> dict[str, Any]:
 
     # Edit-specific options
     options["replace_ss"] = _bool_from_data(data, "replace_ss", False)
-    options["ollama_base_url"] = data.get("ollama_base_url") or None
-    options["lmstudio_base_url"] = data.get("lmstudio_base_url") or None
-
     raw_current_settings = _parse_json_field(data.get("current_settings"))
     options["current_settings"] = (
         raw_current_settings if isinstance(raw_current_settings, dict) else None
@@ -232,7 +229,9 @@ def _extract_options(data) -> dict[str, Any]:
     for key in ("rating", "pick_status"):
         options[key] = _optional_int(data, key)
     options["is_edited"] = (
-        _bool_from_data(data, "is_edited") if data.get("is_edited") is not None else None
+        _bool_from_data(data, "is_edited")
+        if data.get("is_edited") is not None
+        else None
     )
 
     # Tasks list (indexing-specific, kept for backwards compatibility)

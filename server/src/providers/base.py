@@ -58,10 +58,6 @@ class MetadataGenerationRequest:
     generate_aliases: bool = False
     catalog_keywords: list[str] | None = None
 
-    # Provider-specific overrides (e.g. Ollama/LM Studio on remote host)
-    ollama_base_url: str | None = None
-    lmstudio_base_url: str | None = None
-
 
 @dataclass
 class MetadataGenerationResponse:

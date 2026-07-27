@@ -40,7 +40,7 @@ StyleAI now uses a custom, lightweight Python migration engine to manage SQLite 
 
 With the shift away from generative models to mathematically robust machine learning for local edits, the architecture is now strictly bifurcated:
 
-- **Predictive ML (Core):** Powered by local `scikit-learn` algorithms (KNN, Supervised Partial Least Squares, Elastic Net Regression) operating on SigLIP2 dense embeddings, burst-curated density weights, and raw exposure pixel metrics. This is the fast, primary method for style interpolation and slider prediction.
+- **Predictive ML (Core):** Powered by editing-policy v2: target-behavior mixture discovery, embedding-only source-space gates, burst-grouped estimator selection (reduced-rank ridge, weighted PLS, or multi-task Elastic Net), and shrunken hierarchical camera/profile calibration. It predicts absolute Lightroom targets and abstains on ambiguous membership.
 - **Generative LLMs (Fallback/Metadata):** LLMs are used for zero-shot "Creative" fallback edits and generating semantic metadata (auto-tagging). Providers are restricted to locally running open-weights models through Ollama and LM Studio; do not add cloud providers, API-key storage, or remote backend support.
 
 ## 5. Security & Credentials
@@ -66,50 +66,53 @@ When processing images in Python, particularly 1024px JPEGs received from Lightr
 - **Lazy Downsampling:** ALWAYS call `image.thumbnail()` BEFORE calling `.convert("RGB")`. Calling `.convert("RGB")` on a full-resolution JPEG forces Pillow to decode and allocate the entire uncompressed 3-channel array in memory (which can consume hundreds of megabytes) before downsizing. `thumbnail()` allows Pillow to decode natively at a lower resolution, drastically reducing RAM footprints.
 - **16-bit TIFF Bracketing:** The AI Edit bracket generation works with 16-bit ProPhoto RGB TIFFs. To prevent Out-Of-Memory (OOM) crashes during concurrent processing, TIFF concurrency is strictly capped to the number of CPU threads via `BRACKET_SEMAPHORE` in `image_processing.py`.
 
-## 9. Signature Styles Export
-
-Users can now export their learned Signature Styles directly to Lightroom Classic Develop Presets. The background service aggregates the style parameters into Adobe XMP format and generates an importable `.zip` file on the fly via `preset_generator.py`.
-
-## 10. Lightroom SDK Layout Quirks
+## 9. Lightroom SDK Layout Quirks
 
 The Lightroom SDK `LrView` engine has several undocumented layout quirks, particularly when attempting to align different components like `popup_menu` and `simple_list`:
 - **`share()` Truncation:** Using `width = share("groupName")` on mixed components can cause the layout engine to collapse to the narrowest intrinsic width among the shared elements. For example, a `popup_menu` will shrink to the width of its currently selected item, aggressively truncating the contents of a `simple_list` sharing the same width group.
 - **`width_in_chars` on `simple_list`:** The `simple_list` component often completely ignores the `width_in_chars` parameter, collapsing to the natural width of its text content even if `width_in_chars` is generously set.
 - **The Solution:** To guarantee perfectly aligned widths between different UI elements (e.g., centering a dropdown directly above a list), bypass dynamic text-width logic and hardcode an explicit pixel width (`width = 600`). This ensures all components stretch symmetrically regardless of their intrinsic text contents.
 
-## 11. Embedding-First Grouping and Semantic Guardrails
+## 10. Editing-Policy Discovery and Recommendations
 
-When classifying photos or preventing cross-genre leakage (e.g., in Style Upgrade Assistant recommendations or AI Style Training):
-- **DO NOT Use Ad-Hoc Keyword Wordlists:** NEVER implement hardcoded keyword exception arrays or custom string-matching lists inside filtering functions (like `_check_genre_mismatch`) to categorize photos. Ad-hoc wordlists do not scale across genres, languages, or evolving metadata.
-- **USE the Unified Multi-Tiered Pipeline as a Guardrail:** Route candidates through `style_grouping._primary_genre_with_keywords` for an interpretable label and conflict signal, but never use it as the only inclusion/exclusion decision. Dense SigLIP2 membership is authoritative for visual grouping and recommendation admission.
-  1. **Tier 1 (Explicit User Keywords):** Resolves dynamic semantic mappings and domain priority hierarchy from user metadata.
-  2. **Tier 2 (Vision Model Content Tags):** Evaluates all predicted scene tags (`content_tags`) in confidence order against canonical subject regimes (`scene_studio`, `scene_macro`, `scene_portrait`, `scene_landscape`, `scene_architecture`, `scene_night`).
-  3. **Tier 3 (EXIF Bayesian Priors):** When text or vision tags do not resolve a canonical regime, evaluates EXIF prior distributions (`_evaluate_exif_priors`, where strong priors $\ge 0.30$ determine regime from focal length, macro lenses, flash, or exposure settings).
-- **Visual Cohesion:** Use `split_examples_by_visual_cohesion` only for stable components containing at least two examples; retain sparse or unembedded groups intact. Use leave-one-out membership to withhold clear outliers without deleting their training records.
-- **Stitched Panoramas Exclusion:** Stitched panoramas (`_is_stitched_panorama`: `-Pano`/`_Pano` filename suffix, `panorama` tags, or aspect ratio $\ge 2.2:1$) must be universally filtered out of style upgrade recommendations and style training datasets.
+- Do not restore hard-coded genre buckets, semantic genre caches, or keyword
+  exception ladders. Subject and lighting diversity belong inside conditional
+  policies, not in Cartesian style IDs.
+- Discover policies from differences in absolute edited targets, then require
+  those components to be recognizable from source embeddings and pixel/EXIF
+  evidence alone.
+- Keep only HDR/profile as hard compatibility partitions. Camera body, lens,
+  and other categories use shrunken calibration offsets.
+- Add experts only after grouped held-out validation demonstrates material
+  improvement, adequate effective support, and stable low-ambiguity assignment.
+- Retrieve upgrade candidates from bounded multi-anchor Chroma neighborhoods.
+  Membership precision is an admission gate; coverage and quality only rank
+  candidates that already pass.
+- Exclude panoramas in both training and recommendations through
+  `photo_constraints.is_stitched_panorama`.
 
-## 12. Automated Rule Versioning & Semantic Cache Invalidation (`CURRENT_GROUPING_RULE_VERSION`)
+## 11. Transactional Policy Generations and Absolute Edits
 
-To speed up classification across massive catalogs, dynamic semantic mappings (`_dynamic_semantic_mapping`) persist closest bucket lookups in the `semantic_genre_cache` table (`styles.sqlite`).
+- Build model artifacts under a new inactive generation. Activate only after
+  every model, membership, descriptor, coverage row, and artifact succeeds.
+- Upload Lightroom training data in bounded chunks, then rebuild once after the
+  full transfer. Never refit the complete generation after every chunk.
+- Interrupted startup recovery marks only incomplete builds failed; it never
+  invalidates the prior active generation.
+- Current Lightroom settings are application inputs, never model features.
+  Apply strength as `current + strength * (target - current)`. Full strength
+  must equal the target exactly and be idempotent.
+- Canonically order mixture components before creating deterministic policy
+  IDs. Store user custom names independently of model generations.
 
-- **Troubleshooting History & Why Versioning is Critical:**
-  During live debugging, modifying Python categorization logic (`style_grouping.py`) did not resolve cross-genre contamination on its own. Persistent loose semantic cache entries (such as nature or trail words mapped to `scene_wildlife`) survived restarts and caused endpoints like `/styles/upgrades/recommendations` to serve stale category mappings.
-- **Rule Version Bumping:**
-  Whenever categorization rules, distance thresholds, or guards change in `style_grouping.py`, developers **must** increment `CURRENT_GROUPING_RULE_VERSION` in `style_catalog.py`.
-- **Automated Lifecycle Actions:**
-  When `catalog_service._ensure_initialized()` executes on database open or API routing:
-  1. It checks `SELECT rule_value FROM grouping_rule_state WHERE rule_key = 'GROUPING_RULE_VERSION'`.
-  2. If the stored version differs from `CURRENT_GROUPING_RULE_VERSION`, it purges `semantic_genre_cache` (`DELETE FROM semantic_genre_cache`) and sets `NEEDS_REDISCOVERY = '1'`.
-  3. `NEEDS_REDISCOVERY = '1'` triggers `discover_styles_from_examples()`, cleanly rebuilding all style buckets and cache entries against the latest logic.
-
-## 13. LLM Metadata Generation Anti-Patterns
+## 12. LLM Metadata Generation Anti-Patterns
 
 - **Sequential Processing:** Never iterate over items and call `/metadata/generate` sequentially in plugins or scripts. This bypasses the backend's semantic deduplication pipeline (Semantic Clustering) and bottlenecks the GPU, as the LLM processes every image individually. Always batch requests and send them to `/metadata/generate_batch`.
 - **Hard-Failing on Missing Image Cache:** The plugin supports "LLM-only" batch generation, where it relies on existing vision tags in the database to generate metadata, explicitly skipping the expensive JPEG export to the backend cache to save time. The backend endpoints (`/metadata/generate_batch`, `/metadata/generate`) MUST NOT fail with HTTP 400 errors when `image_bytes` are `None`. They must gracefully proceed and generate text-only metadata.
 
-## 14. Test Discipline and Lightroom Smoke Checks
+## 13. Test Discipline and Lightroom Smoke Checks
 
 - **Isolated backend tests:** `server/test/conftest.py` assigns every pytest-xdist worker its own temporary catalog database. Tests must never use an actual catalog path or contact Ollama, LM Studio, or any HTTP service; mock provider and network boundaries explicitly.
 - **Required local checks:** Run `uv run pytest test/`, `uv run ruff check src test`, and `python scripts/validate_lrc_plugin.py` before handing off a change.
-- **Grouping and recommendation changes:** Preserve labelled visual-cluster fixtures, including expected members and expected rejections. Measure precision and cross-style leakage rather than adding unstructured keyword exceptions.
+- **Policy and recommendation changes:** Preserve labelled policy-recovery and candidate-admission fixtures, including expected members, ambiguity abstentions, and rejections. Measure target error, membership precision, and cross-policy leakage.
 - **Required Lightroom smoke check:** After changes to Upgrade Assistant, open a real catalog and verify one-style candidate selection, **Show All Candidate Photos**, cancellation, absent/deleted photos, and repeated collection creation. Confirm the Lightroom UI stays responsive and no write transaction yields.

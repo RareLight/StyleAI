@@ -18,6 +18,7 @@ class PolicyCandidate:
     assignment_entropy: float
     coverage_gain: float = 0.0
     hard_partition_key: str = "default"
+    source_ambiguous: bool = False
 
 
 @dataclass(frozen=True)
@@ -144,9 +145,17 @@ def retrieve_policy_neighbors(
     dimensions = {len(value) for value in anchors}
     if len(dimensions) != 1:
         raise ValueError("all retrieval anchors must have the same dimension")
+    available_count = collection.count() if hasattr(collection, "count") else None
+    bounded_results = (
+        min(results_per_anchor, int(available_count))
+        if available_count is not None
+        else results_per_anchor
+    )
+    if bounded_results <= 0:
+        return []
     response = collection.query(
         query_embeddings=[value.tolist() for value in anchors],
-        n_results=results_per_anchor,
+        n_results=bounded_results,
         include=["metadatas", "distances"],
     )
     nested_ids = response.get("ids") or []
@@ -311,6 +320,11 @@ def rank_policy_candidates(
     normalized_existing = [
         _normalized_embedding(value) for value in (existing_embeddings or [])
     ]
+    existing_matrix = (
+        np.stack(normalized_existing)
+        if normalized_existing
+        else np.empty((0, 0), dtype=np.float64)
+    )
     admitted: list[tuple[PolicyCandidate, np.ndarray, float, float, float]] = []
     embedding_dimension: int | None = (
         len(normalized_existing[0]) if normalized_existing else None
@@ -336,7 +350,8 @@ def rank_policy_candidates(
         )
         top_policy = int(np.argmax(candidate.responsibilities))
         if (
-            top_policy != policy_index
+            candidate.source_ambiguous
+            or top_policy != policy_index
             or confidence < minimum_confidence
             or margin < minimum_margin
             or not math.isfinite(candidate.assignment_entropy)
@@ -357,10 +372,8 @@ def rank_policy_candidates(
         if pick_status == -1:
             counts["quality"] += 1
             continue
-        if normalized_existing:
-            maximum_similarity = max(
-                float(embedding @ existing) for existing in normalized_existing
-            )
+        if len(existing_matrix):
+            maximum_similarity = float(np.max(existing_matrix @ embedding))
             if 1.0 - maximum_similarity <= duplicate_cosine_distance:
                 counts["duplicate"] += 1
                 continue

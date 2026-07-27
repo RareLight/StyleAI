@@ -318,6 +318,17 @@ def compute_dominant_colors(image_bytes: bytes, n_colors: int = 5) -> list[str]:
         # Reshape the image to be a list of pixels
         pixels = np.asarray(image)
         pixels = pixels.reshape(-1, 3)
+        unique_colors, unique_counts = np.unique(
+            pixels,
+            axis=0,
+            return_counts=True,
+        )
+        if len(unique_colors) <= n_colors:
+            order = np.argsort(unique_counts)[::-1]
+            return [
+                f"#{red:02x}{green:02x}{blue:02x}"
+                for red, green, blue in unique_colors[order]
+            ]
 
         # Cluster the pixels
         kmeans = KMeans(n_clusters=n_colors, n_init="auto", random_state=42)
@@ -525,7 +536,7 @@ def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
     Each regime is represented by an ensemble of normalized text prompts. The
     ensemble reduces prompt sensitivity, and relative ranking always supplies a
     primary regime when an embedding exists. An absolute Softmax floor is not
-    meaningful across catalogs and previously left most photos as
+    meaningful across varied photo collections and previously left most photos as
     ``scene_general``, allowing weak EXIF priors to become de-facto labels.
     """
     if image_embedding is None:
@@ -684,6 +695,7 @@ _LR_TO_CANONICAL: dict[str, str] = {
     "Whites2012": "whites",
     "Blacks2012": "blacks",
     "Temp": "temperature",
+    "Temperature": "temperature",
     "Tint": "tint",
     "Texture": "texture",
     "Clarity2012": "clarity",
@@ -729,6 +741,9 @@ def normalize_develop_settings_for_style(
 ) -> dict[str, Any]:
     """Convert raw LR develop settings dict to canonical dict for interpolation."""
     canonical: dict[str, Any] = {}
+    white_balance = develop_settings.get("WhiteBalance")
+    if isinstance(white_balance, str) and white_balance.strip():
+        canonical["white_balance"] = white_balance.strip()
     for lr_key, canon_key in _LR_TO_CANONICAL.items():
         raw = develop_settings.get(lr_key)
         if raw is not None and isinstance(raw, (int, float)):
@@ -893,7 +908,7 @@ def add_training_example(
         if not force_retrain:
             raise ValueError(f"Skipped {photo_id}: Already trained")
 
-    from services import style_grouping
+    from services.photo_constraints import is_stitched_panorama
 
     metadata: dict[str, Any] = {
         "photo_id": photo_id,
@@ -903,7 +918,7 @@ def add_training_example(
         ),
         "captured_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "has_embedding": embedding is not None,
-        "is_panorama": style_grouping.is_stitched_panorama(
+        "is_panorama": is_stitched_panorama(
             {
                 "filename": filename or "",
                 "user_keywords": user_keywords or [],
@@ -1018,21 +1033,11 @@ def add_training_example(
     # Update style catalog
     if not skip_discovery:
         try:
-            from services import style_catalog as style_catalog_service
+            from services import policy_runtime
 
-            style_catalog_service.update_style_for_example(
-                photo_id=photo_id,
-                camera_make=camera_make,
-                camera_model=camera_model,
-                camera_profile=camera_profile,
-                scene_tags=scene_tags,
-                exposure_metrics=(exp_metrics if image_bytes else {}),
-                user_keywords=user_keywords,
-            )
-            # Re-discover styles to update aggregate stats (mean DNA, counts)
-            style_catalog_service.discover_styles_from_examples()
+            policy_runtime.schedule_rebuild()
         except Exception as exc:
-            logger.warning("Style discovery trigger failed: %s", exc)
+            logger.warning("Editing-policy rebuild trigger failed: %s", exc)
 
 
 def update_training_example_labels(
@@ -1084,13 +1089,12 @@ def delete_training_example(photo_id: str) -> bool:
     _training_collection.delete(ids=[photo_id])
     logger.info("Deleted training example photo_id=%s", photo_id)
 
-    # Re-discover styles to remove orphaned styles / update counts
     try:
-        from services import style_catalog as style_catalog_service
+        from services import policy_runtime
 
-        style_catalog_service.discover_styles_from_examples()
+        policy_runtime.schedule_rebuild()
     except Exception as exc:
-        logger.warning("Style discovery after deletion failed: %s", exc)
+        logger.warning("Editing-policy rebuild after deletion failed: %s", exc)
     return True
 
 
@@ -1243,6 +1247,39 @@ def list_training_examples() -> list[dict[str, Any]]:
     return examples
 
 
+def list_training_examples_with_embeddings() -> list[dict[str, Any]]:
+    """Return bounded-page training metadata with source embeddings for v2 fitting."""
+    _ensure_initialized()
+    if _training_collection is None:
+        return []
+    examples: list[dict[str, Any]] = []
+    for page in _iter_training_pages(["metadatas", "embeddings"]):
+        ids = page.get("ids") or []
+        metadatas = page.get("metadatas") or []
+        embeddings = page.get("embeddings") or []
+        _enrich_and_sync_metadatas_from_main_index(ids, metadatas)
+        for index, photo_id in enumerate(ids):
+            metadata = (
+                dict(metadatas[index])
+                if index < len(metadatas) and metadatas[index]
+                else {}
+            )
+            embedding = embeddings[index] if index < len(embeddings) else None
+            examples.append(
+                {
+                    "photo_id": photo_id,
+                    "metadata": metadata,
+                    "embedding": (
+                        embedding.tolist()
+                        if hasattr(embedding, "tolist")
+                        else embedding
+                    ),
+                }
+            )
+    examples.sort(key=lambda item: item["photo_id"])
+    return examples
+
+
 def get_training_stats() -> dict[str, Any]:
     """Return aggregate statistics over all training examples for the style profile UI.
 
@@ -1329,9 +1366,9 @@ def get_training_stats() -> dict[str, Any]:
 
     top_styles: list[dict[str, Any]] = []
     try:
-        from services import style_catalog
+        from services import policy_runtime
 
-        styles = style_catalog.list_styles()
+        styles = policy_runtime.list_active_policies()
         styles.sort(key=lambda s: s.get("example_count", 0), reverse=True)
         for s in styles[:5]:
             top_styles.append(
@@ -1456,12 +1493,6 @@ def clear_all_training_examples() -> int:
         _training_collection.delete(ids=ids)
         removed += len(ids)
     logger.info("Cleared all %d training examples.", removed)
-    try:
-        from services import style_upgrades
-
-        style_upgrades.invalidate_upgrade_recommendations_cache()
-    except Exception:
-        pass
     return removed
 
 

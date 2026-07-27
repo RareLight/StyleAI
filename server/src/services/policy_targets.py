@@ -7,8 +7,121 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
+import numpy as np
+
 
 TARGET_SCHEMA_VERSION = "policy-target-v1"
+
+
+def flatten_absolute_target(canonical: dict[str, Any]) -> dict[str, float]:
+    """Flatten supported absolute Lightroom targets into stable scalar keys."""
+    flat: dict[str, float] = {}
+    for key, value in canonical.items():
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            flat[key] = float(value)
+
+    for color, properties in canonical.get("hsl", {}).items():
+        if isinstance(properties, dict):
+            for property_name, value in properties.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    flat[f"hsl_{color}_{property_name}"] = float(value)
+
+    for region, properties in canonical.get("color_grading", {}).items():
+        if isinstance(properties, dict):
+            for property_name, value in properties.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    flat[f"cg_{region}_{property_name}"] = float(value)
+        elif isinstance(properties, (int, float)) and not isinstance(properties, bool):
+            flat[f"cg_{region}"] = float(properties)
+
+    point_curves = canonical.get("tone_curve", {}).get("point_curve", {})
+    for channel, curve in point_curves.items():
+        if isinstance(curve, list) and len(curve) >= 4:
+            x_values = curve[::2]
+            y_values = curve[1::2]
+            evaluation_points = np.linspace(0, 255, 16)
+            sampled = np.interp(evaluation_points, x_values, y_values)
+            for index, value in enumerate(sampled):
+                flat[f"curve_{channel}_y_{index}"] = float(value)
+
+    crop = canonical.get("crop", {})
+    if isinstance(crop, dict):
+        for property_name in ("left", "right", "top", "bottom", "angle"):
+            value = crop.get(property_name)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                flat[f"crop_{property_name}"] = float(value)
+
+    white_balance = canonical.get("white_balance", "As Shot")
+    flat["white_balance_is_custom"] = (
+        0.0 if str(white_balance).casefold() == "as shot" else 1.0
+    )
+    return flat
+
+
+def default_flat_target_value(key: str) -> float:
+    if key.startswith("crop_") and key != "crop_angle":
+        return 1.0
+    if key == "cg_blending":
+        return 50.0
+    if key.startswith("curve_"):
+        try:
+            point_index = int(key.rsplit("_", 1)[1])
+        except (ValueError, IndexError):
+            return 0.0
+        return float(np.linspace(0, 255, 16)[point_index])
+    return 0.0
+
+
+def unflatten_absolute_target(flat: dict[str, float]) -> dict[str, Any]:
+    """Rebuild a nested absolute target from scalar model predictions."""
+    canonical: dict[str, Any] = {
+        "hsl": {},
+        "color_grading": {},
+        "tone_curve": {"point_curve": {}},
+    }
+    curve_values: dict[str, dict[int, float]] = {}
+    for key, raw_value in flat.items():
+        value = float(raw_value)
+        if key.startswith("hsl_"):
+            _, color, property_name = key.split("_", 2)
+            canonical["hsl"].setdefault(color, {})[property_name] = value
+        elif key.startswith("cg_"):
+            parts = key.split("_")
+            if len(parts) == 3:
+                _, region, property_name = parts
+                canonical["color_grading"].setdefault(region, {})[property_name] = value
+            elif len(parts) == 2:
+                canonical["color_grading"][parts[1]] = value
+        elif key.startswith("curve_"):
+            _, channel, _, index = key.split("_")
+            curve_values.setdefault(channel, {})[int(index)] = value
+        elif key.startswith("crop_"):
+            canonical.setdefault("crop", {})[key.removeprefix("crop_")] = value
+        elif key == "white_balance_is_custom":
+            canonical["white_balance"] = "Custom" if value >= 0.7 else "As Shot"
+        else:
+            canonical[key] = value
+
+    evaluation_points = np.linspace(0, 255, 16)
+    for channel, values in curve_values.items():
+        if len(values) != 16:
+            continue
+        curve: list[float] = []
+        for index, x_value in enumerate(evaluation_points):
+            curve.extend((float(x_value), float(values[index])))
+        canonical["tone_curve"]["point_curve"][channel] = curve
+
+    if not canonical["hsl"]:
+        canonical.pop("hsl")
+    if not canonical["color_grading"]:
+        canonical.pop("color_grading")
+    if not canonical["tone_curve"]["point_curve"]:
+        canonical.pop("tone_curve")
+    if canonical.get("white_balance") == "As Shot":
+        canonical.pop("temperature", None)
+        canonical.pop("tint", None)
+    return canonical
+
 
 _TOP_LEVEL_NEUTRALS: dict[str, float] = {
     "sharpening": 40.0,
@@ -25,6 +138,16 @@ class AbsoluteTarget:
     process_version: str
     values: dict[str, Any]
     modeled_paths: tuple[str, ...]
+
+    def validate(self) -> None:
+        if self.schema_version != TARGET_SCHEMA_VERSION:
+            raise ValueError("unsupported absolute-target schema version")
+        if not self.process_version:
+            raise ValueError("process version is required")
+        if not isinstance(self.values, dict) or not self.values:
+            raise ValueError("absolute target values are required")
+        if not self.modeled_paths:
+            raise ValueError("modeled target paths are required")
 
 
 def _neutral_for_path(path: tuple[str, ...]) -> Any:
@@ -121,5 +244,7 @@ def interpolate_absolute_target(
     target_values = target.values if isinstance(target, AbsoluteTarget) else target
     if not isinstance(target_values, dict):
         raise ValueError("absolute target must be a dictionary")
+    if bounded_strength >= 1.0:
+        return deepcopy(target_values)
     current = current_values if isinstance(current_values, dict) else {}
     return _interpolate_value(current, target_values, bounded_strength, ())

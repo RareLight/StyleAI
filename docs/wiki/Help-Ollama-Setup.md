@@ -20,14 +20,15 @@ Type the following command and press enter:
 
 If your system has more than 10GB of Video RAM, you might consider larger models for improved nuance in image descriptions, such as the 8B variant of Qwen3 or the Gemma3 models. The initial download may take several minutes depending on your internet connection speed. You can view the full directory of available vision models on the Ollama website.
 
-## Configuring StyleAI
+## Using Ollama with StyleAI
 
-After the model finishes downloading, open Lightroom Classic and navigate to the StyleAI Plugin Manager.
+After the model finishes downloading, leave Ollama running and open Lightroom
+Classic. StyleAI detects the local service automatically.
 
-Scroll down to the AI Provider Configuration section. You will find a field labeled Ollama Base URL. 
+StyleAI intentionally connects only to Ollama on the same Mac at
+`http://127.0.0.1:11434`. Remote hosts and LAN model servers are not supported,
+so catalog images and metadata cannot leave the machine through provider
+configuration.
 
-If Ollama is running on the same computer as Lightroom, you can leave this field at its default value (`http://localhost:11434`). 
-
-If you are running Ollama on a different machine on your local network, enter the IP address and port of that machine (for example, `http://192.168.1.100:11434`). Ensure that you have configured the remote Ollama instance to listen on external network interfaces, as it defaults to localhost only.
-
-With the URL configured, you can close the Plugin Manager. When you open the AI Indexing or AI Edit dialogs, StyleAI will automatically query Ollama and populate the AI Model dropdown with the models you have downloaded.
+When you open the AI Indexing or AI Edit dialogs, StyleAI queries the loopback
+Ollama service and populates the AI Model dropdown with downloaded models.

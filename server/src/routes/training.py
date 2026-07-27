@@ -22,7 +22,6 @@ import io
 
 from config import logger
 from services import training as training_service
-from services import style_catalog
 
 training_bp = Blueprint("training", __name__)
 
@@ -359,18 +358,6 @@ def add_training_batch():
         try:
             embedding = None
             if image_bytes_data:
-                # Batch add doesn't usually use files, it uses base64
-                # But we can still support filepath if provided
-                filepath = item.get("filepath")
-                if filepath:
-                    from utils.image_processing import extract_exiftool_preview
-
-                    raw_preview = extract_exiftool_preview(filepath)
-                    if raw_preview:
-                        logger.info(
-                            f"Successfully extracted unedited raw preview for {filepath}"
-                        )
-                        image_bytes_data = raw_preview
                 embedding = _compute_clip_embedding(image_bytes_data)
 
             if embedding is None:
@@ -440,13 +427,20 @@ def add_training_batch():
     success_count = sum(1 for r in results if r["status"] == "ok")
     total_count = training_service.get_training_count()
 
-    # Trigger a single full recalculation of all styles after the batch completes
-    try:
-        from services import style_catalog
+    policy_generation = None
+    policy_warning = None
+    if data.get("rebuild_policies", True):
+        try:
+            from services import policy_runtime
 
-        style_catalog.discover_styles_from_examples()
-    except Exception as exc:
-        logger.error("Failed to recalculate styles after batch: %s", exc)
+            policy_generation = policy_runtime.rebuild_active_generation()
+        except Exception as exc:
+            policy_warning = str(exc)
+            logger.error(
+                "Failed to rebuild editing policies after batch: %s",
+                exc,
+                exc_info=True,
+            )
 
     return jsonify(
         {
@@ -454,6 +448,8 @@ def add_training_batch():
             "added": success_count,
             "total_count": total_count,
             "results": results,
+            "policy_generation": policy_generation,
+            "policy_warning": policy_warning,
         }
     ), 200
 
@@ -541,9 +537,9 @@ def delete_training_example(photo_id: str):
 @training_bp.route("/training", methods=["DELETE"])
 def clear_training_examples():
     try:
-        # Per user instruction, we ONLY clear the derived styles (which are cheap to regenerate)
-        # and we preserve the actual training examples (which contain expensive vector embeddings and LLM metadata)
-        styles_removed = style_catalog.reset_all_styles()
+        from services import policy_runtime
+
+        styles_removed = policy_runtime.reset_policy_state()
         return jsonify(
             {"status": "ok", "removed": 0, "styles_removed": styles_removed}
         ), 200
@@ -555,8 +551,9 @@ def clear_training_examples():
 @training_bp.route("/training/all", methods=["DELETE"])
 def clear_all_data():
     try:
-        # Destructively wipe both the derived styles AND the underlying training examples
-        styles_removed = style_catalog.reset_all_styles()
+        from services import policy_runtime
+
+        styles_removed = policy_runtime.reset_policy_state()
         examples_removed = training_service.clear_all_training_examples()
         return jsonify(
             {

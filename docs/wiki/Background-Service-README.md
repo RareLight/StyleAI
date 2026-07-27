@@ -8,7 +8,7 @@ This is the Python-based core of **StyleAI**. It acts as the local bridge betwee
 
 - **📂 Database Management:** Stores image metadata, AI-generated descriptions, and vector embeddings in a local SQLite database and ChromaDB vector store to ensure blazing-fast retrieval without re-scanning images.
 - **🧠 ML / AI Orchestration:** 
-    - Executes completely local ML prediction for personalized editing (KNN, Supervised Partial Least Squares, Elastic Net Regression) with burst deduplication and density weighting.
+    - Executes local source-conditioned editing-policy inference with target-behavior discovery, burst-grouped estimator selection, hierarchical calibration, burst curation, and ambiguity-aware abstention.
     - Interfaces with **Local LLMs** (Ollama, LM Studio) for creative generative fallback edits and auto-tagging.
 - **🔎 Semantic Search Engine:** Uses `SigLIP2` to generate dense visual image embeddings locally. This allows users to search their Lightroom catalog using natural language descriptions instead of just keywords.
 - **🎭 Face Intelligence:** Provides face detection and recognition capabilities powered entirely locally by `InsightFace`.
@@ -47,7 +47,6 @@ In `Plug-in Manager -> StyleAI -> Background Service`, the button `Download DB b
 
 ## ⚠️ Identity Scope Note
 
-The backend uses `photo_id` / hashes derived from the Lightroom catalog. While highly stable, backend identity should still be treated as best-effort and mostly catalog-scoped, especially when:
-- The same source files exist in multiple Lightroom catalogs.
-- Files were duplicated, re-exported, or rewritten outside Lightroom.
-- Stable metadata IDs were unavailable, falling back to partial file hashes.
+The backend uses stable catalog `photo_id` values. A backend process and its
+adjacent `styleai.db` belong to exactly one Lightroom catalog; cross-catalog
+database sharing and routing are unsupported.
