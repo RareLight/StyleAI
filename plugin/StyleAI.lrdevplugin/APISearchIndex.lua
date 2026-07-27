@@ -683,6 +683,7 @@ function SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, progressScope)
             end
         end
         table.insert(results, {
+            styleKey = entry.styleKey,
             fullName = entry.fullName,
             photos = photosForStyle
         })
