@@ -3726,6 +3726,7 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
     addEditOpt("adjust_detail", options.adjust_detail)
     addEditOpt("adjust_effects", options.adjust_effects)
     addEditOpt("allow_auto_crop", options.allow_auto_crop)
+    addEditOpt("allow_auto_rotate", options.allow_auto_rotate)
     addEditOpt("style_strength", options.style_strength)
 
     if filepath and LrFileUtils.exists(filepath) then

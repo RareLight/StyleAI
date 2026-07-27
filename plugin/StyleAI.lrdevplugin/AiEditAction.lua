@@ -201,6 +201,7 @@ local function getAiEditOptions(ctx, editMode)
 	props.adjustEffects = prefs.aiEditAdjustEffects ~= false
 	props.adjustLensCorrections = prefs.aiEditAdjustLensCorrections ~= false
 	props.allowAutoCrop = prefs.aiEditAllowAutoCrop == true
+	props.allowAutoRotate = prefs.aiEditAllowAutoRotate == true
 	props.compositionModes = Defaults.compositionModes or {}
 	props.compositionMode = prefs.aiEditCompositionMode or Defaults.defaultCompositionMode or "subtle"
 	if not hasCompositionModeValue(props.compositionMode) then
@@ -335,8 +336,12 @@ local function getAiEditOptions(ctx, editMode)
 				}),
 				f:row({
 					f:checkbox({
-						title = LOC("$$$/StyleAI/TaskAiEditPhotos/AllowAutoCrop=Allow AI to crop and straighten images"),
+						title = LOC("$$$/StyleAI/TaskAiEditPhotos/AllowAutoCrop=Allow AI to crop"),
 						value = bind("allowAutoCrop"),
+					}),
+					f:checkbox({
+						title = LOC("$$$/StyleAI/TaskAiEditPhotos/AllowAutoRotate=Allow AI to straighten/rotate"),
+						value = bind("allowAutoRotate"),
 					}),
 				}),
 				f:row({
@@ -587,6 +592,7 @@ local function getAiEditOptions(ctx, editMode)
 						props.submitKeywords = true
 						props.submitFolderName = false
 						props.allowAutoCrop = false
+						props.allowAutoRotate = false
 						props.useTrainingStyle = true
 						props.faceBlurSensitivity = "balanced"
 					end
@@ -632,6 +638,7 @@ local function getAiEditOptions(ctx, editMode)
 	prefs.aiEditAdjustEffects = props.adjustEffects
 	prefs.aiEditAdjustLensCorrections = props.adjustLensCorrections
 	prefs.aiEditAllowAutoCrop = props.allowAutoCrop
+	prefs.aiEditAllowAutoRotate = props.allowAutoRotate
 	prefs.aiEditCompositionMode = props.compositionMode
 	prefs.aiEditSubmitKeywords = props.submitKeywords
 	prefs.aiEditSubmitFolderName = props.submitFolderName
@@ -672,6 +679,7 @@ local function getAiEditOptions(ctx, editMode)
 		quickEditStyleStrength = props.styleStrength,
 		do_not_clip = props.doNotClip,
 		allow_auto_crop = props.allowAutoCrop,
+		allow_auto_rotate = props.allowAutoRotate,
 	}
 
 	if props.overrideStyleEnabled and props.overrideStyleId then
@@ -778,6 +786,8 @@ function AiEditAction.run(editMode)
 				.. tostring(options.adjust_lens_corrections)
 				.. " crop="
 				.. tostring(options.allow_auto_crop)
+				.. " rotate="
+				.. tostring(options.allow_auto_rotate)
 				.. " composition="
 				.. tostring(options.composition_mode)
 		)
