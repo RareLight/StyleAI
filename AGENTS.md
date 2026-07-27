@@ -56,6 +56,7 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 | **Add Dependency** | `cd server && uv add <package>` (or `uv add --dev <package>`) |
 | **Format & Lint** | `bash server/scripts/lint_format.sh` (runs ruff check and ruff format) |
 | **Run Backend Tests** | `cd server && uv run pytest test/` |
+| **Evaluate Editing Policies** | `cd server && uv run python scripts/evaluate_editing_policies.py` |
 | **Start Backend Server** | `cd server && uv run python src/styleai_server.py` |
 | **Plugin Smoke Tests** | Run inside Lightroom via `TaskAutomatedTests.lua` |
 | **Sync Translations** | `python sync_translations.py` (Updates `en`, `de`, `fr` files) |
@@ -125,4 +126,10 @@ Classification uses the multi-tiered pipeline (`style_grouping._primary_genre_wi
 - **Do not use taxonomy as the primary gate**: Genre labels, tags, and EXIF are probabilistic priors and review aids. They must not be hard-coded exception ladders that decide visual membership before embeddings are evaluated.
 - **Component membership**: Within hard camera/profile/HDR partitions, represent a style using dense visual/editing components (medoids and calibrated membership distributions), not a single centroid or a global cosine threshold. Reject candidates that are ambiguous between competing styles.
 - **Recommendation selection**: Retrieve visual neighbors through Chroma, then re-rank by component membership, quality, burst deduplication, and coverage of underrepresented components. Maintain labelled regression fixtures and measure precision/leakage before changing membership logic.
+
+### Editing-Policy v2 Architecture
+- **Style identity**: A trained style represents a conditional mapping from unedited source-image evidence to absolute Lightroom develop targets. Subject matter, lighting, location, and open-vocabulary descriptions are features and diagnostics; they are not style IDs or mandatory grouping keys.
+- **Genre-neutral evaluation**: New discovery algorithms must pass `scripts/evaluate_editing_policies.py` and its synthetic policy-recovery fixtures. Burst groups must remain within one validation fold. The current user catalog is an evaluation sample, never the source of a fixed product ontology.
+- **Absolute targets**: Current Lightroom settings must never influence target inference. At application time, interpolate each modeled value from current to absolute target as `current + strength * (target - current)`. Full-strength application must be idempotent.
+- **Model proliferation**: Begin with one broad conditional policy and add experts only when grouped held-out validation, effective support, and stability justify the added complexity. Never create Cartesian subject × lighting style partitions.
 - **Cohesion scaling**: Exact full cosine matrices are acceptable only for small groups. Large groups must use deterministic blockwise or bounded-neighbor graph construction so memory does not grow as `N²`.

@@ -1,0 +1,195 @@
+import sqlite3
+
+import pytest
+
+from services import policy_store
+
+
+@pytest.fixture
+def store(tmp_path):
+    connection = policy_store.connect_policy_store(str(tmp_path / "styleai.db"))
+    yield connection
+    connection.close()
+
+
+def _add_model(connection, generation_id, policy_id="policy-1"):
+    policy_store.add_policy_model(
+        connection,
+        generation_id=generation_id,
+        policy_id=policy_id,
+        hard_partition_key="sdr",
+        expert_index=0,
+        estimator_type="weighted_pls",
+        artifact_name=f"{generation_id}/{policy_id}.json",
+        effective_sample_count=24.5,
+    )
+
+
+def test_v2_schema_is_created_without_removing_legacy_tables(store):
+    tables = {
+        row[0]
+        for row in store.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    }
+    assert set(policy_store.V2_TABLES).issubset(tables)
+    assert {"styles", "style_examples"}.issubset(tables)
+
+
+def test_generation_activation_is_atomic_and_unique(store):
+    first = policy_store.create_generation(
+        store,
+        generation_id="generation-1",
+        algorithm_version="policy-v2",
+        feature_schema_version="features-v1",
+        target_schema_version="targets-v1",
+    )
+    _add_model(store, first)
+    policy_store.activate_generation(store, first)
+
+    second = policy_store.create_generation(
+        store,
+        generation_id="generation-2",
+        algorithm_version="policy-v2",
+        feature_schema_version="features-v1",
+        target_schema_version="targets-v1",
+    )
+    _add_model(store, second)
+    policy_store.activate_generation(store, second)
+
+    assert policy_store.get_active_generation(store)["generation_id"] == second
+    statuses = dict(
+        store.execute(
+            "SELECT generation_id, status FROM policy_v2_generations"
+        ).fetchall()
+    )
+    assert statuses == {"generation-1": "retired", "generation-2": "active"}
+
+
+def test_activation_failure_preserves_existing_active_generation(store):
+    active = policy_store.create_generation(
+        store,
+        generation_id="active",
+        algorithm_version="v2",
+        feature_schema_version="f1",
+        target_schema_version="t1",
+    )
+    _add_model(store, active)
+    policy_store.activate_generation(store, active)
+    empty = policy_store.create_generation(
+        store,
+        generation_id="empty",
+        algorithm_version="v2",
+        feature_schema_version="f1",
+        target_schema_version="t1",
+    )
+
+    with pytest.raises(ValueError, match="without models"):
+        policy_store.activate_generation(store, empty)
+
+    assert policy_store.get_active_generation(store)["generation_id"] == active
+
+
+def test_recovery_fails_only_interrupted_builds(store):
+    active = policy_store.create_generation(
+        store,
+        generation_id="active",
+        algorithm_version="v2",
+        feature_schema_version="f1",
+        target_schema_version="t1",
+    )
+    _add_model(store, active)
+    policy_store.activate_generation(store, active)
+    policy_store.create_generation(
+        store,
+        generation_id="interrupted",
+        algorithm_version="v2",
+        feature_schema_version="f1",
+        target_schema_version="t1",
+    )
+
+    assert policy_store.recover_incomplete_generations(store) == 1
+    assert policy_store.get_active_generation(store)["generation_id"] == active
+    status = store.execute(
+        "SELECT status FROM policy_v2_generations WHERE generation_id = 'interrupted'"
+    ).fetchone()[0]
+    assert status == "failed"
+
+
+def test_reset_removes_only_v2_state(store):
+    store.execute(
+        """
+        INSERT INTO policy_v2_examples (
+            photo_id, source_provenance, feature_schema_version,
+            source_features_json, target_schema_version, target_values_json,
+            created_at, updated_at
+        ) VALUES ('photo-1', 'raw_preview', 'f1', '[]', 't1', '{}', 'now', 'now')
+        """
+    )
+    store.execute(
+        """
+        INSERT INTO styles (style_id, style_name, genre)
+        VALUES ('legacy', 'Legacy Style', 'scene_general')
+        """
+    )
+    store.commit()
+    generation = policy_store.create_generation(
+        store,
+        algorithm_version="v2",
+        feature_schema_version="f1",
+        target_schema_version="t1",
+    )
+    _add_model(store, generation)
+
+    policy_store.reset_policy_v2(store)
+
+    assert policy_store.policy_store_stats(store) == {
+        "examples": 0,
+        "generations": 0,
+        "models": 0,
+        "memberships": 0,
+    }
+    assert (
+        store.execute(
+            "SELECT COUNT(*) FROM styles WHERE style_id = 'legacy'"
+        ).fetchone()[0]
+        == 1
+    )
+
+
+def test_artifact_name_must_be_relative_and_safe(store):
+    generation = policy_store.create_generation(
+        store,
+        algorithm_version="v2",
+        feature_schema_version="f1",
+        target_schema_version="t1",
+    )
+    with pytest.raises(ValueError, match="safe relative"):
+        policy_store.add_policy_model(
+            store,
+            generation_id=generation,
+            policy_id="policy-1",
+            hard_partition_key="sdr",
+            expert_index=0,
+            estimator_type="ridge",
+            artifact_name="../outside.json",
+        )
+
+
+def test_foreign_keys_reject_membership_without_example(store):
+    generation = policy_store.create_generation(
+        store,
+        algorithm_version="v2",
+        feature_schema_version="f1",
+        target_schema_version="t1",
+    )
+    _add_model(store, generation)
+    with pytest.raises(sqlite3.IntegrityError):
+        store.execute(
+            """
+            INSERT INTO policy_v2_memberships (
+                generation_id, policy_id, photo_id, responsibility
+            ) VALUES (?, 'policy-1', 'missing-photo', 1.0)
+            """,
+            (generation,),
+        )
