@@ -86,6 +86,27 @@ def test_single_policy_gate_rejects_absolute_source_outlier():
     assert model.assignments(outlier)[0].ambiguous
 
 
+def test_single_policy_fits_its_expert_once():
+    source, target, _ = _discoverable_fixture()
+    created = []
+
+    def factory():
+        model = ReducedRankRidge(alpha=0.1, rank=4)
+        created.append(model)
+        return model
+
+    model = PolicyMixture(
+        n_policies=1,
+        expert_factory=factory,
+        max_iterations=30,
+        minimum_effective_samples=8,
+    ).fit(source, target)
+
+    assert len(created) == 1
+    assert model.iterations_ == 1
+    np.testing.assert_allclose(model.predict(source), created[0].predict(source))
+
+
 def test_policy_mixture_is_deterministic():
     source, target, _ = _discoverable_fixture()
     first = _mixture().fit(source, target)

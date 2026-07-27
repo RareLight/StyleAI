@@ -10,7 +10,8 @@ import os
 import re
 import shutil
 import threading
-from typing import Any
+from time import perf_counter, time
+from typing import Any, Callable
 from uuid import uuid4
 
 import joblib
@@ -53,6 +54,17 @@ from .policy_targets import (
 POLICY_ALGORITHM_VERSION = "editing-policy-v2.2"
 MIN_PARTITION_EXAMPLES = 12
 MAX_POLICIES_PER_PARTITION = 4
+# Policy-count validation is a guard against unnecessary expert proliferation,
+# not the final fit.  A small number of EM iterations is sufficient to reject
+# weak extra components and avoids multiplying full model fits on every fold.
+MAX_CV_MIXTURE_ITERATIONS = 6
+MAX_FINAL_MIXTURE_ITERATIONS = 12
+# Coordinate-descent Elastic Net is not a viable production candidate when a
+# small Lightroom partition is paired with the full SigLIP feature vector.  In
+# that p >> n regime it is both poorly conditioned and dramatically slower than
+# the ridge/PLS candidates.  Keep it in the estimator bake-off for adequately
+# supported low-dimensional data instead of letting it monopolize discovery.
+MAX_ELASTIC_NET_FEATURES = 512
 MODEL_DIRECTORY_NAME = "policy_v2_models"
 
 _PROFILE_VERSION_SUFFIX = re.compile(r"\s*\(v\d+\)\s*$", re.IGNORECASE)
@@ -63,6 +75,17 @@ _cached_custom_names: dict[str, str] | None = None
 _rebuild_lock = threading.Lock()
 _rebuild_requested = 0
 _rebuild_worker: threading.Thread | None = None
+_rebuild_status: dict[str, Any] = {
+    "status": "idle",
+    "phase": "idle",
+    "requested_at": None,
+    "started_at": None,
+    "completed_at": None,
+    "generation": None,
+    "error": None,
+    "eligible_partitions": 0,
+    "completed_partitions": 0,
+}
 
 
 @dataclass
@@ -306,6 +329,7 @@ def _policy_mixture(
     *,
     expert_factory: EstimatorFactory,
     seed: int,
+    max_iterations: int = MAX_FINAL_MIXTURE_ITERATIONS,
 ) -> PolicyMixture:
     minimum_support = max(3.0, min(8.0, n_examples / max(3 * n_policies, 1)))
     return PolicyMixture(
@@ -313,6 +337,7 @@ def _policy_mixture(
         expert_factory=expert_factory,
         minimum_effective_samples=minimum_support,
         seed=seed,
+        max_iterations=max_iterations,
     )
 
 
@@ -333,6 +358,13 @@ def _cross_validated_estimator(
         for name, factory in default_estimator_factories().items()
         if name != "random_feature_ridge"
     }
+    skipped_estimators: dict[str, str] = {}
+    if source.shape[1] > MAX_ELASTIC_NET_FEATURES:
+        candidates.pop("multitask_elastic_net", None)
+        skipped_estimators["multitask_elastic_net"] = (
+            "requires at most "
+            f"{MAX_ELASTIC_NET_FEATURES} source features; received {source.shape[1]}"
+        )
     unique_groups = np.unique(groups)
     fold_count = min(3, len(unique_groups))
     if fold_count < 2:
@@ -344,6 +376,7 @@ def _cross_validated_estimator(
                 "selected_estimator": name,
                 "fold_count": 0,
                 "candidates": {},
+                "skipped_estimators": skipped_estimators,
             },
         )
 
@@ -396,6 +429,7 @@ def _cross_validated_estimator(
             "selected_estimator": name,
             "fold_count": fold_count,
             "candidates": scores,
+            "skipped_estimators": skipped_estimators,
         },
     )
 
@@ -461,6 +495,7 @@ def _cross_validated_policy_count(
                     len(train_indices),
                     expert_factory=expert_factory,
                     seed=seed + fold_index,
+                    max_iterations=MAX_CV_MIXTURE_ITERATIONS,
                 ).fit(
                     source[train_indices],
                     targets[train_indices],
@@ -487,6 +522,14 @@ def _cross_validated_policy_count(
             "ambiguity_rate": ambiguity_rate,
             "penalized_score": penalized,
         }
+        # A more complex mixture is only justified when the immediately
+        # simpler split already earns a material grouped held-out gain.  This
+        # is both the intended anti-proliferation rule and avoids evaluating a
+        # combinatorial tail of weak components on large catalogs.
+        if policy_count == 2:
+            baseline = candidate_scores.get(1, {}).get("penalized_score")
+            if baseline is None or penalized >= baseline * 0.95:
+                break
     selected = 1
     best_score = candidate_scores.get(1, {}).get("penalized_score", float("inf"))
     for policy_count in range(2, maximum + 1):
@@ -602,6 +645,7 @@ def _fit_partition(
         len(rows),
         expert_factory=estimator_factory,
         seed=seed,
+        max_iterations=MAX_FINAL_MIXTURE_ITERATIONS,
     ).fit(
         source,
         targets,
@@ -732,8 +776,18 @@ def _artifact_directory(generation_id: str) -> str:
     )
 
 
-def rebuild_active_generation(*, seed: int = 17) -> dict[str, Any]:
+def rebuild_active_generation(
+    *,
+    seed: int = 17,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     """Fit, persist, validate, and atomically activate a complete v2 generation."""
+
+    def report(**details: Any) -> None:
+        if progress is not None:
+            progress(details)
+
+    report(phase="loading_examples", eligible_partitions=0, completed_partitions=0)
     raw_examples = training_service.list_training_examples_with_embeddings()
     prepared = _prepare_rows(raw_examples)
     partitions: dict[str, list[dict[str, Any]]] = {}
@@ -748,6 +802,11 @@ def rebuild_active_generation(*, seed: int = 17) -> dict[str, Any]:
         raise ValueError(
             f"No profile/HDR partition has {MIN_PARTITION_EXAMPLES} valid examples"
         )
+    report(
+        phase="fitting_partitions",
+        eligible_partitions=len(eligible),
+        completed_partitions=0,
+    )
 
     connection = policy_store.connect_policy_store(_database_path())
     generation_id = uuid4().hex
@@ -766,6 +825,7 @@ def rebuild_active_generation(*, seed: int = 17) -> dict[str, Any]:
         all_memberships: list[dict[str, Any]] = []
         validation_rows: list[dict[str, Any]] = []
         for partition_index, partition_key in enumerate(sorted(eligible)):
+            started = perf_counter()
             curated, weights = _curate_bursts(eligible[partition_key])
             if len(curated) < MIN_PARTITION_EXAMPLES:
                 logger.info(
@@ -781,6 +841,18 @@ def rebuild_active_generation(*, seed: int = 17) -> dict[str, Any]:
                 seed=seed + partition_index * 100,
             )
             artifacts.append(artifact)
+            logger.info(
+                "Built policy partition %s in %.2fs with %d curated examples and %d policy(s)",
+                partition_key,
+                perf_counter() - started,
+                len(curated),
+                len(artifact.policy_ids),
+            )
+            report(
+                phase="fitting_partitions",
+                eligible_partitions=len(eligible),
+                completed_partitions=len(artifacts),
+            )
             artifact_name = (
                 f"{MODEL_DIRECTORY_NAME}/{generation_id}/"
                 f"{_partition_slug(partition_key)}.joblib"
@@ -923,12 +995,18 @@ def rebuild_active_generation(*, seed: int = 17) -> dict[str, Any]:
             ignore_errors=True,
         )
     invalidate_runtime_cache()
-    return {
+    result = {
         "generation_id": generation_id,
         "partition_count": len(artifacts),
         "policy_count": sum(len(artifact.policy_ids) for artifact in artifacts),
         "example_count": sum(artifact.example_count for artifact in artifacts),
     }
+    report(
+        phase="activating",
+        eligible_partitions=len(eligible),
+        completed_partitions=len(artifacts),
+    )
+    return result
 
 
 def invalidate_runtime_cache() -> None:
@@ -1288,33 +1366,90 @@ def predict_absolute_edit(
     )
 
 
-def schedule_rebuild() -> None:
-    """Coalesce training mutations into one non-blocking v2 rebuild."""
-    global _rebuild_requested, _rebuild_worker
+def request_rebuild() -> dict[str, Any]:
+    """Coalesce and expose one non-blocking rebuild job for the active catalog."""
+    global _rebuild_requested, _rebuild_worker, _rebuild_status
     with _rebuild_lock:
         _rebuild_requested += 1
+        _rebuild_status = {
+            "status": "queued",
+            "phase": "queued",
+            "requested_at": time(),
+            "started_at": None,
+            "completed_at": None,
+            "generation": None,
+            "error": None,
+            "eligible_partitions": 0,
+            "completed_partitions": 0,
+        }
         if _rebuild_worker is not None and _rebuild_worker.is_alive():
-            return
+            _rebuild_status["status"] = "running"
+            _rebuild_status["phase"] = "waiting_for_current_rebuild"
+            return dict(_rebuild_status)
         _rebuild_worker = threading.Thread(
             target=_rebuild_loop,
             name="PolicyV2Rebuild",
             daemon=True,
         )
         _rebuild_worker.start()
+        return dict(_rebuild_status)
+
+
+def schedule_rebuild() -> None:
+    """Coalesce training mutations into one non-blocking v2 rebuild."""
+    request_rebuild()
+
+
+def discovery_status() -> dict[str, Any]:
+    """Return compact, in-memory progress for the catalog-local rebuild job."""
+    with _rebuild_lock:
+        return dict(_rebuild_status)
 
 
 def _rebuild_loop() -> None:
-    global _rebuild_worker
+    global _rebuild_worker, _rebuild_status
     while True:
         with _rebuild_lock:
             requested = _rebuild_requested
+            _rebuild_status.update(
+                {
+                    "status": "running",
+                    "phase": "loading_examples",
+                    "started_at": time(),
+                    "completed_at": None,
+                    "generation": None,
+                    "error": None,
+                    "eligible_partitions": 0,
+                    "completed_partitions": 0,
+                }
+            )
+
+        def update_progress(details: dict[str, Any]) -> None:
+            with _rebuild_lock:
+                if requested == _rebuild_requested:
+                    _rebuild_status.update(details)
+
+        result: dict[str, Any] | None = None
+        error: str | None = None
         try:
-            rebuild_active_generation()
+            result = rebuild_active_generation(progress=update_progress)
         except ValueError as exc:
             logger.info("Policy v2 rebuild deferred: %s", exc)
+            error = str(exc)
         except Exception as exc:
             logger.error("Policy v2 rebuild failed: %s", exc, exc_info=True)
+            error = str(exc)
         with _rebuild_lock:
-            if requested == _rebuild_requested:
-                _rebuild_worker = None
-                return
+            if requested != _rebuild_requested:
+                continue
+            _rebuild_status.update(
+                {
+                    "status": "succeeded" if result is not None else "failed",
+                    "phase": "complete" if result is not None else "failed",
+                    "completed_at": time(),
+                    "generation": result,
+                    "error": error,
+                }
+            )
+            _rebuild_worker = None
+            return
