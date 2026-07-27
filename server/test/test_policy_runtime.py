@@ -150,6 +150,27 @@ def test_partition_estimator_selection_uses_grouped_held_out_accuracy():
     )
 
 
+def test_partition_estimator_skips_elastic_net_for_wide_embedding_features():
+    dataset = make_synthetic_policy_dataset(
+        seed=19,
+        n_examples=48,
+        n_source_features=policy_runtime.MAX_ELASTIC_NET_FEATURES + 1,
+        n_targets=4,
+        n_policies=1,
+    )
+
+    name, _, validation = policy_runtime._cross_validated_estimator(
+        dataset.source_features,
+        dataset.target_values,
+        dataset.burst_group_ids,
+        np.ones(len(dataset.source_features)),
+    )
+
+    assert name != "multitask_elastic_net"
+    assert "multitask_elastic_net" not in validation["candidates"]
+    assert "multitask_elastic_net" in validation["skipped_estimators"]
+
+
 def test_failed_candidate_preserves_active_generation(policy_database, monkeypatch):
     examples = _examples()
     monkeypatch.setattr(

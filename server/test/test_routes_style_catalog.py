@@ -57,17 +57,32 @@ def test_get_upgrade_recommendations(client, mocker):
 
 def test_discover_styles(client, mocker):
     mocker.patch(
-        "routes.style_catalog.policy_runtime.rebuild_active_generation",
-        return_value={"generation_id": "generation-1"},
-    )
-    mocker.patch(
-        "routes.style_catalog.policy_runtime.list_active_policies",
-        return_value=[{"id": "s1", "name": "Discovered"}],
+        "routes.style_catalog.policy_runtime.request_rebuild",
+        return_value={"status": "queued", "phase": "queued"},
     )
 
     response = client.post("/styles/discover", json={"photo_ids": ["p1"]})
-    assert response.status_code == 200
+    assert response.status_code == 202
     json_data = response.get_json()
     assert json_data.get("error") is None
     res = json_data["results"]
-    assert res["styles_created"] == 1
+    assert res["status"] == "accepted"
+    assert res["discovery"]["status"] == "queued"
+
+
+def test_discovery_status(client, mocker):
+    mocker.patch(
+        "routes.style_catalog.policy_runtime.discovery_status",
+        return_value={
+            "status": "running",
+            "phase": "fitting_partitions",
+            "eligible_partitions": 4,
+            "completed_partitions": 2,
+        },
+    )
+
+    response = client.get("/styles/discover/status")
+
+    assert response.status_code == 200
+    result = response.get_json()["results"]
+    assert result["discovery"]["completed_partitions"] == 2

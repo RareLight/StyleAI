@@ -51,6 +51,7 @@ local ENDPOINTS = {
     STYLE_EDIT = "/style_edit",
     STYLE_LIST = "/styles",
     STYLE_DISCOVER = "/styles/discover",
+    STYLE_DISCOVER_STATUS = "/styles/discover/status",
     STYLE_UPGRADES_RECOMMENDATIONS = "/styles/upgrades/recommendations",
     STYLE_RESET_ALL = "/styles/reset-all",
     LOGS = "/logs",
@@ -3793,12 +3794,31 @@ end
 function SearchIndexAPI.discoverStyles(photoIds)
     local url = getBaseUrl() .. ENDPOINTS.STYLE_DISCOVER
     local body = { photo_ids = photoIds or {} }
-    local response, err = _request('POST', url, body, 300)
+    -- Discovery runs on the backend worker.  Keep this acknowledgement short;
+    -- callers poll discoveryStatus() instead of holding a Lightroom HTTP
+    -- connection through CPU-intensive policy fitting.
+    local response, err = _request('POST', url, body, 30)
     if not response then
         return false, err or "Unknown error"
     end
-    if response.status == "ok" then
+    if response.status == "accepted" then
         return true, response
+    end
+    return false, response.error or "Unexpected response"
+end
+
+---
+-- Get the current catalog-local policy discovery job state.
+-- @return boolean success, table|string status payload or error message
+---
+function SearchIndexAPI.discoveryStatus()
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_DISCOVER_STATUS
+    local response, err = _request('GET', url, {}, 15)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" and response.discovery then
+        return true, response.discovery
     end
     return false, response.error or "Unexpected response"
 end

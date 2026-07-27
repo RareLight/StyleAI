@@ -59,6 +59,7 @@ def get_style(policy_id: str):
 
 @style_catalog_bp.route("/styles/discover", methods=["POST"])
 def discover_styles():
+    """Queue discovery so a Lightroom HTTP request never owns model fitting."""
     data = request.get_json() or {}
     photo_ids = data.get("photo_ids")
     try:
@@ -68,19 +69,25 @@ def discover_styles():
                 "the supplied %d photo IDs are advisory.",
                 len(photo_ids),
             )
-        generation = policy_runtime.rebuild_active_generation()
-        policies = policy_runtime.list_active_policies()
         return jsonify(
             {
-                "status": "ok",
-                "styles_created": len(policies),
-                "styles": policies,
-                "generation": generation,
+                "status": "accepted",
+                "discovery": policy_runtime.request_rebuild(),
             }
-        ), 200
+        ), 202
     except Exception as exc:
         logger.error("Editing-policy discovery failed: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500
+
+
+@style_catalog_bp.route("/styles/discover/status", methods=["GET"])
+def discovery_status():
+    return jsonify(
+        {
+            "status": "ok",
+            "discovery": policy_runtime.discovery_status(),
+        }
+    ), 200
 
 
 @style_catalog_bp.route("/styles/reset-all", methods=["POST"])

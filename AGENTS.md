@@ -91,6 +91,7 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 - **Catalog traversal**: Use Chroma `count()` for totals and bounded `limit`/`offset` pages for collection-wide maintenance. Never introduce fixed million-record loads or silent catalog-size ceilings.
 - **Shutdown recovery**: Keep Lightroom teardown non-blocking. Persist the catalog session marker before forced backend exit; interrupted sessions must pass SQLite integrity checking and invalidate derived discovery/recommendation state at startup.
 - **Policy rebuilds**: Coalesce repeated training mutations and rebuild exactly once after a complete Lightroom training upload, never once per transport chunk. Build and validate a complete inactive generation, atomically replace its artifacts, and activate it only after all relational rows and artifacts succeed. A failed candidate must not retire the prior active generation. Prune inactive derived generations after successful activation.
+- **Discovery UX and scaling**: `/styles/discover` must only acknowledge a catalog-local background rebuild; Lightroom polls its status rather than holding an HTTP request through model fitting. Do not use repeated EM refits for a one-policy baseline, and do not run coordinate-descent Elastic Net against the full embedding vector when features greatly outnumber partition examples; preserve broad-policy quality with the stable ridge/PLS candidates instead.
 
 ---
 

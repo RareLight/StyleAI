@@ -222,6 +222,32 @@ LrTasks.startAsyncTask(function()
 		end
 
 		-- Reset and Discover styles
+		local function waitForDiscoveryCompletion()
+			-- The backend owns the expensive rebuild; polling keeps Lightroom's
+			-- network call short and lets this dialog remain responsive for large
+			-- training sets.
+			for _ = 1, 3600 do
+				local success, discovery = SearchIndexAPI.discoveryStatus()
+				if success then
+					if discovery.status == "succeeded" then
+						return true, discovery.generation or {}
+					end
+					if discovery.status == "failed" then
+						return false, discovery.error or "Unknown discovery error"
+					end
+					if discovery.phase == "fitting_partitions" then
+						props.statusMessage = LOC(
+							"$$$/StyleAI/StyleCatalog/DiscoveringProgress=Discovering policies: ^1 of ^2 compatible camera/profile partitions...",
+							tostring(discovery.completed_partitions or 0),
+							tostring(discovery.eligible_partitions or 0)
+						)
+					end
+				end
+				LrTasks.sleep(1)
+			end
+			return false, "Discovery status timed out"
+		end
+
 		local function resetAndDiscoverStyles()
 			local confirm = LrDialogs.confirm(
 				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverTitle=Reset & Discover Styles"),
@@ -243,12 +269,16 @@ LrTasks.startAsyncTask(function()
 					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Discovering=Discovering styles from training examples...")
 					local dSuccess, result = SearchIndexAPI.discoverStyles(nil)
 					if dSuccess then
-						local count = result.styles_created or 0
-						props.statusMessage = LOC(
-							"$$$/StyleAI/StyleCatalog/DiscoveredCount=Discovered ^1 style(s).",
-							tostring(count)
-						)
-						loadStyles()
+						local completed, discoveryResult = waitForDiscoveryCompletion()
+						if completed then
+							loadStyles()
+						else
+							props.statusMessage = LOC(
+								"$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1",
+								tostring(discoveryResult)
+							)
+							props.isLoading = false
+						end
 					else
 						props.statusMessage = LOC(
 							"$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1",

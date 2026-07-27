@@ -123,6 +123,23 @@ class PolicyMixture:
             ):
                 raise ValueError("gate feature indices are invalid")
 
+        # With one component, EM refits the identical expert repeatedly and
+        # cannot change an assignment.  Fit it once; this is mathematically
+        # equivalent while making the broad-policy baseline inexpensive.
+        if self.n_policies == 1:
+            expert = self.expert_factory()
+            expert.fit(source, target, sample_weight=weights)
+            self.experts_ = [expert]
+            self.iterations_ = 1
+            self.training_responsibilities_ = np.ones((len(source), 1))
+            self.policy_priors_ = np.ones(1)
+            self._fit_source_gate(
+                source[:, self.gate_feature_indices_],
+                self.training_responsibilities_,
+                weights,
+            )
+            return self
+
         broad_model = self.expert_factory()
         broad_model.fit(source, target, sample_weight=weights)
         normalized_residuals = (
