@@ -193,3 +193,62 @@ def test_foreign_keys_reject_membership_without_example(store):
             """,
             (generation,),
         )
+
+
+def test_descriptor_and_coverage_replacement_is_atomic(store):
+    generation = policy_store.create_generation(
+        store,
+        algorithm_version="v2",
+        feature_schema_version="f1",
+        target_schema_version="t1",
+    )
+    _add_model(store, generation)
+    policy_store.replace_policy_descriptors(
+        store,
+        generation_id=generation,
+        policy_id="policy-1",
+        descriptors=[
+            {
+                "descriptor_kind": "user_keyword",
+                "descriptor": "Copper tones",
+                "score": 0.8,
+                "provenance": "user",
+            }
+        ],
+    )
+    policy_store.replace_policy_coverage(
+        store,
+        generation_id=generation,
+        policy_id="policy-1",
+        coverage=[
+            {
+                "dimension_key": "visual_component",
+                "bucket_key": "component_000",
+                "effective_count": 4.0,
+                "coverage_score": 0.8,
+            }
+        ],
+    )
+
+    policy_store.replace_policy_descriptors(
+        store,
+        generation_id=generation,
+        policy_id="policy-1",
+        descriptors=[
+            {
+                "descriptor_kind": "local_tag",
+                "descriptor": "Quiet geometry",
+                "score": 0.9,
+                "provenance": "siglip",
+            }
+        ],
+    )
+
+    descriptor_rows = store.execute(
+        "SELECT descriptor FROM policy_v2_descriptors"
+    ).fetchall()
+    coverage_rows = store.execute(
+        "SELECT bucket_key FROM policy_v2_coverage"
+    ).fetchall()
+    assert [row[0] for row in descriptor_rows] == ["Quiet geometry"]
+    assert [row[0] for row in coverage_rows] == ["component_000"]

@@ -209,3 +209,72 @@ def policy_store_stats(connection: sqlite3.Connection) -> dict[str, int]:
             "SELECT COUNT(*) FROM policy_v2_memberships"
         ).fetchone()[0],
     }
+
+
+def replace_policy_descriptors(
+    connection: sqlite3.Connection,
+    *,
+    generation_id: str,
+    policy_id: str,
+    descriptors: list[dict[str, Any]],
+) -> None:
+    """Atomically replace derived, reproducible descriptors for one policy."""
+    with _immediate_transaction(connection):
+        connection.execute(
+            "DELETE FROM policy_v2_descriptors "
+            "WHERE generation_id = ? AND policy_id = ?",
+            (generation_id, policy_id),
+        )
+        connection.executemany(
+            """
+            INSERT INTO policy_v2_descriptors (
+                generation_id, policy_id, descriptor_kind,
+                descriptor, score, provenance
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    generation_id,
+                    policy_id,
+                    str(item["descriptor_kind"]),
+                    str(item["descriptor"]),
+                    float(item["score"]),
+                    str(item["provenance"]),
+                )
+                for item in descriptors
+            ],
+        )
+
+
+def replace_policy_coverage(
+    connection: sqlite3.Connection,
+    *,
+    generation_id: str,
+    policy_id: str,
+    coverage: list[dict[str, Any]],
+) -> None:
+    """Atomically replace empirical coverage buckets for one policy."""
+    with _immediate_transaction(connection):
+        connection.execute(
+            "DELETE FROM policy_v2_coverage WHERE generation_id = ? AND policy_id = ?",
+            (generation_id, policy_id),
+        )
+        connection.executemany(
+            """
+            INSERT INTO policy_v2_coverage (
+                generation_id, policy_id, dimension_key,
+                bucket_key, effective_count, coverage_score
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    generation_id,
+                    policy_id,
+                    str(item["dimension_key"]),
+                    str(item["bucket_key"]),
+                    float(item["effective_count"]),
+                    float(item["coverage_score"]),
+                )
+                for item in coverage
+            ],
+        )
