@@ -137,6 +137,7 @@ def initialize():
         # Run migrations on the catalog's database path immediately after binding
         if switched:
             run_migrations(db_path)
+            server_lifecycle.recover_catalog_session()
     except CatalogOwnershipError as e:
         logger.warning("Rejected catalog switch: %s", e)
         return jsonify({"error": str(e)}), 409

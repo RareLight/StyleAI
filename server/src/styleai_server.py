@@ -200,6 +200,9 @@ if __name__ == "__main__":
     )
     logger.info("=" * 60)
 
+    if config.DB_PATH:
+        server_lifecycle.recover_catalog_session()
+
     # Mark server as ready for startup scripts
     server_lifecycle.write_ok_file()
 
