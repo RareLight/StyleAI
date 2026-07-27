@@ -665,12 +665,12 @@ def test_exif_priors_and_vision_regimes():
     priors = sg._evaluate_exif_priors(meta_studio)
     assert priors.get("scene_studio", 0.0) >= 0.20
 
-    # 4. Close-up flower shot outdoor on macro lens tagged scene_nature -> scene_macro
+    # 4. A macro-capable lens does not make an ordinary nature photo macro.
     assert (
         sg._primary_genre_with_keywords(
             ["scene_nature"], [], exif_metadata=meta_macro_lens
         )
-        == "scene_macro"
+        == "scene_nature"
     )
 
     # 5. Outdoor close-up tagged with both scene_nature and scene_macro -> scene_macro
@@ -708,6 +708,41 @@ def test_group_examples_by_profile_genre_uses_exif_priors():
     ]
     groups = sg.group_examples_by_profile_genre(examples)
     assert ("Adobe Standard", "scene_night") in groups
+
+
+def test_macro_lens_is_not_an_independent_subject_classifier():
+    meta_macro_lens = {"lens": "NIKKOR Z MC 105mm f/2.8 VR S"}
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_general"], [], exif_metadata=meta_macro_lens
+        )
+        == "scene_general"
+    )
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_event"], [], exif_metadata=meta_macro_lens
+        )
+        == "scene_event"
+    )
+    assert (
+        sg._primary_genre_with_keywords(
+            ["scene_action"], [], exif_metadata=meta_macro_lens
+        )
+        == "scene_action"
+    )
+
+
+def test_reported_subject_regimes_survive_macro_capable_lens():
+    macro_lens = {"lens": "NIKKOR Z MC 105mm f/2.8 VR S"}
+    for expected in (
+        "scene_wildlife",
+        "scene_event",
+        "scene_portrait",
+        "scene_landscape",
+        "scene_street",
+        "scene_action",
+    ):
+        assert sg._primary_genre_with_keywords([expected], [], macro_lens) == expected
 
 
 def test_parse_exif_string_values():

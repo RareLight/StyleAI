@@ -208,13 +208,21 @@ def load_model():
                                 CLIP_MODEL_NAME,
                                 pretrained=weights_file,
                             )
-                            tok = _get_open_clip_tokenizer(local_files_only=True)
                         except Exception:
-                            # Backward compatibility for older vendored open_clip forks.
+                            # Backward compatibility for older vendored
+                            # open_clip forks that require a local-dir URI.
                             local_model_uri = f"local-dir:{cached_model_dir}"
                             model_obj, _, proc = open_clip.create_model_and_transforms(
                                 local_model_uri, pretrained=None
                             )
+
+                        try:
+                            tok = _get_open_clip_tokenizer(local_files_only=True)
+                        except Exception:
+                            # Tokenizer resolution can fail independently of
+                            # model creation. Do not instantiate the multi-GB
+                            # vision model a second time just to retry it.
+                            local_model_uri = f"local-dir:{cached_model_dir}"
                             try:
                                 tok = open_clip.get_tokenizer(
                                     local_model_uri, local_files_only=True
