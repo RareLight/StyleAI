@@ -71,6 +71,21 @@ def test_source_gate_returns_confident_supported_assignments():
     assert all(0.0 <= item.entropy <= 1.0 for item in assignments)
 
 
+def test_single_policy_gate_rejects_absolute_source_outlier():
+    rng = np.random.default_rng(12)
+    source = rng.normal(scale=0.2, size=(60, 6))
+    target = source[:, :2] + 0.1
+    model = PolicyMixture(
+        n_policies=1,
+        expert_factory=lambda: ReducedRankRidge(alpha=0.1, rank=2),
+        minimum_effective_samples=8,
+    ).fit(source, target)
+
+    assert not model.assignments(source[:1])[0].ambiguous
+    outlier = np.full((1, source.shape[1]), 25.0)
+    assert model.assignments(outlier)[0].ambiguous
+
+
 def test_policy_mixture_is_deterministic():
     source, target, _ = _discoverable_fixture()
     first = _mixture().fit(source, target)

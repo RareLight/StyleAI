@@ -110,7 +110,7 @@ Each Lightroom catalog owns its adjacent `styleai.db` directory. StyleAI does no
 
 In the plugin settings dialog you can configure:
 
-- Ollama base URL
+- Local Ollama and LM Studio model selection
 - Export size and quality used for AI processing
 - Prompt presets
 - Optional CLIP model download for advanced search

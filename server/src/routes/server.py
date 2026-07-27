@@ -166,10 +166,10 @@ def rename_style():
     if not style_id or not new_name:
         return jsonify({"error": "style_id and new_name are required"}), 400
 
-    from services import style_catalog
+    from services import policy_runtime
 
     try:
-        success = style_catalog.rename_style(style_id, new_name)
+        success = policy_runtime.rename_active_policy(style_id, new_name)
         if success:
             return jsonify({"status": "success"})
         else:
@@ -187,11 +187,6 @@ def list_models():
     Dynamically checks availability of Ollama and LM Studio on each request.
     Always filters for multimodal (vision-capable) models only.
 
-    POST JSON: {
-        ollama_base_url?: str,
-        lmstudio_base_url?: str
-    }
-
     Returns: {
         "models": {
             "qwen": ["model1", "model2"],
@@ -200,28 +195,12 @@ def list_models():
         }
     }
     """
-    # Parse options from request
-    if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        ollama_base_url = data.get("ollama_base_url")
-        lmstudio_base_url = data.get("lmstudio_base_url")
-        logger.info(
-            f"Received models request with lmstudio_base_url: {lmstudio_base_url}"
-        )
-    else:
-        # Support GET for backward compatibility
-        ollama_base_url = request.args.get("ollama_base_url")
-        lmstudio_base_url = request.args.get("lmstudio_base_url")
-
     logger.info("Models request received - checking all providers")
 
     try:
         # Get all available multimodal models
         # This will dynamically re-check Ollama and LM Studio availability
-        models = get_analysis_service().get_available_models(
-            ollama_base_url=ollama_base_url,
-            lmstudio_base_url=lmstudio_base_url,
-        )
+        models = get_analysis_service().get_available_models()
         return jsonify({"models": models})
     except Exception as e:
         logger.error(f"Error listing models: {e}", exc_info=True)

@@ -11,10 +11,10 @@ from sklearn.cluster import KMeans
 
 from .policy_models import (
     EstimatorFactory,
-    ReducedRankRidge,
     WeightedMultiOutputEstimator,
     _validated_prediction_array,
     _validated_training_arrays,
+    make_default_reduced_rank_ridge,
 )
 
 
@@ -66,6 +66,7 @@ class PolicyMixture:
         ambiguity_margin: float = 0.15,
         minimum_confidence: float = 0.6,
         maximum_entropy: float = 0.8,
+        maximum_gate_distance: float = 2.5,
         seed: int = 17,
     ):
         if n_policies <= 0:
@@ -74,10 +75,10 @@ class PolicyMixture:
             raise ValueError("iteration and medoid counts must be positive")
         if assignment_temperature <= 0 or gate_temperature <= 0:
             raise ValueError("temperatures must be positive")
+        if maximum_gate_distance <= 0:
+            raise ValueError("maximum gate distance must be positive")
         self.n_policies = int(n_policies)
-        self.expert_factory = expert_factory or (
-            lambda: ReducedRankRidge(alpha=1.0, rank=6)
-        )
+        self.expert_factory = expert_factory or make_default_reduced_rank_ridge
         self.max_iterations = int(max_iterations)
         self.tolerance = float(tolerance)
         self.assignment_temperature = float(assignment_temperature)
@@ -87,6 +88,7 @@ class PolicyMixture:
         self.ambiguity_margin = float(ambiguity_margin)
         self.minimum_confidence = float(minimum_confidence)
         self.maximum_entropy = float(maximum_entropy)
+        self.maximum_gate_distance = float(maximum_gate_distance)
         self.seed = int(seed)
 
     def fit(
@@ -95,6 +97,7 @@ class PolicyMixture:
         target_values: np.ndarray,
         *,
         sample_weight: np.ndarray | None = None,
+        gate_feature_indices: np.ndarray | list[int] | None = None,
     ) -> Self:
         source, target, weights = _validated_training_arrays(
             source_features,
@@ -104,6 +107,21 @@ class PolicyMixture:
         if len(source) < self.n_policies * self.minimum_effective_samples:
             raise ValueError("too few examples for the requested policy count")
         self.target_scales_ = np.maximum(np.ptp(target, axis=0), 1e-6)
+        if gate_feature_indices is None:
+            self.gate_feature_indices_ = np.arange(source.shape[1], dtype=np.int64)
+        else:
+            self.gate_feature_indices_ = np.asarray(
+                gate_feature_indices,
+                dtype=np.int64,
+            ).reshape(-1)
+            if (
+                not len(self.gate_feature_indices_)
+                or np.any(self.gate_feature_indices_ < 0)
+                or np.any(self.gate_feature_indices_ >= source.shape[1])
+                or len(np.unique(self.gate_feature_indices_))
+                != len(self.gate_feature_indices_)
+            ):
+                raise ValueError("gate feature indices are invalid")
 
         broad_model = self.expert_factory()
         broad_model.fit(source, target, sample_weight=weights)
@@ -178,7 +196,11 @@ class PolicyMixture:
             axis=0,
             weights=weights,
         )
-        self._fit_source_gate(source, updated_soft, weights)
+        self._fit_source_gate(
+            source[:, self.gate_feature_indices_],
+            updated_soft,
+            weights,
+        )
         return self
 
     def _fit_source_gate(
@@ -236,9 +258,17 @@ class PolicyMixture:
             self.policy_distance_scale_.append(distance_scale)
 
     def source_responsibilities(self, source_features: np.ndarray) -> np.ndarray:
+        distances = self.source_gate_distances(source_features)
+        scores = (
+            -distances + np.log(np.maximum(self.policy_priors_, 1e-9))[np.newaxis, :]
+        )
+        return _softmax(scores / self.gate_temperature)
+
+    def source_gate_distances(self, source_features: np.ndarray) -> np.ndarray:
         source = _validated_prediction_array(source_features)
+        source = source[:, self.gate_feature_indices_]
         standardized = (source - self.source_mean_) / self.source_scale_
-        scores = np.zeros((len(source), self.n_policies), dtype=np.float64)
+        result = np.zeros((len(source), self.n_policies), dtype=np.float64)
         for policy_index, medoids in enumerate(self.policy_medoids_):
             distances = np.sqrt(
                 np.min(
@@ -251,13 +281,14 @@ class PolicyMixture:
                     axis=1,
                 )
             )
-            scores[:, policy_index] = -distances / self.policy_distance_scale_[
-                policy_index
-            ] + math.log(max(float(self.policy_priors_[policy_index]), 1e-9))
-        return _softmax(scores / self.gate_temperature)
+            result[:, policy_index] = (
+                distances / self.policy_distance_scale_[policy_index]
+            )
+        return result
 
     def assignments(self, source_features: np.ndarray) -> list[PolicyAssignment]:
         responsibilities = self.source_responsibilities(source_features)
+        gate_distances = self.source_gate_distances(source_features)
         entropies = _normalized_entropy(responsibilities)
         ordered = np.sort(responsibilities, axis=1)
         results: list[PolicyAssignment] = []
@@ -272,6 +303,8 @@ class PolicyMixture:
                 confidence < self.minimum_confidence
                 or margin < self.ambiguity_margin
                 or float(entropies[index]) > self.maximum_entropy
+                or float(gate_distances[index, int(np.argmax(row))])
+                > self.maximum_gate_distance
             )
             results.append(
                 PolicyAssignment(

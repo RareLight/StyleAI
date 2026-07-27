@@ -196,7 +196,9 @@ class AnalysisService:
             for uid in uuids:
                 while uid in active_embeddings_uuids:
                     if GLOBAL_CANCEL_EVENT.is_set():
-                        raise RuntimeError("Batch canceled while waiting for embeddings.")
+                        raise RuntimeError(
+                            "Batch canceled while waiting for embeddings."
+                        )
                     time.sleep(0.10)
 
             # Bulk fetch missing embeddings from ChromaDB
@@ -476,8 +478,6 @@ class AnalysisService:
             catalog_keywords=options.get("catalog_keywords"),
             system_prompt=options.get("prompt"),
             date_time=options.get("date_time"),
-            ollama_base_url=options.get("ollama_base_url"),
-            lmstudio_base_url=options.get("lmstudio_base_url"),
         )
 
         # Diagnostic logging for prompt context
@@ -534,26 +534,13 @@ class AnalysisService:
             uuid=uuid, success=False, error="Unknown error"
         )
 
-    def get_available_models(
-        self,
-        ollama_base_url: str | None = None,
-        lmstudio_base_url: str | None = None,
-        **kwargs,
-    ) -> dict[str, list[str]]:
+    def get_available_models(self) -> dict[str, list[str]]:
         """
         Return all available multimodal (vision-capable) models from all providers.
         """
         result: dict[str, list[str]] = {}
         for provider_name, provider_instance in self.providers.items():
             try:
-                if provider_name == "ollama" and ollama_base_url:
-                    provider_instance = OllamaProvider({"base_url": ollama_base_url})
-                if provider_name == "lmstudio" and lmstudio_base_url:
-                    # Reuse existing provider instance but point it to a normalized host
-                    provider_instance.host = provider_instance._normalize_host(
-                        lmstudio_base_url
-                    )
-
                 if not provider_instance.is_available():
                     result[provider_name] = []
                     continue

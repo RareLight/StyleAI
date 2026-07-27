@@ -3,7 +3,9 @@ import pytest
 from services.policy_targets import (
     AbsoluteTarget,
     TARGET_SCHEMA_VERSION,
+    flatten_absolute_target,
     interpolate_absolute_target,
+    unflatten_absolute_target,
 )
 
 
@@ -107,3 +109,41 @@ def test_strength_is_clamped_and_non_finite_rejected():
     }
     with pytest.raises(ValueError, match="finite"):
         interpolate_absolute_target({}, target, strength=float("nan"))
+
+
+def test_flat_target_round_trip_preserves_nested_targets():
+    canonical = {
+        "exposure": 0.4,
+        "hsl": {"red": {"saturation": -12.0}},
+        "color_grading": {
+            "shadows": {"hue": 220.0, "saturation": 8.0},
+            "blending": 65.0,
+        },
+        "tone_curve": {
+            "point_curve": {"master": [0.0, 0.0, 128.0, 150.0, 255.0, 255.0]}
+        },
+        "crop": {"left": 0.1, "right": 0.9, "angle": 1.5},
+        "white_balance": "Custom",
+    }
+    rebuilt = unflatten_absolute_target(flatten_absolute_target(canonical))
+
+    assert rebuilt["exposure"] == pytest.approx(0.4)
+    assert rebuilt["hsl"] == canonical["hsl"]
+    assert rebuilt["color_grading"] == canonical["color_grading"]
+    assert rebuilt["crop"] == canonical["crop"]
+    assert rebuilt["white_balance"] == "Custom"
+    assert len(rebuilt["tone_curve"]["point_curve"]["master"]) == 32
+
+
+def test_as_shot_white_balance_does_not_apply_numeric_overrides():
+    rebuilt = unflatten_absolute_target(
+        {
+            "white_balance_is_custom": 0.69,
+            "temperature": 7200.0,
+            "tint": 18.0,
+        }
+    )
+
+    assert rebuilt["white_balance"] == "As Shot"
+    assert "temperature" not in rebuilt
+    assert "tint" not in rebuilt

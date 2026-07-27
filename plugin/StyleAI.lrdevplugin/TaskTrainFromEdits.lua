@@ -150,15 +150,6 @@ LrTasks.startAsyncTask(function()
 		})
 		progressScope:setPortionComplete(0, #photos)
 
-		-- Fetch styles before training to detect tier upgrades later
-		local _, preStyles = SearchIndexAPI.listStyles()
-		local preStyleCounts = {}
-		if preStyles then
-			for _, s in ipairs(preStyles) do
-				preStyleCounts[s.style_id] = tonumber(s.example_count) or 0
-			end
-		end
-
 		-- Collect and send examples in chunks (reduces RAM usage by holding fewer base64 strings).
 		local successCount = 0
 		local errorCount = 0
@@ -182,7 +173,7 @@ LrTasks.startAsyncTask(function()
 						while retryChunk and not progressScope:isCanceled() do
 							retryChunk = false
 							progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
-							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain)
+							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain, false)
 	
 							if ok and resp and resp.results then
 								local hitTimeout = false
@@ -244,7 +235,7 @@ LrTasks.startAsyncTask(function()
 						while retryChunk and not progressScope:isCanceled() do
 							retryChunk = false
 							progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
-							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain)
+							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain, false)
 							if ok and resp and resp.results then
 								local hitTimeout = false
 								for _, result in ipairs(resp.results) do
@@ -411,10 +402,20 @@ LrTasks.startAsyncTask(function()
 			LrTasks.yield()
 			LrTasks.sleep(0.1)
 		end
-		-- Add slight delay to ensure consumerWorker cleanly exits
-		if not progressScope:isCanceled() then
-			LrTasks.yield()
-			LrTasks.sleep(0.2)
+		if not progressScope:isCanceled() and successCount > 0 then
+			progressScope:setCaption(
+				LOC("$$$/StyleAI/Training/BuildingPolicies=Building editing policies from all saved examples...")
+			)
+			local rebuilt, rebuildResult = SearchIndexAPI.discoverStyles()
+			if not rebuilt then
+				table.insert(
+					backendWarnings,
+					LOC(
+						"$$$/StyleAI/Training/PolicyBuildFailed=Training examples were saved, but editing-policy generation failed: ^1",
+						tostring(rebuildResult or "Unknown error")
+					)
+				)
+			end
 		end
 
 		progressScope:done()
@@ -453,44 +454,12 @@ LrTasks.startAsyncTask(function()
 
 		-- 2. Build upgrade and recommendation messages if we had any successes
 		local recommendationMsg = ""
-		local upgradeMsg = ""
 		if successCount > 0 then
 			local ok, styles = SearchIndexAPI.listStyles()
 			if ok and styles and #styles > 0 then
-				local upgradedMLDirect = {}
-				local upgradedMLPCA = {}
-				for _, s in ipairs(styles) do
-					local currentCount = tonumber(s.example_count) or 0
-					local preCount = preStyleCounts[s.style_id] or 0
-					local name = s.style_name or s.genre or "Unknown"
-					
-					if preCount < 50 and currentCount >= 50 then
-						table.insert(upgradedMLDirect, name)
-					elseif preCount < 20 and currentCount >= 20 and preCount < 50 and currentCount < 50 then
-						table.insert(upgradedMLPCA, name)
-					end
-				end
-
-				if #upgradedMLDirect > 0 then
-					upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLDirect=🎉 ^1 style(s) upgraded to 🌟 ML Predictive (Best).", tostring(#upgradedMLDirect))
-				end
-				if #upgradedMLPCA > 0 then
-					upgradeMsg = upgradeMsg .. "\n\n" .. LOC("$$$/StyleAI/Training/UpgradeMLPCA=🎉 ^1 style(s) upgraded to ⭐️ ML Predictive (Good).", tostring(#upgradedMLPCA))
-				end
-
-				table.sort(styles, function(a, b) return (tonumber(a.example_count) or 0) < (tonumber(b.example_count) or 0) end)
-				local weakest = styles[1]
-				local weakestCount = tonumber(weakest.example_count) or 0
-				local name = weakest.style_name or weakest.genre or "one of your styles"
-				if weakestCount < 3 then
-					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMore=Tip: Your '^1' style only has ^2 examples (🔴 Undertrained). For the best AI edit results, try to provide at least 15 examples for this style to unlock Supervised PLS regression.", name, tostring(weakestCount))
-				elseif weakestCount < 15 then
-					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendGood=Tip: Your '^1' style has ^2 examples (🟡 Basic). Adding more examples will unlock Supervised PLS regression at 15 examples.", name, tostring(weakestCount))
-				elseif weakestCount < 50 then
-					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLPCA=Tip: Your styles look ⭐️ ML Predictive (Good)! The AI has trained a personalized local model for your edits.")
-				else
-					recommendationMsg = "\n\n" .. LOC("$$$/StyleAI/Training/RecommendMLBest=Tip: Your styles look 🌟 ML Predictive (Best)! The AI has trained a highly robust predictive model for your edits.")
-				end
+				recommendationMsg = "\n\n" .. LOC(
+					"$$$/StyleAI/Training/PolicyComplete=Editing-policy training completed. Open Style Upgrade Assistant to review high-confidence examples that improve policy coverage."
+				)
 			end
 		end
 
@@ -513,7 +482,7 @@ LrTasks.startAsyncTask(function()
 			end
 		end
 
-		combinedReport = combinedReport .. upgradeMsg .. recommendationMsg
+		combinedReport = combinedReport .. recommendationMsg
 
 		-- 4. Present the appropriate dialog
 		if errorCount > 0 then

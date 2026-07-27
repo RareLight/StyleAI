@@ -31,7 +31,7 @@ StyleAI/
 │       ├── config.py              # Path resolution & configuration
 │       ├── server_lifecycle.py    # Process PID & OK file signalling, 30-min idle SigLIP2 unload
 │       ├── routes/                # Flask Blueprints (API endpoints)
-│       ├── services/              # Logic (chroma, index, search, face, style_engine, style_grouping)
+│       ├── services/              # Search/index logic and editing-policy v2 runtime
 │       └── providers/             # LLM APIs (ollama, lmstudio via auto-discovered ports)
 └── .agents/rules/                 # Agent constraint files
 ```
@@ -39,8 +39,9 @@ StyleAI/
 ### Key Storage Locations
 - **Databases (`styleai.db`)**: Located in user's Catalog folder (`~/Pictures/Lightroom/styleai.db`). Passed via `--db-path`.
   - `styleai.db/chroma.sqlite3`: ChromaDB vector embeddings.
-  - `styleai.db/styles.sqlite`: Relational metadata, styles, and face templates.
-- **Model Cache**: SigLIP2, InsightFace, and SentenceTransformer cached in `~/.cache/huggingface/` or `~/.insightface/`.
+  - `styleai.db/styles.sqlite`: Transactional policy generations, memberships, diagnostics, and custom names.
+  - `styleai.db/policy_v2_models/`: Versioned local regression artifacts.
+- **Model Cache**: SigLIP2 and InsightFace cached in `~/.cache/huggingface/` or `~/.insightface/`.
 - **Logs**: Plugin logs in `~/Documents/LrClassicLogs/`; Backend logs in `<catalog>/styleai.db/` or stdout.
 
 ---
@@ -89,33 +90,28 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 - **Hardware tiers**: Use `config.get_index_resource_limits()` rather than hard-coded queue, GPU batch, or Waitress thread counts. Apple Silicon defaults are bounded by unified memory (16 GB: 8/32/8; 32 GB: 12/48/12; 64 GB+: 16/64/16 for GPU batch/queue/HTTP threads); only explicit `STYLEAI_*` environment overrides may exceed them.
 - **Catalog traversal**: Use Chroma `count()` for totals and bounded `limit`/`offset` pages for collection-wide maintenance. Never introduce fixed million-record loads or silent catalog-size ceilings.
 - **Shutdown recovery**: Keep Lightroom teardown non-blocking. Persist the catalog session marker before forced backend exit; interrupted sessions must pass SQLite integrity checking and invalidate derived discovery/recommendation state at startup.
-- **Post-discovery work**: Coalesce repeated discovery follow-up jobs. Predictive fitting runs before optional prose summarization; signature summaries are disabled unless `STYLEAI_SUMMARY_MODEL` explicitly selects a local `ollama::<model>` or `lmstudio::<model>`.
+- **Policy rebuilds**: Coalesce repeated training mutations and rebuild exactly once after a complete Lightroom training upload, never once per transport chunk. Build and validate a complete inactive generation, atomically replace its artifacts, and activate it only after all relational rows and artifacts succeed. A failed candidate must not retire the prior active generation. Prune inactive derived generations after successful activation.
 
 ---
 
 ## 4. ML Architecture & Taxonomy Constraints
 
 ### Database Isolation & Image Exports
-- **Collection Isolation**: ChromaDB `photos` (Search) and `training_examples` (Style Training) MUST remain strictly isolated.
+- **Collection Isolation**: ChromaDB `image_embeddings` (Search) and `edit_training` (Style Training) MUST remain strictly isolated.
 - **Training Image Pixels**: "Train AI Style" requires JPEG exports for pixel metrics (`zone_deep_shadows`, `histogram_signature`, `dominant_colors`). Missing JPEG bytes during text-only metadata generation must handle gracefully (proceed with text metadata without HTTP 400 errors).
 
-### Style Curation & Tonal Regression
+### Style Curation & Conditional Regression
 - **Burst Curation**: Cluster photos with capture time $\Delta t \le 10\text{s}$ and SigLIP2 distance $\le 0.05$. Select hero shots by star rating > pick status (`pick_status == 1`) > edit complexity. Weight hero shots by $w_i = 1.0 / |C|$.
-- **Supervised Regression**: Use **Partial Least Squares (`WeightedPLSRegression`)** with row scaling ($X \odot \sqrt{w}, Y \odot \sqrt{w}$) for $15 \le N < 50$. Use **Elastic Net (`ElasticNet`)** ($L_1\text{-ratio}=0.2, \alpha=0.1$) for $N \ge 50$. Never use unsupervised PCA.
+- **Supervised Regression**: Select the production expert family independently for each compatible partition using burst-grouped held-out validation across reduced-rank ridge, weighted PLS, and multi-task Elastic Net. Use the selected pickle-safe factory consistently for mixture discovery and shrunken hierarchical camera/profile residual calibration. Keep nonlinear challengers in the offline evaluation harness unless held-out evidence and adequate sample size justify production use.
 - **Math Defaults & Clamping**: Default missing targets to linear bounds (1.0 crops, 50.0 color blend, linear point curves). Universally clamp predictions to learned `slider_bounds` and blend recipes with linear interpolation ($\text{start} + \text{strength} \times (\text{target} - \text{start})$).
 - **HDR & Panoramas**: SigLIP2 SDR model uses base SDR JPEG + appends `+ HDR` profile suffix for HDR photos. Panoramas (`-Pano`, `_Pano`, `panorama` tag, aspect ratio $\ge 2.2:1$) are excluded from training and recommendations.
 - **WB Threshold**: Categorical WB (`is_custom`) requires a 0.7 probability threshold to override "As Shot". Normalize crops via `avg_dim = (width + height) / 2.0`.
 
-### Genre Taxonomy & Classification Pipeline
-Classification uses the multi-tiered pipeline (`style_grouping._primary_genre_with_keywords`) only as an interpretable label and guardrail. NEVER use ad-hoc keyword exception lists or early return short-circuits.
-1. **Keywords & Semantic Vectors**: Explicit dictionary keywords take precedence. SentenceTransformer vector mapping (cosine distance $\le 0.45$) overrides vision scene tags ONLY if mapping to a Specialized Subject Regime (astrophotography, macro, event). Broad regimes act as fallbacks.
-   - Only keywords explicitly supplied with the training request are authoritative. Never alias AI-generated search-index `keywords` or `flattened_keywords` to `user_keywords`, and never copy generated labels into training records during metadata enrichment.
-2. **Vision Scene Tags**: Evaluate top 6 tags (`content_tags[:6]`). For suppressed subjects (`dog`, `pet`, `insect` masked by `nature`/`outdoors`), evaluate up to index 12 (`[:12]`). Map domestic tags (`domestic`, `dog`, `mammal`) to `scene_portrait`.
-3. **EXIF Bayesian Priors**: Evaluated via `_evaluate_exif_priors`. `scene_night` (0.40) may independently trigger classification when subject evidence does not conflict. A macro-capable lens is weak corroboration only and MUST NOT classify a photo as macro by itself because macro lenses are routinely used at ordinary focus distances. Other priors (`scene_portrait`, `scene_landscape`, `scene_studio` 0.15–0.20) act as disambiguation signals.
-4. **Sensor Crop Factors**: Evaluate focal lengths against 35mm full-frame equivalents via `_get_35mm_equivalent_focal_length` (parsing crop factors for Sony, Canon, Nikon, Fuji, OM System, Leica).
-5. **Macro Verification**: Prefer direct visual macro evidence. A known non-macro lens may reject weak macro tags; a `macro`, `micro`, or `mc` lens can corroborate visual evidence but is never sufficient alone.
-6. **Embedding-first verification**: Dense SigLIP2 neighborhoods control recommendation admission and visual-cohesion splitting. Text/EXIF disagreement is a stronger-evidence guardrail, not a hard retrieval gate. Split a profile/genre group only into stable components of at least two examples (`split_examples_by_visual_cohesion`); retain sparse or unembedded groups intact. View-time queries trust database `style_id` linkage.
-7. **Cache Invalidation & Rule Versioning**: Increment `CURRENT_GROUPING_RULE_VERSION` in `style_catalog.py` when modifying grouping rules to purge `semantic_genre_cache` and set `NEEDS_REDISCOVERY = '1'`. Backend routes MUST invoke `catalog_service._ensure_initialized()` at entry points.
+### Taxonomy-Free Policy Discovery
+- **No product ontology**: Do not restore genre buckets, semantic genre caches, keyword exception ladders, or subject × lighting style IDs. Policy discovery is driven by edited target behavior and source-space recognizability.
+- **Hard partitions only for incompatibilities**: HDR state and normalized camera profile may partition training. Camera make/model/lens are regularized calibration categories, not style identities.
+- **Descriptors are explanatory**: User keywords and local visual tags may name or explain a discovered policy after fitting. They never admit training examples or recommendations.
+- **Stable identity**: Canonically order mixture components before assigning deterministic policy IDs. Persist user custom names outside model generations so retraining does not discard them.
 
 ### LLM Batching & GPU Synchronization
 - **LLM Batching Protocol**: Lua plugin MUST send batch requests to `/metadata/generate_batch` (never call single `/metadata/generate` sequentially in loops).

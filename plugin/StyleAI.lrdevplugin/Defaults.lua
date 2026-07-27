@@ -61,11 +61,11 @@ Defaults.legacySystemInstructions = {
 }
 Defaults.defaultSystemInstruction =
 	"You are an expert photography analyst. Output a concise, standardized list of keywords describing the primary subject and intent of the image.\n\n" ..
-	"Focus strictly on these primary photography genres: Portrait, Event, Landscape, Nature, Macro, Wildlife, Architecture, Studio, Street, Action, Night, and Astrophotography.\n\n" ..
-	"Analyze and tag based on this STRICT priority. Limit output to 5-10 highly relevant tags:\n" ..
-	"1. Primary Genre: Explicitly include the exact genre (e.g., Macro, Nature, Portrait, Landscape, Wildlife, Architecture, Event, Studio, Street, Action, Night, Astrophotography).\n" ..
-	"2. Primary Subject: What is the photo actually about? (e.g., Dog, Bride, Insect, Mountain, Car, Product, Athlete).\n" ..
-	"3. Key Context: Only the most dominant environmental or lighting features (e.g., Studio, Night, Snow, Sunset).\n\n" ..
+	"Use open-vocabulary terms appropriate to the photograph instead of forcing it into a fixed genre list. Limit output to 5-10 highly relevant tags.\n" ..
+	"Analyze and tag based on this priority:\n" ..
+	"1. Primary Subject: What the photo is actually about, as specifically as the evidence supports.\n" ..
+	"2. Photographic Intent: Include a recognized genre or practice only when it is visually clear and useful.\n" ..
+	"3. Key Context: Only dominant activity, environment, lighting, weather, or mood.\n\n" ..
 	"Rules:\n" ..
 	"- DO NOT tag background noise, minor objects, or generic filler (e.g., outdoors, grass, sky, daylight).\n" ..
 	"- Be highly specific and objective.\n" ..

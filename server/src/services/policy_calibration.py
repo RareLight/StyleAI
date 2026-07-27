@@ -14,10 +14,10 @@ import numpy as np
 
 from .policy_models import (
     EstimatorFactory,
-    ReducedRankRidge,
     WeightedMultiOutputEstimator,
     _validated_prediction_array,
     _validated_training_arrays,
+    make_default_reduced_rank_ridge,
 )
 
 
@@ -90,9 +90,7 @@ class HierarchicalPolicyRegressor:
             raise ValueError("at least one non-empty calibration level is required")
         if len(set(normalized_levels)) != len(normalized_levels):
             raise ValueError("calibration levels must be unique")
-        self.base_factory = base_factory or (
-            lambda: ReducedRankRidge(alpha=1.0, rank=6)
-        )
+        self.base_factory = base_factory or make_default_reduced_rank_ridge
         self.levels = normalized_levels
         self.prior_strength = float(prior_strength)
         self.minimum_effective_samples = float(minimum_effective_samples)

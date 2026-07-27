@@ -1,266 +1,107 @@
-"""Flask blueprint for the Style Catalog REST API.
-
-Endpoints
----------
-GET  /styles                    → List all styles
-GET  /styles/<id>               → Get style details + example photo_ids
-POST /styles/discover           → Auto-discover from selected photo_ids
-POST /styles/<id>/reset         → Remove one style
-POST /styles/reset-all          → Global reset
-POST /styles/migrate            → One-time legacy migration
-GET  /styles/export             → JSON export
-POST /styles/import             → JSON import (body: JSON payload)
-GET  /styles/match              → Find matching styles for a photo
-"""
+"""Editing-policy v2 catalog and upgrade recommendation routes."""
 
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
 from config import logger
-from services import style_catalog as catalog_service
-from services import style_upgrades
+from services import policy_runtime
+
 
 style_catalog_bp = Blueprint("style_catalog", __name__)
-
-
-# ---------------------------------------------------------------------------
-# GET /styles
-# ---------------------------------------------------------------------------
 
 
 @style_catalog_bp.route("/styles", methods=["GET"])
 def list_styles():
     try:
-        styles = catalog_service.list_styles()
+        styles = policy_runtime.list_active_policies()
         return jsonify({"status": "ok", "styles": styles, "count": len(styles)}), 200
     except Exception as exc:
-        logger.error("Failed to list styles: %s", exc, exc_info=True)
+        logger.error("Failed to list editing policies: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500
-
-
-# ---------------------------------------------------------------------------
-# GET / POST /styles/upgrades/recommendations
-# ---------------------------------------------------------------------------
 
 
 @style_catalog_bp.route("/styles/upgrades/recommendations", methods=["GET", "POST"])
 def get_upgrade_recommendations():
     try:
-        catalog_service._ensure_initialized()
         limit = request.args.get("limit", 100, type=int)
         if request.is_json and request.json:
             limit = request.json.get("limit", limit)
-        results = style_upgrades.get_style_upgrade_recommendations(
-            top_styles_limit=limit
-        )
+        results = policy_runtime.get_upgrade_recommendations(top_policies_limit=limit)
         return jsonify(
             {"status": "ok", "results": results, "error": None, "warning": None}
         ), 200
     except Exception as exc:
         logger.error(
-            "Failed to get style upgrade recommendations: %s", exc, exc_info=True
+            "Failed to get policy upgrade recommendations: %s",
+            exc,
+            exc_info=True,
         )
         return jsonify({"results": None, "error": str(exc), "warning": None}), 500
 
 
-# ---------------------------------------------------------------------------
-# GET /styles/<style_id>
-# ---------------------------------------------------------------------------
-
-
-@style_catalog_bp.route("/styles/<path:style_id>", methods=["GET"])
-def get_style(style_id: str):
+@style_catalog_bp.route("/styles/<path:policy_id>", methods=["GET"])
+def get_style(policy_id: str):
     try:
-        style = catalog_service.get_style(style_id)
-        if not style:
-            return jsonify({"error": f"Style not found: {style_id}"}), 404
-        return jsonify({"status": "ok", "style": style}), 200
+        policy = policy_runtime.get_active_policy(policy_id)
+        if not policy:
+            return jsonify({"error": f"Editing policy not found: {policy_id}"}), 404
+        return jsonify({"status": "ok", "style": policy}), 200
     except Exception as exc:
-        logger.error("Failed to get style %s: %s", style_id, exc, exc_info=True)
+        logger.error(
+            "Failed to get editing policy %s: %s",
+            policy_id,
+            exc,
+            exc_info=True,
+        )
         return jsonify({"error": str(exc)}), 500
-
-
-# ---------------------------------------------------------------------------
-# POST /styles/discover
-# ---------------------------------------------------------------------------
 
 
 @style_catalog_bp.route("/styles/discover", methods=["POST"])
 def discover_styles():
-    """Request body: { "photo_ids": ["id1", "id2", ...] } (optional).
-
-    If photo_ids is omitted, discovers from ALL training examples.
-    """
     data = request.get_json() or {}
     photo_ids = data.get("photo_ids")
     try:
-        styles = catalog_service.discover_styles_from_examples(photo_ids)
-        return (
-            jsonify(
-                {
-                    "status": "ok",
-                    "styles_created": len(styles),
-                    "styles": styles,
-                }
-            ),
-            200,
-        )
+        if photo_ids:
+            logger.info(
+                "Policy discovery rebuilds the complete training generation; "
+                "the supplied %d photo IDs are advisory.",
+                len(photo_ids),
+            )
+        generation = policy_runtime.rebuild_active_generation()
+        policies = policy_runtime.list_active_policies()
+        return jsonify(
+            {
+                "status": "ok",
+                "styles_created": len(policies),
+                "styles": policies,
+                "generation": generation,
+            }
+        ), 200
     except Exception as exc:
-        logger.error("Style discovery failed: %s", exc, exc_info=True)
+        logger.error("Editing-policy discovery failed: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500
-
-
-# ---------------------------------------------------------------------------
-# POST /styles/<style_id>/reset
-# ---------------------------------------------------------------------------
-
-
-@style_catalog_bp.route("/styles/<path:style_id>/reset", methods=["POST"])
-def reset_style(style_id: str):
-    try:
-        deleted = catalog_service.reset_style(style_id)
-        if deleted:
-            return jsonify({"status": "ok", "style_id": style_id}), 200
-        return jsonify({"error": f"Style not found: {style_id}"}), 404
-    except Exception as exc:
-        logger.error("Failed to reset style %s: %s", style_id, exc, exc_info=True)
-        return jsonify({"error": str(exc)}), 500
-
-
-# ---------------------------------------------------------------------------
-# POST /styles/reset-all
-# ---------------------------------------------------------------------------
 
 
 @style_catalog_bp.route("/styles/reset-all", methods=["POST"])
 def reset_all_styles():
     try:
-        count = catalog_service.reset_all_styles()
+        count = policy_runtime.reset_policy_state()
         return jsonify({"status": "ok", "removed": count}), 200
     except Exception as exc:
-        logger.error("Failed to reset all styles: %s", exc, exc_info=True)
+        logger.error("Failed to reset editing policies: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500
-
-
-# ---------------------------------------------------------------------------
-# POST /styles/migrate
-# ---------------------------------------------------------------------------
-
-
-@style_catalog_bp.route("/styles/migrate", methods=["POST"])
-def migrate_styles():
-    try:
-        result = catalog_service.migrate_legacy_training()
-        return jsonify({"status": "ok", **result}), 200
-    except Exception as exc:
-        logger.error("Migration failed: %s", exc, exc_info=True)
-        return jsonify({"error": str(exc)}), 500
-
-
-# ---------------------------------------------------------------------------
-# GET /styles/all_examples
-# ---------------------------------------------------------------------------
 
 
 @style_catalog_bp.route("/styles/all_examples", methods=["GET"])
 def get_all_examples():
     try:
-        results = catalog_service.get_all_styles_with_examples()
-        return jsonify({"status": "ok", "styles": results}), 200
+        policies = policy_runtime.list_active_policies_with_examples()
+        return jsonify({"status": "ok", "styles": policies}), 200
     except Exception as exc:
-        logger.error("Failed to get all styles with examples: %s", exc, exc_info=True)
-        return jsonify({"error": str(exc)}), 500
-
-
-# ---------------------------------------------------------------------------
-# GET /styles/export
-# ---------------------------------------------------------------------------
-
-
-@style_catalog_bp.route("/styles/export", methods=["GET"])
-def export_styles():
-    try:
-        data = catalog_service.export_styles_json()
-        return jsonify(data), 200
-    except Exception as exc:
-        logger.error("Export failed: %s", exc, exc_info=True)
-        return jsonify({"error": str(exc)}), 500
-
-
-# ---------------------------------------------------------------------------
-# POST /styles/import
-# ---------------------------------------------------------------------------
-
-
-@style_catalog_bp.route("/styles/import", methods=["POST"])
-def import_styles():
-    data = request.get_json() or {}
-    if not data or not data.get("styles"):
-        return jsonify({"error": "Missing 'styles' array in body"}), 400
-    merge = str(data.get("merge", "true")).lower() == "true"
-    try:
-        result = catalog_service.import_styles_json(data, merge=merge)
-        return jsonify({"status": "ok", **result}), 200
-    except Exception as exc:
-        logger.error("Import failed: %s", exc, exc_info=True)
-        return jsonify({"error": str(exc)}), 500
-
-
-# ---------------------------------------------------------------------------
-# GET /styles/match
-# ---------------------------------------------------------------------------
-
-
-@style_catalog_bp.route("/styles/match", methods=["GET"])
-def match_styles():
-    """Query params:
-    camera_make, camera_model, primary_genre, user_keywords,
-    lum_mean, contrast, warmth_proxy
-    """
-    camera_make = request.args.get("camera_make") or None
-    camera_model = request.args.get("camera_model") or None
-    scene_tags = []
-    primary_genre = request.args.get("primary_genre")
-    if primary_genre:
-        scene_tags.append(primary_genre)
-
-    user_keywords_raw = request.args.get("user_keywords")
-    user_keywords = (
-        [k.strip() for k in user_keywords_raw.split(",") if k.strip()]
-        if user_keywords_raw
-        else []
-    )
-
-    exposure_metrics: dict[str, float] = {}
-    for key in ("lum_mean", "contrast", "warmth_proxy"):
-        raw = request.args.get(key)
-        if raw is not None:
-            try:
-                exposure_metrics[f"exp_{key}"] = float(raw)
-            except (TypeError, ValueError):
-                pass
-
-    try:
-        matches = catalog_service.find_matching_styles(
-            camera_make=camera_make,
-            camera_model=camera_model,
-            scene_tags=scene_tags,
-            exposure_metrics=exposure_metrics if exposure_metrics else None,
-            user_keywords=user_keywords,
-            top_k=3,
+        logger.error(
+            "Failed to get policies with examples: %s",
+            exc,
+            exc_info=True,
         )
-        return (
-            jsonify(
-                {
-                    "status": "ok",
-                    "matches": [
-                        {"style": style, "confidence": conf} for style, conf in matches
-                    ],
-                }
-            ),
-            200,
-        )
-    except Exception as exc:
-        logger.error("Style matching failed: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500

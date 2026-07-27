@@ -52,10 +52,7 @@ local ENDPOINTS = {
     STYLE_LIST = "/styles",
     STYLE_DISCOVER = "/styles/discover",
     STYLE_UPGRADES_RECOMMENDATIONS = "/styles/upgrades/recommendations",
-    STYLE_RESET = "/styles/%s/reset",
     STYLE_RESET_ALL = "/styles/reset-all",
-    STYLE_EXPORT = "/styles/export",
-    STYLE_IMPORT = "/styles/import",
     LOGS = "/logs",
     LOGS_RAW = "/logs/raw",
     INITIALIZE = "/initialize",
@@ -108,7 +105,7 @@ local function httpStatusForLog(status, hdrs)
     return "unknown"
 end
 
--- Catalog DB migrations: one-time backend operations per catalog (e.g. claim_photos after cross-catalog soft state).
+-- Catalog DB migrations: one-time backend operations scoped to this catalog.
 -- Each entry: { id = "unique_id", run = function(progressScope) return ok, err [, userMessage] end }. progressScope is optional (nil for migrations that don't need it). Optional userMessage is shown via LrDialogs when present.
 local CATALOG_DB_MIGRATIONS = {
     -- Add future migrations here, e.g. { id = "some_breaking_change_v1", run = function(progressScope) ... return ok, err [, userMessage] end },
@@ -272,12 +269,6 @@ local function ensureDbMigrationsDone()
             local done = raw
             for _, m in ipairs(pending) do
                 local progressScope
-                if m.id == "claim_photos_v1" then
-                    progressScope = LrProgressScope({
-                        title = LOC "$$$/StyleAI/SearchIndexAPI/claimingPhotos=Claiming photos for this catalog...",
-                        functionContext = nil,
-                    })
-                end
                 local ok, err, userMessage
                 if type(m.run) == "function" then
                     local status, a, b, c
@@ -298,19 +289,8 @@ local function ensureDbMigrationsDone()
                         catalog:setPropertyForPlugin(_PLUGIN, "catalogDbMigrations", done)
                     end, { timeout = 15 })
                     log:info("Catalog DB migration completed: " .. tostring(m.id))
-                    if userMessage and userMessage ~= "" then
-                        LrDialogs.message(LOC "$$$/StyleAI/PluginInfo/ClaimPhotosTitle=Claim photos", userMessage,
-                            "info")
-                    end
                 else
                     log:warn("Catalog DB migration failed: " .. tostring(m.id) .. " - " .. tostring(err))
-                    if m.id == "claim_photos_v1" then
-                        LrDialogs.message(LOC "$$$/StyleAI/PluginInfo/ClaimPhotosFailed=Claim photos failed",
-                            tostring(err or LOC "$$$/StyleAI/common/UnknownError=Unknown error") ..
-                            "\n\n" ..
-                            LOC "$$$/StyleAI/SearchIndexAPI/ClaimPhotosRetryHint=You can try again from Plug-in Manager → StyleAI → Background Service → Claim photos for this catalog.",
-                            "critical")
-                    end
                 end
                 if progressScope then
                     progressScope:done()
@@ -339,8 +319,7 @@ local function allCatalogDbMigrationsCompleted(completed)
 end
 
 --- Waits for catalog-scoped DB migrations (tracked by `catalogDbMigrations`) to complete.
---- This is important because backend operations (e.g. photo claiming visibility) can race if we start
---- indexing before `claim_photos_v1` finishes.
+--- This prevents indexing from racing a future catalog-local schema operation.
 --- @param timeoutSeconds number
 --- @return boolean success (all migrations completed)
 local function waitForCatalogDbMigrationsDone(timeoutSeconds)
@@ -898,8 +877,6 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
         keyword_secondary_language = options.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or
             "English",
         date_time = options.date_time,
-        ollama_base_url = options.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
-        lmstudio_base_url = options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
         regenerate_metadata = (options.regenerate_metadata == true),
         semantic_clustering_threshold = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
     }
@@ -1035,8 +1012,6 @@ function SearchIndexAPI.generateMetadataSingle(photoId, base64Image, filename, o
         keyword_secondary_language = options.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English",
         date_time = options.date_time,
         date_time_unix = options.date_time_unix,
-        ollama_base_url = options.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
-        lmstudio_base_url = options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
         regenerate_metadata = tostring(options.regenerate_metadata ~= false),
         semantic_clustering_threshold = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
     }
@@ -1098,8 +1073,6 @@ function SearchIndexAPI.generateMetadataBatch(items, options)
         keyword_secondary_language = options.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English",
         date_time = options.date_time,
         date_time_unix = options.date_time_unix,
-        ollama_base_url = options.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
-        lmstudio_base_url = options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
         regenerate_metadata = tostring(options.regenerate_metadata ~= false),
         semantic_clustering_threshold = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
     }
@@ -1178,8 +1151,6 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
         keyword_categories = globalOptions.keyword_categories and JSON:encode(globalOptions.keyword_categories) or "[]",
         bilingual_keywords = tostring(globalOptions.bilingual_keywords or false),
         keyword_secondary_language = globalOptions.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English",
-        ollama_base_url = globalOptions.ollama_base_url or (prefs and prefs.ollamaBaseUrl),
-        lmstudio_base_url = globalOptions.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl),
         regenerate_metadata = (globalOptions.regenerate_metadata == true),
         cache_images = globalOptions.cache_images == true,
         semantic_clustering_threshold = tostring(globalOptions.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
@@ -1341,14 +1312,6 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
     if options.date_time then
         table.insert(mimeChunks, { name = "date_time", value = options.date_time })
     end
-    if options.ollama_base_url or (prefs and prefs.ollamaBaseUrl) then
-        table.insert(mimeChunks, { name = "ollama_base_url", value = options.ollama_base_url or prefs.ollamaBaseUrl })
-    end
-    if options.lmstudio_base_url or (prefs and prefs.lmstudioBaseUrl) then
-        table.insert(mimeChunks,
-            { name = "lmstudio_base_url", value = options.lmstudio_base_url or prefs.lmstudioBaseUrl })
-    end
-
     -- Regeneration control: if false, server will only fill missing fields
     table.insert(mimeChunks, { name = "regenerate_metadata", value = tostring(options.regenerate_metadata ~= false) })
 
@@ -2637,11 +2600,6 @@ function SearchIndexAPI.startServer(opts)
         return false
     end
 
-    if not SearchIndexAPI.isLocalBackend() then
-        log:trace("Backend URL points to remote server, skipping local server start")
-        return false
-    end
-
     if not acquireStartLock(lockStaleSeconds) then
         log:trace("Backend start lock is active; another start attempt may be in progress")
         return false
@@ -3102,11 +3060,7 @@ end
 -- @return table|nil Response from server with format: { models = { qwen = {...}, ollama = {...}, ... } }
 function SearchIndexAPI.getModels()
     local url = getBaseUrl() .. ENDPOINTS.MODELS
-    local body = {
-        ollama_base_url = (prefs and prefs.ollamaBaseUrl) or nil,
-        lmstudio_base_url = (prefs and prefs.lmstudioBaseUrl) or nil,
-    }
-    local result = _request('POST', url, body)
+    local result = _request('GET', url)
     return result
 end
 
@@ -3451,22 +3405,10 @@ function SearchIndexAPI.getDetailedHealth()
         lmstudio = false,
     }
 
-    -- Try to ping local LLMs if they are not default localhost but maybe they are
-    if not Util.nilOrEmpty(prefs.ollamaBaseUrl) then
-        local url = prefs.ollamaBaseUrl .. "/api/tags"
-        local _, hdrs = LrHttp.get(url, nil, 0.5)
-        local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status)
-        if status == 200 then health.ollama = true end
-    end
-
-    if not Util.nilOrEmpty(prefs.lmstudioBaseUrl) then
-        local baseUrl = prefs.lmstudioBaseUrl
-        if not baseUrl:match("^https?://") then baseUrl = "http://" .. baseUrl end
-        local url = baseUrl .. "/v1/models"
-        local _, hdrs = LrHttp.get(url, nil, 0.5)
-        local status = (type(hdrs) == "number") and hdrs or (type(hdrs) == "table" and hdrs.status)
-        if status == 200 then health.lmstudio = true end
-    end
+    local _, ollamaHeaders = LrHttp.get("http://127.0.0.1:11434/api/tags", nil, 0.5)
+    local ollamaStatus = (type(ollamaHeaders) == "number") and ollamaHeaders
+        or (type(ollamaHeaders) == "table" and ollamaHeaders.status)
+    if ollamaStatus == 200 then health.ollama = true end
 
     -- Fall back to backend provider health check for dynamic LM Studio port discovery
     if not health.lmstudio and health.backend then
@@ -3597,12 +3539,16 @@ end
 -- @param examples table        List of training examples.
 -- @return boolean success, table|string response or error message
 ---
-function SearchIndexAPI.addTrainingBatch(examples, forceRetrain)
+function SearchIndexAPI.addTrainingBatch(examples, forceRetrain, rebuildPolicies)
     if not examples or #examples == 0 then
         return false, "No examples provided"
     end
     local url = getBaseUrl() .. ENDPOINTS.TRAINING_ADD_BATCH
-    local body = { examples = examples, force_retrain = forceRetrain or false }
+    local body = {
+        examples = examples,
+        force_retrain = forceRetrain or false,
+        rebuild_policies = rebuildPolicies ~= false,
+    }
     log:trace("addTrainingBatch: uploading " .. tostring(#examples) .. " examples")
     local response, err = _request('POST', url, body, 120)
     if not response then
@@ -3725,18 +3671,6 @@ end
 --                           iso, aperture, shutter_speed.
 -- @return boolean success, table|string response or error message
 ---
-function SearchIndexAPI.getRemoteLogs()
-    local url = getBaseUrl() .. ENDPOINTS.LOGS
-    log:trace("Fetching remote logs from: " .. url)
-    local response, err = _request('GET', url, nil, 10)
-    log:trace("getRemoteLogs: _request returned type=" .. type(response))
-    if not response then
-        log:error("Failed to fetch remote logs: " .. tostring(err))
-        return nil, err
-    end
-    return response
-end
-
 function SearchIndexAPI.styleEdit(photoId, filepath, options)
     if not photoId or photoId == "" then
         log:error("styleEdit: photo_id missing")
@@ -3870,23 +3804,6 @@ function SearchIndexAPI.discoverStyles(photoIds)
 end
 
 ---
--- Reset a specific style by ID.
--- @param styleId string The style ID to reset.
--- @return boolean success, string error message if any
----
-function SearchIndexAPI.resetStyle(styleId)
-    local url = getBaseUrl() .. string.format(ENDPOINTS.STYLE_RESET, tostring(styleId))
-    local response, err = _request('POST', url, {}, 30)
-    if not response then
-        return false, err or "Unknown error"
-    end
-    if response.status == "ok" then
-        return true, nil
-    end
-    return false, response.error or "Unexpected response"
-end
-
----
 -- Reset all styles.
 -- @return boolean success, string error message if any
 ---
@@ -3898,22 +3815,6 @@ function SearchIndexAPI.resetAllStyles()
     end
     if response.status == "ok" then
         return true, nil
-    end
-    return false, response.error or "Unexpected response"
-end
-
----
--- Export the style catalog as JSON.
--- @return boolean success, string json export or error message
----
-function SearchIndexAPI.exportStyles()
-    local url = getBaseUrl() .. ENDPOINTS.STYLE_EXPORT
-    local response, err = _request('GET', url, {}, 30)
-    if not response then
-        return false, err or "Unknown error"
-    end
-    if response.status == "ok" then
-        return true, response.export
     end
     return false, response.error or "Unexpected response"
 end
@@ -3951,23 +3852,6 @@ function SearchIndexAPI.getAllStylesWithExamples()
     return false, response.error or "Unexpected response"
 end
 
----
--- Import a style catalog from JSON data.
--- @param data table The JSON data representing styles
--- @return boolean success, string error message if any
----
-function SearchIndexAPI.importStyles(data)
-    local url = getBaseUrl() .. ENDPOINTS.STYLE_IMPORT
-    local response, err = _request('POST', url, data, 30)
-    if not response then
-        return false, err or "Unknown error"
-    end
-    if response.status == "ok" then
-        return true, nil
-    end
-    return false, response.error or "Unexpected response"
-end
-
 function SearchIndexAPI.getUpgradeRecommendations(limit)
     local url = getBaseUrl() .. ENDPOINTS.STYLE_UPGRADES_RECOMMENDATIONS
     if limit and tonumber(limit) then
@@ -3981,11 +3865,6 @@ function SearchIndexAPI.getUpgradeRecommendations(limit)
         return true, response.results
     end
     return false, response.error or "Unexpected response"
-end
-
-function SearchIndexAPI.waitForDbMigrations()
-    ensureDbMigrationsDone()
-    return waitForCatalogDbMigrationsDone(tonumber(prefs and prefs.dbMigrationWaitTimeoutSeconds) or 600)
 end
 
 return SearchIndexAPI

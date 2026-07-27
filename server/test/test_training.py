@@ -2,6 +2,8 @@ import sys
 import os
 import unittest
 
+import numpy as np
+
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
@@ -9,6 +11,19 @@ from services.training import normalize_develop_settings_for_style
 
 
 class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
+    def test_white_balance_mode_is_preserved(self):
+        canonical = normalize_develop_settings_for_style(
+            {
+                "WhiteBalance": "Custom",
+                "Temperature": 6125,
+                "Tint": 14,
+            }
+        )
+
+        self.assertEqual(canonical["white_balance"], "Custom")
+        self.assertEqual(canonical["temperature"], 6125.0)
+        self.assertEqual(canonical["tint"], 14.0)
+
     def test_partial_hsl_preserved(self):
         # Simulate Lightroom exporting only a Red hue adjustment
         raw_settings = {"HueAdjustmentRed": 15.0}
@@ -211,31 +226,27 @@ class TestFocalLengthAndTODBuckets(unittest.TestCase):
 
 class TestBurstClusteringHeroSelection(unittest.TestCase):
     def test_burst_clustering_selects_hero(self):
-        from services.predictive_engine import _curate_training_cluster
+        from services.policy_runtime import _curate_bursts
 
-        # Create 3 examples in a burst (timestamps within 10s, identical embedding)
         emb = [1.0] + [0.0] * 1151
-        ex1 = (
-            emb,
-            {"capture_time": 1000.0, "rating": 3, "pick_status": 0},
-            {"exposure": 0.1},
-        )
-        ex2 = (
-            emb,
-            {"capture_time": 1002.0, "rating": 5, "pick_status": 1},
-            {"exposure": 0.2},
-        )
-        ex3 = (
-            emb,
-            {"capture_time": 1004.0, "rating": 2, "pick_status": 0},
-            {"exposure": 0.3},
-        )
+        examples = [
+            {
+                "photo_id": f"photo-{index}",
+                "normalized_embedding": np.asarray(emb),
+                "metadata": {
+                    "capture_time": 1000.0 + index * 2,
+                    "rating": rating,
+                    "pick_status": int(rating == 5),
+                },
+                "flat_target": {"exposure": index / 10},
+            }
+            for index, rating in enumerate((3, 5, 2))
+        ]
 
-        curated, weights = _curate_training_cluster([ex1, ex2, ex3])
-        # Burst clustering should group all three into 1 cluster and choose ex2 as the hero
+        curated, weights = _curate_bursts(examples)
         self.assertEqual(len(curated), 1)
-        self.assertEqual(curated[0][1]["rating"], 5)
-        self.assertEqual(weights[0], 1.0)
+        self.assertEqual(curated[0]["metadata"]["rating"], 5)
+        self.assertEqual(weights[0], 1.0 / 3.0)
 
 
 class TestColorAndHistogramFeatures(unittest.TestCase):

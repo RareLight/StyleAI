@@ -57,7 +57,9 @@ To ensure code consistency, we use `pre-commit` for automatic formatting and lin
 - **Naming Conventions**: Top-level plugin actions should follow the `Task*.lua` naming convention.
 - **Localization**: All GUI strings **must** be localized using the `LOC` function. Keep `TranslatedStrings_de.txt` (German) and `TranslatedStrings_fr.txt` (French) synchronized with English.
 - **Utilities**: Use `Util.lua` for common logic.
-- **Photo Identity**: Use `Util.getGlobalPhotoIdForPhoto` (metadata-based) for cross-catalog consistency.
+- **Photo Identity**: Use `Util.getGlobalPhotoIdForPhoto` for stable identity
+  within the active catalog. Never add cross-catalog routing or shared database
+  ownership.
 
 ### Backend Development (Python/Flask)
 - **Structure**:

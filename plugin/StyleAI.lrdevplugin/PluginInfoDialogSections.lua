@@ -32,8 +32,6 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 
 	propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck == nil and true or prefs.periodicalUpdateCheck
 	propertyTable.shutdownServerOnExit = prefs.shutdownServerOnExit == nil and true or prefs.shutdownServerOnExit
-	propertyTable.ollamaBaseUrl = prefs.ollamaBaseUrl or Defaults.defaultOllamaBaseUrl
-	propertyTable.lmstudioBaseUrl = prefs.lmstudioBaseUrl or Defaults.defaultLmStudioBaseUrl
 	propertyTable.indexingPerformanceProfile = tonumber(prefs.indexingPerformanceProfile) or 2
 	propertyTable.indexingBatchSize = tostring(prefs.indexingBatchSize or "32")
 	propertyTable.semanticClusteringThresholdInt = math.floor((tonumber(prefs.semanticClusteringThreshold) or 0.94) * 100)
@@ -725,18 +723,6 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 	prefs.periodicalUpdateCheck = propertyTable.periodicalUpdateCheck
 	prefs.shutdownServerOnExit = (propertyTable.shutdownServerOnExit ~= false)
 	prefs.backupRotationDays = propertyTable.backupRotationDays
-
-	if propertyTable.ollamaBaseUrl and propertyTable.ollamaBaseUrl:gsub("^%s*(.-)%s*$", "%1") ~= "" then
-		prefs.ollamaBaseUrl = propertyTable.ollamaBaseUrl:gsub("^%s*(.-)%s*$", "%1")
-	else
-		prefs.ollamaBaseUrl = Defaults.defaultOllamaBaseUrl
-	end
-
-	if propertyTable.lmstudioBaseUrl and propertyTable.lmstudioBaseUrl:gsub("^%s*(.-)%s*$", "%1") ~= "" then
-		prefs.lmstudioBaseUrl = propertyTable.lmstudioBaseUrl:gsub("^%s*(.-)%s*$", "%1")
-	else
-		prefs.lmstudioBaseUrl = Defaults.defaultLmStudioBaseUrl
-	end
 
 	prefs.forceFreshPreviews = propertyTable.forceFreshPreviews
 	prefs.auditLlmInputs = propertyTable.auditLlmInputs

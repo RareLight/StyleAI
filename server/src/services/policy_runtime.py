@@ -1,0 +1,1320 @@
+"""Transactional training and inference runtime for editing-policy v2."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import json
+import math
+import os
+import re
+import shutil
+import threading
+from typing import Any
+from uuid import uuid4
+
+import joblib
+import numpy as np
+from sklearn.model_selection import GroupKFold
+
+import config
+from config import logger
+from . import policy_store
+from . import training as training_service
+from .policy_calibration import HierarchicalPolicyRegressor
+from .policy_discovery import PolicyMixture
+from .policy_features import (
+    FEATURE_SCHEMA_VERSION,
+    build_source_feature_vector,
+)
+from .policy_insights import (
+    DescriptorObservation,
+    PolicyCoverageDiagnostics,
+    discover_open_vocabulary_descriptors,
+)
+from .policy_models import EstimatorFactory, default_estimator_factories
+from .photo_constraints import is_stitched_panorama
+from .policy_recommendations import (
+    PolicyCandidate,
+    build_policy_recommendation_payload,
+    rank_policy_candidates,
+    retrieve_policy_neighbors,
+)
+from .policy_targets import (
+    TARGET_SCHEMA_VERSION,
+    AbsoluteTarget,
+    default_flat_target_value,
+    flatten_absolute_target,
+    interpolate_absolute_target,
+    unflatten_absolute_target,
+)
+
+
+POLICY_ALGORITHM_VERSION = "editing-policy-v2.2"
+MIN_PARTITION_EXAMPLES = 12
+MAX_POLICIES_PER_PARTITION = 4
+MODEL_DIRECTORY_NAME = "policy_v2_models"
+
+_PROFILE_VERSION_SUFFIX = re.compile(r"\s*\(v\d+\)\s*$", re.IGNORECASE)
+_runtime_lock = threading.RLock()
+_cached_generation_id: str | None = None
+_cached_artifacts: dict[str, "PartitionPolicyArtifact"] = {}
+_cached_custom_names: dict[str, str] | None = None
+_rebuild_lock = threading.Lock()
+_rebuild_requested = 0
+_rebuild_worker: threading.Thread | None = None
+
+
+@dataclass
+class PartitionPolicyArtifact:
+    generation_id: str
+    partition_key: str
+    camera_profile: str
+    feature_names: tuple[str, ...]
+    target_keys: tuple[str, ...]
+    policy_ids: tuple[str, ...]
+    policy_names: tuple[str, ...]
+    mixture: PolicyMixture
+    calibrators: list[HierarchicalPolicyRegressor]
+    slider_bounds: list[dict[str, tuple[float, float]]]
+    coverage: PolicyCoverageDiagnostics
+    descriptors: list[list[dict[str, Any]]]
+    image_anchors: list[list[np.ndarray]]
+    example_embeddings: list[list[np.ndarray]]
+    example_photo_ids: list[list[str]]
+    example_count: int
+    estimator_name: str
+    validation: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class PolicyPrediction:
+    policy_id: str
+    policy_name: str
+    confidence: float
+    entropy: float
+    target: dict[str, Any]
+    applied: dict[str, Any]
+    example_count: int
+
+
+def _database_path() -> str:
+    if not config.DB_PATH:
+        raise RuntimeError("StyleAI database path is not configured")
+    return config.DB_PATH
+
+
+def _normalized_profile(value: Any) -> str:
+    profile = _PROFILE_VERSION_SUFFIX.sub("", str(value or "Default").strip())
+    return profile or "Default"
+
+
+def hard_partition_key(metadata: dict[str, Any]) -> str:
+    profile = _normalized_profile(metadata.get("camera_profile"))
+    is_hdr = bool(metadata.get("is_hdr")) or "hdr" in profile.casefold()
+    return f"{'hdr' if is_hdr else 'sdr'}|{profile.casefold()}"
+
+
+def _categories(metadata: dict[str, Any]) -> dict[str, str]:
+    profile = _normalized_profile(metadata.get("camera_profile"))
+    return {
+        "hdr_state": (
+            "hdr"
+            if bool(metadata.get("is_hdr")) or "hdr" in profile.casefold()
+            else "sdr"
+        ),
+        "camera_make": str(metadata.get("camera_make") or "unknown"),
+        "camera_model": str(metadata.get("camera_model") or "unknown"),
+        "camera_profile": profile,
+        "lens": str(metadata.get("lens") or "unknown"),
+    }
+
+
+def _safe_json_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    try:
+        parsed = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _safe_descriptor_values(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    try:
+        parsed = json.loads(value or "[]")
+    except (TypeError, ValueError):
+        parsed = None
+    if isinstance(parsed, list):
+        return [str(item).strip() for item in parsed if str(item).strip()]
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return []
+
+
+def _source_row(
+    metadata: dict[str, Any],
+    embedding: Any,
+) -> tuple[np.ndarray, tuple[str, ...]]:
+    vector = build_source_feature_vector(
+        metadata,
+        image_embedding=embedding,
+        source_provenance=str(metadata.get("source_provenance") or "raw_preview"),
+    )
+    values = np.asarray(
+        (*vector.values, *(1.0 if item else 0.0 for item in vector.availability)),
+        dtype=np.float64,
+    )
+    names = (
+        *vector.names,
+        *(f"available:{name}" for name in vector.names),
+    )
+    return values, tuple(names)
+
+
+def _training_quality(metadata: dict[str, Any], target: dict[str, float]) -> tuple:
+    try:
+        rating = int(metadata.get("rating", 0) or 0)
+    except (TypeError, ValueError):
+        rating = 0
+    try:
+        pick = int(metadata.get("pick_status", 0) or 0)
+    except (TypeError, ValueError):
+        pick = 0
+    complexity = sum(abs(float(value)) > 1e-6 for value in target.values())
+    return rating, pick == 1, complexity
+
+
+def _capture_time(metadata: dict[str, Any]) -> float | None:
+    raw = metadata.get("capture_time") or metadata.get("capture_time_unix")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _curate_bursts(
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], np.ndarray]:
+    """Keep one deterministic hero per temporal/visual burst."""
+    parents = list(range(len(rows)))
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(first: int, second: int) -> None:
+        first_root, second_root = find(first), find(second)
+        if first_root != second_root:
+            parents[max(first_root, second_root)] = min(first_root, second_root)
+
+    timed = sorted(
+        (
+            (capture_time, index)
+            for index, row in enumerate(rows)
+            if (capture_time := _capture_time(row["metadata"])) is not None
+        )
+    )
+    for position, (first_time, first_index) in enumerate(timed):
+        next_position = position + 1
+        while next_position < len(timed):
+            second_time, second_index = timed[next_position]
+            if second_time - first_time > 10.0:
+                break
+            similarity = float(
+                rows[first_index]["normalized_embedding"]
+                @ rows[second_index]["normalized_embedding"]
+            )
+            if 1.0 - similarity <= 0.05:
+                union(first_index, second_index)
+            next_position += 1
+
+    clusters: dict[int, list[int]] = {}
+    for index in range(len(rows)):
+        clusters.setdefault(find(index), []).append(index)
+    selected: list[dict[str, Any]] = []
+    weights: list[float] = []
+    for indices in clusters.values():
+        hero_index = max(
+            indices,
+            key=lambda index: (
+                _training_quality(
+                    rows[index]["metadata"],
+                    rows[index]["flat_target"],
+                ),
+                rows[index]["photo_id"],
+            ),
+        )
+        hero = dict(rows[hero_index])
+        hero["burst_group_id"] = "burst:" + min(
+            rows[index]["photo_id"] for index in indices
+        )
+        selected.append(hero)
+        weights.append(1.0 / len(indices))
+    order = np.argsort([row["photo_id"] for row in selected])
+    return (
+        [selected[int(index)] for index in order],
+        np.asarray([weights[int(index)] for index in order], dtype=np.float64),
+    )
+
+
+def _prepare_rows(raw_examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    prepared: list[dict[str, Any]] = []
+    for item in raw_examples:
+        metadata = dict(item.get("metadata") or {})
+        embedding = item.get("embedding")
+        if embedding is None or is_stitched_panorama(metadata):
+            continue
+        normalized_embedding = np.asarray(embedding, dtype=np.float64).reshape(-1)
+        if (
+            not len(normalized_embedding)
+            or not np.all(np.isfinite(normalized_embedding))
+            or float(np.linalg.norm(normalized_embedding)) <= 0
+        ):
+            continue
+        normalized_embedding /= np.linalg.norm(normalized_embedding)
+        canonical = _safe_json_dict(metadata.get("canonical_settings"))
+        flat_target = flatten_absolute_target(canonical)
+        if not flat_target:
+            continue
+        source, feature_names = _source_row(metadata, normalized_embedding)
+        prepared.append(
+            {
+                "photo_id": str(item["photo_id"]),
+                "metadata": metadata,
+                "embedding": normalized_embedding,
+                "normalized_embedding": normalized_embedding,
+                "source": source,
+                "feature_names": feature_names,
+                "flat_target": flat_target,
+                "canonical_target": canonical,
+                "partition_key": hard_partition_key(metadata),
+                "categories": _categories(metadata),
+            }
+        )
+    return prepared
+
+
+def _policy_mixture(
+    n_policies: int,
+    n_examples: int,
+    *,
+    expert_factory: EstimatorFactory,
+    seed: int,
+) -> PolicyMixture:
+    minimum_support = max(3.0, min(8.0, n_examples / max(3 * n_policies, 1)))
+    return PolicyMixture(
+        n_policies=n_policies,
+        expert_factory=expert_factory,
+        minimum_effective_samples=minimum_support,
+        seed=seed,
+    )
+
+
+def _cross_validated_estimator(
+    source: np.ndarray,
+    targets: np.ndarray,
+    groups: np.ndarray,
+    weights: np.ndarray,
+) -> tuple[str, EstimatorFactory, dict[str, Any]]:
+    """Select a production expert on burst-safe held-out examples.
+
+    The nonlinear challenger remains available to the offline benchmark but is
+    intentionally excluded here: small Lightroom training sets do not provide
+    enough evidence to justify its added variance and artifact size.
+    """
+    candidates = {
+        name: factory
+        for name, factory in default_estimator_factories().items()
+        if name != "random_feature_ridge"
+    }
+    unique_groups = np.unique(groups)
+    fold_count = min(3, len(unique_groups))
+    if fold_count < 2:
+        name = "reduced_rank_ridge"
+        return (
+            name,
+            candidates[name],
+            {
+                "selected_estimator": name,
+                "fold_count": 0,
+                "candidates": {},
+            },
+        )
+
+    folds = list(GroupKFold(n_splits=fold_count).split(source, groups=groups))
+    scales = np.maximum(np.ptp(targets, axis=0), 1e-6)
+    scores: dict[str, dict[str, float | int]] = {}
+    for name, factory in candidates.items():
+        predictions = np.zeros_like(targets)
+        failed = False
+        parameter_count = 0
+        for train_indices, test_indices in folds:
+            try:
+                estimator = factory().fit(
+                    source[train_indices],
+                    targets[train_indices],
+                    sample_weight=weights[train_indices],
+                )
+                predictions[test_indices] = estimator.predict(source[test_indices])
+                parameter_count = max(
+                    parameter_count,
+                    int(getattr(estimator, "parameter_count_", 0)),
+                )
+            except (ValueError, np.linalg.LinAlgError):
+                failed = True
+                break
+        if failed:
+            continue
+        normalized_rmse = float(
+            np.sqrt(np.mean(np.square((predictions - targets) / scales)))
+        )
+        scores[name] = {
+            "normalized_rmse": normalized_rmse,
+            "parameter_count": parameter_count,
+        }
+    if not scores:
+        name = "reduced_rank_ridge"
+    else:
+        name = min(
+            scores,
+            key=lambda item: (
+                float(scores[item]["normalized_rmse"]),
+                int(scores[item]["parameter_count"]),
+                item,
+            ),
+        )
+    return (
+        name,
+        candidates[name],
+        {
+            "selected_estimator": name,
+            "fold_count": fold_count,
+            "candidates": scores,
+        },
+    )
+
+
+def _canonicalize_components(
+    mixture: PolicyMixture,
+    targets: np.ndarray,
+    weights: np.ndarray,
+) -> None:
+    """Give otherwise permutation-invariant mixture components stable indices."""
+    responsibilities = mixture.training_responsibilities_
+    signatures = []
+    for policy_index in range(mixture.n_policies):
+        component_weight = weights * responsibilities[:, policy_index]
+        centroid = np.average(targets, axis=0, weights=component_weight)
+        signatures.append(
+            (
+                tuple(np.round(centroid, 8)),
+                policy_index,
+            )
+        )
+    order = [item[1] for item in sorted(signatures)]
+    if order == list(range(mixture.n_policies)):
+        return
+    mixture.training_responsibilities_ = responsibilities[:, order]
+    mixture.policy_priors_ = mixture.policy_priors_[order]
+    mixture.experts_ = [mixture.experts_[index] for index in order]
+    mixture.policy_medoids_ = [mixture.policy_medoids_[index] for index in order]
+    mixture.policy_distance_scale_ = [
+        mixture.policy_distance_scale_[index] for index in order
+    ]
+
+
+def _cross_validated_policy_count(
+    source: np.ndarray,
+    targets: np.ndarray,
+    groups: np.ndarray,
+    weights: np.ndarray,
+    gate_feature_indices: np.ndarray,
+    *,
+    expert_factory: EstimatorFactory,
+    seed: int,
+) -> tuple[int, dict[str, Any]]:
+    maximum = min(
+        MAX_POLICIES_PER_PARTITION,
+        max(1, len(source) // MIN_PARTITION_EXAMPLES),
+    )
+    unique_groups = np.unique(groups)
+    fold_count = min(3, len(unique_groups))
+    if maximum == 1 or fold_count < 2:
+        return 1, {"selected_policy_count": 1, "candidates": {}}
+    folds = list(GroupKFold(n_splits=fold_count).split(source, groups=groups))
+    scales = np.maximum(np.ptp(targets, axis=0), 1e-6)
+    candidate_scores: dict[int, dict[str, float]] = {}
+    for policy_count in range(1, maximum + 1):
+        predictions = np.zeros_like(targets)
+        ambiguous = 0
+        failed = False
+        for fold_index, (train_indices, test_indices) in enumerate(folds):
+            try:
+                model = _policy_mixture(
+                    policy_count,
+                    len(train_indices),
+                    expert_factory=expert_factory,
+                    seed=seed + fold_index,
+                ).fit(
+                    source[train_indices],
+                    targets[train_indices],
+                    sample_weight=weights[train_indices],
+                    gate_feature_indices=gate_feature_indices,
+                )
+                predictions[test_indices] = model.predict(source[test_indices])
+                ambiguous += sum(
+                    assignment.ambiguous
+                    for assignment in model.assignments(source[test_indices])
+                )
+            except (ValueError, np.linalg.LinAlgError):
+                failed = True
+                break
+        if failed:
+            continue
+        normalized_rmse = float(
+            np.sqrt(np.mean(np.square((predictions - targets) / scales)))
+        )
+        ambiguity_rate = ambiguous / len(source)
+        penalized = normalized_rmse + 0.015 * (policy_count - 1) + 0.05 * ambiguity_rate
+        candidate_scores[policy_count] = {
+            "normalized_rmse": normalized_rmse,
+            "ambiguity_rate": ambiguity_rate,
+            "penalized_score": penalized,
+        }
+    selected = 1
+    best_score = candidate_scores.get(1, {}).get("penalized_score", float("inf"))
+    for policy_count in range(2, maximum + 1):
+        metrics = candidate_scores.get(policy_count)
+        if not metrics or metrics["ambiguity_rate"] > 0.35:
+            continue
+        # Require material held-out improvement before proliferating experts.
+        if metrics["penalized_score"] < best_score * 0.95:
+            selected = policy_count
+            best_score = metrics["penalized_score"]
+    return selected, {
+        "selected_policy_count": selected,
+        "candidates": candidate_scores,
+        "fold_count": fold_count,
+    }
+
+
+def _select_image_anchors(
+    embeddings: np.ndarray,
+    responsibilities: np.ndarray,
+    policy_index: int,
+    *,
+    maximum: int = 6,
+) -> tuple[list[np.ndarray], list[int]]:
+    indices = np.flatnonzero(np.argmax(responsibilities, axis=1) == policy_index)
+    if not len(indices):
+        return [], []
+    component = embeddings[indices]
+    first = int(np.argmax(responsibilities[indices, policy_index]))
+    selected_local = [first]
+    minimum_distance = 1.0 - component @ component[first]
+    while len(selected_local) < min(maximum, len(component)):
+        next_local = int(np.argmax(minimum_distance))
+        if next_local in selected_local:
+            break
+        selected_local.append(next_local)
+        minimum_distance = np.minimum(
+            minimum_distance,
+            1.0 - component @ component[next_local],
+        )
+    selected_indices = [int(indices[index]) for index in selected_local]
+    return [embeddings[index] for index in selected_indices], selected_indices
+
+
+def _descriptor_observations(metadata_rows: list[dict[str, Any]]):
+    observations: list[list[DescriptorObservation]] = []
+    for metadata in metadata_rows:
+        row: list[DescriptorObservation] = []
+        for value in _safe_descriptor_values(metadata.get("user_keywords")):
+            row.append(DescriptorObservation("user_keyword", value, "user"))
+        for key in ("scene_tags", "content_tags", "tags"):
+            for value in _safe_descriptor_values(metadata.get(key)):
+                row.append(DescriptorObservation("local_visual_tag", value, key))
+        observations.append(row)
+    return observations
+
+
+def _partition_slug(partition_key: str) -> str:
+    return hashlib.sha256(partition_key.encode("utf-8")).hexdigest()[:12]
+
+
+def _fit_partition(
+    rows: list[dict[str, Any]],
+    weights: np.ndarray,
+    *,
+    generation_id: str,
+    seed: int,
+) -> PartitionPolicyArtifact:
+    feature_names = rows[0]["feature_names"]
+    if any(row["feature_names"] != feature_names for row in rows):
+        raise ValueError("source feature dimensions differ within a partition")
+    source = np.stack([row["source"] for row in rows])
+    target_keys = tuple(sorted({key for row in rows for key in row["flat_target"]}))
+    targets = np.asarray(
+        [
+            [
+                row["flat_target"].get(key, default_flat_target_value(key))
+                for key in target_keys
+            ]
+            for row in rows
+        ],
+        dtype=np.float64,
+    )
+    groups = np.asarray([row.get("burst_group_id") or row["photo_id"] for row in rows])
+    gate_feature_indices = np.asarray(
+        [
+            index
+            for index, name in enumerate(feature_names)
+            if name.startswith("image_embedding_")
+        ],
+        dtype=np.int64,
+    )
+    estimator_name, estimator_factory, estimator_validation = (
+        _cross_validated_estimator(
+            source,
+            targets,
+            groups,
+            weights,
+        )
+    )
+    policy_count, validation = _cross_validated_policy_count(
+        source,
+        targets,
+        groups,
+        weights,
+        gate_feature_indices,
+        expert_factory=estimator_factory,
+        seed=seed,
+    )
+    validation["estimator_selection"] = estimator_validation
+    mixture = _policy_mixture(
+        policy_count,
+        len(rows),
+        expert_factory=estimator_factory,
+        seed=seed,
+    ).fit(
+        source,
+        targets,
+        sample_weight=weights,
+        gate_feature_indices=gate_feature_indices,
+    )
+    _canonicalize_components(mixture, targets, weights)
+    responsibilities = mixture.training_responsibilities_
+    categories = [row["categories"] for row in rows]
+    calibrators = []
+    bounds = []
+    policy_ids = []
+    for policy_index in range(policy_count):
+        component_weights = weights * np.maximum(
+            responsibilities[:, policy_index],
+            1e-4,
+        )
+        calibrator = HierarchicalPolicyRegressor(
+            base_factory=estimator_factory,
+        ).fit(
+            source,
+            targets,
+            categories=categories,
+            sample_weight=component_weights,
+        )
+        calibrators.append(calibrator)
+        member_indices = np.flatnonzero(
+            np.argmax(responsibilities, axis=1) == policy_index
+        )
+        member_targets = targets[member_indices] if len(member_indices) else targets
+        bounds.append(
+            {
+                key: (
+                    float(np.min(member_targets[:, target_index])),
+                    float(np.max(member_targets[:, target_index])),
+                )
+                for target_index, key in enumerate(target_keys)
+            }
+        )
+        policy_ids.append(
+            f"policy-{_partition_slug(rows[0]['partition_key'])}-{policy_index + 1}"
+        )
+
+    coverage = PolicyCoverageDiagnostics(
+        visual_component_count=min(6, max(1, len(rows) // 8)),
+    ).fit(
+        source[:, gate_feature_indices],
+        tuple(feature_names[index] for index in gate_feature_indices),
+        responsibilities,
+        categories=categories,
+        numeric_dimensions=(),
+        sample_weight=weights,
+    )
+    discovered = discover_open_vocabulary_descriptors(
+        _descriptor_observations([row["metadata"] for row in rows]),
+        responsibilities,
+        sample_weight=weights,
+        minimum_effective_support=max(1.5, min(3.0, len(rows) / 10.0)),
+    )
+    descriptors: list[list[dict[str, Any]]] = [[] for _ in range(policy_count)]
+    for descriptor in discovered:
+        descriptors[descriptor.policy_index].append(
+            {
+                "descriptor_kind": descriptor.descriptor_kind,
+                "descriptor": descriptor.descriptor,
+                "score": descriptor.score,
+                "provenance": descriptor.provenance,
+                "effective_support": descriptor.effective_support,
+            }
+        )
+    policy_names = []
+    for policy_index in range(policy_count):
+        cues = [item["descriptor"] for item in descriptors[policy_index][:3]]
+        policy_names.append(
+            " • ".join(cues) if cues else f"Editing Policy {policy_index + 1}"
+        )
+    embedding_matrix = np.stack([row["normalized_embedding"] for row in rows])
+    image_anchors = []
+    example_embeddings = []
+    example_photo_ids = []
+    hard_labels = np.argmax(responsibilities, axis=1)
+    for policy_index in range(policy_count):
+        anchors, _ = _select_image_anchors(
+            embedding_matrix,
+            responsibilities,
+            policy_index,
+        )
+        image_anchors.append(anchors)
+        example_embeddings.append(
+            [
+                embedding_matrix[index]
+                for index in np.flatnonzero(hard_labels == policy_index)
+            ]
+        )
+        example_photo_ids.append(
+            [
+                rows[index]["photo_id"]
+                for index in np.flatnonzero(hard_labels == policy_index)
+            ]
+        )
+    return PartitionPolicyArtifact(
+        generation_id=generation_id,
+        partition_key=rows[0]["partition_key"],
+        camera_profile=_normalized_profile(rows[0]["metadata"].get("camera_profile")),
+        feature_names=feature_names,
+        target_keys=target_keys,
+        policy_ids=tuple(policy_ids),
+        policy_names=tuple(policy_names),
+        mixture=mixture,
+        calibrators=calibrators,
+        slider_bounds=bounds,
+        coverage=coverage,
+        descriptors=descriptors,
+        image_anchors=image_anchors,
+        example_embeddings=example_embeddings,
+        example_photo_ids=example_photo_ids,
+        example_count=len(rows),
+        estimator_name=estimator_name,
+        validation=validation,
+    )
+
+
+def _artifact_directory(generation_id: str) -> str:
+    return os.path.join(
+        _database_path(),
+        MODEL_DIRECTORY_NAME,
+        generation_id,
+    )
+
+
+def rebuild_active_generation(*, seed: int = 17) -> dict[str, Any]:
+    """Fit, persist, validate, and atomically activate a complete v2 generation."""
+    raw_examples = training_service.list_training_examples_with_embeddings()
+    prepared = _prepare_rows(raw_examples)
+    partitions: dict[str, list[dict[str, Any]]] = {}
+    for row in prepared:
+        partitions.setdefault(row["partition_key"], []).append(row)
+    eligible = {
+        key: value
+        for key, value in partitions.items()
+        if len(value) >= MIN_PARTITION_EXAMPLES
+    }
+    if not eligible:
+        raise ValueError(
+            f"No profile/HDR partition has {MIN_PARTITION_EXAMPLES} valid examples"
+        )
+
+    connection = policy_store.connect_policy_store(_database_path())
+    generation_id = uuid4().hex
+    artifact_directory = _artifact_directory(generation_id)
+    os.makedirs(artifact_directory, exist_ok=False)
+    artifacts: list[PartitionPolicyArtifact] = []
+    try:
+        policy_store.create_generation(
+            connection,
+            generation_id=generation_id,
+            algorithm_version=POLICY_ALGORITHM_VERSION,
+            feature_schema_version=FEATURE_SCHEMA_VERSION,
+            target_schema_version=TARGET_SCHEMA_VERSION,
+        )
+        persisted_examples: list[dict[str, Any]] = []
+        all_memberships: list[dict[str, Any]] = []
+        validation_rows: list[dict[str, Any]] = []
+        for partition_index, partition_key in enumerate(sorted(eligible)):
+            curated, weights = _curate_bursts(eligible[partition_key])
+            if len(curated) < MIN_PARTITION_EXAMPLES:
+                logger.info(
+                    "Skipping partition %s after burst curation: %d examples",
+                    partition_key,
+                    len(curated),
+                )
+                continue
+            artifact = _fit_partition(
+                curated,
+                weights,
+                generation_id=generation_id,
+                seed=seed + partition_index * 100,
+            )
+            artifacts.append(artifact)
+            artifact_name = (
+                f"{MODEL_DIRECTORY_NAME}/{generation_id}/"
+                f"{_partition_slug(partition_key)}.joblib"
+            )
+            artifact_path = os.path.join(_database_path(), artifact_name)
+            temporary_path = f"{artifact_path}.tmp"
+            joblib.dump(artifact, temporary_path)
+            os.replace(temporary_path, artifact_path)
+
+            entropy = -np.sum(
+                np.where(
+                    artifact.mixture.training_responsibilities_ > 0,
+                    artifact.mixture.training_responsibilities_
+                    * np.log(
+                        np.maximum(
+                            artifact.mixture.training_responsibilities_,
+                            1e-12,
+                        )
+                    ),
+                    0.0,
+                ),
+                axis=1,
+            )
+            if len(artifact.policy_ids) > 1:
+                entropy /= math.log(len(artifact.policy_ids))
+            for row_index, row in enumerate(curated):
+                persisted_examples.append(
+                    {
+                        "photo_id": row["photo_id"],
+                        "source_provenance": str(
+                            row["metadata"].get("source_provenance") or "raw_preview"
+                        ),
+                        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                        "source_features": row["source"].tolist(),
+                        "feature_mask": [],
+                        "target_schema_version": TARGET_SCHEMA_VERSION,
+                        "target_values": row["canonical_target"],
+                        "burst_group_id": row.get("burst_group_id"),
+                        "sample_weight": float(weights[row_index]),
+                        "metadata": row["metadata"],
+                    }
+                )
+                for policy_index, policy_id in enumerate(artifact.policy_ids):
+                    all_memberships.append(
+                        {
+                            "policy_id": policy_id,
+                            "photo_id": row["photo_id"],
+                            "responsibility": float(
+                                artifact.mixture.training_responsibilities_[
+                                    row_index, policy_index
+                                ]
+                            ),
+                            "assignment_entropy": float(entropy[row_index]),
+                        }
+                    )
+            for policy_index, policy_id in enumerate(artifact.policy_ids):
+                effective_count = float(
+                    np.sum(
+                        weights
+                        * artifact.mixture.training_responsibilities_[:, policy_index]
+                    )
+                )
+                policy_store.add_policy_model(
+                    connection,
+                    generation_id=generation_id,
+                    policy_id=policy_id,
+                    hard_partition_key=partition_key,
+                    expert_index=policy_index,
+                    estimator_type=f"hierarchical_{artifact.estimator_name}",
+                    artifact_name=artifact_name,
+                    preprocessing={
+                        "feature_names": list(artifact.feature_names),
+                        "target_keys": list(artifact.target_keys),
+                    },
+                    validation=artifact.validation,
+                    effective_sample_count=effective_count,
+                )
+                policy_store.replace_policy_descriptors(
+                    connection,
+                    generation_id=generation_id,
+                    policy_id=policy_id,
+                    descriptors=artifact.descriptors[policy_index],
+                )
+                coverage_rows = [
+                    {
+                        "dimension_key": record.dimension_key,
+                        "bucket_key": record.bucket_key,
+                        "effective_count": record.effective_count,
+                        "coverage_score": record.coverage_score,
+                    }
+                    for record in artifact.coverage.records()
+                    if record.policy_index == policy_index
+                ]
+                policy_store.replace_policy_coverage(
+                    connection,
+                    generation_id=generation_id,
+                    policy_id=policy_id,
+                    coverage=coverage_rows,
+                )
+            for policy_count, metrics in artifact.validation.get(
+                "candidates", {}
+            ).items():
+                validation_rows.append(
+                    {
+                        "validation_scope": partition_key,
+                        "metric_key": f"policy_count_{policy_count}_nrmse",
+                        "metric_value": metrics["normalized_rmse"],
+                        "details": metrics,
+                    }
+                )
+        if not artifacts:
+            raise ValueError(
+                "No partition retained enough examples after burst curation"
+            )
+        policy_store.upsert_policy_examples(connection, persisted_examples)
+        policy_store.replace_policy_memberships(
+            connection,
+            generation_id=generation_id,
+            memberships=all_memberships,
+        )
+        policy_store.replace_validation_results(
+            connection,
+            generation_id=generation_id,
+            results=validation_rows,
+        )
+        policy_store.activate_generation(connection, generation_id)
+        pruned_generation_ids = policy_store.prune_inactive_generations(
+            connection,
+            retain_retired=0,
+        )
+    except Exception:
+        policy_store.fail_generation(connection, generation_id)
+        shutil.rmtree(artifact_directory, ignore_errors=True)
+        raise
+    finally:
+        connection.close()
+    for pruned_generation_id in pruned_generation_ids:
+        shutil.rmtree(
+            _artifact_directory(pruned_generation_id),
+            ignore_errors=True,
+        )
+    invalidate_runtime_cache()
+    return {
+        "generation_id": generation_id,
+        "partition_count": len(artifacts),
+        "policy_count": sum(len(artifact.policy_ids) for artifact in artifacts),
+        "example_count": sum(artifact.example_count for artifact in artifacts),
+    }
+
+
+def invalidate_runtime_cache() -> None:
+    global _cached_generation_id, _cached_artifacts, _cached_custom_names
+    with _runtime_lock:
+        _cached_generation_id = None
+        _cached_artifacts = {}
+        _cached_custom_names = None
+
+
+def _load_active_artifacts() -> dict[str, PartitionPolicyArtifact]:
+    global _cached_generation_id, _cached_artifacts
+    with _runtime_lock:
+        if _cached_generation_id is not None:
+            return dict(_cached_artifacts)
+    connection = policy_store.connect_policy_store(_database_path())
+    try:
+        rows = policy_store.list_active_policy_models(connection)
+    finally:
+        connection.close()
+    if not rows:
+        return {}
+    generation_id = rows[0]["generation_id"]
+    with _runtime_lock:
+        if generation_id == _cached_generation_id:
+            return dict(_cached_artifacts)
+        artifacts: dict[str, PartitionPolicyArtifact] = {}
+        loaded_names: set[str] = set()
+        for row in rows:
+            artifact_name = row["artifact_name"]
+            if artifact_name in loaded_names:
+                continue
+            loaded_names.add(artifact_name)
+            artifact_path = os.path.abspath(
+                os.path.join(_database_path(), artifact_name)
+            )
+            expected_root = os.path.abspath(
+                os.path.join(_database_path(), MODEL_DIRECTORY_NAME)
+            )
+            if os.path.commonpath((artifact_path, expected_root)) != expected_root:
+                raise ValueError("active policy artifact escaped the model directory")
+            artifact = joblib.load(artifact_path)
+            if (
+                not isinstance(artifact, PartitionPolicyArtifact)
+                or artifact.generation_id != generation_id
+            ):
+                raise ValueError("active policy artifact is invalid or stale")
+            artifacts[artifact.partition_key] = artifact
+        _cached_generation_id = generation_id
+        _cached_artifacts = artifacts
+        return dict(artifacts)
+
+
+def has_active_generation() -> bool:
+    try:
+        return bool(_load_active_artifacts())
+    except (RuntimeError, OSError, ValueError):
+        return False
+
+
+def _custom_policy_names() -> dict[str, str]:
+    global _cached_custom_names
+    with _runtime_lock:
+        if _cached_custom_names is not None:
+            return dict(_cached_custom_names)
+    connection = policy_store.connect_policy_store(_database_path())
+    try:
+        names = policy_store.list_policy_custom_names(connection)
+    finally:
+        connection.close()
+    with _runtime_lock:
+        _cached_custom_names = names
+    return dict(names)
+
+
+def _active_policy_rows(*, include_examples: bool) -> list[dict[str, Any]]:
+    policies = []
+    custom_names = _custom_policy_names()
+    for artifact in _load_active_artifacts().values():
+        responsibilities = artifact.mixture.training_responsibilities_
+        for policy_index, policy_id in enumerate(artifact.policy_ids):
+            count = int(np.sum(np.argmax(responsibilities, axis=1) == policy_index))
+            policy = {
+                "recommendation_version": "policy-v2",
+                "policy_id": policy_id,
+                "policy_name": custom_names.get(
+                    policy_id,
+                    artifact.policy_names[policy_index],
+                ),
+                "style_id": policy_id,
+                "style_name": custom_names.get(
+                    policy_id,
+                    artifact.policy_names[policy_index],
+                ),
+                "camera_profile": artifact.camera_profile,
+                "hard_partition_key": artifact.partition_key,
+                "example_count": count,
+                "current_count": count,
+                "policy_descriptors": artifact.descriptors[policy_index],
+                "training_status": "Conditional editing policy",
+            }
+            if include_examples:
+                policy["example_photo_ids"] = list(
+                    artifact.example_photo_ids[policy_index]
+                )
+            policies.append(policy)
+    return sorted(
+        policies,
+        key=lambda item: (item["camera_profile"], item["policy_name"]),
+    )
+
+
+def list_active_policies() -> list[dict[str, Any]]:
+    return _active_policy_rows(include_examples=False)
+
+
+def get_active_policy(policy_id: str) -> dict[str, Any] | None:
+    return next(
+        (
+            item
+            for item in _active_policy_rows(include_examples=True)
+            if item["policy_id"] == policy_id
+        ),
+        None,
+    )
+
+
+def list_active_policies_with_examples() -> list[dict[str, Any]]:
+    return _active_policy_rows(include_examples=True)
+
+
+def rename_active_policy(policy_id: str, custom_name: str) -> bool:
+    connection = policy_store.connect_policy_store(_database_path())
+    try:
+        renamed = policy_store.rename_policy(
+            connection,
+            policy_id=policy_id,
+            custom_name=custom_name,
+        )
+    finally:
+        connection.close()
+    if renamed:
+        global _cached_custom_names
+        with _runtime_lock:
+            _cached_custom_names = None
+    return renamed
+
+
+def reset_policy_state() -> int:
+    """Remove derived v2 generations and artifacts, preserving training examples."""
+    removed = len(list_active_policies())
+    connection = policy_store.connect_policy_store(_database_path())
+    try:
+        policy_store.reset_policy_v2(connection)
+    finally:
+        connection.close()
+    shutil.rmtree(
+        os.path.join(_database_path(), MODEL_DIRECTORY_NAME),
+        ignore_errors=True,
+    )
+    invalidate_runtime_cache()
+    return removed
+
+
+def get_upgrade_recommendations(
+    *,
+    top_policies_limit: int = 100,
+    target_examples_per_policy: int = 50,
+) -> list[dict[str, Any]]:
+    """Retrieve and rank bounded, untrained catalog neighbors for each policy."""
+    from services import chroma as chroma_service
+
+    chroma_service._ensure_initialized()
+    collection = chroma_service.collection
+    if collection is None:
+        return []
+    artifacts = _load_active_artifacts()
+    custom_names = _custom_policy_names()
+    existing_photo_ids = {
+        photo_id
+        for artifact in artifacts.values()
+        for policy_ids in artifact.example_photo_ids
+        for photo_id in policy_ids
+    }
+    payloads: list[dict[str, Any]] = []
+    policy_budget = max(0, int(top_policies_limit))
+    for artifact in sorted(artifacts.values(), key=lambda item: item.partition_key):
+        hard_labels = np.argmax(
+            artifact.mixture.training_responsibilities_,
+            axis=1,
+        )
+        for policy_index, policy_id in enumerate(artifact.policy_ids):
+            if len(payloads) >= policy_budget:
+                return payloads
+            current_count = int(np.sum(hard_labels == policy_index))
+            needed_count = max(0, target_examples_per_policy - current_count)
+            neighbors = retrieve_policy_neighbors(
+                collection,
+                artifact.image_anchors[policy_index],
+                existing_photo_ids=existing_photo_ids,
+            )
+            candidates: list[PolicyCandidate] = []
+            identities: dict[str, dict[str, str]] = {}
+            for offset in range(0, len(neighbors), 250):
+                chunk = neighbors[offset : offset + 250]
+                response = collection.get(
+                    ids=[neighbor.photo_id for neighbor in chunk],
+                    include=["metadatas", "embeddings"],
+                )
+                response_ids = response.get("ids") or []
+                response_metadata = response.get("metadatas") or []
+                response_embeddings = response.get("embeddings")
+                if response_embeddings is None:
+                    response_embeddings = []
+                for row_index, photo_id in enumerate(response_ids):
+                    metadata = (
+                        dict(response_metadata[row_index])
+                        if row_index < len(response_metadata)
+                        and response_metadata[row_index]
+                        else {}
+                    )
+                    if hard_partition_key(metadata) != artifact.partition_key:
+                        continue
+                    if is_stitched_panorama(metadata):
+                        continue
+                    embedding = (
+                        response_embeddings[row_index]
+                        if row_index < len(response_embeddings)
+                        else None
+                    )
+                    if embedding is None:
+                        continue
+                    try:
+                        source, feature_names = _source_row(metadata, embedding)
+                    except ValueError:
+                        continue
+                    if feature_names != artifact.feature_names:
+                        continue
+                    assignments = artifact.mixture.assignments(source[np.newaxis, :])
+                    responsibilities = artifact.mixture.source_responsibilities(
+                        source[np.newaxis, :]
+                    )[0]
+                    coverage_gain = artifact.coverage.score_candidate_gain(
+                        source[
+                            np.newaxis,
+                            artifact.mixture.gate_feature_indices_,
+                        ],
+                        responsibilities[np.newaxis, :],
+                        categories=[_categories(metadata)],
+                    )[0, policy_index]
+                    candidates.append(
+                        PolicyCandidate(
+                            photo_id=str(photo_id),
+                            embedding=np.asarray(embedding, dtype=np.float64),
+                            metadata=metadata,
+                            responsibilities=responsibilities,
+                            assignment_entropy=assignments[0].entropy,
+                            coverage_gain=float(coverage_gain),
+                            hard_partition_key=artifact.partition_key,
+                            source_ambiguous=assignments[0].ambiguous,
+                        )
+                    )
+                    identities[str(photo_id)] = {
+                        "lr_uuid": str(
+                            metadata.get("lr_uuid") or metadata.get("uuid") or ""
+                        )
+                    }
+            ranked, diagnostics = rank_policy_candidates(
+                candidates,
+                policy_index=policy_index,
+                target_count=needed_count,
+                existing_embeddings=artifact.example_embeddings[policy_index],
+                hard_partition_key=artifact.partition_key,
+            )
+            payloads.append(
+                build_policy_recommendation_payload(
+                    policy_id=policy_id,
+                    policy_name=custom_names.get(
+                        policy_id,
+                        artifact.policy_names[policy_index],
+                    ),
+                    camera_profile=artifact.camera_profile,
+                    current_count=current_count,
+                    needed_count=needed_count,
+                    ranked_candidates=ranked,
+                    diagnostics=diagnostics,
+                    policy_descriptors=artifact.descriptors[policy_index],
+                    photo_identities=identities,
+                )
+            )
+    return payloads
+
+
+def predict_absolute_edit(
+    *,
+    embedding: Any,
+    metadata: dict[str, Any],
+    current_settings: dict[str, Any] | None,
+    strength: float = 1.0,
+    policy_override: str | None = None,
+) -> PolicyPrediction | None:
+    artifacts = _load_active_artifacts()
+    artifact = artifacts.get(hard_partition_key(metadata))
+    if artifact is None:
+        return None
+    source, feature_names = _source_row(metadata, embedding)
+    if feature_names != artifact.feature_names:
+        logger.warning("Policy feature schema/dimension mismatch during inference")
+        return None
+    assignments = artifact.mixture.assignments(source[np.newaxis, :])
+    assignment = assignments[0]
+    if policy_override in artifact.policy_ids:
+        policy_index = artifact.policy_ids.index(policy_override)
+        confidence = assignment.responsibilities[policy_index]
+        if confidence < 0.40:
+            return None
+    else:
+        if assignment.ambiguous or assignment.policy_index is None:
+            return None
+        policy_index = assignment.policy_index
+        confidence = assignment.confidence
+    predicted = artifact.calibrators[policy_index].predict(
+        source[np.newaxis, :],
+        categories=[_categories(metadata)],
+    )[0]
+    flat_prediction: dict[str, float] = {}
+    for target_index, key in enumerate(artifact.target_keys):
+        lower, upper = artifact.slider_bounds[policy_index][key]
+        flat_prediction[key] = float(np.clip(predicted[target_index], lower, upper))
+    target = unflatten_absolute_target(flat_prediction)
+    absolute_target = AbsoluteTarget(
+        schema_version=TARGET_SCHEMA_VERSION,
+        process_version=str(metadata.get("process_version") or "Version 6"),
+        values=target,
+        modeled_paths=artifact.target_keys,
+    )
+    absolute_target.validate()
+    canonical_current = training_service.normalize_develop_settings_for_style(
+        current_settings or {}
+    )
+    applied = interpolate_absolute_target(
+        canonical_current,
+        absolute_target,
+        strength=strength,
+    )
+    return PolicyPrediction(
+        policy_id=artifact.policy_ids[policy_index],
+        policy_name=_custom_policy_names().get(
+            artifact.policy_ids[policy_index],
+            artifact.policy_names[policy_index],
+        ),
+        confidence=float(confidence),
+        entropy=assignment.entropy,
+        target=target,
+        applied=applied,
+        example_count=len(artifact.example_photo_ids[policy_index]),
+    )
+
+
+def schedule_rebuild() -> None:
+    """Coalesce training mutations into one non-blocking v2 rebuild."""
+    global _rebuild_requested, _rebuild_worker
+    with _rebuild_lock:
+        _rebuild_requested += 1
+        if _rebuild_worker is not None and _rebuild_worker.is_alive():
+            return
+        _rebuild_worker = threading.Thread(
+            target=_rebuild_loop,
+            name="PolicyV2Rebuild",
+            daemon=True,
+        )
+        _rebuild_worker.start()
+
+
+def _rebuild_loop() -> None:
+    global _rebuild_worker
+    while True:
+        with _rebuild_lock:
+            requested = _rebuild_requested
+        try:
+            rebuild_active_generation()
+        except ValueError as exc:
+            logger.info("Policy v2 rebuild deferred: %s", exc)
+        except Exception as exc:
+            logger.error("Policy v2 rebuild failed: %s", exc, exc_info=True)
+        with _rebuild_lock:
+            if requested == _rebuild_requested:
+                _rebuild_worker = None
+                return

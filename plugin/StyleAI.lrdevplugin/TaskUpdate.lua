@@ -8,11 +8,10 @@ Handles the code-only in-place update flow for StyleAI.
 Delegates the actual file operations to the Backend server and the external Updater GUI.
 
 Flow:
-  1. Guard: local backend only
-  2. Fetch and validate the update manifest
-  3. Show a confirmation dialog
-  4. Send update request to backend (triggers the external Updater GUI)
-  5. Inform user to close Lightroom — no public SDK API exists to quit Lightroom.
+  1. Fetch and validate the update manifest
+  2. Show a confirmation dialog
+  3. Send update request to backend (triggers the external Updater GUI)
+  4. Inform user to close Lightroom — no public SDK API exists to quit Lightroom.
 --]]
 
 require("UpdateCheck")
@@ -41,21 +40,7 @@ function TaskUpdate.runUpdate(releaseInfo)
 	end
 
 	LrTasks.startAsyncTask(function()
-		-- Step 1: Guard — automated update only works against a local backend.
-		-- Check this first so remote-backend users see the right message immediately
-		-- without incurring a network download first.
-		if not SearchIndexAPI.isLocalBackend() then
-			LrDialogs.message(
-				LOC("$$$/StyleAI/TaskUpdate/ErrorTitle=Update Error"),
-				LOC(
-					"$$$/StyleAI/TaskUpdate/RemoteBackendError=The automated update is only available for local backends. Please update the backend manually on your remote server and re-install the plugin if necessary."
-				),
-				"critical"
-			)
-			return
-		end
-
-		-- Step 2: Fetch manifest
+		-- Step 1: Fetch manifest
 		local manifest = UpdateCheck.fetchManifest(releaseInfo.manifest_url)
 		if not manifest then
 			LrDialogs.message(

@@ -45,12 +45,9 @@ def _reset_request_scoped_state(monkeypatch):
     monkeypatch.setattr(requests.sessions.Session, "request", reject_network)
 
     import server_lifecycle
-    from services import style_upgrades
 
     server_lifecycle.GLOBAL_CANCEL_EVENT.clear()
     server_lifecycle.GLOBAL_SHUTDOWN_EVENT.clear()
-    style_upgrades.invalidate_upgrade_recommendations_cache()
     yield
     server_lifecycle.GLOBAL_CANCEL_EVENT.clear()
     server_lifecycle.GLOBAL_SHUTDOWN_EVENT.clear()
-    style_upgrades.invalidate_upgrade_recommendations_cache()

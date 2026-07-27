@@ -89,19 +89,17 @@ def recover_catalog_session() -> bool:
             "Recovering catalog after incomplete backend session (state=%s)",
             previous.get("state", "unknown"),
         )
-        from services import style_catalog, style_upgrades
+        from services import policy_runtime, policy_store
 
-        conn = style_catalog._ensure_initialized()
-        integrity = conn.execute("PRAGMA quick_check").fetchone()
-        if not integrity or str(integrity[0]).lower() != "ok":
-            raise RuntimeError("Style catalog integrity check failed")
-        conn.execute(
-            "INSERT OR REPLACE INTO grouping_rule_state "
-            "(rule_key, rule_value, updated_at) "
-            "VALUES ('NEEDS_REDISCOVERY', '1', datetime('now'))"
-        )
-        conn.commit()
-        style_upgrades.invalidate_upgrade_recommendations_cache()
+        conn = policy_store.connect_policy_store(config.DB_PATH)
+        try:
+            integrity = conn.execute("PRAGMA quick_check").fetchone()
+            if not integrity or str(integrity[0]).lower() != "ok":
+                raise RuntimeError("Style catalog integrity check failed")
+            policy_store.recover_incomplete_generations(conn)
+        finally:
+            conn.close()
+        policy_runtime.invalidate_runtime_cache()
 
     _write_session_state("running")
     return needs_recovery
@@ -125,7 +123,7 @@ def _get_open_clip_tokenizer(local_files_only=False):
 
 def _set_last_used():
     global _last_used
-    _last_used = datetime.datetime.utcnow()
+    _last_used = datetime.datetime.now(datetime.UTC)
 
 
 def _needs_unload():
