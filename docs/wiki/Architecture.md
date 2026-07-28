@@ -46,12 +46,11 @@ process bound to that database.
 ### ML editing
 
 1. The backend computes the new photo's source embedding and pixel metrics.
-2. Its exact HDR/profile partition selects a policy artifact.
-3. Calibrated multi-medoid source membership either selects one policy or
-   abstains. Competing policies are never blended.
-4. The policy predicts absolute Lightroom targets and clamps every scalar to
-   bounds learned from that policy's examples.
-5. Application interpolates from the photo's current value to the target:
+2. The engine routes the inference based on catalog size:
+   - **For large catalogs ($\ge 500$ examples)**: The system bypasses global models and uses **KNN Locally Linear Regression**. It queries ChromaDB for the 100 closest visual neighbors, applies burst deduplication and distance gating, and fits a localized Ridge regression model on-the-fly.
+   - **For small catalogs ($< 500$ examples)**: The exact HDR/profile partition selects a global EM policy artifact. Calibrated multi-medoid source membership either selects one policy or abstains. Competing policies are never blended.
+3. The selected engine predicts absolute Lightroom targets and clamps every scalar to bounds learned from the examples.
+4. Application interpolates from the photo's current value to the target:
    `current + strength * (target - current)`. At full strength the result equals
    the target exactly, regardless of prior edits, and repeated application is
    idempotent.
