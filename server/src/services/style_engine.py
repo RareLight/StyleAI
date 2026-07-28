@@ -115,13 +115,30 @@ def generate_style_edit(
             "user_keywords": user_keywords or [],
             "source_provenance": "raw_preview",
         }
-        prediction = policy_runtime.predict_absolute_edit(
-            embedding=clip_embedding,
-            metadata=query_metadata,
-            current_settings=current_settings,
-            strength=style_strength if style_strength is not None else 1.0,
-            policy_override=style_override,
-        )
+        training_count = training_service.get_training_count()
+        if training_count >= 500:
+            from services.knn_regression import predict_knn_local_regression
+            prediction_result = predict_knn_local_regression(
+                query_embedding=clip_embedding,
+                metadata=query_metadata,
+                current_settings=current_settings,
+                strength=style_strength if style_strength is not None else 1.0,
+            )
+            # If KNN returned a result, we just return it immediately.
+            # If it abstained, we let it fall through (it'll go to LLM or return None).
+            if prediction_result is not None:
+                return prediction_result
+            
+            # If KNN abstained, prediction is None to trigger fallbacks below
+            prediction = None
+        else:
+            prediction = policy_runtime.predict_absolute_edit(
+                embedding=clip_embedding,
+                metadata=query_metadata,
+                current_settings=current_settings,
+                strength=style_strength if style_strength is not None else 1.0,
+                policy_override=style_override,
+            )
     except Exception as exc:
         logger.error(
             "Editing-policy inference failed for photo_id=%s: %s",
