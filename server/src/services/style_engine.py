@@ -115,7 +115,7 @@ def generate_style_edit(
             "user_keywords": user_keywords or [],
             "source_provenance": "raw_preview",
         }
-        training_count = training_service.get_training_count()
+        training_count = training_service.get_training_count_for_profile(camera_profile)
         if training_count >= 500:
             from services.knn_regression import predict_knn_local_regression
             prediction_result = predict_knn_local_regression(
