@@ -1431,7 +1431,7 @@ def query_similar_training_examples(
             query_embeddings=[query_embedding],
             n_results=n_results,
             where=where,
-            include=["metadatas", "distances"],
+            include=["metadatas", "distances", "embeddings"],
         )
     except Exception as exc:
         logger.error("query_similar_training_examples failed: %s", exc, exc_info=True)
@@ -1440,6 +1440,7 @@ def query_similar_training_examples(
     ids = (result.get("ids") or [[]])[0]
     metadatas = (result.get("metadatas") or [[]])[0]
     distances = (result.get("distances") or [[]])[0]
+    embeddings = (result.get("embeddings") or [[]])[0]
 
     examples = []
     for i, pid in enumerate(ids):
@@ -1459,6 +1460,8 @@ def query_similar_training_examples(
         examples.append(
             {
                 "photo_id": pid,
+                "embedding": embeddings[i] if i < len(embeddings) else None,
+                "capture_time": float(meta.get("capture_time", 0.0)),
                 "develop_settings": dev_settings,
                 "canonical_settings": canonical_settings,
                 "label": meta.get("label", ""),
