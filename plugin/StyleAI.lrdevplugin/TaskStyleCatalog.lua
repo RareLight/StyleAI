@@ -433,7 +433,7 @@ LrTasks.startAsyncTask(function()
 				-- Title
 				f:row({
 					f:static_text({
-						title = LOC("$$$/StyleAI/StyleCatalog/Title=Signature Styles Index"),
+						title = LOC("$$$/StyleAI/StyleCatalog/Title=Your Learned Styles"),
 						font = "bold",
 						size = "large",
 					}),
@@ -476,20 +476,11 @@ LrTasks.startAsyncTask(function()
 							transform = function(v) return not v end,
 						}),
 					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverAction=Reset & Discover"),
-						action = resetAndDiscoverStyles,
-						width = share("toolbarButton"),
-						enabled = bind({
-							key = "isLoading",
-							transform = function(v) return not v end,
-						}),
-					}),
 				}),
 
 				-- Style list
 				f:group_box({
-					title = LOC("$$$/StyleAI/StyleCatalog/StyleList=Discovered Styles"),
+					title = LOC("$$$/StyleAI/StyleCatalog/StyleList=Learned Styles"),
 					fill_horizontal = 1,
 					fill_vertical = 1,
 					f:column({
@@ -551,6 +542,26 @@ LrTasks.startAsyncTask(function()
 						}),
 					}),
 				}),
+
+				f:group_box({
+					title = LOC("$$$/StyleAI/StyleCatalog/Maintenance=Style Maintenance"),
+					fill_horizontal = 1,
+					f:row({
+						f:static_text({
+							title = LOC("$$$/StyleAI/StyleCatalog/RebuildHelp=Rebuild learned styles from your saved training examples after changing or refreshing training data."),
+							width_in_chars = 55,
+							wrap = true,
+						}),
+						f:push_button({
+							title = LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverAction=Rebuild Styles"),
+							action = resetAndDiscoverStyles,
+							enabled = bind({
+								key = "isLoading",
+								transform = function(v) return not v end,
+							}),
+						}),
+					}),
+				}),
 			})
 		end
 
@@ -559,7 +570,7 @@ LrTasks.startAsyncTask(function()
 
 		-- Show the dialog
 		LrDialogs.presentModalDialog({
-			title = LOC("$$$/StyleAI/StyleCatalog/DialogTitle=Signature Styles Index"),
+			title = LOC("$$$/StyleAI/StyleCatalog/DialogTitle=Your Learned Styles"),
 			contents = buildDialog(),
 			actionVerb = LOC("$$$/StyleAI/common/Close=Close"),
 		})

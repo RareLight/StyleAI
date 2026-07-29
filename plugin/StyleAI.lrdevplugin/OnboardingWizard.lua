@@ -9,6 +9,13 @@ function OnboardingWizard.show(manualTrigger)
 			propertyTable.backendRunning = SearchIndexAPI.pingServer() or false
 			propertyTable.clipReady = SearchIndexAPI.isClipReady() or false
 			propertyTable.clipDownloading = false
+			propertyTable.setupReady = propertyTable.backendRunning == true and propertyTable.clipReady == true
+
+			local function updateSetupState()
+				propertyTable.setupReady = propertyTable.backendRunning == true and propertyTable.clipReady == true
+			end
+			propertyTable:addObserver("backendRunning", updateSetupState)
+			propertyTable:addObserver("clipReady", updateSetupState)
 
 
 			if propertyTable.backendRunning == true and prefs.indexingPerformanceProfile == nil then
@@ -52,7 +59,7 @@ function OnboardingWizard.show(manualTrigger)
 				width = 650,
 
 				f:group_box({
-					title = LOC("$$$/StyleAI/Onboarding/Step1Title=Step 1: Initialize Local ML Server (Required)"),
+					title = LOC("$$$/StyleAI/Onboarding/Step1Title=Start the StyleAI Service (Required)"),
 					fill_horizontal = 1,
 					f:static_text({
 						title = LOC(
@@ -116,7 +123,7 @@ function OnboardingWizard.show(manualTrigger)
 				}),
 
 				f:group_box({
-					title = LOC("$$$/StyleAI/Onboarding/Step2Title=Step 2: Download AI Editing Engine (Required)"),
+					title = LOC("$$$/StyleAI/Onboarding/Step2Title=Install the Vision Model (Required)"),
 					fill_horizontal = 1,
 					f:static_text({
 						title = LOC(
@@ -165,7 +172,7 @@ function OnboardingWizard.show(manualTrigger)
 				}),
 
 				f:group_box({
-					title = LOC("$$$/StyleAI/Onboarding/Step3Title=Step 3: Auto-Tagging & Semantic Search (Optional)"),
+					title = LOC("$$$/StyleAI/Onboarding/Step3Title=Optional: Add Local AI Metadata"),
 					fill_horizontal = 1,
 					f:static_text({
 						title = LOC(
@@ -195,12 +202,18 @@ function OnboardingWizard.show(manualTrigger)
 				}),
 
 				f:group_box({
-					title = LOC("$$$/StyleAI/Onboarding/FinishTitle=All Set!"),
+					title = LOC("$$$/StyleAI/Onboarding/FinishTitle=Next Step"),
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC(
-							"$$$/StyleAI/Onboarding/FinishDesc=Configuration complete. Click OK below. StyleAI is ready to help you manage and edit your Lightroom catalog."
-						),
+						title = bind({
+							key = "setupReady",
+							transform = function(ready)
+								if ready then
+									return LOC("$$$/StyleAI/Onboarding/SetupReady=StyleAI is ready. Index photos next to prepare visual analysis for search, learning, and editing.")
+								end
+								return LOC("$$$/StyleAI/Onboarding/SetupIncomplete=Finish the required items above to enable style learning and editing. You can finish setup later.")
+							end,
+						}),
 						width_in_chars = 60,
 						wrap = true,
 					}),
@@ -210,18 +223,19 @@ function OnboardingWizard.show(manualTrigger)
 			local result = LrDialogs.presentModalDialog({
 				title = LOC("$$$/StyleAI/Onboarding/WizardTitle=StyleAI Setup"),
 				contents = dialogContents,
-				actionVerb = LOC("$$$/StyleAI/common/OK=OK"),
+				actionVerb = LOC("$$$/StyleAI/Onboarding/Done=Done"),
 				cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
-				otherVerb = LOC("$$$/StyleAI/Onboarding/Skip=Skip Setup"),
+				otherVerb = LOC("$$$/StyleAI/Onboarding/Skip=Finish Later"),
 				resizable = false,
 			})
 
 			if result == "ok" or result == "other" then
-				prefs.onboardingCompleted = true
-				if result == "ok" then
+				prefs.onboardingCompleted = result == "ok" and propertyTable.setupReady == true
+				prefs.onboardingDismissed = not prefs.onboardingCompleted
+				if prefs.onboardingCompleted then
 					log:info("Onboarding wizard completed with OK.")
 				else
-					log:info("Onboarding wizard skipped.")
+					log:info("Onboarding wizard dismissed before required setup was complete.")
 				end
 			end
 		end)
