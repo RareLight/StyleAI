@@ -206,13 +206,10 @@ local function showAnalyzeAndIndexDialog(ctx)
         spacing = f:control_spacing(),
         fill_horizontal = 1,
 
-        f:static_text {
-            title = LOC "$$$/StyleAI/AnalyzeAndIndex/Disclaimer=Note: This tool extracts fundamental AI vision metadata (SigLIP2) and is REQUIRED for Semantic Search, Auto-Tagging, and the ML Style Upgrade Assistant.",
-            wrap = true,
-            width_in_chars = 75,
-            height_in_lines = 2,
-            text_color = LrColor(0.1, 0.4, 0.9),
-        },
+        UIFactory.Notice(f, {
+            kind = "info",
+            title = LOC "$$$/StyleAI/AnalyzeAndIndex/Disclaimer=Indexing creates local visual analysis for catalog search and helps StyleAI learn and apply edits faster. Start here to prepare your catalog.",
+        }),
 
         UIFactory.SettingsGroup(f, {
             title = LOC "$$$/StyleAI/AnalyzeAndIndex/ModeLabel=Workflow Mode",
@@ -223,9 +220,9 @@ local function showAnalyzeAndIndexDialog(ctx)
                     value = bind 'indexingMode',
                     tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/IndexingModeTooltip=Selects which AI features to run. Embedding enables semantic search; Metadata generates text tags.",
                     items = {
-                        { title = LOC "$$$/StyleAI/UI/ModeEmbedOnly=AI Search Embedding Only", value = "embed" },
-                        { title = LOC "$$$/StyleAI/UI/ModeMetaOnly=AI Auto-Tagging/Metadata Only", value = "meta" },
-                        { title = LOC "$$$/StyleAI/UI/ModeBoth=Complete Package (Both)", value = "both" },
+                        { title = LOC "$$$/StyleAI/UI/ModeEmbedOnly=Analyze photos for StyleAI", value = "embed" },
+                        { title = LOC "$$$/StyleAI/UI/ModeMetaOnly=Add keywords and descriptions", value = "meta" },
+                        { title = LOC "$$$/StyleAI/UI/ModeBoth=Do both (recommended)", value = "both" },
                     },
                     width = 300,
                 },
@@ -241,7 +238,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                         { title = LOC "$$$/StyleAI/common/ScopeView=Current view",                          value = 'view' },
                         { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeAll=All photos in catalog",         value = 'all' },
                         { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", value = 'missing' },
-                        { title = LOC "Photos already indexed in database", value = 'indexed' },
+                        { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeIndexed=Previously indexed photos", value = 'indexed' },
                     },
                 },
             },
@@ -250,12 +247,11 @@ local function showAnalyzeAndIndexDialog(ctx)
                 f:column {
                     f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/SkipExisting=Resume (Skip photos with existing data)", checked_value = false },
                     f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/RegenerateMetadata=Force Re-index (Overwrite existing AI data)", checked_value = true },
-                    f:static_text {
-                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/ForceReindexWarning=⚠️ Caution: Force Re-index will overwrite all existing tags, titles, captions, and alt text for processed photos.",
+                    UIFactory.Notice(f, {
+                        kind = "warning",
+                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/ForceReindexWarning=Reprocessing replaces the selected StyleAI-generated fields for processed photos.",
                         visible = bind 'regenerateMetadata',
-                        text_color = LrColor(0.85, 0.4, 0),
-                        tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ForceReindexWarningTooltip=Forces re-analysis and completely overwrites existing metadata for selected fields.",
-                    },
+                    }),
                 }
             },
         }),
@@ -276,7 +272,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                 fill_horizontal = 1,
                 
                 UIFactory.SettingsGroup(f, {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks=Search Indexing (SigLIP2)",
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks=Photo Analysis",
                     fill_horizontal = 1,
                     visible = bind {
                         key = "indexingMode",
@@ -332,7 +328,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                     identifier = 'general',
 
                     UIFactory.SettingsGroup(f, {
-                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks=Search Indexing (SigLIP2)",
+                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks=Photo Analysis",
                         fill_horizontal = 1,
                         visible = bind {
                             key = "indexingMode",

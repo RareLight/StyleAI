@@ -46,7 +46,7 @@ local function showTrainDialog(ctx)
 		f:row({
 			f:static_text({
 				title = LOC(
-					"$$$/StyleAI/Training/DialogHint=Hint: StyleAI will analyze your edits and extract the lighting and color grading recipes to build your personalized signature styles."
+					"$$$/StyleAI/Training/DialogHint=StyleAI learns from your edited RAW and DNG photos. Indexed photos can be reused immediately; other photos are analyzed while learning."
 				),
 				font = "italic",
 				wrap = true,
@@ -78,9 +78,9 @@ local function showTrainDialog(ctx)
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/StyleAI/Training/DialogTitle=Learn My Styles"),
+		title = LOC("$$$/StyleAI/Training/DialogTitle=Learn My Editing Style"),
 		contents = contents,
-		actionVerb = LOC("$$$/StyleAI/Training/SaveButton=Learn Styles"),
+		actionVerb = LOC("$$$/StyleAI/Training/SaveButton=Learn My Style"),
 	})
 
 	if result ~= "ok" then

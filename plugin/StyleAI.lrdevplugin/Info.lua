@@ -23,23 +23,23 @@ return {
 
 	LrLibraryMenuItems = {
 		{
-			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuAutoTagger=Step 1: Index Photos"),
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuAutoTagger=Get Started: Index Photos"),
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Training/MenuLearnMyStyles=Step 2: Learn My Styles"),
+			title = LOC("$$$/StyleAI/Training/MenuLearnMyStyles=Learn My Editing Style"),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Info/MenuApplyMyStyleEdits=Step 3: Apply Style Edits"),
+			title = LOC("$$$/StyleAI/Info/MenuApplyMyStyleEdits=Apply My Style"),
 			file = "TaskAiEditPredictive.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=Utility: Styles Index"),
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=Your Learned Styles"),
 			file = "TaskStyleCatalog.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/UpgradeAssistant/MenuDiscoverCandidates=Utility: ML Style Upgrade Assistant"),
+			title = LOC("$$$/StyleAI/UpgradeAssistant/MenuDiscoverCandidates=Find Training Examples"),
 			file = "TaskDiscoverUpgradeCandidates.lua",
 		},
 		{
@@ -50,23 +50,23 @@ return {
 
 	LrExportMenuItems = {
 		{
-			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuAutoTagger=Step 1: Index Photos"),
+			title = LOC("$$$/StyleAI/AnalyzeAndIndex/MenuAutoTagger=Get Started: Index Photos"),
 			file = "TaskAnalyzeAndIndex.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Training/MenuLearnMyStyles=Step 2: Learn My Styles"),
+			title = LOC("$$$/StyleAI/Training/MenuLearnMyStyles=Learn My Editing Style"),
 			file = "TaskTrainFromEdits.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Info/MenuApplyMyStyleEdits=Step 3: Apply Style Edits"),
+			title = LOC("$$$/StyleAI/Info/MenuApplyMyStyleEdits=Apply My Style"),
 			file = "TaskAiEditPredictive.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=Utility: Styles Index"),
+			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=Your Learned Styles"),
 			file = "TaskStyleCatalog.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/UpgradeAssistant/MenuDiscoverCandidates=Utility: ML Style Upgrade Assistant"),
+			title = LOC("$$$/StyleAI/UpgradeAssistant/MenuDiscoverCandidates=Find Training Examples"),
 			file = "TaskDiscoverUpgradeCandidates.lua",
 		},
 	},

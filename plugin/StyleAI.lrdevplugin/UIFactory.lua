@@ -49,6 +49,28 @@ function UIFactory.ProgressDialog(f, props)
     }
 end
 
+--- Creates a compact, text-first status notice. Color reinforces the message;
+--- it never carries the meaning by itself.
+function UIFactory.Notice(f, props)
+    local kind = props.kind or "info"
+    local colors = {
+        info = LrColor(0.1, 0.4, 0.9),
+        warning = LrColor(0.75, 0.42, 0),
+        error = LrColor(0.75, 0.1, 0.1),
+    }
+    return f:row {
+        fill_horizontal = 1,
+        visible = props.visible,
+        f:static_text {
+            title = props.title or "",
+            width_in_chars = props.width_in_chars or 75,
+            height_in_lines = props.height_in_lines or 2,
+            wrap = true,
+            text_color = colors[kind] or colors.info,
+        },
+    }
+end
+
 --- Creates a standardized LLM Selector row
 -- @param f LrViewFactory
 -- @param props table Property table

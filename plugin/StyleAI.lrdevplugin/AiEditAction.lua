@@ -315,11 +315,11 @@ local function getAiEditOptions(ctx, editMode)
 			bind_to_object = props,
 			spacing = f:control_spacing(),
 			f:group_box({
-				title = LOC("$$$/StyleAI/TaskAiEditPhotos/Workflow=Workflow"),
+				title = LOC("$$$/StyleAI/TaskAiEditPhotos/Workflow=Style and safety"),
 				fill_horizontal = 1,
 				f:row({
 					f:static_text({
-						title = LOC("$$$/StyleAI/TaskAiEditPhotos/TrainedStyleStrength=Trained Style Strength:"),
+						title = LOC("$$$/StyleAI/TaskAiEditPhotos/TrainedStyleStrength=Style strength:"),
 						width = share("labelWidth"),
 					}),
 					f:popup_menu({
@@ -330,7 +330,7 @@ local function getAiEditOptions(ctx, editMode)
 				}),
 				f:row({
 					f:checkbox({
-						title = LOC("$$$/StyleAI/TaskAiEditPhotos/DoNotClip=Do not clip (Safe bounds)"),
+						title = LOC("$$$/StyleAI/TaskAiEditPhotos/DoNotClip=Keep edits within safe slider limits"),
 						value = bind("doNotClip"),
 					}),
 				}),
@@ -602,13 +602,13 @@ local function getAiEditOptions(ctx, editMode)
 	})
 
 	local dialogTitle = editMode == "trained"
-		and LOC("$$$/StyleAI/TaskAiEditPhotos/DialogTitleML=ML Edit Photos in Lightroom")
+		and LOC("$$$/StyleAI/TaskAiEditPhotos/DialogTitleML=Apply My Style")
 		or LOC("$$$/StyleAI/TaskAiEditPhotos/DialogTitle=AI Edit Photos in Lightroom")
 
 	local result = LrDialogs.presentModalDialog({
 		title = dialogTitle,
 		contents = contents,
-		actionVerb = LOC("$$$/StyleAI/TaskAiEditPhotos/GenerateEdits=Generate edits"),
+		actionVerb = LOC("$$$/StyleAI/TaskAiEditPhotos/GenerateEdits=Apply edits"),
 	})
 	log:trace("getAiEditOptions: dialog result=" .. tostring(result))
 

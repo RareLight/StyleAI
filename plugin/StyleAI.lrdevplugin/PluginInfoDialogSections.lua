@@ -464,7 +464,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 
 					f:push_button({
-						title = LOC("$$$/StyleAI/Training/WipeAll=🛑 Wipe All Training"),
+						title = LOC("$$$/StyleAI/Training/WipeAll=Delete All Training Data"),
 						action = function(button)
 							local confirm = LrDialogs.confirm(
 								LOC("$$$/StyleAI/Training/WipeConfirmTitle=Wipe All Training Data"),
@@ -491,7 +491,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			-- 4. Advanced Server Settings & Maintenance
 			f:group_box({
 				width = groupBoxWidth,
-				title = LOC("$$$/StyleAI/PluginInfo/AdvancedSettings=Advanced Service Settings & Maintenance"),
+				title = LOC("$$$/StyleAI/PluginInfo/AdvancedSettings=Performance, Maintenance & Diagnostics"),
 				-- dbStoragePath UI removed
 				f:row({
 					fill_horizontal = 1,
@@ -509,7 +509,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfo/ParallelTasks=Backend Parallel Tasks"),
+						title = LOC("$$$/StyleAI/PluginInfo/ParallelTasks=Indexing speed"),
 						width = share("labelWidth"),
 						alignment = "right",
 					}),
