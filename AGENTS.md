@@ -58,6 +58,7 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 | **Format & Lint** | `bash server/scripts/lint_format.sh` (runs ruff check and ruff format) |
 | **Run Backend Tests** | `cd server && uv run pytest test/` |
 | **Evaluate Editing Policies** | `cd server && uv run python scripts/evaluate_editing_policies.py` |
+| **Benchmark Policy Scaling** | `cd server && uv run python scripts/benchmark_policy_scaling.py` |
 | **Start Backend Server** | `cd server && uv run python src/styleai_server.py` |
 | **Plugin Smoke Tests** | Run inside Lightroom via `TaskAutomatedTests.lua` |
 | **Sync Translations** | `python sync_translations.py` (Updates `en`, `de`, `fr` files) |
@@ -122,6 +123,7 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 ### Embedding-first Style Discovery and Recommendations
 - **Do not use taxonomy as the primary gate**: Genre labels, tags, and EXIF are probabilistic priors and review aids. They must not be hard-coded exception ladders that decide visual membership before embeddings are evaluated.
 - **Component membership**: Within hard camera/profile/HDR partitions, represent a style using dense visual/editing components (medoids and calibrated membership distributions), not a single centroid or a global cosine threshold. Reject candidates that are ambiguous between competing styles.
+- **Policy discovery geometry**: Initialize production policy candidates from grouped out-of-fold target residuals so high-dimensional source features cannot dominate editing-policy identity. Fit source recognizability afterward using normalized cosine geometry; never coordinate-standardize dense image embeddings before membership distance calculations.
 - **Recommendation selection**: Retrieve visual neighbors through Chroma, then re-rank by component membership, quality, burst deduplication, and coverage of underrepresented components. Maintain labelled regression fixtures and measure precision/leakage before changing membership logic.
 
 ### Editing-Policy v2 Architecture
@@ -131,6 +133,7 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 - **Model proliferation**: Begin with one broad conditional policy and add experts only when grouped held-out validation, effective support, and stability justify the added complexity. Never create Cartesian subject × lighting style partitions.
 - **Open-vocabulary insights**: Generate policy descriptions only after mathematical policy discovery, from descriptors actually observed in local/user-provided evidence, with provenance retained. Coverage buckets must be learned from visual components and empirical feature/category distributions; do not encode a fixed product genre vocabulary.
 - **Ambiguity and coverage**: Ambiguous source-space membership must abstain rather than blend competing policies. Coverage gain may rank already-admissible candidates, but it must never override membership precision or turn a weak visual match into a recommendation.
-- **Large-scale inference (KNN)**: When the training catalog exceeds 500 examples, bypass the global EM policy mixture and use KNN Locally Linear Regression. Retrieve the top 100 neighbors, enforce sparsity distance gating ($\le 0.15$), apply burst deduplication ($\le 10$s window), and check target variance before fitting an on-the-fly local Ridge model. This prevents the linear capacity limit from underfitting large catalogs.
+- **Large-scale inference**: Never replace the validated global policy solely because a catalog crosses a fixed example count. A policy-restricted local corrector may learn only grouped out-of-fold residuals, remains enabled only after material held-out improvement, uses at most 100 neighbors within cosine distance 0.15, and must abstain on sparse or high-variance neighborhoods. Local correction is applied before the same learned target clamps; abstention falls back to the unchanged global prediction.
+- **Bounded discovery validation**: Repeated estimator and policy-count cross-validation must use a deterministic, burst-group-preserving bounded sample on large partitions. Local residual validation and its artifact bank must also remain bounded. Final global policy/calibration fitting still uses every curated example.
 - **Recommendation order**: Retrieve bounded multi-medoid neighborhoods in one batched Chroma query, exclude existing examples and hard-partition mismatches, apply calibrated membership/entropy admission, deduplicate bursts, then rank by membership, coverage gain, and user quality signals. Never blend competing policy targets or assign one candidate globally before its policy membership is known.
 - **Cohesion scaling**: Exact full cosine matrices are acceptable only for small groups. Large groups must use deterministic blockwise or bounded-neighbor graph construction so memory does not grow as `N²`.

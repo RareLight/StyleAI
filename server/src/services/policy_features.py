@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 
 
-FEATURE_SCHEMA_VERSION = "policy-source-v1"
+FEATURE_SCHEMA_VERSION = "policy-source-v2"
 
 _NUMERIC_METADATA_FEATURES = (
     "exp_luminance_mean",

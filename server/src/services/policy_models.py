@@ -221,6 +221,36 @@ class WeightedPLS:
         )
 
 
+class WeightedTargetMedian:
+    """Robust constant baseline that ignores source features."""
+
+    def fit(
+        self,
+        source_features: np.ndarray,
+        target_values: np.ndarray,
+        *,
+        sample_weight: np.ndarray | None = None,
+    ) -> Self:
+        source, target, weights = _validated_training_arrays(
+            source_features, target_values, sample_weight
+        )
+        del source
+        medians = []
+        for target_index in range(target.shape[1]):
+            order = np.argsort(target[:, target_index], kind="stable")
+            ordered_values = target[order, target_index]
+            cumulative = np.cumsum(weights[order])
+            median_index = int(np.searchsorted(cumulative, cumulative[-1] / 2.0))
+            medians.append(float(ordered_values[median_index]))
+        self.target_median_ = np.asarray(medians, dtype=np.float64)
+        self.parameter_count_ = len(self.target_median_)
+        return self
+
+    def predict(self, source_features: np.ndarray) -> np.ndarray:
+        source = _validated_prediction_array(source_features)
+        return np.repeat(self.target_median_[np.newaxis, :], len(source), axis=0)
+
+
 class WeightedMultiTaskElasticNet:
     """Sparse multi-output linear candidate with weighted row scaling."""
 
@@ -341,6 +371,11 @@ def make_weighted_pls() -> WeightedPLS:
     return WeightedPLS(n_components=6)
 
 
+def make_weighted_target_median() -> WeightedTargetMedian:
+    """Pickle-safe factory for the robust no-condition baseline."""
+    return WeightedTargetMedian()
+
+
 def make_multitask_elastic_net() -> WeightedMultiTaskElasticNet:
     """Pickle-safe factory for the sparse multi-output candidate."""
     return WeightedMultiTaskElasticNet(alpha=0.01, l1_ratio=0.2)
@@ -359,6 +394,7 @@ def make_random_feature_ridge() -> RandomFeatureRidge:
 def default_estimator_factories() -> dict[str, EstimatorFactory]:
     """Return fresh, deterministic candidates for each validation fold."""
     return {
+        "weighted_target_median": make_weighted_target_median,
         "reduced_rank_ridge": make_default_reduced_rank_ridge,
         "weighted_pls": make_weighted_pls,
         "multitask_elastic_net": make_multitask_elastic_net,

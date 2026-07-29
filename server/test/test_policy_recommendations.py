@@ -4,6 +4,7 @@ from services.policy_recommendations import (
     PolicyCandidate,
     build_policy_recommendation_payload,
     rank_policy_candidates,
+    retrieve_policy_neighbor_sets,
     retrieve_policy_neighbors,
 )
 
@@ -70,6 +71,30 @@ def test_partition_reject_and_training_duplicate_are_hard_gates():
 
     assert [item.photo_id for item in selected] == ["valid"]
     assert diagnostics.partition_rejected_count == 1
+    assert diagnostics.duplicate_rejected_count == 1
+
+
+def test_duplicate_gate_accepts_a_normalized_embedding_matrix():
+    existing = np.asarray(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ]
+    )
+    candidates = [
+        _candidate("duplicate", [0.999, 0.01, 0.0]),
+        _candidate("valid", [0.0, 0.0, 1.0]),
+    ]
+
+    selected, diagnostics = rank_policy_candidates(
+        candidates,
+        policy_index=0,
+        target_count=5,
+        existing_embeddings=existing,
+        hard_partition_key="sdr|camera-a|standard",
+    )
+
+    assert [item.photo_id for item in selected] == ["valid"]
     assert diagnostics.duplicate_rejected_count == 1
 
 
@@ -195,6 +220,54 @@ def test_neighbor_retrieval_enforces_global_candidate_bound():
         maximum_candidates=2,
     )
     assert [item.photo_id for item in neighbors] == ["a", "b"]
+
+
+def test_neighbor_retrieval_batches_multiple_policy_anchor_sets_once():
+    class FakeCollection:
+        def __init__(self):
+            self.calls = []
+
+        def count(self):
+            return 20
+
+        def query(self, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "ids": [
+                    ["shared", "policy-a"],
+                    ["shared", "policy-b"],
+                    ["policy-c"],
+                ],
+                "metadatas": [
+                    [{}, {}],
+                    [{}, {}],
+                    [{}],
+                ],
+                "distances": [
+                    [0.20, 0.10],
+                    [0.05, 0.15],
+                    [0.08],
+                ],
+            }
+
+    collection = FakeCollection()
+    neighbor_sets = retrieve_policy_neighbor_sets(
+        collection,
+        [
+            [np.asarray([1.0, 0.0]), np.asarray([0.9, 0.1])],
+            [np.asarray([0.0, 1.0])],
+        ],
+    )
+
+    assert len(collection.calls) == 1
+    assert len(collection.calls[0]["query_embeddings"]) == 3
+    assert [item.photo_id for item in neighbor_sets[0]] == [
+        "shared",
+        "policy-a",
+        "policy-b",
+    ]
+    assert neighbor_sets[0][0].anchor_hits == 2
+    assert [item.photo_id for item in neighbor_sets[1]] == ["policy-c"]
 
 
 def test_v2_payload_preserves_lightroom_compatibility_and_diagnostics():

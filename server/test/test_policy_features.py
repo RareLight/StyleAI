@@ -5,6 +5,7 @@ from services.policy_features import (
     FEATURE_SCHEMA_VERSION,
     build_source_feature_vector,
 )
+from services.policy_runtime import _source_row
 
 
 def test_source_features_are_deterministic_and_embedding_is_normalized():
@@ -43,6 +44,14 @@ def test_missing_features_have_explicit_availability_mask():
     assert features.values[luminance_index] == 0.0
     assert features.availability[luminance_index] is False
     assert features.categories["camera_model"] == "unknown"
+
+
+def test_runtime_features_do_not_duplicate_embedding_availability_flags():
+    values, names = _source_row({}, [1.0, 0.0, 0.0])
+
+    assert len(values) == len(names)
+    assert not any(name.startswith("available:image_embedding_") for name in names)
+    assert "available:exp_luminance_mean" in names
 
 
 def test_non_finite_embedding_is_rejected():

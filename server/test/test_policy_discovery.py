@@ -71,9 +71,11 @@ def test_source_gate_returns_confident_supported_assignments():
     assert all(0.0 <= item.entropy <= 1.0 for item in assignments)
 
 
-def test_single_policy_gate_rejects_absolute_source_outlier():
+def test_single_policy_gate_rejects_unsupported_embedding_direction():
     rng = np.random.default_rng(12)
-    source = rng.normal(scale=0.2, size=(60, 6))
+    source = rng.normal(scale=0.02, size=(60, 6))
+    source[:, 0] += 1.0
+    source /= np.linalg.norm(source, axis=1, keepdims=True)
     target = source[:, :2] + 0.1
     model = PolicyMixture(
         n_policies=1,
@@ -82,8 +84,25 @@ def test_single_policy_gate_rejects_absolute_source_outlier():
     ).fit(source, target)
 
     assert not model.assignments(source[:1])[0].ambiguous
-    outlier = np.full((1, source.shape[1]), 25.0)
+    outlier = np.asarray([[-1.0, 0.0, 0.0, 0.0, 0.0, 0.0]])
     assert model.assignments(outlier)[0].ambiguous
+
+
+def test_source_gate_preserves_cosine_geometry():
+    rng = np.random.default_rng(91)
+    source = rng.normal(size=(80, 12))
+    source /= np.linalg.norm(source, axis=1, keepdims=True)
+    target = source[:, :2]
+    model = PolicyMixture(
+        n_policies=1,
+        expert_factory=lambda: ReducedRankRidge(alpha=0.1, rank=2),
+        minimum_effective_samples=8,
+    ).fit(source, target)
+
+    original = model.source_gate_distances(source[:1])
+    scaled = model.source_gate_distances(source[:1] * 50.0)
+
+    np.testing.assert_allclose(original, scaled, atol=1e-10)
 
 
 def test_single_policy_fits_its_expert_once():

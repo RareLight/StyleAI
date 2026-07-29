@@ -108,8 +108,9 @@ LrTasks.startAsyncTask(function()
 				or LOC("$$$/StyleAI/UpgradeAssistant/PolicyCuesPending=Learned visual/editing policy")
 			
 			local current = tonumber(s.current_count) or 0
-			local tierName = s.training_status
-				or LOC("$$$/StyleAI/UpgradeAssistant/PolicyModelStatus=Conditional editing policy")
+			local tierName = s.local_correction_enabled and
+				LOC("$$$/StyleAI/UpgradeAssistant/ValidatedLocalPolicy=Global + validated local refinement") or
+				LOC("$$$/StyleAI/UpgradeAssistant/GlobalPolicy=Global conditional policy")
 			props.detailTier = string.format("%s (%d examples)", tierName, current)
 
 			props.detailRecommendedIds = s.recommended_photo_ids or {}
@@ -161,14 +162,9 @@ LrTasks.startAsyncTask(function()
 				local profile = s.camera_profile or "Default"
 				if filter == "All Profiles" or profile == filter then
 					local count = tonumber(s.current_count) or 0
-					local badge = "🔴 Undertrained"
-					if count >= 50 then
-						badge = "🌟 ML Predictive (Best)"
-					elseif count >= 15 then
-						badge = "⭐️ ML Predictive (Good)"
-					elseif count >= 3 then
-						badge = "🟡 Basic"
-					end
+					local badge = s.local_correction_enabled and
+						LOC("$$$/StyleAI/UpgradeAssistant/ValidatedLocalBadge=Validated local refinement") or
+						LOC("$$$/StyleAI/UpgradeAssistant/GlobalPolicyBadge=Global conditional policy")
 					local recCount = #(s.recommended_photo_ids or {})
 					local name = s.style_name or s.policy_name or "Unknown"
 					local label = string.format("%s • %s • %d (+%d recs) • %s", profile, name, count, recCount, badge)

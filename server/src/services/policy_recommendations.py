@@ -72,6 +72,8 @@ def build_policy_recommendation_payload(
     policy_descriptors: list[dict[str, Any]] | None = None,
     photo_identities: dict[str, dict[str, str]] | None = None,
     training_status: str = "Conditional editing policy",
+    estimator_name: str | None = None,
+    local_correction_enabled: bool = False,
 ) -> dict[str, Any]:
     """Build the stable backend-to-Lightroom v2 recommendation contract."""
     identities = photo_identities or {}
@@ -107,6 +109,8 @@ def build_policy_recommendation_payload(
         "current_count": int(current_count),
         "needed_count": max(0, int(needed_count)),
         "training_status": training_status,
+        "estimator_name": estimator_name or "",
+        "local_correction_enabled": bool(local_correction_enabled),
         "target_summary": (
             f"Additional examples requested: {max(0, int(needed_count))}"
         ),
@@ -135,13 +139,40 @@ def retrieve_policy_neighbors(
     maximum_candidates: int = 1200,
 ) -> list[RetrievedPolicyNeighbor]:
     """Retrieve bounded multi-medoid neighborhoods in one Chroma query."""
+    return retrieve_policy_neighbor_sets(
+        collection,
+        [anchor_embeddings],
+        existing_photo_ids=existing_photo_ids,
+        results_per_anchor=results_per_anchor,
+        maximum_anchors=maximum_anchors,
+        maximum_candidates=maximum_candidates,
+    )[0]
+
+
+def retrieve_policy_neighbor_sets(
+    collection: Any,
+    policy_anchor_embeddings: list[list[np.ndarray]],
+    *,
+    existing_photo_ids: set[str] | None = None,
+    results_per_anchor: int = 300,
+    maximum_anchors: int = 6,
+    maximum_candidates: int = 1200,
+) -> list[list[RetrievedPolicyNeighbor]]:
+    """Retrieve all policy neighborhoods through one bounded Chroma query."""
     if results_per_anchor <= 0 or maximum_anchors <= 0 or maximum_candidates <= 0:
         raise ValueError("retrieval limits must be positive")
-    if collection is None or not anchor_embeddings:
+    if not policy_anchor_embeddings:
         return []
-    anchors = [
-        _normalized_embedding(value) for value in anchor_embeddings[:maximum_anchors]
-    ]
+    if collection is None:
+        return [[] for _ in policy_anchor_embeddings]
+    anchors: list[np.ndarray] = []
+    anchor_policy_indices: list[int] = []
+    for policy_index, policy_anchors in enumerate(policy_anchor_embeddings):
+        for value in policy_anchors[:maximum_anchors]:
+            anchors.append(_normalized_embedding(value))
+            anchor_policy_indices.append(policy_index)
+    if not anchors:
+        return [[] for _ in policy_anchor_embeddings]
     dimensions = {len(value) for value in anchors}
     if len(dimensions) != 1:
         raise ValueError("all retrieval anchors must have the same dimension")
@@ -152,7 +183,7 @@ def retrieve_policy_neighbors(
         else results_per_anchor
     )
     if bounded_results <= 0:
-        return []
+        return [[] for _ in policy_anchor_embeddings]
     response = collection.query(
         query_embeddings=[value.tolist() for value in anchors],
         n_results=bounded_results,
@@ -162,8 +193,13 @@ def retrieve_policy_neighbors(
     nested_metadata = response.get("metadatas") or []
     nested_distances = response.get("distances") or []
     existing = existing_photo_ids or set()
-    merged: dict[str, tuple[dict[str, Any], float, int]] = {}
+    merged_by_policy: list[dict[str, tuple[dict[str, Any], float, int]]] = [
+        {} for _ in policy_anchor_embeddings
+    ]
     for anchor_index, ids in enumerate(nested_ids):
+        if anchor_index >= len(anchor_policy_indices):
+            break
+        merged = merged_by_policy[anchor_policy_indices[anchor_index]]
         metadata_rows = (
             nested_metadata[anchor_index] if anchor_index < len(nested_metadata) else []
         )
@@ -195,23 +231,26 @@ def retrieve_policy_neighbors(
                     min(previous[1], distance),
                     previous[2] + 1,
                 )
-    ranked = sorted(
-        (
-            RetrievedPolicyNeighbor(
-                photo_id=photo_id,
-                metadata=values[0],
-                cosine_distance=values[1],
-                anchor_hits=values[2],
-            )
-            for photo_id, values in merged.items()
-        ),
-        key=lambda item: (
-            item.cosine_distance,
-            -item.anchor_hits,
-            item.photo_id,
-        ),
-    )
-    return ranked[:maximum_candidates]
+    result = []
+    for merged in merged_by_policy:
+        ranked = sorted(
+            (
+                RetrievedPolicyNeighbor(
+                    photo_id=photo_id,
+                    metadata=values[0],
+                    cosine_distance=values[1],
+                    anchor_hits=values[2],
+                )
+                for photo_id, values in merged.items()
+            ),
+            key=lambda item: (
+                item.cosine_distance,
+                -item.anchor_hits,
+                item.photo_id,
+            ),
+        )
+        result.append(ranked[:maximum_candidates])
+    return result
 
 
 def _normalized_embedding(value: np.ndarray) -> np.ndarray:
@@ -222,6 +261,54 @@ def _normalized_embedding(value: np.ndarray) -> np.ndarray:
     if norm <= 0:
         raise ValueError("candidate embedding must have positive norm")
     return embedding / norm
+
+
+def _normalized_embedding_matrix(
+    values: list[np.ndarray] | np.ndarray | None,
+) -> np.ndarray:
+    if values is None:
+        return np.empty((0, 0), dtype=np.float32)
+    # This matrix is used only for cosine duplicate screening. Float32 retains
+    # ample precision while halving the largest recommendation artifact and
+    # its matrix-multiply bandwidth on unified-memory Macs.
+    matrix = np.asarray(values, dtype=np.float32)
+    if matrix.size == 0:
+        return np.empty((0, 0), dtype=np.float32)
+    if matrix.ndim != 2 or not np.all(np.isfinite(matrix)):
+        raise ValueError("existing embeddings must be a finite 2D matrix")
+    norms = np.linalg.norm(matrix, axis=1)
+    if np.any(norms <= 0):
+        raise ValueError("existing embeddings must have positive norms")
+    if np.allclose(norms, 1.0, rtol=1e-7, atol=1e-9):
+        return matrix
+    return matrix / norms[:, np.newaxis]
+
+
+def _duplicate_mask(
+    existing: np.ndarray,
+    candidates: list[np.ndarray],
+    *,
+    maximum_cosine_distance: float,
+    maximum_working_bytes: int = 16 * 1024 * 1024,
+) -> np.ndarray:
+    if not candidates:
+        return np.zeros(0, dtype=bool)
+    if not len(existing):
+        return np.zeros(len(candidates), dtype=bool)
+    # Bound the temporary existing_count × block_size similarity matrix while
+    # still feeding matrix batches to Accelerate/BLAS on Apple Silicon.
+    bytes_per_column = max(1, len(existing) * existing.dtype.itemsize)
+    block_size = max(1, min(128, maximum_working_bytes // bytes_per_column))
+    result = np.zeros(len(candidates), dtype=bool)
+    threshold = 1.0 - maximum_cosine_distance
+    for offset in range(0, len(candidates), block_size):
+        block = np.asarray(
+            candidates[offset : offset + block_size],
+            dtype=existing.dtype,
+        )
+        maximum_similarity = np.max(existing @ block.T, axis=0)
+        result[offset : offset + len(block)] = maximum_similarity >= threshold
+    return result
 
 
 def _capture_time(metadata: dict[str, Any]) -> float | None:
@@ -300,7 +387,7 @@ def rank_policy_candidates(
     *,
     policy_index: int,
     target_count: int,
-    existing_embeddings: list[np.ndarray] | None = None,
+    existing_embeddings: list[np.ndarray] | np.ndarray | None = None,
     hard_partition_key: str = "default",
     minimum_confidence: float = 0.60,
     minimum_margin: float = 0.15,
@@ -317,17 +404,10 @@ def rank_policy_candidates(
     """
     if target_count < 0:
         raise ValueError("target_count must be non-negative")
-    normalized_existing = [
-        _normalized_embedding(value) for value in (existing_embeddings or [])
-    ]
-    existing_matrix = (
-        np.stack(normalized_existing)
-        if normalized_existing
-        else np.empty((0, 0), dtype=np.float64)
-    )
-    admitted: list[tuple[PolicyCandidate, np.ndarray, float, float, float]] = []
+    existing_matrix = _normalized_embedding_matrix(existing_embeddings)
+    preduplicate: list[tuple[PolicyCandidate, np.ndarray, float, float, float]] = []
     embedding_dimension: int | None = (
-        len(normalized_existing[0]) if normalized_existing else None
+        existing_matrix.shape[1] if len(existing_matrix) else None
     )
     counts = {
         "ambiguous": 0,
@@ -372,16 +452,11 @@ def rank_policy_candidates(
         if pick_status == -1:
             counts["quality"] += 1
             continue
-        if len(existing_matrix):
-            maximum_similarity = float(np.max(existing_matrix @ embedding))
-            if 1.0 - maximum_similarity <= duplicate_cosine_distance:
-                counts["duplicate"] += 1
-                continue
         coverage_gain = float(candidate.coverage_gain)
         if not math.isfinite(coverage_gain):
             raise ValueError("candidate coverage gain must be finite")
         coverage_gain = min(1.0, max(0.0, coverage_gain))
-        admitted.append(
+        preduplicate.append(
             (
                 candidate,
                 embedding,
@@ -390,6 +465,16 @@ def rank_policy_candidates(
                 _quality_score(candidate.metadata),
             )
         )
+
+    duplicate_mask = _duplicate_mask(
+        existing_matrix,
+        [item[1] for item in preduplicate],
+        maximum_cosine_distance=duplicate_cosine_distance,
+    )
+    admitted = [
+        item for index, item in enumerate(preduplicate) if not duplicate_mask[index]
+    ]
+    counts["duplicate"] = int(np.sum(duplicate_mask))
 
     # Burst representatives are chosen before ranking, using deterministic
     # union-find so input ordering cannot change cluster membership.

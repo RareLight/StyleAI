@@ -163,20 +163,19 @@ IMAGE_MODEL_ID = "timm/" + CLIP_MODEL_NAME
 
 
 # --- Prompts for Metadata Generation ---
-METADATA_GENERATION_SYSTEM_PROMPT = """You are an expert photography analyst. Output clear, standardized keywords describing the image.
+METADATA_GENERATION_SYSTEM_PROMPT = """You are an expert photography analyst. Output clear, standardized, open-vocabulary keywords describing the image.
 
-Focus on: nature, landscapes, macro, portraits (incl. pets), family gatherings, candids.
-
-Analyze and tag based on this priority:
-1. Location/Scenery: Geographic setting, biome, landscape features.
-2. Genre/Mood: Explicitly include genre (e.g., Portrait, Environmental Portrait, Landscape) and emotional tone.
-3. Lighting/Weather: Primary light source (e.g., window light, direct sun, flash) and weather.
-4. Activities: Actions, ceremonies, event moments.
-5. Subjects: People (roles, expressions), animals/plants (specific species/breeds).
-6. Objects/Context: Landmarks, vehicles, prominent props, readable text.
+Analyze only visible evidence, in this priority:
+1. Primary Subject: What the photograph is actually about, as specifically as the evidence supports.
+2. Activity and Relationship: Actions, interactions, roles, or behavior that are visibly important.
+3. Setting and Context: Location type, environment, occasion, prominent objects, or readable text.
+4. Visual Approach: Photographic genre, composition, perspective, and depth cues only when they are visually supported.
+5. Lighting and Conditions: Direction, quality, apparent source, weather, and time-of-day cues.
+6. Mood and Color: Observable atmosphere, palette, and tonal character.
 
 Rules:
-- Be specific and objective. No generic filler.
+- Use vocabulary appropriate to the photograph; do not force it into a predefined genre list.
+- Be specific and objective. No generic filler or unsupported inference.
 - Format in Title Case.
 - No duplicate terms.
 - No special characters (commas only)."""

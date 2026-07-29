@@ -6,9 +6,11 @@ import pytest
 import config
 from services import policy_runtime
 from services.policy_evaluation import make_synthetic_policy_dataset
+from services.policy_local import LocalResidualCorrector
+from services.policy_targets import flatten_absolute_target
 
 
-def _examples(count=12):
+def _examples(count=12, *, camera_profile="Adobe Color", photo_prefix="photo"):
     rows = []
     for index in range(count):
         angle = 0.12 * index
@@ -19,10 +21,10 @@ def _examples(count=12):
         embedding /= np.linalg.norm(embedding)
         rows.append(
             {
-                "photo_id": f"photo-{index:03d}",
+                "photo_id": f"{photo_prefix}-{index:03d}",
                 "embedding": embedding.tolist(),
                 "metadata": {
-                    "camera_profile": "Adobe Color",
+                    "camera_profile": camera_profile,
                     "camera_make": "Example",
                     "camera_model": "Camera",
                     "lens": "Prime",
@@ -74,6 +76,7 @@ def test_generation_round_trip_and_absolute_inference(policy_database, monkeypat
     assert policies[0]["recommendation_version"] == "policy-v2"
     artifact = next(iter(policy_runtime._load_active_artifacts().values()))
     assert artifact.estimator_name in {
+        "weighted_target_median",
         "reduced_rank_ridge",
         "weighted_pls",
         "multitask_elastic_net",
@@ -82,6 +85,14 @@ def test_generation_round_trip_and_absolute_inference(policy_database, monkeypat
         artifact.validation["estimator_selection"]["selected_estimator"]
         == artifact.estimator_name
     )
+    assert len(artifact.local_correctors) == len(artifact.policy_ids)
+    assert len(artifact.validation["local_residual_correction"]) == len(
+        artifact.policy_ids
+    )
+    assert artifact.example_embeddings[0].dtype == np.float32
+    assert policies[0]["estimator_name"] == artifact.estimator_name
+    assert policies[0]["local_correction_enabled"] is False
+    assert policies[0]["training_status"] == "Global conditional policy"
     assert all(
         name.startswith("image_embedding_") for name in artifact.coverage.feature_names_
     )
@@ -92,6 +103,41 @@ def test_generation_round_trip_and_absolute_inference(policy_database, monkeypat
     policy_runtime.invalidate_runtime_cache()
     reloaded = policy_runtime.list_active_policies()
     assert reloaded == policies
+
+
+def test_inference_does_not_cross_camera_profile_partitions(
+    policy_database, monkeypatch
+):
+    examples = [
+        *_examples(camera_profile="Adobe Color", photo_prefix="color"),
+        *_examples(camera_profile="Camera Standard", photo_prefix="standard"),
+    ]
+    monkeypatch.setattr(
+        policy_runtime.training_service,
+        "list_training_examples_with_embeddings",
+        lambda: examples,
+    )
+    policy_runtime.rebuild_active_generation(seed=9)
+    artifacts = policy_runtime._load_active_artifacts()
+    color_artifact = artifacts["sdr|adobe color"]
+
+    assert (
+        policy_runtime.predict_absolute_edit(
+            embedding=examples[0]["embedding"],
+            metadata={**examples[0]["metadata"], "camera_profile": "Untrained Profile"},
+            current_settings={},
+        )
+        is None
+    )
+    assert (
+        policy_runtime.predict_absolute_edit(
+            embedding=examples[-1]["embedding"],
+            metadata=examples[-1]["metadata"],
+            current_settings={},
+            policy_override=color_artifact.policy_ids[0],
+        )
+        is None
+    )
 
 
 def test_successive_rebuilds_bound_generation_and_example_history(
@@ -169,6 +215,156 @@ def test_partition_estimator_skips_elastic_net_for_wide_embedding_features():
     assert name != "multitask_elastic_net"
     assert "multitask_elastic_net" not in validation["candidates"]
     assert "multitask_elastic_net" in validation["skipped_estimators"]
+
+
+def test_policy_initialization_uses_cross_fitted_target_residuals():
+    dataset = make_synthetic_policy_dataset(
+        seed=61,
+        n_examples=240,
+        n_source_features=48,
+        n_targets=6,
+        n_policies=2,
+    )
+
+    labels = policy_runtime._cross_fitted_residual_labels(
+        dataset.source_features,
+        dataset.target_values,
+        dataset.burst_group_ids,
+        np.ones(len(dataset.source_features)),
+        n_policies=2,
+        expert_factory=policy_runtime.default_estimator_factories()[
+            "reduced_rank_ridge"
+        ],
+        seed=17,
+    )
+    repeated = policy_runtime._cross_fitted_residual_labels(
+        dataset.source_features,
+        dataset.target_values,
+        dataset.burst_group_ids,
+        np.ones(len(dataset.source_features)),
+        n_policies=2,
+        expert_factory=policy_runtime.default_estimator_factories()[
+            "reduced_rank_ridge"
+        ],
+        seed=17,
+    )
+
+    np.testing.assert_array_equal(labels, repeated)
+    assert set(labels) == {0, 1}
+
+
+def test_discovery_validation_sample_is_bounded_group_safe_and_deterministic():
+    groups = np.asarray([f"group-{index // 2}" for index in range(1600)])
+
+    first = policy_runtime._bounded_group_sample(groups, maximum=601)
+    second = policy_runtime._bounded_group_sample(groups, maximum=601)
+
+    np.testing.assert_array_equal(first, second)
+    assert len(first) <= 601
+    selected = set(int(index) for index in first)
+    for index in first:
+        paired = int(index) + 1 if int(index) % 2 == 0 else int(index) - 1
+        assert paired in selected
+
+
+def test_validated_local_correction_is_applied_before_target_clamping(
+    policy_database,
+    monkeypatch,
+):
+    examples = _examples()
+    monkeypatch.setattr(
+        policy_runtime.training_service,
+        "list_training_examples_with_embeddings",
+        lambda: examples,
+    )
+    policy_runtime.rebuild_active_generation(seed=9)
+    artifact = next(iter(policy_runtime._load_active_artifacts().values()))
+    embeddings = np.stack(
+        [np.asarray(example["embedding"], dtype=np.float64) for example in examples]
+    )
+    target_count = len(artifact.target_keys)
+    artifact.local_correctors[0] = LocalResidualCorrector(
+        embeddings=embeddings,
+        residuals=np.full((len(embeddings), target_count), 1e6),
+        groups=np.asarray([f"group-{index}" for index in range(len(embeddings))]),
+        photo_ids=np.asarray([example["photo_id"] for example in examples]),
+        sample_weight=np.ones(len(embeddings)),
+        target_scales=np.ones(target_count),
+        minimum_neighbors=1,
+    )
+
+    prediction = policy_runtime.predict_absolute_edit(
+        embedding=examples[4]["embedding"],
+        metadata=examples[4]["metadata"],
+        current_settings={},
+    )
+
+    assert prediction is not None
+    flattened = flatten_absolute_target(prediction.target)
+    for key in artifact.target_keys:
+        assert flattened[key] == pytest.approx(artifact.slider_bounds[0][key][1])
+
+
+def test_upgrade_recommendations_batch_candidate_assignment(
+    policy_database,
+    monkeypatch,
+):
+    examples = _examples()
+    monkeypatch.setattr(
+        policy_runtime.training_service,
+        "list_training_examples_with_embeddings",
+        lambda: examples,
+    )
+    policy_runtime.rebuild_active_generation(seed=9)
+    artifact = next(iter(policy_runtime._load_active_artifacts().values()))
+    assignment_batch_sizes = []
+    original_assignments = artifact.mixture.assignments
+
+    def tracked_assignments(source):
+        assignment_batch_sizes.append(len(source))
+        return original_assignments(source)
+
+    monkeypatch.setattr(artifact.mixture, "assignments", tracked_assignments)
+
+    class FakeCollection:
+        def __init__(self):
+            self.query_count = 0
+            self.get_count = 0
+
+        def count(self):
+            return 100
+
+        def query(self, **_kwargs):
+            self.query_count += 1
+            return {
+                "ids": [["candidate-a", "candidate-b"]],
+                "metadatas": [[{}, {}]],
+                "distances": [[0.01, 0.02]],
+            }
+
+        def get(self, **_kwargs):
+            self.get_count += 1
+            return {
+                "ids": ["candidate-a", "candidate-b"],
+                "metadatas": [examples[3]["metadata"], examples[7]["metadata"]],
+                "embeddings": [
+                    examples[3]["embedding"],
+                    examples[7]["embedding"],
+                ],
+            }
+
+    from services import chroma as chroma_service
+
+    collection = FakeCollection()
+    monkeypatch.setattr(chroma_service, "_ensure_initialized", lambda: None)
+    monkeypatch.setattr(chroma_service, "collection", collection)
+
+    payloads = policy_runtime.get_upgrade_recommendations()
+
+    assert payloads
+    assert collection.query_count == 1
+    assert collection.get_count == 1
+    assert assignment_batch_sizes == [2]
 
 
 def test_failed_candidate_preserves_active_generation(policy_database, monkeypatch):
