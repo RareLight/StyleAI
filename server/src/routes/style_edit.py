@@ -126,10 +126,12 @@ def _run_single_style_edit(
         do_not_clip=options.get("do_not_clip", True),
     )
 
-    # LLM fallback when style engine couldn't produce a confident result but has some matches
+    # An explicitly enabled local-LLM fallback also covers safe ML abstentions.
     if (
-        result.engine != "none" and result.confidence < CONFIDENCE_LOW
-    ) and use_llm_fallback:
+        result.engine != "error"
+        and result.confidence < CONFIDENCE_LOW
+        and use_llm_fallback
+    ):
         logger.info(
             "Style engine confidence %.3f below threshold for photo_id=%s, falling back to LLM",
             result.confidence,
@@ -140,7 +142,9 @@ def _run_single_style_edit(
 
         if clip_embedding is not None:
             training_examples = training_service.query_similar_training_examples(
-                clip_embedding, n_results=3
+                clip_embedding,
+                n_results=3,
+                camera_profile=camera_profile,
             )
         else:
             training_examples = []

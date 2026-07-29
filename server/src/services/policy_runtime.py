@@ -16,6 +16,7 @@ from uuid import uuid4
 
 import joblib
 import numpy as np
+from sklearn.cluster import KMeans
 from sklearn.model_selection import GroupKFold
 
 import config
@@ -33,13 +34,14 @@ from .policy_insights import (
     PolicyCoverageDiagnostics,
     discover_open_vocabulary_descriptors,
 )
+from .policy_local import LocalResidualCorrector
 from .policy_models import EstimatorFactory, default_estimator_factories
 from .photo_constraints import is_stitched_panorama
 from .policy_recommendations import (
     PolicyCandidate,
     build_policy_recommendation_payload,
     rank_policy_candidates,
-    retrieve_policy_neighbors,
+    retrieve_policy_neighbor_sets,
 )
 from .policy_targets import (
     TARGET_SCHEMA_VERSION,
@@ -51,7 +53,7 @@ from .policy_targets import (
 )
 
 
-POLICY_ALGORITHM_VERSION = "editing-policy-v2.2"
+POLICY_ALGORITHM_VERSION = "editing-policy-v2.4"
 MIN_PARTITION_EXAMPLES = 12
 MAX_POLICIES_PER_PARTITION = 4
 # Policy-count validation is a guard against unnecessary expert proliferation,
@@ -59,6 +61,8 @@ MAX_POLICIES_PER_PARTITION = 4
 # weak extra components and avoids multiplying full model fits on every fold.
 MAX_CV_MIXTURE_ITERATIONS = 6
 MAX_FINAL_MIXTURE_ITERATIONS = 12
+MAX_DISCOVERY_VALIDATION_EXAMPLES = 600
+MAX_LOCAL_VALIDATION_EXAMPLES = 2048
 # Coordinate-descent Elastic Net is not a viable production candidate when a
 # small Lightroom partition is paired with the full SigLIP feature vector.  In
 # that p >> n regime it is both poorly conditioned and dramatically slower than
@@ -99,11 +103,12 @@ class PartitionPolicyArtifact:
     policy_names: tuple[str, ...]
     mixture: PolicyMixture
     calibrators: list[HierarchicalPolicyRegressor]
+    local_correctors: list[LocalResidualCorrector | None]
     slider_bounds: list[dict[str, tuple[float, float]]]
     coverage: PolicyCoverageDiagnostics
     descriptors: list[list[dict[str, Any]]]
     image_anchors: list[list[np.ndarray]]
-    example_embeddings: list[list[np.ndarray]]
+    example_embeddings: list[np.ndarray]
     example_photo_ids: list[list[str]]
     example_count: int
     estimator_name: str
@@ -186,13 +191,21 @@ def _source_row(
         image_embedding=embedding,
         source_provenance=str(metadata.get("source_provenance") or "raw_preview"),
     )
+    optional_availability = tuple(
+        (name, available)
+        for name, available in zip(vector.names, vector.availability, strict=True)
+        if not name.startswith(("image_embedding_", "semantic_embedding_"))
+    )
     values = np.asarray(
-        (*vector.values, *(1.0 if item else 0.0 for item in vector.availability)),
+        (
+            *vector.values,
+            *(1.0 if available else 0.0 for _, available in optional_availability),
+        ),
         dtype=np.float64,
     )
     names = (
         *vector.names,
-        *(f"available:{name}" for name in vector.names),
+        *(f"available:{name}" for name, _ in optional_availability),
     )
     return values, tuple(names)
 
@@ -341,6 +354,36 @@ def _policy_mixture(
     )
 
 
+def _bounded_group_sample(
+    groups: np.ndarray,
+    *,
+    maximum: int = MAX_DISCOVERY_VALIDATION_EXAMPLES,
+) -> np.ndarray:
+    """Deterministically cap repeated validation without splitting groups."""
+    group_array = np.asarray(groups).reshape(-1)
+    if len(group_array) <= maximum:
+        return np.arange(len(group_array), dtype=np.int64)
+    grouped: dict[str, list[int]] = {}
+    for index, group in enumerate(group_array):
+        grouped.setdefault(str(group), []).append(index)
+    ranked_groups = sorted(
+        grouped,
+        key=lambda group: (
+            hashlib.sha256(group.encode("utf-8")).digest(),
+            group,
+        ),
+    )
+    selected: list[int] = []
+    for group in ranked_groups:
+        indices = grouped[group]
+        if selected and len(selected) + len(indices) > maximum:
+            continue
+        selected.extend(indices)
+        if len(selected) >= maximum:
+            break
+    return np.asarray(sorted(selected), dtype=np.int64)
+
+
 def _cross_validated_estimator(
     source: np.ndarray,
     targets: np.ndarray,
@@ -353,6 +396,12 @@ def _cross_validated_estimator(
     intentionally excluded here: small Lightroom training sets do not provide
     enough evidence to justify its added variance and artifact size.
     """
+    full_example_count = len(source)
+    validation_indices = _bounded_group_sample(groups)
+    source = source[validation_indices]
+    targets = targets[validation_indices]
+    groups = groups[validation_indices]
+    weights = weights[validation_indices]
     candidates = {
         name: factory
         for name, factory in default_estimator_factories().items()
@@ -377,6 +426,8 @@ def _cross_validated_estimator(
                 "fold_count": 0,
                 "candidates": {},
                 "skipped_estimators": skipped_estimators,
+                "validation_example_count": len(source),
+                "full_example_count": full_example_count,
             },
         )
 
@@ -430,8 +481,106 @@ def _cross_validated_estimator(
             "fold_count": fold_count,
             "candidates": scores,
             "skipped_estimators": skipped_estimators,
+            "validation_example_count": len(source),
+            "full_example_count": full_example_count,
         },
     )
+
+
+def _cross_fitted_residual_labels(
+    source: np.ndarray,
+    targets: np.ndarray,
+    groups: np.ndarray,
+    weights: np.ndarray,
+    *,
+    n_policies: int,
+    expert_factory: EstimatorFactory,
+    seed: int,
+) -> np.ndarray:
+    """Discover target-response candidates without source-dimension dominance."""
+    unique_groups = np.unique(groups)
+    fold_count = min(3, len(unique_groups))
+    predictions = np.zeros_like(targets)
+    if fold_count >= 2:
+        folds = GroupKFold(n_splits=fold_count).split(source, groups=groups)
+        for train_indices, test_indices in folds:
+            estimator = expert_factory().fit(
+                source[train_indices],
+                targets[train_indices],
+                sample_weight=weights[train_indices],
+            )
+            predictions[test_indices] = estimator.predict(source[test_indices])
+    else:
+        estimator = expert_factory().fit(source, targets, sample_weight=weights)
+        predictions = estimator.predict(source)
+    lower, upper = np.quantile(targets, (0.1, 0.9), axis=0)
+    scales = np.maximum(upper - lower, np.maximum(np.ptp(targets, axis=0) * 0.05, 1e-6))
+    residuals = (targets - predictions) / scales
+    return KMeans(
+        n_clusters=n_policies,
+        random_state=seed,
+        n_init=10,
+    ).fit_predict(residuals)
+
+
+def _cross_fitted_calibrator_residuals(
+    source: np.ndarray,
+    targets: np.ndarray,
+    categories: list[dict[str, str]],
+    groups: np.ndarray,
+    weights: np.ndarray,
+    evaluation_indices: np.ndarray,
+    *,
+    base_factory: EstimatorFactory,
+) -> np.ndarray:
+    """Return honest residuals for examples eligible for one local policy."""
+    evaluation_indices = np.asarray(evaluation_indices, dtype=np.int64)
+    if not len(evaluation_indices):
+        return np.empty((0, targets.shape[1]), dtype=np.float64)
+    unique_groups = np.unique(groups)
+    fold_count = min(3, len(unique_groups))
+    predictions = np.zeros(
+        (len(evaluation_indices), targets.shape[1]), dtype=np.float64
+    )
+    evaluated = np.zeros(len(evaluation_indices), dtype=bool)
+    if fold_count < 2:
+        raise ValueError("local residual validation requires at least two groups")
+    evaluation_positions = {
+        int(source_index): output_index
+        for output_index, source_index in enumerate(evaluation_indices)
+    }
+    for train_indices, test_indices in GroupKFold(n_splits=fold_count).split(
+        source,
+        groups=groups,
+    ):
+        fold_evaluation = [
+            int(index) for index in test_indices if int(index) in evaluation_positions
+        ]
+        if not fold_evaluation:
+            continue
+        calibrator = HierarchicalPolicyRegressor(
+            base_factory=base_factory,
+        ).fit(
+            source[train_indices],
+            targets[train_indices],
+            categories=[categories[int(index)] for index in train_indices],
+            sample_weight=weights[train_indices],
+        )
+        fold_predictions = calibrator.predict(
+            source[fold_evaluation],
+            categories=[categories[index] for index in fold_evaluation],
+        )
+        for source_index, prediction in zip(
+            fold_evaluation,
+            fold_predictions,
+            strict=True,
+        ):
+            output_index = evaluation_positions[source_index]
+            predictions[output_index] = prediction
+            evaluated[output_index] = True
+    if not np.all(evaluated):
+        raise ValueError("cross-fitted local residuals did not cover every example")
+    return targets[evaluation_indices] - predictions
 
 
 def _canonicalize_components(
@@ -473,6 +622,12 @@ def _cross_validated_policy_count(
     expert_factory: EstimatorFactory,
     seed: int,
 ) -> tuple[int, dict[str, Any]]:
+    full_example_count = len(source)
+    validation_indices = _bounded_group_sample(groups)
+    source = source[validation_indices]
+    targets = targets[validation_indices]
+    groups = groups[validation_indices]
+    weights = weights[validation_indices]
     maximum = min(
         MAX_POLICIES_PER_PARTITION,
         max(1, len(source) // MIN_PARTITION_EXAMPLES),
@@ -480,7 +635,12 @@ def _cross_validated_policy_count(
     unique_groups = np.unique(groups)
     fold_count = min(3, len(unique_groups))
     if maximum == 1 or fold_count < 2:
-        return 1, {"selected_policy_count": 1, "candidates": {}}
+        return 1, {
+            "selected_policy_count": 1,
+            "candidates": {},
+            "validation_example_count": len(source),
+            "full_example_count": full_example_count,
+        }
     folds = list(GroupKFold(n_splits=fold_count).split(source, groups=groups))
     scales = np.maximum(np.ptp(targets, axis=0), 1e-6)
     candidate_scores: dict[int, dict[str, float]] = {}
@@ -490,6 +650,15 @@ def _cross_validated_policy_count(
         failed = False
         for fold_index, (train_indices, test_indices) in enumerate(folds):
             try:
+                initial_labels = _cross_fitted_residual_labels(
+                    source[train_indices],
+                    targets[train_indices],
+                    groups[train_indices],
+                    weights[train_indices],
+                    n_policies=policy_count,
+                    expert_factory=expert_factory,
+                    seed=seed + fold_index,
+                )
                 model = _policy_mixture(
                     policy_count,
                     len(train_indices),
@@ -501,6 +670,7 @@ def _cross_validated_policy_count(
                     targets[train_indices],
                     sample_weight=weights[train_indices],
                     gate_feature_indices=gate_feature_indices,
+                    initial_labels=initial_labels,
                 )
                 predictions[test_indices] = model.predict(source[test_indices])
                 ambiguous += sum(
@@ -544,6 +714,8 @@ def _cross_validated_policy_count(
         "selected_policy_count": selected,
         "candidates": candidate_scores,
         "fold_count": fold_count,
+        "validation_example_count": len(source),
+        "full_example_count": full_example_count,
     }
 
 
@@ -640,6 +812,19 @@ def _fit_partition(
         seed=seed,
     )
     validation["estimator_selection"] = estimator_validation
+    initial_labels = (
+        _cross_fitted_residual_labels(
+            source,
+            targets,
+            groups,
+            weights,
+            n_policies=policy_count,
+            expert_factory=estimator_factory,
+            seed=seed,
+        )
+        if policy_count > 1
+        else None
+    )
     mixture = _policy_mixture(
         policy_count,
         len(rows),
@@ -651,11 +836,20 @@ def _fit_partition(
         targets,
         sample_weight=weights,
         gate_feature_indices=gate_feature_indices,
+        initial_labels=initial_labels,
     )
     _canonicalize_components(mixture, targets, weights)
     responsibilities = mixture.training_responsibilities_
     categories = [row["categories"] for row in rows]
+    embedding_matrix = np.stack([row["normalized_embedding"] for row in rows])
+    hard_labels = np.argmax(responsibilities, axis=1)
+    local_fit_indices = _bounded_group_sample(
+        groups,
+        maximum=MAX_LOCAL_VALIDATION_EXAMPLES,
+    )
     calibrators = []
+    local_correctors: list[LocalResidualCorrector | None] = []
+    local_validation: list[dict[str, Any]] = []
     bounds = []
     policy_ids = []
     for policy_index in range(policy_count):
@@ -672,22 +866,88 @@ def _fit_partition(
             sample_weight=component_weights,
         )
         calibrators.append(calibrator)
-        member_indices = np.flatnonzero(
-            np.argmax(responsibilities, axis=1) == policy_index
-        )
+        member_indices = np.flatnonzero(hard_labels == policy_index)
         member_targets = targets[member_indices] if len(member_indices) else targets
-        bounds.append(
-            {
-                key: (
-                    float(np.min(member_targets[:, target_index])),
-                    float(np.max(member_targets[:, target_index])),
-                )
-                for target_index, key in enumerate(target_keys)
-            }
+        policy_bounds = {
+            key: (
+                float(np.min(member_targets[:, target_index])),
+                float(np.max(member_targets[:, target_index])),
+            )
+            for target_index, key in enumerate(target_keys)
+        }
+        bounds.append(policy_bounds)
+        local_member_positions = np.flatnonzero(
+            hard_labels[local_fit_indices] == policy_index
         )
+        local_member_indices = local_fit_indices[local_member_positions]
+        if len(local_member_indices) >= 24:
+            try:
+                local_residuals = _cross_fitted_calibrator_residuals(
+                    source[local_fit_indices],
+                    targets[local_fit_indices],
+                    [categories[int(index)] for index in local_fit_indices],
+                    groups[local_fit_indices],
+                    component_weights[local_fit_indices],
+                    local_member_positions,
+                    base_factory=estimator_factory,
+                )
+                local_member_targets = targets[local_member_indices]
+                lower, upper = np.quantile(
+                    local_member_targets,
+                    (0.1, 0.9),
+                    axis=0,
+                )
+                target_scales = np.maximum(
+                    upper - lower,
+                    np.maximum(
+                        np.ptp(local_member_targets, axis=0) * 0.05,
+                        1e-6,
+                    ),
+                )
+                local_corrector, local_diagnostics = (
+                    LocalResidualCorrector.fit_validated(
+                        embedding_matrix[local_member_indices],
+                        local_residuals,
+                        groups=groups[local_member_indices],
+                        photo_ids=np.asarray(
+                            [
+                                rows[int(index)]["photo_id"]
+                                for index in local_member_indices
+                            ]
+                        ),
+                        sample_weight=component_weights[local_member_indices],
+                        target_scales=target_scales,
+                    )
+                )
+                local_diagnostics["full_policy_example_count"] = len(member_indices)
+            except (ValueError, np.linalg.LinAlgError):
+                logger.warning(
+                    "Local residual validation failed for partition %s policy %d",
+                    rows[0]["partition_key"],
+                    policy_index,
+                    exc_info=True,
+                )
+                local_corrector = None
+                local_diagnostics = {
+                    "enabled": False,
+                    "reason": "validation_failed",
+                    "example_count": len(local_member_indices),
+                    "full_policy_example_count": len(member_indices),
+                }
+        else:
+            local_corrector = None
+            local_diagnostics = {
+                "enabled": False,
+                "reason": "insufficient_examples",
+                "example_count": len(local_member_indices),
+                "full_policy_example_count": len(member_indices),
+            }
+        local_correctors.append(local_corrector)
+        local_validation.append(local_diagnostics)
         policy_ids.append(
             f"policy-{_partition_slug(rows[0]['partition_key'])}-{policy_index + 1}"
         )
+    validation["local_residual_correction"] = local_validation
 
     coverage = PolicyCoverageDiagnostics(
         visual_component_count=min(6, max(1, len(rows) // 8)),
@@ -722,11 +982,9 @@ def _fit_partition(
         policy_names.append(
             " • ".join(cues) if cues else f"Editing Policy {policy_index + 1}"
         )
-    embedding_matrix = np.stack([row["normalized_embedding"] for row in rows])
     image_anchors = []
     example_embeddings = []
     example_photo_ids = []
-    hard_labels = np.argmax(responsibilities, axis=1)
     for policy_index in range(policy_count):
         anchors, _ = _select_image_anchors(
             embedding_matrix,
@@ -735,10 +993,9 @@ def _fit_partition(
         )
         image_anchors.append(anchors)
         example_embeddings.append(
-            [
-                embedding_matrix[index]
-                for index in np.flatnonzero(hard_labels == policy_index)
-            ]
+            embedding_matrix[np.flatnonzero(hard_labels == policy_index)].astype(
+                np.float32
+            )
         )
         example_photo_ids.append(
             [
@@ -756,6 +1013,7 @@ def _fit_partition(
         policy_names=tuple(policy_names),
         mixture=mixture,
         calibrators=calibrators,
+        local_correctors=local_correctors,
         slider_bounds=bounds,
         coverage=coverage,
         descriptors=descriptors,
@@ -1089,6 +1347,12 @@ def _active_policy_rows(*, include_examples: bool) -> list[dict[str, Any]]:
         responsibilities = artifact.mixture.training_responsibilities_
         for policy_index, policy_id in enumerate(artifact.policy_ids):
             count = int(np.sum(np.argmax(responsibilities, axis=1) == policy_index))
+            local_correctors = getattr(
+                artifact,
+                "local_correctors",
+                [None] * len(artifact.policy_ids),
+            )
+            local_enabled = local_correctors[policy_index] is not None
             policy = {
                 "recommendation_version": "policy-v2",
                 "policy_id": policy_id,
@@ -1106,7 +1370,13 @@ def _active_policy_rows(*, include_examples: bool) -> list[dict[str, Any]]:
                 "example_count": count,
                 "current_count": count,
                 "policy_descriptors": artifact.descriptors[policy_index],
-                "training_status": "Conditional editing policy",
+                "training_status": (
+                    "Global + validated local refinement"
+                    if local_enabled
+                    else "Global conditional policy"
+                ),
+                "estimator_name": artifact.estimator_name,
+                "local_correction_enabled": local_enabled,
             }
             if include_examples:
                 policy["example_photo_ids"] = list(
@@ -1194,86 +1464,131 @@ def get_upgrade_recommendations(
     payloads: list[dict[str, Any]] = []
     policy_budget = max(0, int(top_policies_limit))
     for artifact in sorted(artifacts.values(), key=lambda item: item.partition_key):
+        remaining_budget = policy_budget - len(payloads)
+        if remaining_budget <= 0:
+            return payloads
+        policy_indices = list(range(min(len(artifact.policy_ids), remaining_budget)))
+        neighbor_sets = retrieve_policy_neighbor_sets(
+            collection,
+            [artifact.image_anchors[index] for index in policy_indices],
+            existing_photo_ids=existing_photo_ids,
+        )
+        neighbor_ids = list(
+            dict.fromkeys(
+                neighbor.photo_id
+                for neighbors in neighbor_sets
+                for neighbor in neighbors
+            )
+        )
+        candidate_rows: list[tuple[str, dict[str, Any], np.ndarray, np.ndarray]] = []
+        identities: dict[str, dict[str, str]] = {}
+        for offset in range(0, len(neighbor_ids), 250):
+            response = collection.get(
+                ids=neighbor_ids[offset : offset + 250],
+                include=["metadatas", "embeddings"],
+            )
+            response_ids = response.get("ids") or []
+            response_metadata = response.get("metadatas") or []
+            response_embeddings = response.get("embeddings")
+            if response_embeddings is None:
+                response_embeddings = []
+            for row_index, photo_id in enumerate(response_ids):
+                metadata = (
+                    dict(response_metadata[row_index])
+                    if row_index < len(response_metadata)
+                    and response_metadata[row_index]
+                    else {}
+                )
+                if hard_partition_key(metadata) != artifact.partition_key:
+                    continue
+                if is_stitched_panorama(metadata):
+                    continue
+                embedding = (
+                    response_embeddings[row_index]
+                    if row_index < len(response_embeddings)
+                    else None
+                )
+                if embedding is None:
+                    continue
+                try:
+                    source, feature_names = _source_row(metadata, embedding)
+                except ValueError:
+                    continue
+                if feature_names != artifact.feature_names:
+                    continue
+                candidate_rows.append(
+                    (
+                        str(photo_id),
+                        metadata,
+                        np.asarray(embedding, dtype=np.float64),
+                        source,
+                    )
+                )
+                identities[str(photo_id)] = {
+                    "lr_uuid": str(
+                        metadata.get("lr_uuid") or metadata.get("uuid") or ""
+                    )
+                }
+
+        candidate_data: dict[str, dict[str, Any]] = {}
+        if candidate_rows:
+            source_matrix = np.stack([row[3] for row in candidate_rows])
+            assignments = artifact.mixture.assignments(source_matrix)
+            responsibilities = np.asarray(
+                [assignment.responsibilities for assignment in assignments],
+                dtype=np.float64,
+            )
+            coverage_gains = artifact.coverage.score_candidate_gain(
+                source_matrix[:, artifact.mixture.gate_feature_indices_],
+                responsibilities,
+                categories=[_categories(row[1]) for row in candidate_rows],
+            )
+            for row_index, (
+                photo_id,
+                metadata,
+                embedding,
+                _,
+            ) in enumerate(candidate_rows):
+                candidate_data[photo_id] = {
+                    "metadata": metadata,
+                    "embedding": embedding,
+                    "assignment": assignments[row_index],
+                    "responsibilities": responsibilities[row_index],
+                    "coverage_gains": coverage_gains[row_index],
+                }
+
         hard_labels = np.argmax(
             artifact.mixture.training_responsibilities_,
             axis=1,
         )
-        for policy_index, policy_id in enumerate(artifact.policy_ids):
-            if len(payloads) >= policy_budget:
-                return payloads
+        for neighbor_set_index, policy_index in enumerate(policy_indices):
+            policy_id = artifact.policy_ids[policy_index]
+            local_correctors = getattr(
+                artifact,
+                "local_correctors",
+                [None] * len(artifact.policy_ids),
+            )
+            local_enabled = local_correctors[policy_index] is not None
             current_count = int(np.sum(hard_labels == policy_index))
             needed_count = max(0, target_examples_per_policy - current_count)
-            neighbors = retrieve_policy_neighbors(
-                collection,
-                artifact.image_anchors[policy_index],
-                existing_photo_ids=existing_photo_ids,
-            )
             candidates: list[PolicyCandidate] = []
-            identities: dict[str, dict[str, str]] = {}
-            for offset in range(0, len(neighbors), 250):
-                chunk = neighbors[offset : offset + 250]
-                response = collection.get(
-                    ids=[neighbor.photo_id for neighbor in chunk],
-                    include=["metadatas", "embeddings"],
+            for neighbor in neighbor_sets[neighbor_set_index]:
+                data = candidate_data.get(neighbor.photo_id)
+                if data is None:
+                    continue
+                assignment = data["assignment"]
+                candidates.append(
+                    PolicyCandidate(
+                        photo_id=neighbor.photo_id,
+                        embedding=data["embedding"],
+                        metadata=data["metadata"],
+                        responsibilities=data["responsibilities"],
+                        assignment_entropy=assignment.entropy,
+                        coverage_gain=float(data["coverage_gains"][policy_index]),
+                        hard_partition_key=artifact.partition_key,
+                        source_ambiguous=assignment.ambiguous,
+                    )
                 )
-                response_ids = response.get("ids") or []
-                response_metadata = response.get("metadatas") or []
-                response_embeddings = response.get("embeddings")
-                if response_embeddings is None:
-                    response_embeddings = []
-                for row_index, photo_id in enumerate(response_ids):
-                    metadata = (
-                        dict(response_metadata[row_index])
-                        if row_index < len(response_metadata)
-                        and response_metadata[row_index]
-                        else {}
-                    )
-                    if hard_partition_key(metadata) != artifact.partition_key:
-                        continue
-                    if is_stitched_panorama(metadata):
-                        continue
-                    embedding = (
-                        response_embeddings[row_index]
-                        if row_index < len(response_embeddings)
-                        else None
-                    )
-                    if embedding is None:
-                        continue
-                    try:
-                        source, feature_names = _source_row(metadata, embedding)
-                    except ValueError:
-                        continue
-                    if feature_names != artifact.feature_names:
-                        continue
-                    assignments = artifact.mixture.assignments(source[np.newaxis, :])
-                    responsibilities = artifact.mixture.source_responsibilities(
-                        source[np.newaxis, :]
-                    )[0]
-                    coverage_gain = artifact.coverage.score_candidate_gain(
-                        source[
-                            np.newaxis,
-                            artifact.mixture.gate_feature_indices_,
-                        ],
-                        responsibilities[np.newaxis, :],
-                        categories=[_categories(metadata)],
-                    )[0, policy_index]
-                    candidates.append(
-                        PolicyCandidate(
-                            photo_id=str(photo_id),
-                            embedding=np.asarray(embedding, dtype=np.float64),
-                            metadata=metadata,
-                            responsibilities=responsibilities,
-                            assignment_entropy=assignments[0].entropy,
-                            coverage_gain=float(coverage_gain),
-                            hard_partition_key=artifact.partition_key,
-                            source_ambiguous=assignments[0].ambiguous,
-                        )
-                    )
-                    identities[str(photo_id)] = {
-                        "lr_uuid": str(
-                            metadata.get("lr_uuid") or metadata.get("uuid") or ""
-                        )
-                    }
             ranked, diagnostics = rank_policy_candidates(
                 candidates,
                 policy_index=policy_index,
@@ -1295,6 +1610,13 @@ def get_upgrade_recommendations(
                     diagnostics=diagnostics,
                     policy_descriptors=artifact.descriptors[policy_index],
                     photo_identities=identities,
+                    training_status=(
+                        "Global + validated local refinement"
+                        if local_enabled
+                        else "Global conditional policy"
+                    ),
+                    estimator_name=artifact.estimator_name,
+                    local_correction_enabled=local_enabled,
                 )
             )
     return payloads
@@ -1309,105 +1631,73 @@ def predict_absolute_edit(
     policy_override: str | None = None,
 ) -> PolicyPrediction | None:
     artifacts = _load_active_artifacts()
-    if not artifacts:
+    artifact = artifacts.get(hard_partition_key(metadata))
+    if artifact is None:
         return None
-
-    profile = _normalized_profile(metadata.get("camera_profile"))
-    is_hdr = bool(metadata.get("is_hdr")) or "hdr" in profile.casefold()
-    target_hdr_prefix = "hdr|" if is_hdr else "sdr|"
-    
-    candidate_artifacts = []
+    source, feature_names = _source_row(metadata, embedding)
+    if feature_names != artifact.feature_names:
+        logger.warning("Policy feature schema/dimension mismatch during inference")
+        return None
+    assignments = artifact.mixture.assignments(source[np.newaxis, :])
+    assignment = assignments[0]
     if policy_override:
-        for art in artifacts.values():
-            if policy_override in art.policy_ids:
-                candidate_artifacts = [art]
-                break
+        if policy_override not in artifact.policy_ids:
+            return None
+        policy_index = artifact.policy_ids.index(policy_override)
+        confidence = assignment.responsibilities[policy_index]
+        if confidence < 0.40:
+            return None
     else:
-        candidate_artifacts = [
-            art for art in artifacts.values()
-            if art.partition_key.startswith(target_hdr_prefix)
-        ]
-
-    if not candidate_artifacts:
-        return None
-
-    best_prediction: PolicyPrediction | None = None
-    best_confidence = -1.0
-
-    for artifact in candidate_artifacts:
-        source, feature_names = _source_row(metadata, embedding)
-        if feature_names != artifact.feature_names:
-            logger.warning("Policy feature schema/dimension mismatch during inference")
-            continue
-            
-        assignments = artifact.mixture.assignments(source[np.newaxis, :])
-        assignment = assignments[0]
-        
-        if policy_override and policy_override in artifact.policy_ids:
-            policy_index = artifact.policy_ids.index(policy_override)
-            confidence = assignment.responsibilities[policy_index]
-            if confidence < 0.40:
-                continue
-        else:
-            if assignment.ambiguous or assignment.policy_index is None:
-                continue
-            policy_index = assignment.policy_index
-            confidence = assignment.confidence
-
-        if confidence > best_confidence:
-            best_confidence = confidence
-            
-            predicted = artifact.calibrators[policy_index].predict(
-                source[np.newaxis, :],
-                categories=[_categories(metadata)],
-            )[0]
-            
-            flat_prediction: dict[str, float] = {}
-            for target_index, key in enumerate(artifact.target_keys):
-                lower, upper = artifact.slider_bounds[policy_index][key]
-                flat_prediction[key] = float(np.clip(predicted[target_index], lower, upper))
-                
-            target = unflatten_absolute_target(flat_prediction)
-            
-            if artifact.camera_profile and artifact.camera_profile.casefold() != "default":
-                target["CameraProfile"] = artifact.camera_profile
-                
-            absolute_target = AbsoluteTarget(
-                schema_version=TARGET_SCHEMA_VERSION,
-                process_version=str(metadata.get("process_version") or "Version 6"),
-                values=target,
-                modeled_paths=artifact.target_keys,
-            )
-            
-            try:
-                absolute_target.validate()
-            except ValueError as e:
-                logger.error(f"Target validation failed: {e}")
-                continue
-                
-            canonical_current = training_service.normalize_develop_settings_for_style(
-                current_settings or {}
-            )
-            applied = interpolate_absolute_target(
-                canonical_current,
-                absolute_target,
-                strength=strength,
-            )
-            
-            best_prediction = PolicyPrediction(
-                policy_id=artifact.policy_ids[policy_index],
-                policy_name=_custom_policy_names().get(
-                    artifact.policy_ids[policy_index],
-                    artifact.policy_names[policy_index],
-                ),
-                confidence=float(confidence),
-                entropy=assignment.entropy,
-                target=target,
-                applied=applied,
-                example_count=len(artifact.example_photo_ids[policy_index]),
-            )
-
-    return best_prediction
+        if assignment.ambiguous or assignment.policy_index is None:
+            return None
+        policy_index = assignment.policy_index
+        confidence = assignment.confidence
+    predicted = artifact.calibrators[policy_index].predict(
+        source[np.newaxis, :],
+        categories=[_categories(metadata)],
+    )[0]
+    local_correctors = getattr(
+        artifact,
+        "local_correctors",
+        [None] * len(artifact.policy_ids),
+    )
+    local_corrector = local_correctors[policy_index]
+    if local_corrector is not None:
+        correction = local_corrector.predict(np.asarray(embedding, dtype=np.float64))
+        if correction is not None:
+            predicted = predicted + correction
+    flat_prediction: dict[str, float] = {}
+    for target_index, key in enumerate(artifact.target_keys):
+        lower, upper = artifact.slider_bounds[policy_index][key]
+        flat_prediction[key] = float(np.clip(predicted[target_index], lower, upper))
+    target = unflatten_absolute_target(flat_prediction)
+    absolute_target = AbsoluteTarget(
+        schema_version=TARGET_SCHEMA_VERSION,
+        process_version=str(metadata.get("process_version") or "Version 6"),
+        values=target,
+        modeled_paths=artifact.target_keys,
+    )
+    absolute_target.validate()
+    canonical_current = training_service.normalize_develop_settings_for_style(
+        current_settings or {}
+    )
+    applied = interpolate_absolute_target(
+        canonical_current,
+        absolute_target,
+        strength=strength,
+    )
+    return PolicyPrediction(
+        policy_id=artifact.policy_ids[policy_index],
+        policy_name=_custom_policy_names().get(
+            artifact.policy_ids[policy_index],
+            artifact.policy_names[policy_index],
+        ),
+        confidence=float(confidence),
+        entropy=assignment.entropy,
+        target=target,
+        applied=applied,
+        example_count=len(artifact.example_photo_ids[policy_index]),
+    )
 
 
 def request_rebuild() -> dict[str, Any]:

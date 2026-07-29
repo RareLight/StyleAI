@@ -56,6 +56,35 @@ def test_generate_style_edit_uses_active_policy_without_legacy_blending(
     assert result.engine == "policy_v2"
     assert result.confidence == 0.92
     assert result.recipe["global"]["exposure"] == 0.35
+    mock_predict.assert_called_once()
+
+
+@patch("services.style_engine.policy_runtime.predict_absolute_edit")
+@patch("services.style_engine.policy_runtime.has_active_generation", return_value=True)
+@patch("services.style_engine.training_service.compute_exposure_metrics")
+def test_generate_style_edit_never_switches_models_at_an_example_count_threshold(
+    mock_exposure,
+    _mock_active,
+    mock_predict,
+):
+    mock_exposure.return_value = {}
+    mock_predict.return_value = SimpleNamespace(
+        policy_id="policy-1",
+        policy_name="Stable Policy",
+        confidence=0.9,
+        applied={"exposure": 0.2},
+        example_count=800,
+    )
+
+    result = generate_style_edit(
+        "target",
+        b"preview",
+        clip_embedding=[1.0, 0.0],
+        camera_profile="Adobe Color",
+    )
+
+    assert result.engine == "policy_v2"
+    mock_predict.assert_called_once()
 
 
 @patch("services.style_engine.policy_runtime.has_active_generation", return_value=False)

@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 
-TARGET_SCHEMA_VERSION = "policy-target-v1"
+TARGET_SCHEMA_VERSION = "policy-target-v2"
 
 
 def flatten_absolute_target(canonical: dict[str, Any]) -> dict[str, float]:
@@ -30,7 +30,12 @@ def flatten_absolute_target(canonical: dict[str, Any]) -> dict[str, float]:
         if isinstance(properties, dict):
             for property_name, value in properties.items():
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    flat[f"cg_{region}_{property_name}"] = float(value)
+                    if property_name == "hue":
+                        radians = math.radians(float(value))
+                        flat[f"cg_{region}_hue_sin"] = math.sin(radians)
+                        flat[f"cg_{region}_hue_cos"] = math.cos(radians)
+                    else:
+                        flat[f"cg_{region}_{property_name}"] = float(value)
         elif isinstance(properties, (int, float)) and not isinstance(properties, bool):
             flat[f"cg_{region}"] = float(properties)
 
@@ -63,6 +68,8 @@ def default_flat_target_value(key: str) -> float:
         return 1.0
     if key == "cg_blending":
         return 50.0
+    if key.endswith("_hue_cos"):
+        return 1.0
     if key.startswith("curve_"):
         try:
             point_index = int(key.rsplit("_", 1)[1])
@@ -80,11 +87,15 @@ def unflatten_absolute_target(flat: dict[str, float]) -> dict[str, Any]:
         "tone_curve": {"point_curve": {}},
     }
     curve_values: dict[str, dict[int, float]] = {}
+    circular_hues: dict[str, dict[str, float]] = {}
     for key, raw_value in flat.items():
         value = float(raw_value)
         if key.startswith("hsl_"):
             _, color, property_name = key.split("_", 2)
             canonical["hsl"].setdefault(color, {})[property_name] = value
+        elif key.startswith("cg_") and key.endswith(("_hue_sin", "_hue_cos")):
+            region, component = key.removeprefix("cg_").rsplit("_hue_", 1)
+            circular_hues.setdefault(region, {})[component] = value
         elif key.startswith("cg_"):
             parts = key.split("_")
             if len(parts) == 3:
@@ -101,6 +112,14 @@ def unflatten_absolute_target(flat: dict[str, float]) -> dict[str, Any]:
             canonical["white_balance"] = "Custom" if value >= 0.7 else "As Shot"
         else:
             canonical[key] = value
+
+    for region, components in circular_hues.items():
+        if "sin" not in components or "cos" not in components:
+            continue
+        hue = math.degrees(math.atan2(components["sin"], components["cos"])) % 360.0
+        if math.isclose(hue, 360.0, abs_tol=1e-9):
+            hue = 0.0
+        canonical["color_grading"].setdefault(region, {})["hue"] = hue
 
     evaluation_points = np.linspace(0, 255, 16)
     for channel, values in curve_values.items():
@@ -148,6 +167,14 @@ class AbsoluteTarget:
             raise ValueError("absolute target values are required")
         if not self.modeled_paths:
             raise ValueError("modeled target paths are required")
+        crop = self.values.get("crop")
+        if isinstance(crop, dict):
+            left, right = crop.get("left"), crop.get("right")
+            top, bottom = crop.get("top"), crop.get("bottom")
+            if left is not None and right is not None and float(left) >= float(right):
+                raise ValueError("crop left must be less than crop right")
+            if top is not None and bottom is not None and float(top) >= float(bottom):
+                raise ValueError("crop top must be less than crop bottom")
 
 
 def _neutral_for_path(path: tuple[str, ...]) -> Any:

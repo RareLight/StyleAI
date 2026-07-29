@@ -72,8 +72,9 @@ LrTasks.startAsyncTask(function()
 			
 			local count = tonumber(s.example_count) or 0
 			props.detailCount = tostring(count)
-			props.detailStrengthText = s.training_status or
-				LOC("$$$/StyleAI/StyleCatalog/ConditionalPolicy=Conditional editing policy")
+			props.detailStrengthText = s.local_correction_enabled and
+				LOC("$$$/StyleAI/StyleCatalog/ValidatedLocalPolicy=Global + validated local refinement") or
+				LOC("$$$/StyleAI/StyleCatalog/GlobalPolicy=Global conditional policy")
 			
 			props.detailDesc = s.description or
 				LOC("$$$/StyleAI/StyleCatalog/PolicyDescription=Source-conditioned absolute Lightroom targets with ambiguity-aware matching.")

@@ -1106,26 +1106,6 @@ def get_training_count() -> int:
     return _training_collection.count()
 
 
-def get_training_count_for_profile(camera_profile: str | None) -> int:
-    """Return the number of training examples for a specific camera profile."""
-    _ensure_initialized()
-    if _training_collection is None:
-        return 0
-    if not camera_profile:
-        return get_training_count()
-        
-    try:
-        result = _training_collection.get(
-            where={"camera_profile": camera_profile},
-            include=[]
-        )
-        return len(result.get("ids", []))
-    except Exception as exc:
-        from config import logger
-        logger.error("Failed to count examples for profile %s: %s", camera_profile, exc)
-        return 0
-
-
 def _enrich_and_sync_metadatas_from_main_index(
     ids: list[str], metadatas: list[Any]
 ) -> None:
@@ -1482,6 +1462,8 @@ def query_similar_training_examples(
                 "photo_id": pid,
                 "embedding": embeddings[i] if i < len(embeddings) else None,
                 "capture_time": float(meta.get("capture_time", 0.0)),
+                "rating": int(meta.get("rating", 0) or 0),
+                "pick_status": int(meta.get("pick_status", 0) or 0),
                 "develop_settings": dev_settings,
                 "canonical_settings": canonical_settings,
                 "label": meta.get("label", ""),

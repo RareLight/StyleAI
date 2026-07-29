@@ -98,6 +98,7 @@ class PolicyMixture:
         *,
         sample_weight: np.ndarray | None = None,
         gate_feature_indices: np.ndarray | list[int] | None = None,
+        initial_labels: np.ndarray | list[int] | None = None,
     ) -> Self:
         source, target, weights = _validated_training_arrays(
             source_features,
@@ -140,24 +141,29 @@ class PolicyMixture:
             )
             return self
 
-        broad_model = self.expert_factory()
-        broad_model.fit(source, target, sample_weight=weights)
-        normalized_residuals = (
-            target - broad_model.predict(source)
-        ) / self.target_scales_
-        source_scale = np.maximum(np.std(source, axis=0), 1e-8)
-        standardized_source = (source - np.mean(source, axis=0)) / source_scale
-        # A policy must be supported by both a distinct editing response and a
-        # source-space region that can be recognized on an unedited new photo.
-        # Joint initialization avoids inventing components that can only be
-        # distinguished after their target edits are already known.
-        initialization_features = np.hstack((standardized_source, normalized_residuals))
-        initial_labels = KMeans(
-            n_clusters=self.n_policies,
-            random_state=self.seed,
-            n_init=10,
-        ).fit_predict(initialization_features)
-        responsibilities = np.eye(self.n_policies, dtype=np.float64)[initial_labels]
+        if initial_labels is None:
+            broad_model = self.expert_factory()
+            broad_model.fit(source, target, sample_weight=weights)
+            normalized_residuals = (
+                target - broad_model.predict(source)
+            ) / self.target_scales_
+            source_scale = np.maximum(np.std(source, axis=0), 1e-8)
+            standardized_source = (source - np.mean(source, axis=0)) / source_scale
+            labels = KMeans(
+                n_clusters=self.n_policies,
+                random_state=self.seed,
+                n_init=10,
+            ).fit_predict(np.hstack((standardized_source, normalized_residuals)))
+        else:
+            labels = np.asarray(initial_labels, dtype=np.int64).reshape(-1)
+            if (
+                labels.shape != (len(source),)
+                or np.any(labels < 0)
+                or np.any(labels >= self.n_policies)
+                or len(np.unique(labels)) != self.n_policies
+            ):
+                raise ValueError("initial labels are invalid")
+        responsibilities = np.eye(self.n_policies, dtype=np.float64)[labels]
 
         self.experts_: list[WeightedMultiOutputEstimator] = []
         for iteration in range(self.max_iterations):
@@ -226,14 +232,10 @@ class PolicyMixture:
         responsibilities: np.ndarray,
         weights: np.ndarray,
     ) -> None:
-        self.source_mean_ = np.average(source, axis=0, weights=weights)
-        variance = np.average(
-            np.square(source - self.source_mean_),
-            axis=0,
-            weights=weights,
-        )
-        self.source_scale_ = np.sqrt(np.maximum(variance, 1e-8))
-        standardized = (source - self.source_mean_) / self.source_scale_
+        norms = np.linalg.norm(source, axis=1, keepdims=True)
+        if np.any(norms <= 0):
+            raise ValueError("source gate requires non-zero embeddings")
+        normalized = source / norms
         hard_labels = np.argmax(responsibilities, axis=1)
         self.policy_medoids_: list[np.ndarray] = []
         self.policy_distance_scale_: list[float] = []
@@ -243,7 +245,7 @@ class PolicyMixture:
             cluster_count = min(self.medoids_per_policy, len(indices))
             if cluster_count == 0:
                 raise ValueError("policy component has no source-space members")
-            component = standardized[indices]
+            component = normalized[indices]
             centers = (
                 KMeans(
                     n_clusters=cluster_count,
@@ -253,23 +255,14 @@ class PolicyMixture:
                 .fit(component, sample_weight=weights[indices])
                 .cluster_centers_
             )
+            center_norms = np.linalg.norm(centers, axis=1, keepdims=True)
+            centers = centers / np.maximum(center_norms, 1e-12)
             medoids = []
             for center in centers:
-                nearest = int(np.argmin(np.sum(np.square(component - center), axis=1)))
+                nearest = int(np.argmax(component @ center))
                 medoids.append(component[nearest])
             medoid_matrix = np.asarray(medoids)
-            distances = np.sqrt(
-                np.min(
-                    np.sum(
-                        np.square(
-                            component[:, np.newaxis, :]
-                            - medoid_matrix[np.newaxis, :, :]
-                        ),
-                        axis=2,
-                    ),
-                    axis=1,
-                )
-            )
+            distances = 1.0 - np.max(component @ medoid_matrix.T, axis=1)
             distance_scale = max(float(np.quantile(distances, 0.9)), 1e-6)
             self.policy_medoids_.append(medoid_matrix)
             self.policy_distance_scale_.append(distance_scale)
@@ -279,25 +272,21 @@ class PolicyMixture:
         scores = (
             -distances + np.log(np.maximum(self.policy_priors_, 1e-9))[np.newaxis, :]
         )
+        unsupported = ~np.any(np.isfinite(scores), axis=1)
+        if np.any(unsupported):
+            scores[unsupported] = np.log(np.maximum(self.policy_priors_, 1e-9))
         return _softmax(scores / self.gate_temperature)
 
     def source_gate_distances(self, source_features: np.ndarray) -> np.ndarray:
         source = _validated_prediction_array(source_features)
         source = source[:, self.gate_feature_indices_]
-        standardized = (source - self.source_mean_) / self.source_scale_
+        norms = np.linalg.norm(source, axis=1, keepdims=True)
+        if np.any(norms <= 0):
+            return np.full((len(source), self.n_policies), np.inf)
+        normalized = source / norms
         result = np.zeros((len(source), self.n_policies), dtype=np.float64)
         for policy_index, medoids in enumerate(self.policy_medoids_):
-            distances = np.sqrt(
-                np.min(
-                    np.sum(
-                        np.square(
-                            standardized[:, np.newaxis, :] - medoids[np.newaxis, :, :]
-                        ),
-                        axis=2,
-                    ),
-                    axis=1,
-                )
-            )
+            distances = 1.0 - np.max(normalized @ medoids.T, axis=1)
             result[:, policy_index] = (
                 distances / self.policy_distance_scale_[policy_index]
             )

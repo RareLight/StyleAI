@@ -75,6 +75,7 @@ def test_candidate_benchmark_is_complete_finite_and_serializable():
     report = benchmark_candidate_estimators(dataset, n_splits=3)
 
     assert set(report) == {
+        "weighted_target_median",
         "reduced_rank_ridge",
         "weighted_pls",
         "multitask_elastic_net",

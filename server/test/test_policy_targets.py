@@ -129,7 +129,9 @@ def test_flat_target_round_trip_preserves_nested_targets():
 
     assert rebuilt["exposure"] == pytest.approx(0.4)
     assert rebuilt["hsl"] == canonical["hsl"]
-    assert rebuilt["color_grading"] == canonical["color_grading"]
+    assert rebuilt["color_grading"]["shadows"]["hue"] == pytest.approx(220.0)
+    assert rebuilt["color_grading"]["shadows"]["saturation"] == 8.0
+    assert rebuilt["color_grading"]["blending"] == 65.0
     assert rebuilt["crop"] == canonical["crop"]
     assert rebuilt["white_balance"] == "Custom"
     assert len(rebuilt["tone_curve"]["point_curve"]["master"]) == 32
@@ -147,3 +149,24 @@ def test_as_shot_white_balance_does_not_apply_numeric_overrides():
     assert rebuilt["white_balance"] == "As Shot"
     assert "temperature" not in rebuilt
     assert "tint" not in rebuilt
+
+
+def test_color_grading_hue_modeling_wraps_across_zero_degrees():
+    first = flatten_absolute_target({"color_grading": {"shadows": {"hue": 359.0}}})
+    second = flatten_absolute_target({"color_grading": {"shadows": {"hue": 1.0}}})
+    averaged = {
+        key: (first[key] + second[key]) / 2.0
+        for key in first
+        if key.startswith("cg_shadows_hue_")
+    }
+
+    rebuilt = unflatten_absolute_target(averaged)
+
+    assert rebuilt["color_grading"]["shadows"]["hue"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_absolute_target_rejects_invalid_crop_geometry():
+    target = _target({"crop": {"left": 0.8, "right": 0.2}})
+
+    with pytest.raises(ValueError, match="crop left"):
+        target.validate()

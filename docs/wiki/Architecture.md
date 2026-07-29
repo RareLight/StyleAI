@@ -29,16 +29,27 @@ process bound to that database.
    genre, lighting, camera body, and lens do not create Cartesian style groups.
 4. Lightroom uploads bounded transport chunks without fitting between chunks;
    one explicit rebuild begins after the complete training run is saved.
-5. Burst-grouped cross-validation selects reduced-rank ridge, weighted PLS, or
-   multi-task Elastic Net independently for each compatible partition.
-6. A mixture using that selected conditional regressor discovers distinct
-   editing responses from target behavior. New photos are assigned using only
-   the universally available image-embedding gate.
+5. Burst-grouped cross-validation selects a robust constant baseline,
+   reduced-rank ridge, weighted PLS, or eligible multi-task Elastic Net
+   independently for each compatible partition.
+6. Grouped out-of-fold residuals from the selected broad model initialize
+   distinct editing responses without allowing the much larger source-feature
+   block to dominate policy identity. New photos are assigned through
+   normalized cosine multi-medoid image-embedding gates.
 7. Grouped cross-validation adds experts only when they produce a material
    held-out improvement with adequate support and acceptable ambiguity.
 8. Shrunken hierarchical residual offsets calibrate supported
    HDR/camera/profile combinations without fragmenting policy identity.
-9. The backend writes a complete inactive generation and versioned `joblib`
+   A policy-specific cosine-neighborhood corrector may then learn only grouped
+   out-of-fold residuals. It is saved only when held-out error improves
+   materially and coverage is adequate; sparse, distant, or high-variance
+   neighborhoods abstain.
+9. Repeated estimator and policy-count validation uses a deterministic,
+   burst-preserving sample of at most 600 examples. Local correction validation
+   and its residual bank use at most 2,048 examples. The selected final global
+   model still fits all curated examples, so scaling does not impose a silent
+   training-data ceiling.
+10. The backend writes a complete inactive generation and versioned `joblib`
    artifacts, then atomically activates it. Failed or interrupted builds leave
    the prior active generation intact; successful activation prunes inactive
    derived generations and stale examples.
@@ -46,10 +57,14 @@ process bound to that database.
 ### ML editing
 
 1. The backend computes the new photo's source embedding and pixel metrics.
-2. The engine routes the inference based on catalog size:
-   - **For large catalogs ($\ge 500$ examples)**: The system bypasses global models and uses **KNN Locally Linear Regression**. It queries ChromaDB for the 100 closest visual neighbors, applies burst deduplication and distance gating, and fits a localized Ridge regression model on-the-fly.
-   - **For small catalogs ($< 500$ examples)**: The exact HDR/profile partition selects a global EM policy artifact. Calibrated multi-medoid source membership either selects one policy or abstains. Competing policies are never blended.
-3. The selected engine predicts absolute Lightroom targets and clamps every scalar to bounds learned from the examples.
+2. The exact HDR/profile partition selects a global policy artifact. Calibrated
+   source membership either selects one policy or abstains. Competing policies
+   are never blended, and catalog size never causes an abrupt model switch.
+3. The selected policy predicts absolute Lightroom targets. When its local
+   corrector passed training-time validation, up to 100 policy-local neighbors
+   within cosine distance 0.15 may correct the global residual. The result is
+   then clamped to Lightroom-safe and learned bounds; local abstention leaves
+   the global prediction unchanged.
 4. Application interpolates from the photo's current value to the target:
    `current + strength * (target - current)`. At full strength the result equals
    the target exactly, regardless of prior edits, and repeated application is
@@ -57,14 +72,18 @@ process bound to that database.
 
 ### Upgrade recommendations
 
-1. Each policy retrieves bounded Chroma neighborhoods around multiple visual
-   anchors in one batched query.
+1. All policies in a compatible partition retrieve bounded Chroma
+   neighborhoods around their visual anchors in one Chroma query.
 2. Existing training photos, panoramas, incompatible partitions, ambiguous
    memberships, rejected photos, and near-duplicates are excluded.
-3. Burst representatives are selected deterministically.
-4. Remaining candidates are ranked by policy membership, embedding-only
+3. Candidate source features, membership, and empirical coverage are evaluated
+   as matrix batches. Existing-example duplicate screening uses float32
+   embeddings and bounded matrix blocks to use local BLAS throughput without an
+   unbounded similarity matrix.
+4. Burst representatives are selected deterministically.
+5. Remaining candidates are ranked by policy membership, embedding-only
    empirical coverage gain, user rating/pick signals, and diversity.
-5. Keywords and local visual tags may provide open-vocabulary explanations
+6. Keywords and local visual tags may provide open-vocabulary explanations
    after admission. They never determine membership.
 
 ## Resource scaling
@@ -75,6 +94,18 @@ GPU batch / admission queue / HTTP threads are:
 - 16 GB unified memory: `8 / 32 / 8`
 - 32 GB unified memory: `12 / 48 / 12`
 - 64 GB or more: `16 / 64 / 16`
+
+Policy discovery keeps repeated estimator/policy-count validation at 600
+burst-safe examples and local residual validation at 2,048, while the selected
+global model still fits every curated example. Recommendation membership and
+coverage are matrix-batched; duplicate screening uses float32 embedding
+artifacts and a maximum 16 MiB similarity workspace. Run
+`uv run python scripts/benchmark_policy_scaling.py` from `server/` to measure
+these paths at representative catalog sizes on the current machine.
+
+The Lightroom Style Index and Upgrade Assistant report the model selected by
+evidence (`Global conditional policy` or `Global + validated local refinement`);
+they do not infer quality tiers from arbitrary training-count thresholds.
 
 Local LLM concurrency remains one by default. Increasing concurrent model
 requests usually reduces throughput through GPU context switching and unified

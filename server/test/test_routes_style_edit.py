@@ -1,7 +1,11 @@
 """Tests for routes/style_edit.py — covers POST /style_edit."""
 
 import io
+from types import SimpleNamespace
+
 import pytest
+
+from services.style_engine import StyleEngineResult
 from styleai_server import app
 
 
@@ -82,3 +86,90 @@ def test_style_edit_batch_photos_success(client, mocker):
     assert len(items) == 2
     assert items[0]["photo_id"] == "photo-1"
     assert items[1]["photo_id"] == "photo-2"
+
+
+def test_no_policy_match_can_use_explicit_local_llm_fallback(mocker):
+    mocker.patch("routes.style_edit._get_clip_embedding", return_value=[1.0, 0.0])
+    mocker.patch(
+        "routes.style_edit.style_engine.generate_style_edit",
+        return_value=StyleEngineResult(
+            recipe={},
+            confidence=0.0,
+            matched_count=0,
+            engine="none",
+            warning="No compatible policy",
+        ),
+    )
+    query = mocker.patch(
+        "services.training.query_similar_training_examples",
+        return_value=[],
+    )
+    analysis = mocker.Mock()
+    analysis.generate_edit_recipe_single.return_value = SimpleNamespace(
+        success=True,
+        recipe={"global": {"exposure": 0.25}},
+        warning=None,
+        input_tokens=10,
+        output_tokens=5,
+    )
+    mocker.patch("services.metadata.get_analysis_service", return_value=analysis)
+    mocker.patch("routes.style_edit._persist_edit_recipe")
+    mocker.patch(
+        "routes.style_edit._success_payload",
+        return_value={"status": "ok", "recipe": {"global": {"exposure": 0.25}}},
+    )
+
+    from routes.style_edit import _run_single_style_edit
+
+    result = _run_single_style_edit(
+        "photo-1",
+        b"jpeg",
+        "photo.jpg",
+        {},
+        camera_profile="Adobe Color",
+        use_llm_fallback=True,
+    )
+
+    assert result["engine"] == "llm"
+    query.assert_called_once_with(
+        [1.0, 0.0],
+        n_results=3,
+        camera_profile="Adobe Color",
+    )
+
+
+@pytest.mark.parametrize(
+    ("allow_crop", "allow_rotate", "expected"),
+    (
+        (True, True, {"left": 0.1, "right": 0.9, "angle": 2.0}),
+        (True, False, {"left": 0.1, "right": 0.9}),
+        (False, True, {"angle": 2.0}),
+        (False, False, None),
+    ),
+)
+def test_crop_and_rotation_permissions_are_independent(
+    allow_crop,
+    allow_rotate,
+    expected,
+):
+    from routes.style_edit import _filter_recipe_crop_rotate
+
+    recipe = {
+        "global": {
+            "crop": {
+                "left": 0.1,
+                "right": 0.9,
+                "angle": 2.0,
+            }
+        }
+    }
+
+    _filter_recipe_crop_rotate(
+        recipe,
+        {
+            "allow_auto_crop": allow_crop,
+            "allow_auto_rotate": allow_rotate,
+        },
+    )
+
+    assert recipe["global"].get("crop") == expected
