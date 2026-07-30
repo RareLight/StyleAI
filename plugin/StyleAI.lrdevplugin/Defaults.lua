@@ -15,7 +15,7 @@ Defaults.topLevelKeywordSynonym = "StyleAI Top-Level Keyword"
 
 Defaults.defaultGenerateLanguage = "English"
 
-Defaults.generateLanguages = { "English", "German", "French", "Spanish", "Italian", "Norwegian" }
+Defaults.generateLanguages = { "English", "German", "French", "Spanish", "Catalan", "Italian", "Norwegian" }
 Defaults.defaultBilingualKeywords = false
 Defaults.defaultKeywordSecondaryLanguage = "English"
 Defaults.defaultKeywordAliases = false
