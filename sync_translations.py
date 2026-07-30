@@ -93,6 +93,8 @@ if __name__ == "__main__":
     trans_en = os.path.join(lua_dir, "TranslatedStrings_en.txt")
     trans_de = os.path.join(lua_dir, "TranslatedStrings_de.txt")
     trans_fr = os.path.join(lua_dir, "TranslatedStrings_fr.txt")
+    trans_es = os.path.join(lua_dir, "TranslatedStrings_es.txt")
+    trans_ca = os.path.join(lua_dir, "TranslatedStrings_ca.txt")
     
     en_strings = sync_translations(lua_dir, trans_en)
     print("Synched English.")
@@ -100,3 +102,7 @@ if __name__ == "__main__":
     print("Synched German.")
     sync_translations(lua_dir, trans_fr, en_strings)
     print("Synched French.")
+    sync_translations(lua_dir, trans_es, en_strings)
+    print("Synched Spanish.")
+    sync_translations(lua_dir, trans_ca, en_strings)
+    print("Synched Catalan.")
