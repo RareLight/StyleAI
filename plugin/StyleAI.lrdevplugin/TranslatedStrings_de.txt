@@ -239,8 +239,6 @@
 "$$$/StyleAI/PluginInfo/RestartFailed" = "Fehler beim Neustart des Backends: ^1"
 "$$$/StyleAI/PluginInfo/RestartSuccess" = "Backend erfolgreich neu gestartet."
 "$$$/StyleAI/PluginInfo/Restarting" = "Neustart..."
-"$$$/StyleAI/PluginInfo/SemanticClustering" = "Clustering\nThreshold:"
-"$$$/StyleAI/PluginInfo/SemanticClusteringTooltip" = "Höhere Werte gruppieren Fotos enger. Niedrigere Werte erstellen lockerere, breitere Stilgruppen."
 "$$$/StyleAI/PluginInfo/SetupLmStudio" = "LM Studio einrichten"
 "$$$/StyleAI/PluginInfo/ShowDbStats" = "DB-Statistik anzeigen"
 "$$$/StyleAI/PluginInfo/Support" = "Support & Diagnostics"

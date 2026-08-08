@@ -33,7 +33,6 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck == nil and true or prefs.periodicalUpdateCheck
 	propertyTable.indexingPerformanceProfile = tonumber(prefs.indexingPerformanceProfile) or 2
 	propertyTable.indexingBatchSize = tostring(prefs.indexingBatchSize or "32")
-	propertyTable.semanticClusteringThresholdInt = math.floor((tonumber(prefs.semanticClusteringThreshold) or 0.94) * 100)
 	propertyTable.forceFreshPreviews = prefs.forceFreshPreviews or false
 	propertyTable.auditLlmInputs = prefs.auditLlmInputs or false
 	propertyTable.auditLlmInputsPath = prefs.auditLlmInputsPath or ""
@@ -545,40 +544,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 
 				f:row({
 					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfo/SemanticClustering=Clustering Threshold:"),
-						width = share("labelWidth"),
-						alignment = "right",
-					}),
-					f:column({
-						f:row({
-							f:slider({
-								value = bind("semanticClusteringThresholdInt"),
-								tooltip = LOC("$$$/StyleAI/PluginInfo/SemanticClusteringTooltip=Adjusts how strictly AI groups similar photos. Higher values mean photos must be more similar to group together."),
-								min = 80,
-								max = 100,
-								integral = true,
-								immediate = true,
-								width = 200,
-							}),
-							f:static_text({
-								title = bind({
-									key = "semanticClusteringThresholdInt",
-									transform = function(v) return string.format("%.2f", (v or 94) / 100) end,
-								}),
-								width_in_chars = 5,
-							}),
-						}),
-						f:push_button({
-							title = LOC("$$$/StyleAI/common/Reset=Reset"),
-							width = 60,
-							action = function() propertyTable.semanticClusteringThresholdInt = 94 end,
-						}),
-					}),
-					f:spacer({ fill_horizontal = 1 }),
-				}),
-				f:row({
-					fill_horizontal = 1,
 					f:checkbox({
 						value = bind("usePreviewThumbnails"),
 						title = LOC("$$$/StyleAI/PluginInfo/UsePreviewThumbnails=Use Lightroom previews for faster indexing"),
@@ -700,7 +665,6 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 	prefs.exportSize = propertyTable.exportSize
 	prefs.exportQuality = propertyTable.exportQuality
 	prefs.usePreviewThumbnails = (propertyTable.usePreviewThumbnails ~= false)
-	prefs.semanticClusteringThreshold = tonumber(propertyTable.semanticClusteringThresholdInt) / 100
 
 	prefs.prompt = propertyTable.prompt
 	prefs.prompts = propertyTable.prompts

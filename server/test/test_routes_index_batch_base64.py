@@ -4,6 +4,7 @@ import pytest
 
 from styleai_server import app
 from services import index as index_service
+from services import image_cache
 
 
 @pytest.fixture
@@ -149,18 +150,69 @@ def test_index_queue_rejects_before_decoding_when_full(client, monkeypatch):
     assert payload == {"status": "backpressure", "enqueued": 0, "rejected": 1}
 
 
+def test_index_queue_backpressures_when_metadata_cache_is_full(client, monkeypatch):
+    bounded_queue = queue.Queue(maxsize=2)
+    monkeypatch.setattr(index_service, "index_queue", bounded_queue)
+    monkeypatch.setattr(image_cache, "store_image", lambda _uuid, _data: False)
+    index_service._index_queue_accepting.set()
+    img_b64 = base64.b64encode(b"fake image data").decode("ascii")
+
+    response = client.post(
+        "/index_queue",
+        json={
+            "images": [{"image": img_b64, "photo_id": "a", "filename": "a.jpg"}],
+            "options": {"cache_images": True},
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.get_json()["results"] == {
+        "status": "backpressure",
+        "enqueued": 0,
+        "rejected": 1,
+    }
+    assert bounded_queue.empty()
+
+
+def test_metadata_batch_missing_image_fails_without_consuming_present_image(
+    client, mocker
+):
+    image_cache.clear()
+    assert image_cache.store_image("present", b"present image")
+    process = mocker.patch("routes.index.process_image_task")
+
+    response = client.post(
+        "/metadata/generate_batch",
+        json={
+            "tasks": [
+                {"photo_id": "present", "filename": "present.jpg"},
+                {"photo_id": "missing", "filename": "missing.jpg"},
+            ]
+        },
+    )
+
+    assert response.status_code == 409
+    assert "expired or was not admitted" in response.get_json()["error"]
+    assert image_cache.get_image("present") == b"present image"
+    process.assert_not_called()
+    image_cache.clear()
+
+
 def test_stop_index_queue_releases_pending_images(monkeypatch):
     bounded_queue = queue.Queue(maxsize=2)
     item = {"uuid": "queued", "image_bytes": b"image"}
     bounded_queue.put(item)
     monkeypatch.setattr(index_service, "index_queue", bounded_queue)
     index_service.active_embeddings_uuids.add("queued")
+    image_cache.clear()
+    assert image_cache.store_image("queued", b"cached")
     index_service._index_queue_accepting.set()
 
     assert index_service.stop_index_queue() == 1
     assert bounded_queue.empty()
     assert item == {}
     assert "queued" not in index_service.active_embeddings_uuids
+    assert image_cache.get_image("queued") is None
     assert index_service.is_index_queue_accepting() is False
     index_service._index_queue_accepting.set()
 

@@ -76,6 +76,7 @@ def test_cancel_discards_pending_queue_work(client, mocker):
     mock_discard = mocker.patch(
         "services.index.discard_pending_index_queue", return_value=3
     )
+    clear_cache = mocker.patch("services.image_cache.clear", return_value=2)
     server_lifecycle.GLOBAL_CANCEL_EVENT.clear()
 
     response = client.post("/cancel_all_tasks")
@@ -84,9 +85,11 @@ def test_cancel_discards_pending_queue_work(client, mocker):
     assert response.get_json()["results"] == {
         "status": "Canceled active tasks.",
         "discarded": 3,
+        "released_cached_images": 2,
     }
     assert server_lifecycle.GLOBAL_CANCEL_EVENT.is_set()
     mock_discard.assert_called_once()
+    clear_cache.assert_called_once()
     server_lifecycle.GLOBAL_CANCEL_EVENT.clear()
 
 

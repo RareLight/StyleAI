@@ -883,7 +883,6 @@ function SearchIndexAPI.analyzeAndIndexPhotoBase64(photoId, jpegData, filename, 
             "English",
         date_time = options.date_time,
         regenerate_metadata = (options.regenerate_metadata == true),
-        semantic_clustering_threshold = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
     }
 
     log:trace("Analyzing and indexing photo (base64): " .. tostring(filename) .. " id " .. photoId)
@@ -1019,7 +1018,6 @@ function SearchIndexAPI.generateMetadataSingle(photoId, base64Image, filename, o
         date_time = options.date_time,
         date_time_unix = options.date_time_unix,
         regenerate_metadata = tostring(options.regenerate_metadata ~= false),
-        semantic_clustering_threshold = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
     }
 
     log:trace("Generating metadata for single photo: " .. tostring(filename) .. " id " .. photoId)
@@ -1046,7 +1044,7 @@ end
 
 ---
 -- Calls the /metadata/generate_batch endpoint for a batch of photos.
--- Designed to re-introduce Semantic Clustering for Stage 2 (LLM Metadata generation).
+-- Each item is inferred independently; batching controls transport and GPU scheduling only.
 function SearchIndexAPI.generateMetadataBatch(items, options)
     if not items or type(items) ~= "table" or #items == 0 then
         return false, "No items provided for batch metadata generation"
@@ -1080,7 +1078,6 @@ function SearchIndexAPI.generateMetadataBatch(items, options)
         date_time = options.date_time,
         date_time_unix = options.date_time_unix,
         regenerate_metadata = tostring(options.regenerate_metadata ~= false),
-        semantic_clustering_threshold = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
     }
 
     local body = {
@@ -1159,7 +1156,6 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
         keyword_secondary_language = globalOptions.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English",
         regenerate_metadata = (globalOptions.regenerate_metadata == true),
         cache_images = globalOptions.cache_images == true,
-        semantic_clustering_threshold = tostring(globalOptions.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94),
         audit_llm_inputs = tostring(globalOptions.audit_llm_inputs or (prefs and prefs.auditLlmInputs) or false),
         audit_llm_inputs_path = globalOptions.audit_llm_inputs_path or (prefs and prefs.auditLlmInputsPath)
     }
@@ -1320,8 +1316,6 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
     end
     -- Regeneration control: if false, server will only fill missing fields
     table.insert(mimeChunks, { name = "regenerate_metadata", value = tostring(options.regenerate_metadata ~= false) })
-
-    table.insert(mimeChunks, { name = "semantic_clustering_threshold", value = tostring(options.semantic_clustering_threshold or (prefs and prefs.semanticClusteringThreshold) or 0.94) })
 
     if prefs and prefs.auditLlmInputs then
         table.insert(mimeChunks, { name = "audit_llm_inputs", value = "true" })
@@ -2095,7 +2089,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         activeLlmWorkers = activeLlmWorkers + 1
         while keepRunning and not progressScope:isCanceled() do
             if #llmQueue == 0 then
-                if preparationDone then
+                if preparationDone and activeSenderWorkers == 0 then
                     break
                 else
                     LrTasks.yield()

@@ -107,7 +107,7 @@ The Lightroom SDK `LrView` engine has several undocumented layout quirks, partic
 
 ## 12. LLM Metadata Generation Anti-Patterns
 
-- **Sequential Processing:** Never iterate over items and call `/metadata/generate` sequentially in plugins or scripts. This bypasses the backend's semantic deduplication pipeline (Semantic Clustering) and bottlenecks the GPU, as the LLM processes every image individually. Always batch requests and send them to `/metadata/generate_batch`.
+- **Sequential Processing:** Never iterate over items and call `/metadata/generate` sequentially in plugins or scripts. Always batch requests through `/metadata/generate_batch` so the backend can enforce bounded admission and serialize local-model work. Every photo must retain its own image bytes and receive its own vision result; do not clone captions, alt text, titles, or keywords from an embedding-cluster representative.
 - **Hard-Failing on Missing Image Cache:** The plugin supports "LLM-only" batch generation, where it relies on existing vision tags in the database to generate metadata, explicitly skipping the expensive JPEG export to the backend cache to save time. The backend endpoints (`/metadata/generate_batch`, `/metadata/generate`) MUST NOT fail with HTTP 400 errors when `image_bytes` are `None`. They must gracefully proceed and generate text-only metadata.
 
 ## 12.1 Edit Inference History and Undo Reconciliation

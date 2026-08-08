@@ -122,6 +122,7 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 
 ### LLM Batching & GPU Synchronization
 - **LLM Batching Protocol**: Lua plugin MUST send batch requests to `/metadata/generate_batch` (never call single `/metadata/generate` sequentially in loops).
+- **Metadata integrity**: Batch transport and burst detection may optimize scheduling, but every accepted vision-metadata job must retain its own image bytes until inference and must fail closed if they are unavailable. Never run a vision prompt without pixels or clone a representative's complete keywords, caption, title, or alt text onto embedding-cluster members. Any future burst optimization must validate per-photo visibility/content and abstain to independent inference when uncertain.
 - **Dynamic Port & Runner Prefixes**: Auto-discover local LLM hosts (`find_default_local_api_host()`); use explicit runner prefixes (`ollama::`, `lmstudio::`).
 - **GPU Pipeline Synchronization**: Downstream LLM workers must pause on `active_embeddings_uuids` gate until upstream vision embedding workers commit output to the database.
 

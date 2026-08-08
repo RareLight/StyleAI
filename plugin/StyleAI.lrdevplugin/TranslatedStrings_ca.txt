@@ -239,8 +239,6 @@
 "$$$/StyleAI/PluginInfo/RestartFailed" = "Failed to restart service: ^1"
 "$$$/StyleAI/PluginInfo/RestartSuccess" = "Service restarted successfully."
 "$$$/StyleAI/PluginInfo/Restarting" = "Restarting..."
-"$$$/StyleAI/PluginInfo/SemanticClustering" = "Clustering Threshold:"
-"$$$/StyleAI/PluginInfo/SemanticClusteringTooltip" = "Adjusts how strictly AI groups similar photos. Higher values mean photos must be more similar to group together."
 "$$$/StyleAI/PluginInfo/SetupLmStudio" = "Setup LM Studio"
 "$$$/StyleAI/PluginInfo/ShowDbStats" = "Show DB stats"
 "$$$/StyleAI/PluginInfo/Support" = "Support & Diagnostics"
