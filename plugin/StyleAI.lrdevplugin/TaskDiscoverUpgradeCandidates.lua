@@ -1,5 +1,5 @@
 -- TaskDiscoverUpgradeCandidates.lua
--- Discover Style Upgrade Candidates using Active Style Upgrade Assistant.
+-- Find policy-specific training candidates for learned styles.
 -- Surfaces under-trained styles and recommends candidate photos to train them.
 
 local LrApplication = import("LrApplication")
@@ -13,7 +13,7 @@ local LrBinding = import("LrBinding")
 
 local SearchIndexAPI = require("APISearchIndex")
 local Util = require("Util")
-local ErrorHandler = require("ErrorHandler")
+local StyleUI = require("StyleUI")
 
 local log = import("LrLogger")("StyleAI")
 
@@ -62,22 +62,7 @@ LrTasks.startAsyncTask(function()
 		end
 
 		local function updateDetailView()
-			local rawIdx = props.selectedStyleIndex
-			local idx = tonumber(rawIdx)
-			if type(rawIdx) == "table" then
-				if rawIdx.value then
-					idx = tonumber(rawIdx.value)
-				elseif rawIdx[1] ~= nil then
-					idx = tonumber(rawIdx[1])
-				else
-					for _, item in ipairs(props.listItems or {}) do
-						if item == rawIdx or item.title == rawIdx.title then
-							idx = item.value
-							break
-						end
-					end
-				end
-			end
+			local idx = StyleUI.resolveSelectedIndex(props.selectedStyleIndex, props.listItems)
 			if not idx or idx < 1 or not props.styles or idx > #props.styles then
 				props.detailName = LOC("$$$/StyleAI/UpgradeAssistant/SelectPrompt=Select a style to view details.")
 				props.detailProfile = ""
@@ -95,11 +80,10 @@ LrTasks.startAsyncTask(function()
 			end
 
 			local s = props.styles[idx]
-			local sName = s.style_name or s.policy_name or "Unknown Style"
-			local sProf = s.camera_profile or "Default"
+			local sName = s.style_name or s.policy_name or LOC("$$$/StyleAI/common/UnknownStyle=Unknown Style")
 			
 			props.detailName = sName
-			props.detailProfile = sProf
+			props.detailProfile = s.camera_profile or LOC("$$$/StyleAI/common/Default=Default")
 			props.showPolicyDetails = true
 			props.detailDescriptorLabel = LOC("$$$/StyleAI/UpgradeAssistant/PolicyCuesLabel=Policy cues:")
 			local cueNames = {}
@@ -175,17 +159,14 @@ LrTasks.startAsyncTask(function()
 						LOC("$$$/StyleAI/UpgradeAssistant/ValidatedLocalBadge=Validated local refinement") or
 						LOC("$$$/StyleAI/UpgradeAssistant/GlobalPolicyBadge=Global conditional policy")
 					local recCount = #(s.recommended_photo_ids or {})
-					local name = s.style_name or s.policy_name or "Unknown"
+					local name = s.style_name or s.policy_name or LOC("$$$/StyleAI/common/Unknown=Unknown")
 					local label = string.format("%s • %s • %d (+%d recs) • %s", profile, name, count, recCount, badge)
 					table.insert(items, { title = label, value = i })
 				end
 			end
+			local previousSelection = props.selectedStyleIndex
 			props.listItems = items
-			if #items > 0 then
-				props.selectedStyleIndex = items[1].value
-			else
-				props.selectedStyleIndex = 0
-			end
+			props.selectedStyleIndex = StyleUI.keepSelection(items, previousSelection)
 		end
 
 		props:addObserver("selectedProfileFilter", updateListItems)
@@ -262,12 +243,7 @@ LrTasks.startAsyncTask(function()
 
 		-- Action: Show Candidate Photos for selected style
 		local function showSelectedPhotos()
-			local rawIdx = props.selectedStyleIndex
-			local idx = tonumber(rawIdx)
-			if type(rawIdx) == "table" then
-				if rawIdx.value then idx = tonumber(rawIdx.value)
-				elseif rawIdx[1] ~= nil then idx = tonumber(rawIdx[1]) end
-			end
+			local idx = StyleUI.resolveSelectedIndex(props.selectedStyleIndex, props.listItems)
 			if not idx or idx < 1 or not props.styles or idx > #props.styles then return end
 			local s = props.styles[idx]
 			local recIds = s.recommended_photo_ids or {}
@@ -504,7 +480,7 @@ LrTasks.startAsyncTask(function()
 				-- Title
 				f:row({
 					f:static_text({
-						title = LOC("$$$/StyleAI/UpgradeAssistant/Title=ML Style Upgrade Assistant"),
+						title = LOC("$$$/StyleAI/UpgradeAssistant/Title=Find More Training Examples"),
 						font = "bold",
 						size = "large",
 					}),
@@ -512,9 +488,11 @@ LrTasks.startAsyncTask(function()
 
 				-- Status bar
 				f:row({
+					fill_horizontal = 1,
 					f:static_text({
 						title = bind("statusMessage"),
-						width_in_chars = 80,
+						fill_horizontal = 1,
+						wrap = true,
 					}),
 				}),
 
@@ -535,9 +513,10 @@ LrTasks.startAsyncTask(function()
 				}),
 
 				f:row({
+					fill_horizontal = 1,
 					f:static_text({
 						title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackGuide=After reviewing a candidate collection in Library, select photos and label them here:"),
-						width_in_chars = 48,
+						fill_horizontal = 1,
 						wrap = true,
 					}),
 					f:push_button({
@@ -557,74 +536,50 @@ LrTasks.startAsyncTask(function()
 					}),
 				}),
 
-				-- Style list
-				f:group_box({
+				StyleUI.filteredListGroup(f, {
 					title = LOC("$$$/StyleAI/UpgradeAssistant/StyleList=Styles Needing Upgrades"),
-					fill_horizontal = 1,
-					fill_vertical = 1,
-					f:column({
-						spacing = f:control_spacing(),
-						fill_horizontal = 1,
-						fill_vertical = 1,
-						f:row({
-							f:spacer({ fill_horizontal = 1 }),
-							f:column({
-								spacing = f:control_spacing(),
-								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/FilterByProfile=Filter by Profile:") }),
-								f:popup_menu({
-									items = bind("profileFilters"),
-									value = bind("selectedProfileFilter"),
-									width = 600,
-								}),
-								f:simple_list({
-									items = bind("listItems"),
-									value = bind("selectedStyleIndex"),
-									allows_multiple_selection = false,
-									height_in_lines = 12,
-									width = 600,
-								}),
-							}),
-							f:spacer({ fill_horizontal = 1 }),
-						}),
-					}),
+					filterLabel = LOC("$$$/StyleAI/StyleCatalog/FilterByProfile=Filter by Profile:"),
+					filterItems = bind("profileFilters"),
+					filterValue = bind("selectedProfileFilter"),
+					listItems = bind("listItems"),
+					selectedValue = bind("selectedStyleIndex"),
 				}),
 
 				-- Style detail panel
 				f:group_box({
 					title = LOC("$$$/StyleAI/UpgradeAssistant/StyleDetails=Upgrade Details"),
 					fill_horizontal = 1,
-					f:row({
-						f:column({
+					f:column({
+						fill_horizontal = 1,
 							f:row({
 								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailName=Name:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailName"), width = 250 }),
+								f:static_text({ title = bind("detailName"), fill_horizontal = 1, wrap = true }),
 							}),
 							f:row({
 								f:static_text({ title = bind("detailDescriptorLabel"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailGenre"), width = 250 }),
+								f:static_text({ title = bind("detailGenre"), fill_horizontal = 1, wrap = true }),
 							}),
 							f:row({
 								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailProfile=Profile:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailProfile"), width = 250 }),
+								f:static_text({ title = bind("detailProfile"), fill_horizontal = 1, wrap = true }),
 							}),
 							f:row({
 								f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/DetailTierLabel=ML Tier:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailTier"), width = 250 }),
+								f:static_text({ title = bind("detailTier"), fill_horizontal = 1, wrap = true }),
 							}),
 							f:row({
 								f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/DetailNeededLabel=Target:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailNeeded"), width = 250, font = "<system/bold>" }),
+								f:static_text({ title = bind("detailNeeded"), fill_horizontal = 1, wrap = true, font = "<system/bold>" }),
 							}),
 							f:row({
 								visible = bind("showPolicyDetails"),
 								f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/CoverageLabel=Coverage:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailCoverage"), width = 250, wrap = true }),
+								f:static_text({ title = bind("detailCoverage"), fill_horizontal = 1, wrap = true }),
 							}),
-						}),
-						f:column({
-							f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/DetailExplanationLabel=Recommendation Details:"), font = "<system/bold>" }),
-							f:static_text({ title = bind("detailExplanation"), width_in_chars = 40, height_in_lines = 6, wrap = true }),
-						}),
+							f:row({
+								f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/DetailExplanationLabel=Recommendation Details:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
+								f:static_text({ title = bind("detailExplanation"), fill_horizontal = 1, wrap = true }),
+							}),
 					}),
 				}),
 			})
@@ -633,9 +588,10 @@ LrTasks.startAsyncTask(function()
 		loadRecommendations()
 
 		LrDialogs.presentModalDialog({
-			title = LOC("$$$/StyleAI/UpgradeAssistant/DialogTitle=ML Style Upgrade Assistant"),
+			title = LOC("$$$/StyleAI/UpgradeAssistant/DialogTitle=Find More Training Examples"),
 			contents = buildDialog(),
 			actionVerb = LOC("$$$/StyleAI/common/Close=Close"),
+			resizable = true,
 		})
 
 		log:info("Discover Style Upgrade Candidates task finished")

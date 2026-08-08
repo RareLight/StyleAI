@@ -18,9 +18,13 @@ end
 function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
 	local f = LrView.osFactory()
 	local share = LrView.share
+	local UIFactory = require("UIFactory")
 
 	local dialogView = f:column({
+		spacing = f:control_spacing(),
+		fill_horizontal = 1,
 		f:row({
+			fill_horizontal = 1,
 			f:static_text({
 				title = LOC("$$$/StyleAI/ErrorHandler/Error=Error"),
 				alignment = "left",
@@ -31,19 +35,25 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
 				title = errorMessage,
 				alignment = "left",
 				font = "<system/bold>",
+				fill_horizontal = 1,
+				wrap = true,
 			}),
 		}),
-		f:row({
-			margin_top = 10,
-			f:static_text({
-				title = LOC("$$$/StyleAI/ErrorHandler/Details=Details"),
-				alignment = "left",
-				width = share("labelWidth"),
-			}),
-			f:static_text({
-				title = detailedInfo or LOC("$$$/StyleAI/ErrorHandler/noDetails=No additional details provided."),
-				alignment = "left",
-				size = "small",
+		UIFactory.HelpText(f, {
+			title = LOC("$$$/StyleAI/ErrorHandler/Details=Details"),
+		}),
+		f:scrolled_view({
+			fill_horizontal = 1,
+			height = 160,
+			horizontal_scroller = false,
+			vertical_scroller = true,
+			f:edit_field({
+				value = detailedInfo or LOC("$$$/StyleAI/ErrorHandler/noDetails=No additional details provided."),
+				enabled = false,
+				fill_horizontal = 1,
+				height_in_lines = 8,
+				wraps = true,
+				allow_newlines = true,
 			}),
 		}),
 	})
@@ -52,6 +62,7 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
 		title = LOC("$$$/StyleAI/ErrorHandler/Error=Error"),
 		contents = dialogView,
 		cancelVerb = LOC("$$$/StyleAI/ErrorHandler/gatherLogs=Generate report"),
+		resizable = true,
 	})
 
 	if result == "cancel" then
@@ -62,4 +73,3 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
 end
 
 return ErrorHandler
-

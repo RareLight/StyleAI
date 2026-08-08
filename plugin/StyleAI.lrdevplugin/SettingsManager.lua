@@ -34,6 +34,8 @@ function SettingsManager.initializeDefaults()
         editPrompts = { Default = Defaults.defaultEditSystemInstruction },
         editPrompt = Defaults.defaultEditPromptName,
         periodicalUpdateCheck = false,
+        debugMode = false,
+        captureLlmInputs = false,
         submitFolderName = false,
         useGlobalPhotoId = true,
         useLightroomKeywords = false,
@@ -51,6 +53,19 @@ function SettingsManager.initializeDefaults()
         if prefs[key] == nil then
             prefs[key] = defaultValue
         end
+    end
+
+    -- Diagnostic image capture used to be controlled directly by
+    -- `auditLlmInputs`.  Never carry an enabled legacy value into a release:
+    -- Debug mode and its subordinate capture option are both opt-in.
+    if prefs.debugSettingsMigrated ~= true then
+        if prefs.auditLlmInputsPath and not prefs.captureLlmInputsPath then
+            prefs.captureLlmInputsPath = prefs.auditLlmInputsPath
+        end
+        prefs.debugMode = false
+        prefs.captureLlmInputs = false
+        prefs.auditLlmInputs = false
+        prefs.debugSettingsMigrated = true
     end
     -- Force 'Default' prompts to update to the latest shipped version
     -- ONLY if the user hasn't customized them (i.e., they exactly match a known legacy default)

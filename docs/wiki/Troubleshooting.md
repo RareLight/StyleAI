@@ -8,7 +8,7 @@ Recent versions of StyleAI have transitioned from silent, log-file-based error t
 
 ### Task Completion Summaries
 
-When running bulk operations like "Analyze & Index photos" or "AI Edit photos", you may process hundreds of images at once. If any single image fails (e.g., due to an API timeout), the overall task will continue. At the end of the batch process, a **Task Completion Dialog** will systematically aggregate and display a summary of:
+When running bulk operations like **Prepare Photos** or **Apply My Style**, you may process hundreds of images at once. If any single image fails (e.g., due to an API timeout), the overall task will continue. At the end of the batch process, a **Task Completion Dialog** will systematically aggregate and display a summary of:
 - Successfully processed photos
 - Photos that encountered errors
 
@@ -52,7 +52,7 @@ Local AI models (via LM Studio or Ollama) can take longer to process on machines
 - **Symptom**: The Styles Index is empty, an edit reports no active policy, or
   recommendations still reflect an older training run.
 - **Resolution**: Open **StyleAI → Styles Index** and choose **Reset & Discover**,
-  or rerun **Train AI Style**. Policy training builds a complete inactive
+  or rerun **Learn From My Edits**. Policy training builds a complete inactive
   generation and activates it atomically, so the prior generation remains
   usable if a rebuild fails.
 - **Minimum support**: Each compatible HDR/profile partition needs at least 12

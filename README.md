@@ -48,8 +48,9 @@ Whether you want to cull a massive photo shoot, find a specific photo using natu
      - **Windows:** Click *More info* -> *Run anyway*.
      - **macOS:** Right-click the `.pkg` -> *Open* -> *Open anyway*.
 4. **Usage:** Select photos in your Library, go to **Library -> Plug-in Extras**, and choose:
-   - **Analyze & Index Photos...** for auto-tagging, face recognition, and semantic search.
-   - **Train AI Style (Save Edits)...** to teach the local AI your signature editing style.
+   - **Prepare Photos...** for local visual analysis, semantic search, and optional metadata generation.
+   - **Learn From My Edits...** to teach StyleAI your editing decisions from edited RAW and DNG photos.
+   - **Apply My Style...** to apply learned edits with visible review and virtual-copy safeguards.
    - **AI Edit Photos...** to apply your predictive learned styles or creative generative edits.
    - **Advanced Search...** to find photos using natural language.
 

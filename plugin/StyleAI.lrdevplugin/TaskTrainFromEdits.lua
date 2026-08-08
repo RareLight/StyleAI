@@ -8,30 +8,34 @@
 ---
 
 require("DevelopEditManager")
+local LrApplication = import("LrApplication")
 local WorkCoordinator = require("WorkCoordinator")
+local UIFactory = require("UIFactory")
+local StyleDiscovery = require("StyleDiscovery")
 
-local function showTrainDialog(ctx)
+local function showTrainDialog(ctx, selectedPhotosSnapshot)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 	local props = LrBinding.makePropertyTable(ctx)
 
 	props.scope = prefs.trainingScope or "selected"
 	props.forceRetrain = false
+	props.selectedCount = #(selectedPhotosSnapshot or {})
 
 	local contents = f:column({
 		bind_to_object = props,
 		spacing = f:control_spacing(),
-		f:group_box({
-			title = LOC("$$$/StyleAI/AnalyzeAndIndex/Scope=Scope"),
-			fill_horizontal = 1,
-			f:row({
-				f:static_text({
-					title = LOC("$$$/StyleAI/AnalyzeAndIndex/Scope=Scope"),
-					width = 150,
-				}),
+		UIFactory.Notice(f, {
+			kind = "info",
+			title = LOC("$$$/StyleAI/Training/DialogHint=StyleAI learns from the Develop settings of your edited RAW and DNG photos. It reads those settings but does not change them."),
+		}),
+		UIFactory.SettingsGroup(f, {
+			title = LOC("$$$/StyleAI/Training/Photos=Training Photos"),
+			UIFactory.FormRow(f, {
+				label = LOC("$$$/StyleAI/AnalyzeAndIndex/Scope=Scope:"),
 				f:popup_menu({
 					value = bind("scope"),
-					width = 300,
+					fill_horizontal = 1,
 					items = {
 						{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
 						{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
@@ -39,45 +43,35 @@ local function showTrainDialog(ctx)
 					},
 				}),
 			}),
-		}),
-		f:row({
-			f:static_text({
-				title = LOC(
-					"$$$/StyleAI/Training/DialogHint=StyleAI learns from your edited RAW and DNG photos. Indexed photos can be reused immediately; other photos are analyzed while learning."
-				),
-				font = "italic",
-				wrap = true,
-				width_in_chars = 60,
+			UIFactory.HelpText(f, {
+				title = bind({
+					key = "scope",
+					transform = function(scope)
+						if scope == "selected" then
+							return LOC("$$$/StyleAI/Training/SelectedCount=^1 selected photo(s) will be checked for training eligibility.", tostring(props.selectedCount))
+						end
+						return LOC("$$$/StyleAI/Training/ScopeCountPending=StyleAI will count and check eligible photos after you continue.")
+					end,
+				}),
 			}),
 		}),
-		f:spacer({ height = 5 }),
-		f:row({
+		UIFactory.SettingsGroup(f, {
+			title = LOC("$$$/StyleAI/Training/ExistingExamples=Existing Training Examples"),
 			f:checkbox({
-				title = LOC("$$$/StyleAI/Training/ForceRetrain=Re-analyze photos that have already been learned (overwrites existing data)"),
+				title = LOC("$$$/StyleAI/Training/ForceRetrain=Update previously learned examples"),
 				value = bind("forceRetrain"),
 			}),
-		}),
-		f:row({
-			f:push_button({
-				title = LOC("$$$/StyleAI/common/ResetAllDefaults=Reset to Defaults"),
-				action = function()
-					local confirm = LrDialogs.confirm(
-						LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmTitle=Reset Settings"),
-						LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmMessage=Are you sure you want to reset all options in this dialog to their default values?")
-					)
-					if confirm == "ok" then
-						props.scope = "selected"
-						props.forceRetrain = false
-					end
-				end,
+			UIFactory.HelpText(f, {
+				title = LOC("$$$/StyleAI/Training/UpdateHelp=When enabled, the saved training record for an eligible photo is replaced with its current Develop settings and source analysis."),
 			}),
 		}),
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/StyleAI/Training/DialogTitle=Learn My Editing Style"),
+		title = LOC("$$$/StyleAI/Training/DialogTitle=Learn From My Edits"),
 		contents = contents,
-		actionVerb = LOC("$$$/StyleAI/Training/SaveButton=Learn My Style"),
+		actionVerb = LOC("$$$/StyleAI/Training/SaveButton=Learn From My Edits"),
+		resizable = true,
 	})
 
 	if result ~= "ok" then
@@ -96,12 +90,13 @@ LrTasks.startAsyncTask(function()
 	LrFunctionContext.callWithContext("TrainFromEditsTask", function(ctx)
 		LrDialogs.attachErrorDialogToFunctionContext(ctx)
 		log:info("Save Training Examples task started")
+		local catalog = LrApplication.activeCatalog()
 
 		-- Preserve the user's target-photo selection before modal UI changes
 		-- Lightroom's live selection/focus state.
 		local selectedPhotosSnapshot = PhotoSelector.snapshotSelectedPhotos()
 
-		local options = showTrainDialog(ctx)
+		local options = showTrainDialog(ctx, selectedPhotosSnapshot)
 		if not options then
 			log:info("Train task cancelled by user")
 			return
@@ -490,6 +485,19 @@ LrTasks.startAsyncTask(function()
 				LOC("$$$/StyleAI/Training/BuildingPolicies=Building editing policies from all saved examples...")
 			)
 			local rebuilt, rebuildResult = SearchIndexAPI.discoverStyles()
+			if rebuilt then
+				rebuilt, rebuildResult = StyleDiscovery.waitForCompletion(function(discovery)
+					if discovery.phase == "fitting_partitions" then
+						progressScope:setCaption(LOC(
+							"$$$/StyleAI/Training/BuildingProgress=Building editing policies: ^1 of ^2 compatible partitions...",
+							tostring(discovery.completed_partitions or 0),
+							tostring(discovery.eligible_partitions or 0)
+						))
+					elseif discovery.phase == "activating" then
+						progressScope:setCaption(LOC("$$$/StyleAI/Training/Activating=Validating and activating learned styles..."))
+					end
+				end)
+			end
 			if not rebuilt then
 				table.insert(
 					backendWarnings,
@@ -542,7 +550,7 @@ LrTasks.startAsyncTask(function()
 			local ok, styles = SearchIndexAPI.listStyles()
 			if ok and styles and #styles > 0 then
 				recommendationMsg = "\n\n" .. LOC(
-					"$$$/StyleAI/Training/PolicyComplete=Editing-policy training completed. Open Style Upgrade Assistant to review high-confidence examples that improve policy coverage."
+					"$$$/StyleAI/Training/PolicyComplete=Style learning completed. Open Find More Training Examples to review high-confidence photos that may improve policy coverage."
 				)
 			end
 		end

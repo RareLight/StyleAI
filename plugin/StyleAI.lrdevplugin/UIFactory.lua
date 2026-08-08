@@ -1,7 +1,7 @@
 local LrView = import("LrView")
 local LrColor = import("LrColor")
-local LrTasks = import("LrTasks")
-local LrHttp = import("LrHttp")
+local bind = LrView.bind
+local share = LrView.share
 
 UIFactory = {}
 
@@ -49,6 +49,92 @@ function UIFactory.ProgressDialog(f, props)
     }
 end
 
+--- Creates a dynamic label/control form row. Label widths may be shared with
+--- other labels, but never with the mixed controls that follow them.
+function UIFactory.FormRow(f, props)
+    local children = {}
+    for i, child in ipairs(props) do
+        children[i] = child
+    end
+    local row = {
+        fill_horizontal = props.fill_horizontal == nil and 1 or props.fill_horizontal,
+        spacing = props.spacing or f:control_spacing(),
+        visible = props.visible,
+        enabled = props.enabled,
+    }
+    if props.label then
+        table.insert(row, f:static_text {
+            title = props.label,
+            alignment = props.labelAlignment or "right",
+            width = props.labelWidth,
+        })
+    end
+    for _, child in ipairs(children) do
+        table.insert(row, child)
+    end
+    return f:row(row)
+end
+
+--- Creates wrapped supporting copy that grows vertically with localization.
+function UIFactory.HelpText(f, props)
+    return f:static_text {
+        title = props.title or "",
+        fill_horizontal = 1,
+        wrap = true,
+        size = props.size or "small",
+        text_color = props.text_color,
+        visible = props.visible,
+    }
+end
+
+--- Creates a status row whose text remains meaningful without its color.
+function UIFactory.StatusRow(f, props)
+    return UIFactory.FormRow(f, {
+        label = props.label,
+        labelWidth = props.labelWidth,
+        visible = props.visible,
+        f:static_text {
+            title = props.title,
+            text_color = props.text_color,
+            fill_horizontal = 1,
+            wrap = true,
+        },
+        props.action,
+    })
+end
+
+--- Creates a summary block for the effective operation, allowing long text to
+--- wrap rather than determining the dialog width.
+function UIFactory.Summary(f, props)
+    return UIFactory.SettingsGroup(f, {
+        title = props.title or LOC("$$$/StyleAI/UI/Summary=Summary"),
+        visible = props.visible,
+        UIFactory.HelpText(f, {
+            title = props.text,
+            size = props.size,
+        }),
+    })
+end
+
+--- Keeps destructive actions visually separate from routine controls.
+function UIFactory.DestructiveAction(f, props)
+    return f:column {
+        fill_horizontal = 1,
+        spacing = f:control_spacing(),
+        visible = props.visible,
+        UIFactory.HelpText(f, {
+            title = props.explanation or "",
+        }),
+        f:row {
+            f:push_button {
+                title = props.title,
+                action = props.action,
+                enabled = props.enabled,
+            },
+        },
+    }
+end
+
 --- Creates a compact, text-first status notice. Color reinforces the message;
 --- it never carries the meaning by itself.
 function UIFactory.Notice(f, props)
@@ -58,16 +144,18 @@ function UIFactory.Notice(f, props)
         warning = LrColor(0.75, 0.42, 0),
         error = LrColor(0.75, 0.1, 0.1),
     }
+    local textProps = {
+        title = props.title or "",
+        fill_horizontal = 1,
+        wrap = true,
+        text_color = colors[kind] or colors.info,
+    }
+    if props.width then textProps.width = props.width end
+    if props.height_in_lines then textProps.height_in_lines = props.height_in_lines end
     return f:row {
         fill_horizontal = 1,
         visible = props.visible,
-        f:static_text {
-            title = props.title or "",
-            width_in_chars = props.width_in_chars or 75,
-            height_in_lines = props.height_in_lines or 2,
-            wrap = true,
-            text_color = colors[kind] or colors.info,
-        },
+        f:static_text(textProps),
     }
 end
 

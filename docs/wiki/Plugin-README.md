@@ -24,7 +24,7 @@ The plugin uses locally running open-weights models through Ollama or LM Studio 
 
 ## Core Features
 
-### Analyze and Index
+### Prepare Photos
 
 - Batch-process selected, visible, all, or missing photos
 - Generate embeddings for semantic retrieval
@@ -119,7 +119,7 @@ In the plugin settings dialog you can configure:
 
 ## Typical Workflow
 
-1. Run **Analyze and Index Photos**
+1. Run **Prepare Photos**
 2. Optionally validate generated metadata
 3. Use **Advanced Search** to find related images
 4. Use **People** and **Find Similar Faces** for portrait-heavy catalogs

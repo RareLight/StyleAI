@@ -65,6 +65,7 @@ local ENDPOINTS = {
     INITIALIZE = "/initialize",
     RESTART = "/restart",
     HEALTH = "/health",
+    DEBUG_CAPTURES = "/debug/captures",
 }
 
 local EXPORT_SETTINGS = {
@@ -1247,6 +1248,8 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
 
     globalOptions = globalOptions or {}
     local url = getBaseUrl() .. ENDPOINTS.INDEX_BASE64_BATCH
+	local diagnosticCaptureEnabled = (prefs and prefs.debugMode) == true
+		and (prefs and prefs.captureLlmInputs) == true
 
     -- Construct global options table to send in JSON body
     local bodyOptions = {
@@ -1270,8 +1273,11 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
         keyword_secondary_language = globalOptions.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English",
         regenerate_metadata = (globalOptions.regenerate_metadata == true),
         cache_images = globalOptions.cache_images == true,
-        audit_llm_inputs = tostring(globalOptions.audit_llm_inputs or (prefs and prefs.auditLlmInputs) or false),
-        audit_llm_inputs_path = globalOptions.audit_llm_inputs_path or (prefs and prefs.auditLlmInputsPath)
+        diagnostic_mode = tostring((prefs and prefs.debugMode) == true),
+		audit_llm_inputs = tostring(diagnosticCaptureEnabled),
+		audit_llm_inputs_path = diagnosticCaptureEnabled
+			and (globalOptions.audit_llm_inputs_path or (prefs and prefs.captureLlmInputsPath))
+			or nil,
     }
 
     local bodyImages = {}
@@ -1431,10 +1437,11 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
     -- Regeneration control: if false, server will only fill missing fields
     table.insert(mimeChunks, { name = "regenerate_metadata", value = tostring(options.regenerate_metadata ~= false) })
 
-    if prefs and prefs.auditLlmInputs then
+    if prefs and prefs.debugMode == true and prefs.captureLlmInputs == true then
+        table.insert(mimeChunks, { name = "diagnostic_mode", value = "true" })
         table.insert(mimeChunks, { name = "audit_llm_inputs", value = "true" })
-        if prefs.auditLlmInputsPath then
-            table.insert(mimeChunks, { name = "audit_llm_inputs_path", value = prefs.auditLlmInputsPath })
+        if prefs.captureLlmInputsPath then
+            table.insert(mimeChunks, { name = "audit_llm_inputs_path", value = prefs.captureLlmInputsPath })
         end
     end
 
@@ -3411,6 +3418,22 @@ function SearchIndexAPI.getModels()
     local url = getBaseUrl() .. ENDPOINTS.MODELS
     local result = _request('GET', url)
     return result
+end
+
+function SearchIndexAPI.getDiagnosticCaptureInfo(path)
+    local url = getBaseUrl() .. ENDPOINTS.DEBUG_CAPTURES
+    if path and path ~= "" then
+        url = url .. "?path=" .. LrHttp.encodeForUrl(path)
+    end
+    local result, err = _request('GET', url, nil, 15)
+    return result, err
+end
+
+function SearchIndexAPI.clearDiagnosticCaptures(path)
+    local result, err = _request('POST', getBaseUrl() .. ENDPOINTS.DEBUG_CAPTURES, {
+        path = path,
+    }, 30)
+    return result, err
 end
 
 ---

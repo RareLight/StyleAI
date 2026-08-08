@@ -1,5 +1,6 @@
-local SettingsManager = require("SettingsManager")
 local TaskDiagnostics = require("TaskDiagnostics")
+local UIFactory = require("UIFactory")
+local BuildConfig = require("BuildConfig")
 
 PluginInfoDialogSections = {}
 
@@ -8,35 +9,55 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.logging = prefs.logging
 
 
-	propertyTable.exportSize = prefs.exportSize
-	propertyTable.exportQuality = prefs.exportQuality
-	propertyTable.usePreviewThumbnails = (prefs.usePreviewThumbnails ~= false)
-
-	propertyTable.promptTitles = {}
-	for title in pairs(prefs.prompts) do
-		table.insert(propertyTable.promptTitles, { title = title, value = title })
-	end
-
-	propertyTable.prompt = prefs.prompt
-	propertyTable.prompts = prefs.prompts
-
-	propertyTable.selectedPrompt = prefs.prompts[prefs.prompt]
-
-	propertyTable:addObserver("prompt", function(properties, key, newValue)
-		properties.selectedPrompt = properties.prompts[newValue]
-	end)
-
-	propertyTable:addObserver("selectedPrompt", function(properties, key, newValue)
-		properties.prompts[properties.prompt] = newValue
-	end)
-
 	propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck == nil and true or prefs.periodicalUpdateCheck
 	propertyTable.indexingPerformanceProfile = tonumber(prefs.indexingPerformanceProfile) or 2
-	propertyTable.indexingBatchSize = tostring(prefs.indexingBatchSize or "32")
-	propertyTable.forceFreshPreviews = prefs.forceFreshPreviews or false
-	propertyTable.auditLlmInputs = prefs.auditLlmInputs or false
-	propertyTable.auditLlmInputsPath = prefs.auditLlmInputsPath or ""
-	propertyTable.usePreviewThumbnails = prefs.usePreviewThumbnails == nil and true or prefs.usePreviewThumbnails
+	propertyTable.developerBuild = BuildConfig.developerBuild == true
+	propertyTable.debugMode = prefs.debugMode == true
+	propertyTable.captureLlmInputs = propertyTable.debugMode and prefs.captureLlmInputs == true
+	propertyTable.captureLlmInputsPath = prefs.captureLlmInputsPath or ""
+	propertyTable.captureInfoText = LOC("$$$/StyleAI/Debug/NoCaptures=No diagnostic captures saved.")
+	propertyTable:addObserver("debugMode", function(properties, key, newValue)
+		if newValue ~= true then
+			properties.captureLlmInputs = false
+		end
+	end)
+
+	local function refreshCaptureInfo()
+		if propertyTable.debugMode ~= true then return end
+		LrTasks.startAsyncTask(function()
+			local info = SearchIndexAPI.getDiagnosticCaptureInfo(propertyTable.captureLlmInputsPath)
+			if info then
+				if propertyTable.captureLlmInputsPath == "" and info.path then
+					propertyTable.captureLlmInputsPath = tostring(info.path)
+				end
+				local megabytes = (tonumber(info.bytes) or 0) / (1024 * 1024)
+				propertyTable.captureInfoText = LOC(
+					"$$$/StyleAI/Debug/CaptureSummary=^1 capture(s), ^2 MB — ^3",
+					tostring(info.capture_count or 0),
+					string.format("%.1f", megabytes),
+					tostring(info.path or "")
+				)
+			end
+		end)
+	end
+	propertyTable.refreshCaptureInfo = refreshCaptureInfo
+	if propertyTable.debugMode then refreshCaptureInfo() end
+	propertyTable.usePreviewThumbnails = prefs.usePreviewThumbnails ~= false
+	propertyTable.pluginVersionText = string.format(
+		"%d.%d.%d (%d)",
+		Info.MAJOR or 0,
+		Info.MINOR or 0,
+		Info.REVISION or 0,
+		Info.BUILD or 0
+	)
+	propertyTable.backendVersionText = LOC("$$$/StyleAI/common/Checking=Checking...")
+	local catalogPath = LrApplication.activeCatalog():getPath()
+	propertyTable.databasePath = LrPathUtils.child(LrPathUtils.parent(catalogPath), "styleai.db")
+	LrTasks.startAsyncTask(function()
+		local versionInfo = SearchIndexAPI.getBackendVersion()
+		propertyTable.backendVersionText = versionInfo and (versionInfo.backend_version or versionInfo.version)
+			or LOC("$$$/StyleAI/common/Unavailable=Unavailable")
+	end)
 
 	-- Training/Style Profile stats (loaded asynchronously).
 	propertyTable.trainingCount = 0
@@ -84,6 +105,9 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.healthStatus = "healthy"
 	propertyTable.healthIssues = ""
 	propertyTable.healthColor = { 0, 0.8, 0 }
+	propertyTable.backendStatusText = LOC("$$$/StyleAI/common/Checking=Checking...")
+	propertyTable.visionStatusText = LOC("$$$/StyleAI/common/Checking=Checking...")
+	propertyTable.metadataStatusText = LOC("$$$/StyleAI/common/Checking=Checking...")
 
 	local function updateHealth()
 		LrTasks.startAsyncTask(function()
@@ -92,12 +116,25 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 			local issues = {}
 			local color = { 0, 0.8, 0 }
 
+			propertyTable.backendStatusText = health.backend
+				and LOC("$$$/StyleAI/Health/ServiceReady=Ready — local background service is running.")
+				or LOC("$$$/StyleAI/Health/ServiceUnavailable=Unavailable — local background service is not reachable.")
+			propertyTable.visionStatusText = health.clip
+				and LOC("$$$/StyleAI/Health/VisionReady=Ready — vision model is installed.")
+				or LOC("$$$/StyleAI/Health/VisionUnavailable=Unavailable — vision model setup is required.")
+			propertyTable.metadataStatusText = (health.ollama or health.lmstudio)
+				and LOC("$$$/StyleAI/Health/MetadataReady=Ready — a local metadata model provider is available.")
+				or LOC("$$$/StyleAI/Health/MetadataOptional=Optional — no local metadata model provider is configured.")
+
 			if not health.backend then
 				status = "critical"
 				table.insert(issues, LOC("$$$/StyleAI/Health/BackendFailed=Local background service is not reachable."))
 				color = { 0.8, 0, 0 }
-			else
-				table.insert(issues, LOC("$$$/StyleAI/Health/BackendOk=Local ML Engine: Running (Editing fully functional)."))
+			end
+			if not health.clip then
+				status = "critical"
+				table.insert(issues, LOC("$$$/StyleAI/Health/ClipMissing=Vision model is not ready."))
+				color = { 0.8, 0, 0 }
 			end
 			if not health.ollama and not health.lmstudio then
 				if status ~= "critical" then
@@ -171,17 +208,17 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 	return {
 		{
 			bind_to_object = propertyTable,
-			title = LOC("$$$/StyleAI/PluginInfo/Logging=Logging"),
+			title = LOC("$$$/StyleAI/PluginInfo/UpdatesAndLogs=Updates & Log Files"),
 
 			f:group_box({
-				title = LOC("$$$/StyleAI/PluginInfo/Logging=Logging"),
-				width = 600,
+				title = LOC("$$$/StyleAI/PluginInfo/UpdatesAndLogs=Updates & Log Files"),
+				fill_horizontal = 1,
 
 				f:row({
 					f:static_text({
 						title = bind("updateStatus"),
 						text_color = bind("updateStatusColor"),
-						width = share("bottomButtons"),
+						fill_horizontal = 1,
 						alignment = "center",
 					}),
 					f:push_button({
@@ -189,7 +226,6 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 						action = function(button)
 							LrShell.revealInShell(Util.getLogfilePath())
 						end,
-						width = share("bottomButtons"),
 					}),
 					f:push_button({
 						title = LOC(
@@ -200,7 +236,6 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 								Util.copyLogfilesToDesktop()
 							end)
 						end,
-						width = share("bottomButtons"),
 					}),
 					f:push_button({
 						title = bind("updateButtonTitle"),
@@ -218,7 +253,6 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 								propertyTable.manualCheckUpdates()
 							end
 						end,
-						width = share("bottomButtons"),
 					}),
 				}),
 				f:row({
@@ -232,16 +266,43 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 			}),
 		},
 		{
-			title = LOC("$$$/StyleAI/PluginInfo/Credits=CREDITS"),
+			title = LOC("$$$/StyleAI/PluginInfo/Credits=About"),
 			f:group_box({
-				width = 600,
-				title = LOC("$$$/StyleAI/PluginInfo/Credits=CREDITS"),
+				fill_horizontal = 1,
+				title = LOC("$$$/StyleAI/PluginInfo/Credits=About"),
 				f:row({
 					f:static_text({
-						title = Defaults.copyrightString,
-						width_in_chars = 140,
-						height_in_lines = 20,
+						title = LOC("$$$/StyleAI/PluginInfo/AboutText=StyleAI is local-first software built with open-source libraries and models."),
+						fill_horizontal = 1,
+						wrap = true,
 					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/PluginInfo/ViewCredits=View Credits"),
+						action = function()
+							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Credits")
+						end,
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/PluginInfo/ViewLicense=View License"),
+						action = function()
+						LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/blob/main/LICENSE")
+					end,
+					}),
+				}),
+				UIFactory.FormRow(f, {
+					label = LOC("$$$/StyleAI/PluginInfo/PluginVersion=Plugin version:"),
+					labelWidth = share("aboutLabelWidth"),
+					f:static_text({ title = bind("pluginVersionText") }),
+				}),
+				UIFactory.FormRow(f, {
+					label = LOC("$$$/StyleAI/PluginInfo/BackendVersion=Service version:"),
+					labelWidth = share("aboutLabelWidth"),
+					f:static_text({ title = bind("backendVersionText") }),
+				}),
+				UIFactory.Notice(f, {
+					kind = "warning",
+					visible = bind("developerBuild"),
+					title = LOC("$$$/StyleAI/PluginInfo/DeveloperBuild=Developer build — developer-only tools are enabled."),
 				}),
 			}),
 		},
@@ -252,8 +313,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 	local bind = LrView.bind
 	local share = LrView.share
 
-	local groupBoxWidth = 600
-
 	-- We remove the prompt title menu setup entirely as it was moved.
 
 	return {
@@ -263,7 +322,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 
 			-- 1. System Setup & Health
 			f:group_box({
-				width = groupBoxWidth,
+				fill_horizontal = 1,
 				title = LOC("$$$/StyleAI/Health/SummaryTitle=System Setup & Health"),
 				f:row({
 					fill_horizontal = 1,
@@ -278,16 +337,31 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							key = "healthStatus",
 							transform = function(v)
 								if v == "healthy" then
-									return LOC("$$$/StyleAI/Health/StatusHealthy=✅ Everything looks good!")
+									return LOC("$$$/StyleAI/Health/StatusHealthy=Ready — everything required is available.")
 								end
 								if v == "warning" then
-									return LOC("$$$/StyleAI/Health/StatusWarning=⚠️ Some features might not work correctly.")
+									return LOC("$$$/StyleAI/Health/StatusWarning=Limited — an optional feature needs attention.")
 								end
-								return LOC("$$$/StyleAI/Health/StatusCritical=🚨 Critical issues detected. Plugin cannot function.")
+								return LOC("$$$/StyleAI/Health/StatusCritical=Unavailable — required setup needs attention.")
 							end,
 						}),
 						text_color = bind("healthColor"),
 					}),
+				}),
+				UIFactory.StatusRow(f, {
+					label = LOC("$$$/StyleAI/Health/ServiceLabel=Background service:"),
+					labelWidth = share("healthLabelWidth"),
+					title = bind("backendStatusText"),
+				}),
+				UIFactory.StatusRow(f, {
+					label = LOC("$$$/StyleAI/Health/VisionLabel=Vision model:"),
+					labelWidth = share("healthLabelWidth"),
+					title = bind("visionStatusText"),
+				}),
+				UIFactory.StatusRow(f, {
+					label = LOC("$$$/StyleAI/Health/MetadataLabel=Metadata model:"),
+					labelWidth = share("healthLabelWidth"),
+					title = bind("metadataStatusText"),
 				}),
 				f:row({
 					visible = bind({
@@ -323,7 +397,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 
 			-- 2. My Signature Styles (Editing Engine Prerequisites)
 			f:group_box({
-				width = groupBoxWidth,
+				fill_horizontal = 1,
 				title = LOC("$$$/StyleAI/Training/SectionTitle=My Signature Styles"),
 				f:row({
 					fill_horizontal = 1,
@@ -419,7 +493,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							end,
 						}),
 						font = "<system/italic>",
-						height_in_lines = 5,
 						wrap = true,
 					}),
 				}),
@@ -446,7 +519,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							end,
 						}),
 						font = "<system/bold>",
-						height_in_lines = 5,
 						wrap = true,
 					}),
 				}),
@@ -458,34 +530,12 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						end,
 					}),
 
-					f:push_button({
-						title = LOC("$$$/StyleAI/Training/WipeAll=Delete All Training Data"),
-						action = function(button)
-							local confirm = LrDialogs.confirm(
-								LOC("$$$/StyleAI/Training/WipeConfirmTitle=Wipe All Training Data"),
-								LOC("$$$/StyleAI/Training/WipeConfirmMsg=This is a destructive process. It will completely delete all discovered signature styles AND all underlying vector embeddings for your training examples. This cannot be undone. Continue?"),
-								LOC("$$$/StyleAI/Training/WipeConfirmOk=Wipe Everything"),
-								LOC("$$$/StyleAI/Training/WipeConfirmCancel=Cancel")
-							)
-							if confirm == "ok" then
-								LrTasks.startAsyncTask(function()
-									local ok, err = SearchIndexAPI.clearAllTrainingData()
-									if ok then
-										propertyTable.refreshStyleStats()
-										LrDialogs.message(LOC("$$$/StyleAI/Training/WipedTitle=Training Wiped"), LOC("$$$/StyleAI/Training/WipedMsg=All training examples and signature styles have been permanently deleted."), "info")
-									else
-										ErrorHandler.handleError(LOC("$$$/StyleAI/Training/WipeFailedTitle=Wipe Failed"), tostring(err or "Unknown error"))
-									end
-								end)
-							end
-						end,
-					}),
 				}),
 			}),
 
 			-- 4. Advanced Server Settings & Maintenance
 			f:group_box({
-				width = groupBoxWidth,
+				fill_horizontal = 1,
 				title = LOC("$$$/StyleAI/PluginInfo/AdvancedSettings=Performance, Maintenance & Diagnostics"),
 				-- dbStoragePath UI removed
 				f:row({
@@ -525,6 +575,18 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						}),
 					}),
 				}),
+				UIFactory.FormRow(f, {
+					label = LOC("$$$/StyleAI/PluginInfo/DatabaseLocation=Catalog-local data:"),
+					labelWidth = share("labelWidth"),
+					f:edit_field({
+						value = bind("databasePath"),
+						enabled = false,
+						fill_horizontal = 1,
+					}),
+				}),
+				UIFactory.HelpText(f, {
+					title = LOC("$$$/StyleAI/PluginInfo/DatabaseLocationHelp=StyleAI keeps this catalog's search index, training examples, learned styles, and edit history beside the Lightroom catalog."),
+				}),
 
 				f:row({
 					fill_horizontal = 1,
@@ -534,31 +596,36 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 				}),
 				f:separator({ fill_horizontal = 1 }),
-				f:static_text({
+				UIFactory.HelpText(f, {
 					title = LOC("$$$/StyleAI/PluginInfo/BackupScopeNote=StyleAI backups protect AI indexes, training data, learned styles, and history. They do not back up the Lightroom catalog, photo files, or Develop edits."),
-					width = 570,
-					height_in_lines = 2,
 					text_color = LrColor(0.5, 0.5, 0.5),
 				}),
-				f:row({
-					fill_horizontal = 1,
-					f:checkbox({
-						value = bind("forceFreshPreviews"),
-						title = LOC("$$$/StyleAI/PluginInfo/ForceFreshPreviews=Force generate fresh LLM previews (Bypass cache)"),
-					}),
-				}),
-				f:row({
-					fill_horizontal = 1,
-					f:checkbox({
-						value = bind("auditLlmInputs"),
-						title = LOC("$$$/StyleAI/PluginInfo/AuditLlmInputs=Audit LLM inputs (Save copies of images)"),
-					}),
-					f:edit_field({
-						value = bind("auditLlmInputsPath"),
-						enabled = bind("auditLlmInputs"),
-						width_in_chars = 30,
-						tooltip = LOC("$$$/StyleAI/PluginInfo/AuditDirTooltip=Directory to save audited images"),
-					}),
+				f:separator({ fill_horizontal = 1 }),
+				UIFactory.DestructiveAction(f, {
+					title = LOC("$$$/StyleAI/Training/WipeAll=Delete All Training Data"),
+					explanation = LOC("$$$/StyleAI/Training/WipeMaintenanceHelp=Permanently delete saved training examples and learned styles. Search data, Lightroom photos, and Develop edits are not changed."),
+					action = function()
+						local confirm = LrDialogs.confirm(
+							LOC("$$$/StyleAI/Training/WipeConfirmTitle=Delete All Training Data"),
+							LOC("$$$/StyleAI/Training/WipeConfirmMsg=This permanently deletes all saved training examples and learned styles. Lightroom photos and Develop edits are not changed. Continue?"),
+							LOC("$$$/StyleAI/Training/WipeConfirmOk=Delete Training Data"),
+							LOC("$$$/StyleAI/Training/WipeConfirmCancel=Cancel")
+						)
+						if confirm ~= "ok" then return end
+						LrTasks.startAsyncTask(function()
+							local ok, err = SearchIndexAPI.clearAllTrainingData()
+							if ok then
+								propertyTable.refreshStyleStats()
+								LrDialogs.message(
+									LOC("$$$/StyleAI/Training/WipedTitle=Training Data Deleted"),
+									LOC("$$$/StyleAI/Training/WipedMsg=Saved training examples and learned styles were permanently deleted."),
+									"info"
+								)
+							else
+								ErrorHandler.handleError(LOC("$$$/StyleAI/Training/WipeFailedTitle=Delete Failed"), tostring(err or "Unknown error"))
+							end
+						end)
+					end,
 				}),
 				f:separator({ fill_horizontal = 1 }),
 				f:row({
@@ -658,6 +725,95 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 				}),
 			}),
+			f:group_box({
+				title = LOC("$$$/StyleAI/Debug/Section=Debug Options"),
+				fill_horizontal = 1,
+				f:column({
+					fill_horizontal = 1,
+					spacing = f:control_spacing(),
+					f:checkbox({
+						value = bind("debugMode"),
+						title = LOC("$$$/StyleAI/Debug/Enable=Enable Debug options"),
+					}),
+					f:column({
+						visible = bind("debugMode"),
+						fill_horizontal = 1,
+						spacing = f:control_spacing(),
+						UIFactory.Notice(f, {
+							kind = "warning",
+							title = LOC("$$$/StyleAI/Debug/PrivacyWarning=Debug capture is local, but saved files can contain photo pixels and metadata. Enable it only while troubleshooting."),
+						}),
+						f:checkbox({
+							value = bind("captureLlmInputs"),
+							title = LOC("$$$/StyleAI/Debug/CaptureInputs=Capture LLM image inputs for troubleshooting"),
+						}),
+						f:row({
+							fill_horizontal = 1,
+							f:static_text({
+								title = LOC("$$$/StyleAI/Debug/Destination=Destination:"),
+								width = share("debugLabelWidth"),
+							}),
+							f:edit_field({
+								value = bind("captureLlmInputsPath"),
+								enabled = false,
+								fill_horizontal = 1,
+							}),
+							f:push_button({
+								title = LOC("$$$/StyleAI/common/Choose=Choose..."),
+								action = function()
+									local selected = LrDialogs.runOpenPanel({
+										title = LOC("$$$/StyleAI/Debug/ChooseDestination=Choose a diagnostic capture folder"),
+										canChooseFiles = false,
+										canChooseDirectories = true,
+										allowsMultipleSelection = false,
+									})
+									if selected and selected[1] then
+										propertyTable.captureLlmInputsPath = selected[1]
+										propertyTable.refreshCaptureInfo()
+									end
+								end,
+							}),
+							f:push_button({
+								title = LOC("$$$/StyleAI/common/Reveal=Reveal"),
+								enabled = bind({ key = "captureLlmInputsPath", transform = function(v) return v and v ~= "" end }),
+								action = function()
+									if propertyTable.captureLlmInputsPath ~= "" then
+										LrShell.revealInShell(propertyTable.captureLlmInputsPath)
+									end
+								end,
+							}),
+						}),
+						UIFactory.HelpText(f, { title = bind("captureInfoText") }),
+						f:row({
+							f:push_button({
+								title = LOC("$$$/StyleAI/Debug/ClearCaptures=Clear Captured Debug Data..."),
+								action = function()
+									local confirmed = LrDialogs.confirm(
+										LOC("$$$/StyleAI/Debug/ClearTitle=Clear Captured Debug Data?"),
+										LOC("$$$/StyleAI/Debug/ClearMessage=This deletes only StyleAI diagnostic capture files in the selected debug folder. Photos, catalogs, databases, and normal logs are not changed."),
+										LOC("$$$/StyleAI/Debug/ClearAction=Clear Captures"),
+										LOC("$$$/StyleAI/common/Cancel=Cancel")
+									)
+									if confirmed ~= "ok" then return end
+									LrTasks.startAsyncTask(function()
+										local result, err = SearchIndexAPI.clearDiagnosticCaptures(propertyTable.captureLlmInputsPath)
+										if result then
+											propertyTable.refreshCaptureInfo()
+											LrDialogs.message(
+												LOC("$$$/StyleAI/Debug/ClearedTitle=Debug Captures Cleared"),
+												LOC("$$$/StyleAI/Debug/ClearedMessage=Deleted ^1 diagnostic file(s).", tostring(result.deleted_files or 0)),
+												"info"
+											)
+										else
+											ErrorHandler.handleError(LOC("$$$/StyleAI/Debug/ClearFailed=Could Not Clear Debug Captures"), tostring(err))
+										end
+									end)
+								end,
+							}),
+						}),
+					}),
+				}),
+			}),
 		},
 		{
 			title = LOC("$$$/StyleAI/PluginInfo/Support=Support & Diagnostics"),
@@ -667,8 +823,8 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				fill_horizontal = 1,
 				f:static_text({
 					title = LOC("$$$/StyleAI/PluginInfo/DiagnosticsInfo=If you are experiencing issues with StyleAI, generate a diagnostic report. This report contains local health statuses and backend logs to help with troubleshooting."),
-					width_in_chars = 60,
-					height_in_lines = 3,
+					fill_horizontal = 1,
+					wrap = true,
 				}),
 				f:push_button({
 					title = LOC("$$$/StyleAI/PluginInfo/GenerateDiagnosticReport=Generate Diagnostic Report"),
@@ -683,14 +839,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 end
 function PluginInfoDialogSections.endDialog(propertyTable)
 	prefs.indexingPerformanceProfile = tonumber(propertyTable.indexingPerformanceProfile) or 2
-	prefs.indexingBatchSize = tonumber(propertyTable.indexingBatchSize) or 32
-
-	prefs.exportSize = propertyTable.exportSize
-	prefs.exportQuality = propertyTable.exportQuality
 	prefs.usePreviewThumbnails = (propertyTable.usePreviewThumbnails ~= false)
-
-	prefs.prompt = propertyTable.prompt
-	prefs.prompts = propertyTable.prompts
 
 	prefs.logging = propertyTable.logging
 	if propertyTable.logging then
@@ -700,9 +849,9 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 	end
 
 	prefs.periodicalUpdateCheck = propertyTable.periodicalUpdateCheck
-	prefs.forceFreshPreviews = propertyTable.forceFreshPreviews
-	prefs.auditLlmInputs = propertyTable.auditLlmInputs
-	prefs.auditLlmInputsPath = propertyTable.auditLlmInputsPath
+	prefs.debugMode = propertyTable.debugMode == true
+	prefs.captureLlmInputs = prefs.debugMode and propertyTable.captureLlmInputs == true
+	prefs.captureLlmInputsPath = propertyTable.captureLlmInputsPath
 
 	propertyTable.keepChecksRunning = false -- Stop background health polling
 end

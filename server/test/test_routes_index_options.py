@@ -79,6 +79,21 @@ class ExtractOptionsTests(unittest.TestCase):
         opts = _extract_options({"generate_keywords": "yes"})
         self.assertFalse(opts["generate_keywords"])
 
+    def test_diagnostic_capture_requires_master_gate(self):
+        opts = _extract_options({"audit_llm_inputs": "true"})
+        self.assertFalse(opts["diagnostic_mode"])
+        self.assertFalse(opts["audit_llm_inputs"])
+
+    def test_diagnostic_mode_without_capture_flag_does_not_capture(self):
+        opts = _extract_options({"diagnostic_mode": "true"})
+        self.assertTrue(opts["diagnostic_mode"])
+        self.assertFalse(opts["audit_llm_inputs"])
+
+    def test_diagnostic_capture_enabled_by_both_flags(self):
+        opts = _extract_options({"diagnostic_mode": "true", "audit_llm_inputs": "true"})
+        self.assertTrue(opts["diagnostic_mode"])
+        self.assertTrue(opts["audit_llm_inputs"])
+
     def test_existing_keywords_raw_csv_string_split(self):
         opts = _extract_options({"existing_keywords": "Alpha,Beta,Gamma"})
         self.assertEqual(opts["existing_keywords"], ["Alpha", "Beta", "Gamma"])

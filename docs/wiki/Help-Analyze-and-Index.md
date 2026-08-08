@@ -1,6 +1,6 @@
 # Guide to AI Indexing and Auto-Tagging
 
-The Analyze and Index feature powers the Semantic Search and Auto-Tagging capabilities of StyleAI. It scans your photos, generates rich visual descriptions using an LLM, and embeds them into a specialized search database. It is **not** required for AI editing or style training.
+Prepare Photos powers the semantic-search and optional local-metadata capabilities of StyleAI. It can create local visual analysis, generate descriptions with a selected local model, or do both. Preparing photos separately is **not** required before learning from edited training photos.
 
 ## Accessing the Tool
 

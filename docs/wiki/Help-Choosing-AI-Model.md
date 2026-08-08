@@ -57,7 +57,7 @@ significantly faster than the GGUF builds. See [LM Studio Setup](Help-LM-Studio-
 
 ## Practical recommendation
 
-The dropdown in *Analyze & Index* always reflects what the
+The dropdown in *Prepare Photos* always reflects what the
 backend currently advertises — newer models that ship with future backend
 updates will appear automatically. If a model you expect is missing, check
 that the corresponding local server is configured and reachable
