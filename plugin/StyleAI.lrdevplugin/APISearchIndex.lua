@@ -49,10 +49,14 @@ local ENDPOINTS = {
     TRAINING_CLEAR_ALL = "/training/all",  -- DELETE /training/all (all data)
     TRAINING_STATS = "/training/stats",
     STYLE_EDIT = "/style_edit",
+    STYLE_EDIT_APPLICATION_EVENTS = "/style_edit/events/application",
+    STYLE_EDIT_RECONCILE_EVENTS = "/style_edit/events/reconcile",
+    STYLE_EDIT_OUTCOMES = "/style_edit/events/outcomes",
     STYLE_LIST = "/styles",
     STYLE_DISCOVER = "/styles/discover",
     STYLE_DISCOVER_STATUS = "/styles/discover/status",
     STYLE_UPGRADES_RECOMMENDATIONS = "/styles/upgrades/recommendations",
+    STYLE_UPGRADES_FEEDBACK = "/styles/upgrades/feedback",
     STYLE_RESET_ALL = "/styles/reset-all",
     LOGS = "/logs",
     LOGS_RAW = "/logs/raw",
@@ -941,6 +945,7 @@ function SearchIndexAPI.enqueuePhotosBase64Batch(batch, globalOptions)
             rating = itemOptions.rating,
             pick_status = itemOptions.pick_status,
             is_edited = itemOptions.is_edited,
+            is_hdr = itemOptions.is_hdr,
         }
         table.insert(bodyImages, {
             image = item.image,
@@ -1853,6 +1858,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     local exifInfo = Util.getPhotoExif(photo)
                     if exifInfo then
                         photoOptions.camera_profile = exifInfo.camera_profile
+						photoOptions.is_hdr = exifInfo.is_hdr
                         photoOptions.camera_make = exifInfo.camera_make
                         photoOptions.camera_model = exifInfo.camera_model
                         photoOptions.focal_length = exifInfo.focal_length
@@ -3695,6 +3701,8 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
     addStr("camera_make")
     addStr("camera_model")
     addStr("camera_profile")
+    addStr("profile_mode")
+    addStr("hdr_mode")
     addStr("iso")
     addStr("aperture")
     addStr("shutter_speed")
@@ -3768,6 +3776,63 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
         return false, response.error or "Style engine error"
     end
     log:error("styleEdit unexpected status: " .. tostring(response.status))
+    return false, response.error or "Unexpected response"
+end
+
+function SearchIndexAPI.submitStyleEditApplicationEvents(events)
+    if type(events) ~= "table" or #events == 0 then
+        return true, { stored = 0, events = {} }
+    end
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_EDIT_APPLICATION_EVENTS
+    local combined = { stored = 0, events = {} }
+    for first = 1, #events, 250 do
+        local batch = {}
+        local last = math.min(first + 249, #events)
+        for index = first, last do
+            table.insert(batch, events[index])
+        end
+        local response, err = _request('POST', url, { events = batch }, 30)
+        if not response then
+            return false, err or "Unknown error"
+        end
+        if not response.results then
+            return false, response.error or "Unexpected response"
+        end
+        combined.stored = combined.stored + (response.results.stored or 0)
+        for _, storedEvent in ipairs(response.results.events or {}) do
+            table.insert(combined.events, storedEvent)
+        end
+    end
+    return true, combined
+end
+
+function SearchIndexAPI.reconcileStyleEditStates(items)
+    if type(items) ~= "table" or #items == 0 then
+        return true, { checked = 0, photos = {} }
+    end
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_EDIT_RECONCILE_EVENTS
+    local response, err = _request('POST', url, { items = items }, 30)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.results then
+        return true, response.results
+    end
+    return false, response.error or "Unexpected response"
+end
+
+function SearchIndexAPI.recordStyleEditOutcomes(items)
+    if type(items) ~= "table" or #items == 0 then
+        return true, { stored = 0, photos = {} }
+    end
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_EDIT_OUTCOMES
+    local response, err = _request('POST', url, { items = items }, 30)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.results then
+        return true, response.results
+    end
     return false, response.error or "Unexpected response"
 end
 
@@ -3883,6 +3948,22 @@ function SearchIndexAPI.getUpgradeRecommendations(limit)
         return false, err or "Unknown error"
     end
     if response.status == "ok" and response.results then
+        return true, response.results
+    end
+    return false, response.error or "Unexpected response"
+end
+
+function SearchIndexAPI.submitUpgradeFeedback(reviewId, policyId, labels)
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_UPGRADES_FEEDBACK
+    local response, err = _request('POST', url, {
+        review_id = reviewId,
+        policy_id = policyId,
+        labels = labels or {},
+    }, 30)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.results then
         return true, response.results
     end
     return false, response.error or "Unexpected response"

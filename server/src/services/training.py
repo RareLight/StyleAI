@@ -867,6 +867,7 @@ def add_training_example(
     pick_status: int = 0,
     skip_discovery: bool = False,
     force_retrain: bool = True,
+    source_provenance: str = "unknown",
 ) -> None:
     """Store or overwrite a training example.
 
@@ -925,6 +926,7 @@ def add_training_example(
                 "camera_profile": camera_profile or "",
             }
         ),
+        "source_provenance": str(source_provenance or "unknown")[:64],
     }
     if not filename:
         try:
@@ -970,6 +972,18 @@ def add_training_example(
         metadata["camera_model"] = camera_model[:64]
     if camera_profile:
         metadata["camera_profile"] = camera_profile[:128]
+    from services.rendering_state import rendering_state_from_settings
+
+    rendering_state = rendering_state_from_settings(
+        develop_settings,
+        camera_make=camera_make,
+        camera_model=camera_model,
+        legacy_profile=camera_profile,
+    )
+    metadata["rendering_state_json"] = json.dumps(
+        rendering_state, sort_keys=True, separators=(",", ":")
+    )
+    metadata["is_hdr"] = bool(rendering_state["is_hdr"])
     if iso is not None:
         metadata["iso"] = float(iso)
     if aperture is not None:

@@ -110,9 +110,190 @@ The Lightroom SDK `LrView` engine has several undocumented layout quirks, partic
 - **Sequential Processing:** Never iterate over items and call `/metadata/generate` sequentially in plugins or scripts. This bypasses the backend's semantic deduplication pipeline (Semantic Clustering) and bottlenecks the GPU, as the LLM processes every image individually. Always batch requests and send them to `/metadata/generate_batch`.
 - **Hard-Failing on Missing Image Cache:** The plugin supports "LLM-only" batch generation, where it relies on existing vision tags in the database to generate metadata, explicitly skipping the expensive JPEG export to the backend cache to save time. The backend endpoints (`/metadata/generate_batch`, `/metadata/generate`) MUST NOT fail with HTTP 400 errors when `image_bytes` are `None`. They must gracefully proceed and generate text-only metadata.
 
+## 12.1 Edit Inference History and Undo Reconciliation
+
+- Every generated recipe has an immutable catalog-local inference row with its
+  policy/model provenance, modeled slider keys, pre-edit state, and target.
+- Lightroom sends one idempotent application event after attempting the edit.
+  Successful global application includes a Develop-settings readback so later
+  comparisons use what Lightroom actually stored rather than an assumed target.
+- The Help-menu developer action **Reconcile Selected AI Edit State** checks at
+  most 100 selected photos and writes their current observed state in one
+  Lightroom metadata transaction. Use it after Apply, Undo, Redo, or manual
+  slider changes during QA.
+- `reverted` and `diverged` are state observations, not user preference labels.
+  Do not treat them as rejection/acceptance training evidence.
+- Policy resets must not delete edit inference/event history. Removing the
+  catalog-local database intentionally removes it.
+
 ## 13. Test Discipline and Lightroom Smoke Checks
 
 - **Isolated backend tests:** `server/test/conftest.py` assigns every pytest-xdist worker its own temporary catalog database. Tests must never use an actual catalog path or contact Ollama, LM Studio, or any HTTP service; mock provider and network boundaries explicitly.
 - **Required local checks:** Run `uv run pytest test/`, `uv run ruff check src test`, and `python scripts/validate_lrc_plugin.py` before handing off a change.
 - **Policy and recommendation changes:** Preserve labelled policy-recovery and candidate-admission fixtures, including expected members, ambiguity abstentions, and rejections. Measure target error, membership precision, and cross-policy leakage.
 - **Required Lightroom smoke check:** After changes to Upgrade Assistant, open a real catalog and verify one-style candidate selection, **Show All Candidate Photos**, cancellation, absent/deleted photos, and repeated collection creation. Confirm the Lightroom UI stays responsive and no write transaction yields.
+
+### Rendering-state SDK capability gate
+
+Automatic profile and HDR selection must remain disabled until the current
+Lightroom Classic version passes this catalog-local capability spike. The spike
+does not train a model, alter StyleAI databases, or change the production edit
+path. It accepts virtual copies only and restores their captured rendering state
+after each test.
+
+1. In a disposable catalog, make two to eight virtual copies from RAW photos.
+   Include compatible copies from the same camera with: Adobe built-in,
+   camera-matching, and at least one installed custom camera profile. Include
+   both SDR and HDR states. Keep copies from other camera models selected if you
+   want to confirm that the harness refuses cross-camera application.
+2. Select only those disposable virtual copies in Library.
+3. Run **Help → Plug-in Extras → Developer: Test Profile and HDR SDK Support**.
+4. Inspect the JSON report written to the Desktop. For every profile class,
+   record the exact `CameraProfile`, `CameraProfileRaw`, and `Look` values that
+   Lightroom returned. Confirm profile-only, HDR-only, and combined tests show
+   `matched=true`, and every test shows `restore_verified=true`.
+5. Manually apply one verified profile/HDR combination to a disposable virtual
+   copy, then use Lightroom Undo and Redo. After each action, reopen Develop and
+   confirm both the UI and `getDevelopSettings()` readback (by rerunning the
+   spike with that state represented on a selected copy) agree.
+6. Temporarily remove or rename the custom profile and confirm Lightroom rejects
+   or substitutes it without leaving a mixed profile/HDR state. Restore the
+   profile before continuing normal work.
+
+Lightroom's documented plug-in API does not provide profile enumeration, so a
+future selector must use only a catalog-local registry of representations
+observed in training photos. Do not infer a profile ID from its display name.
+The report deliberately leaves `gate_passed=false`: a developer must classify
+the observed built-in/camera-matching/custom specimens and record the manual
+Undo/Redo and unavailable-profile outcomes. If custom profile application is
+not exact and repeatable, profile selection is recommendation-only. If HDR
+application/readback is not exact and repeatable, HDR selection is suggestion-
+only.
+
+The Lightroom Classic 15.5 Nikon Z7 custom-profile spike covered four custom
+profiles in SDR and HDR: 104/104 profile-only, HDR-only, and combined
+applications matched exact readback, with zero restore failures or
+cross-category changes. Undo worked; Redo did not survive the two SDK catalog
+transactions used for apply and verified restore. Production code therefore
+does not promise Redo and never simulates it by rerunning the spike or edit.
+
+Profile and HDR controls default independently to **Suggest**. **Off** preserves
+the current state without a proposal. **Auto** is conservative: it is eligible
+only for a validated selector trained from a Lightroom-target-independent
+embedded RAW preview, a compatible
+catalog-observed profile, and an available continuous policy for the exact
+target rendering state. Auto eligibility uses stricter cross-fitted, per-class
+precision and uncertainty gates than Suggest. Lightroom must confirm exact
+profile/HDR readback before StyleAI applies sliders. An unavailable or
+substituted profile aborts
+the slider edit and triggers one bounded restoration attempt.
+The unavailable-profile branch is code- and fixture-verified but remains
+unverified against a removed real custom profile, because removing the active
+profile would disturb unrelated catalog photos.
+
+## 14. Local Catalog Policy Evaluation
+
+Synthetic policy fixtures prove mathematical invariants, but they do not
+measure fidelity on a photographer's actual edits. Run burst-safe held-out
+evaluation against a catalog-local training collection with:
+
+```sh
+cd server
+uv run python scripts/evaluate_catalog_policies.py \
+  --db-path "/path/to/catalog/styleai.db"
+```
+
+The evaluator builds fold-specific production artifacts entirely in memory. It
+does not replace the active generation or alter training examples. Reports are
+written beneath `styleai.db/evaluation_reports/` by default and include:
+
+- a deterministic dataset fingerprint and all policy schema versions;
+- selective prediction coverage, confidence, entropy, and abstentions;
+- normalized and raw RMSE by target and target family;
+- white-balance classification accuracy and catastrophic-outlier counts;
+- estimator, policy-count, local-corrector, partition, and timing diagnostics.
+
+Reports contain aggregate metrics by default. Use `--include-photo-ids` only
+when local debugging requires the IDs of the worst predicted examples. Reports
+must not be uploaded automatically or treated as cross-catalog training data.
+
+## 15. Recommendation Calibration
+
+Recommendation thresholds and membership/coverage/quality ranking weights must
+be supported by labelled local evidence rather than tuned against one anecdotal
+candidate list. A review document uses schema
+`policy-recommendation-review-v1` and groups candidates by the recommendation
+run in which they were reviewed. Each candidate may be labelled:
+
+- `policy_match`: whether the photo truly belongs to the proposed editing policy;
+- `useful`: whether it would be a valuable additional training example;
+- `null`: not reviewed, and therefore excluded from that metric.
+
+The complete interchange contract is
+`docs/schemas/policy-recommendation-review-v1.schema.json`.
+Review files contain local embeddings and selected metadata needed to replay
+the production ranker. Keep them catalog-local; neither the plugin nor the
+calibration command uploads them.
+
+The Upgrade Assistant creates a compact review snapshot automatically. After
+opening a candidate collection, select reviewed photos in Library, reopen the
+same policy in the assistant, and choose one label:
+
+- **Helpful Example** means `policy_match=true, useful=true`.
+- **Fits, But Redundant** means `policy_match=true, useful=false`.
+- **Not This Policy** means `policy_match=false, useful=false`.
+
+Labels are durable evaluation evidence; they do not retrain a policy or change
+production thresholds. Export labelled sessions, joining their photo IDs to
+the canonical Chroma embeddings, with:
+
+```sh
+cd server
+uv run python scripts/export_policy_recommendation_reviews.py \
+  --db-path "/path/to/catalog/styleai.db" \
+  --output "/path/to/local-recommendation-reviews.json"
+```
+
+Run calibration with:
+
+```sh
+cd server
+uv run python scripts/calibrate_policy_recommendations.py \
+  "/path/to/local-recommendation-reviews.json"
+```
+
+The report measures policy precision/leakage/recall, useful-example precision
+and recall, NDCG, and selection rate. Parameter selection is cross-validated by
+whole review group, and the precision gate uses the lower bound of a 95% Wilson
+interval rather than an optimistic point estimate. Recommended values remain
+`evaluation_only`; this command never updates production defaults. Upstream
+`source_ambiguous` decisions remain hard gates and cannot be loosened by
+downstream ranking calibration.
+
+## 16. Applied Edit Outcome Evaluation
+
+Use **Library → Review AI Edit Outcome** on selected AI-edited photos to record
+one explicit result: Keep, Modified and Kept, or Reject. The action records
+feedback only; it never changes Develop settings. Keep is accepted only when
+the modeled Lightroom state still matches the confirmed application. Reopen
+the action with a different choice to append a corrected judgment—the history
+is never overwritten.
+
+Generate a catalog-local report with:
+
+```sh
+cd server
+uv run python scripts/evaluate_applied_edits.py \
+  --db-path "/path/to/catalog/styleai.db"
+```
+
+Reports are written under `styleai.db/evaluation_reports/` and follow
+`docs/schemas/applied-edit-quality-v1.schema.json`. They include application
+confirmation/failure counts, review coverage, explicit outcome rates,
+corrections to delivered targets, confidence calibration, and generation-level
+Wilson intervals. Rendering decisions are reported separately from slider
+errors, stratified by Suggest and Auto; unchanged suggestions are not counted
+as accepted or rejected. HDR activations have a dedicated return-rate report.
+Rejected edits are preference evidence but never numeric
+regression targets. Results and generation comparisons remain
+`evaluation_only`; they do not retrain, activate, or adjust a model.

@@ -29,6 +29,11 @@ class StyleEngineResult:
         warning: str | None = None,
         error: str | None = None,
         matched_filenames: list[str] | None = None,
+        generation_id: str | None = None,
+        policy_id: str | None = None,
+        hard_partition_key: str = "default",
+        entropy: float | None = None,
+        rendering_intent: dict[str, Any] | None = None,
     ) -> None:
         self.recipe = recipe
         self.confidence = confidence
@@ -37,6 +42,11 @@ class StyleEngineResult:
         self.warning = warning
         self.error = error
         self.matched_filenames = matched_filenames or []
+        self.generation_id = generation_id
+        self.policy_id = policy_id
+        self.hard_partition_key = hard_partition_key
+        self.entropy = entropy
+        self.rendering_intent = rendering_intent
 
 
 def _canonical_to_edit_recipe(
@@ -89,6 +99,9 @@ def generate_style_edit(
     style_strength: float | None = None,
     style_override: str | None = None,
     do_not_clip: bool = True,
+    profile_mode: str = "suggest",
+    hdr_mode: str = "suggest",
+    source_provenance: str = "unknown",
 ) -> StyleEngineResult:
     """Predict one absolute edit, abstaining on unsupported or ambiguous input."""
     del min_confidence, do_not_clip
@@ -113,7 +126,8 @@ def generate_style_edit(
             "focal_length": focal_length,
             "capture_time": capture_time_unix,
             "user_keywords": user_keywords or [],
-            "source_provenance": "raw_preview",
+            "source_provenance": source_provenance,
+            "develop_settings": current_settings or {},
         }
         prediction = policy_runtime.predict_absolute_edit(
             embedding=clip_embedding,
@@ -121,6 +135,9 @@ def generate_style_edit(
             current_settings=current_settings,
             strength=style_strength if style_strength is not None else 1.0,
             policy_override=style_override,
+            profile_mode=profile_mode,
+            hdr_mode=hdr_mode,
+            source_provenance=source_provenance,
         )
     except Exception as exc:
         logger.error(
@@ -146,10 +163,19 @@ def generate_style_edit(
         f"Editing Policy: {prediction.policy_name} "
         f"(confidence {prediction.confidence:.0%})"
     )
+    recipe = _canonical_to_edit_recipe(prediction.applied, summary)
+    rendering_intent = getattr(prediction, "rendering_intent", None)
+    if rendering_intent is not None:
+        recipe["rendering_intent"] = rendering_intent
     return StyleEngineResult(
-        recipe=_canonical_to_edit_recipe(prediction.applied, summary),
+        recipe=recipe,
         confidence=round(prediction.confidence, 3),
         matched_count=prediction.example_count,
         engine="policy_v2",
         matched_filenames=[prediction.policy_name],
+        generation_id=getattr(prediction, "generation_id", None),
+        policy_id=prediction.policy_id,
+        hard_partition_key=getattr(prediction, "hard_partition_key", "default"),
+        entropy=getattr(prediction, "entropy", None),
+        rendering_intent=rendering_intent,
     )

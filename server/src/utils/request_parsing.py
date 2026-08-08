@@ -234,6 +234,12 @@ def _extract_options(data) -> dict[str, Any]:
         if data.get("is_edited") is not None
         else None
     )
+    options["is_hdr"] = (
+        _bool_from_data(data, "is_hdr") if data.get("is_hdr") is not None else None
+    )
+    for key in ("profile_mode", "hdr_mode"):
+        mode = str(data.get(key, "suggest") or "suggest").strip().lower()
+        options[key] = mode if mode in {"off", "suggest", "auto"} else "suggest"
 
     # Tasks list (indexing-specific, kept for backwards compatibility)
     tasks_raw = data.get("tasks")

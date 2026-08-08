@@ -48,13 +48,17 @@ LrTasks.startAsyncTask(function()
 		props.detailButtonTitle = ""
 		props.detailButtonEnabled = false
 		props.detailRecommendedIds = {}
+		props.detailReviewId = ""
+		props.detailPolicyId = ""
 		props.findAllEnabled = false
 		props.selectedActionEnabled = false
 		props.allActionEnabled = false
+		props.feedbackActionEnabled = false
 
 		local function refreshActionState()
 			props.selectedActionEnabled = props.detailButtonEnabled and not props.isLoading
 			props.allActionEnabled = props.findAllEnabled and not props.isLoading
+			props.feedbackActionEnabled = props.detailReviewId ~= "" and not props.isLoading
 		end
 
 		local function updateDetailView()
@@ -85,6 +89,8 @@ LrTasks.startAsyncTask(function()
 				props.detailButtonTitle = LOC("$$$/StyleAI/UpgradeAssistant/BtnNoRecs=No Candidate Photos Found")
 				props.detailButtonEnabled = false
 				props.detailRecommendedIds = {}
+				props.detailReviewId = ""
+				props.detailPolicyId = ""
 				return
 			end
 
@@ -114,6 +120,8 @@ LrTasks.startAsyncTask(function()
 			props.detailTier = string.format("%s (%d examples)", tierName, current)
 
 			props.detailRecommendedIds = s.recommended_photo_ids or {}
+			props.detailReviewId = s.review_id or ""
+			props.detailPolicyId = s.policy_id or ""
 			local recCount = #props.detailRecommendedIds
 
 			local admitted = tonumber(s.admitted_candidate_count) or recCount
@@ -154,6 +162,7 @@ LrTasks.startAsyncTask(function()
 		props:addObserver("isLoading", refreshActionState)
 		props:addObserver("detailButtonEnabled", refreshActionState)
 		props:addObserver("findAllEnabled", refreshActionState)
+		props:addObserver("detailReviewId", refreshActionState)
 
 		local function updateListItems()
 			local items = {}
@@ -437,6 +446,55 @@ LrTasks.startAsyncTask(function()
 			end)
 		end
 
+		local function submitSelectedFeedback(policyMatch, useful)
+			local reviewId = props.detailReviewId or ""
+			local policyId = props.detailPolicyId or ""
+			if reviewId == "" or policyId == "" then return end
+
+			local candidateIds = {}
+			for _, item in ipairs(props.detailRecommendedIds or {}) do
+				local photoId = type(item) == "table" and (item.globalPhotoId or item.photo_id) or item
+				if photoId and photoId ~= "" then
+					candidateIds[tostring(photoId)] = true
+				end
+			end
+			local labels = {}
+			local catalog = LrApplication.activeCatalog()
+			for _, photo in ipairs(catalog:getTargetPhotos() or {}) do
+				local photoId = Util.getGlobalPhotoIdForPhoto(photo, { skipCacheWrite = true })
+				if photoId and candidateIds[tostring(photoId)] then
+					table.insert(labels, {
+						photo_id = tostring(photoId),
+						policy_match = policyMatch,
+						useful = useful,
+					})
+				end
+			end
+			if #labels == 0 then
+				LrDialogs.message(
+					LOC("$$$/StyleAI/UpgradeAssistant/FeedbackNoneTitle=No Reviewed Candidates Selected"),
+					LOC("$$$/StyleAI/UpgradeAssistant/FeedbackNoneMsg=Select one or more photos from the selected policy candidate collection in Library, then reopen the assistant and record the appropriate review label."),
+					"warning"
+				)
+				return
+			end
+
+			props.isLoading = true
+			props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackSaving=Saving local recommendation feedback...")
+			LrTasks.startAsyncTask(function()
+				local success, result = SearchIndexAPI.submitUpgradeFeedback(reviewId, policyId, labels)
+				props.isLoading = false
+				if not success then
+					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackError=Could not save feedback: ^1", tostring(result))
+					return
+				end
+				props.statusMessage = LOC(
+					"$$$/StyleAI/UpgradeAssistant/FeedbackSaved=Saved local feedback for ^1 candidate photos.",
+					tostring((result and result.updated) or #labels)
+				)
+			end)
+		end
+
 		-- Build Dialog
 		local function buildDialog()
 			return f:column({
@@ -473,6 +531,29 @@ LrTasks.startAsyncTask(function()
 						action = showAllPhotos,
 						width = share("toolbarButton"),
 						enabled = bind("allActionEnabled"),
+					}),
+				}),
+
+				f:row({
+					f:static_text({
+						title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackGuide=After reviewing a candidate collection in Library, select photos and label them here:"),
+						width_in_chars = 48,
+						wrap = true,
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackHelpful=Helpful Example"),
+						action = function() submitSelectedFeedback(true, true) end,
+						enabled = bind("feedbackActionEnabled"),
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackRedundant=Fits, But Redundant"),
+						action = function() submitSelectedFeedback(true, false) end,
+						enabled = bind("feedbackActionEnabled"),
+					}),
+					f:push_button({
+						title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackWrong=Not This Policy"),
+						action = function() submitSelectedFeedback(false, false) end,
+						enabled = bind("feedbackActionEnabled"),
 					}),
 				}),
 

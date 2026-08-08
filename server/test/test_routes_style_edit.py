@@ -34,6 +34,24 @@ def test_style_edit_mismatched_lengths_returns_400(client):
     assert "Mismatch" in json_data["error"]
 
 
+@pytest.mark.parametrize("field", ("profile_mode", "hdr_mode"))
+def test_style_edit_rejects_invalid_rendering_mode(client, field):
+    response = client.post(
+        "/style_edit",
+        data={
+            "image": (io.BytesIO(b"fakejpeg"), "test.jpg"),
+            "photo_id": "photo-1",
+            field: "sometimes",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["results"] is None
+    assert field in payload["error"]
+
+
 def test_style_edit_single_photo_success(client, mocker):
     mocker.patch(
         "routes.style_edit._run_single_style_edit",
@@ -114,6 +132,10 @@ def test_no_policy_match_can_use_explicit_local_llm_fallback(mocker):
     )
     mocker.patch("services.metadata.get_analysis_service", return_value=analysis)
     mocker.patch("routes.style_edit._persist_edit_recipe")
+    inference = mocker.patch(
+        "routes.style_edit.edit_history.create_recipe_inference",
+        return_value="inference-1",
+    )
     mocker.patch(
         "routes.style_edit._success_payload",
         return_value={"status": "ok", "recipe": {"global": {"exposure": 0.25}}},
@@ -131,6 +153,8 @@ def test_no_policy_match_can_use_explicit_local_llm_fallback(mocker):
     )
 
     assert result["engine"] == "llm"
+    assert result["edit_inference_id"] == "inference-1"
+    assert inference.call_args.kwargs["engine"] == "llm"
     query.assert_called_once_with(
         [1.0, 0.0],
         n_results=3,
@@ -173,3 +197,133 @@ def test_crop_and_rotation_permissions_are_independent(
     )
 
     assert recipe["global"].get("crop") == expected
+
+
+def test_record_application_confirmation(client, mocker):
+    record = mocker.patch(
+        "routes.style_edit.edit_history.record_application",
+        return_value={"event_id": "event-1", "event_kind": "apply_confirmed"},
+    )
+    response = client.post(
+        "/style_edit/events/application",
+        json={
+            "events": [
+                {
+                    "edit_inference_id": "inference-1",
+                    "idempotency_key": "application:inference-1",
+                    "status": "apply_confirmed",
+                    "current_settings": {"Exposure2012": 0.5},
+                    "global_applied": True,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["results"]["stored"] == 1
+    assert record.call_args.kwargs["current_settings"] == {"Exposure2012": 0.5}
+
+
+def test_record_application_rejects_unbounded_batch(client):
+    response = client.post(
+        "/style_edit/events/application",
+        json={"events": [{}] * 251},
+    )
+    assert response.status_code == 400
+
+
+def test_reconcile_selected_edit_states(client, mocker):
+    reconcile = mocker.patch(
+        "routes.style_edit.edit_history.reconcile_photo_state",
+        return_value={
+            "photo_id": "photo-1",
+            "inference_id": "inference-1",
+            "state": "reverted",
+            "recorded": True,
+        },
+    )
+    response = client.post(
+        "/style_edit/events/reconcile",
+        json={
+            "items": [
+                {
+                    "photo_id": "photo-1",
+                    "current_settings": {"Exposure2012": 0.0},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["results"]["photos"][0]["state"] == "reverted"
+    assert reconcile.call_args.kwargs["photo_id"] == "photo-1"
+
+
+def test_reconciliation_rejects_unbounded_batch(client):
+    response = client.post(
+        "/style_edit/events/reconcile",
+        json={"items": [{}] * 101},
+    )
+    assert response.status_code == 400
+
+
+def test_record_explicit_edit_outcomes(client, mocker):
+    record = mocker.patch(
+        "routes.style_edit.edit_history.record_user_outcome",
+        return_value={
+            "photo_id": "photo-1",
+            "inference_id": "inference-1",
+            "outcome": "modified_and_kept",
+            "state": "diverged",
+            "recorded": True,
+        },
+    )
+    response = client.post(
+        "/style_edit/events/outcomes",
+        json={
+            "items": [
+                {
+                    "edit_inference_id": "inference-1",
+                    "outcome": "modified_and_kept",
+                    "current_settings": {"Exposure2012": 0.4},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["results"]["stored"] == 1
+    assert record.call_args.kwargs["outcome"] == "modified_and_kept"
+
+
+def test_edit_outcomes_reject_unbounded_batch(client):
+    response = client.post(
+        "/style_edit/events/outcomes",
+        json={"items": [{}] * 101},
+    )
+    assert response.status_code == 400
+
+
+def test_edit_outcomes_report_per_item_validation_failures(client, mocker):
+    mocker.patch(
+        "routes.style_edit.edit_history.record_user_outcome",
+        side_effect=ValueError("use modified_and_kept"),
+    )
+    response = client.post(
+        "/style_edit/events/outcomes",
+        json={
+            "items": [
+                {
+                    "edit_inference_id": "inference-1",
+                    "outcome": "accepted",
+                    "current_settings": {"Exposure2012": 0.4},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["results"]["stored"] == 0
+    assert payload["results"]["failed"] == 1
+    assert payload["results"]["failures"][0]["error"] == "use modified_and_kept"

@@ -61,6 +61,31 @@ def test_recover_catalog_session_recovers_incomplete_policy_builds(mocker, tmp_p
     assert json.loads(marker_path.read_text(encoding="utf-8"))["state"] == "running"
 
 
+def test_recover_catalog_session_is_idempotent_for_current_process(mocker, tmp_path):
+    db_path = tmp_path / "styleai.db"
+    db_path.mkdir()
+    marker_path = db_path / "styleai-session.json"
+    marker_path.write_text(
+        json.dumps(
+            {
+                "state": "running",
+                "active_work": False,
+                "pid": server_lifecycle.os.getpid(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    mocker.patch.object(server_lifecycle.config, "DB_PATH", str(db_path))
+    connect = mocker.patch("services.policy_store.connect_policy_store")
+    invalidate = mocker.patch("services.policy_runtime.invalidate_runtime_cache")
+
+    assert server_lifecycle.recover_catalog_session() is False
+
+    connect.assert_not_called()
+    invalidate.assert_not_called()
+    assert json.loads(marker_path.read_text(encoding="utf-8"))["state"] == "running"
+
+
 def test_tokenizer_fallback_does_not_reload_vision_model(mocker, tmp_path):
     cached_dir = tmp_path / "model"
     cached_dir.mkdir()

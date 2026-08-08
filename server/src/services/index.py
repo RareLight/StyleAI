@@ -555,6 +555,24 @@ def process_image_task(
                     main_metadata["camera_model"] = str(opt["camera_model"])[:64]
                 if opt.get("camera_make"):
                     main_metadata["camera_make"] = str(opt["camera_make"])[:64]
+                if opt.get("is_hdr") is not None:
+                    main_metadata["is_hdr"] = bool(opt["is_hdr"])
+                if main_metadata.get("camera_profile"):
+                    from services.rendering_state import rendering_state_from_settings
+
+                    indexed_rendering_state = rendering_state_from_settings(
+                        {
+                            "CameraProfile": main_metadata["camera_profile"],
+                            "HDREditMode": int(bool(main_metadata.get("is_hdr"))),
+                        },
+                        camera_make=main_metadata.get("camera_make"),
+                        camera_model=main_metadata.get("camera_model"),
+                    )
+                    main_metadata["rendering_state_json"] = json.dumps(
+                        indexed_rendering_state,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
                 if opt.get("lens"):
                     main_metadata["lens"] = str(opt["lens"])[:128]
                 if opt.get("focal_length") is not None:

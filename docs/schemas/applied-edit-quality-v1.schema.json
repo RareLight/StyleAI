@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://styleai.local/schemas/applied-edit-quality-v1.schema.json",
+  "title": "StyleAI Applied Edit Quality Report",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "dataset_fingerprint",
+    "dataset",
+    "application_reliability",
+    "user_outcomes",
+    "rendering_outcomes",
+    "delivered_target_corrections",
+    "confidence_calibration",
+    "generation_comparison",
+    "breakdowns"
+  ],
+  "properties": {
+    "schema_version": { "const": "applied-edit-quality-v1" },
+    "dataset_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "dataset": {
+      "type": "object",
+      "required": [
+        "inferences",
+        "applied_inferences",
+        "reviewed_inferences",
+        "review_coverage"
+      ]
+    },
+    "application_reliability": { "type": "object" },
+    "user_outcomes": {
+      "type": "object",
+      "required": [
+        "accepted",
+        "modified_and_kept",
+        "rejected",
+        "acceptance_rate",
+        "kept_rate",
+        "rejection_rate"
+      ]
+    },
+    "rendering_outcomes": {
+      "type": "object",
+      "required": [
+        "profile",
+        "hdr",
+        "slider_metrics_are_separate",
+        "deployment_status"
+      ],
+      "properties": {
+        "slider_metrics_are_separate": { "const": true },
+        "deployment_status": { "const": "evaluation_only" }
+      }
+    },
+    "delivered_target_corrections": { "type": "object" },
+    "confidence_calibration": {
+      "type": "object",
+      "required": [
+        "definition",
+        "sample_count",
+        "expected_calibration_error",
+        "brier_score",
+        "bins"
+      ]
+    },
+    "generation_comparison": {
+      "type": "object",
+      "required": [
+        "minimum_reviewed_per_generation",
+        "comparable_generation_count",
+        "deployment_status",
+        "generations"
+      ],
+      "properties": {
+        "deployment_status": { "const": "evaluation_only" }
+      }
+    },
+    "breakdowns": { "type": "object" }
+  }
+}

@@ -55,6 +55,45 @@ def test_get_upgrade_recommendations(client, mocker):
     assert data[0]["style_id"] == "style-1"
 
 
+def test_record_upgrade_feedback(client, mocker):
+    record = mocker.patch(
+        "routes.style_catalog.policy_runtime.record_upgrade_feedback",
+        return_value={"updated": 2, "requested": 2},
+    )
+    response = client.post(
+        "/styles/upgrades/feedback",
+        json={
+            "review_id": "review-1",
+            "policy_id": "policy-1",
+            "labels": [
+                {
+                    "globalPhotoId": "photo-1",
+                    "policy_match": True,
+                    "useful": True,
+                },
+                {
+                    "photo_id": "photo-2",
+                    "policy_match": False,
+                    "useful": False,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["results"]["updated"] == 2
+    assert record.call_args.kwargs["labels"][0]["photo_id"] == "photo-1"
+
+
+def test_record_upgrade_feedback_rejects_invalid_payload(client):
+    response = client.post(
+        "/styles/upgrades/feedback",
+        json={"review_id": "review-1"},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error"]
+
+
 def test_discover_styles(client, mocker):
     mocker.patch(
         "routes.style_catalog.policy_runtime.request_rebuild",
