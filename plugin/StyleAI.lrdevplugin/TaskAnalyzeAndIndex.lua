@@ -979,6 +979,8 @@ LrTasks.startAsyncTask(function()
 									appendMetadata = props.appendMetadata,
 									useExistingTransaction = true,
 								})
+							else
+								error("Generated metadata was unavailable for " .. tostring(photoId))
 							end
 						end
 					end, Defaults.catalogWriteAccessOptions)
@@ -987,9 +989,10 @@ LrTasks.startAsyncTask(function()
 				if not writeOk then error(writeError) end
 			end
 		end
+		options.deferCatalogHandoff = props.enableMetadata and props.saveDataToCatalog and not usedInlineApply
 
-		local status, processed, failed, processedPhotos, combinedError, combinedWarnings
-		status, processed, failed, processedPhotos, combinedError, combinedWarnings =
+		local status, processed, failed, processedPhotos, combinedError, combinedWarnings, operationId
+		status, processed, failed, processedPhotos, combinedError, combinedWarnings, operationId =
 			SearchIndexAPI.analyzeAndIndexSelectedPhotos(photosToProcess, progressScope, options, false)
 
 		-- De-clutter: cluster the generated keywords and build a name-mapping so that
@@ -1000,19 +1003,37 @@ LrTasks.startAsyncTask(function()
 		local mergedPairs = {} -- {from="Automobile", to="Car"} for dialog display
 
 
-		if status ~= "allfailed" and props.enableMetadata and props.saveDataToCatalog and not usedInlineApply then
+		if
+			status ~= "allfailed"
+			and status ~= "canceled"
+			and not progressScope:isCanceled()
+			and props.enableMetadata
+			and props.saveDataToCatalog
+			and not usedInlineApply
+		then
 			log:trace("Saving metadata for processed photos...")
 			local savedCount = 0
 			local skippedCount = 0
-
 			local skipFromHere = false
+			local handoffCanceled = false
 
-			for _, photo in ipairs(processedPhotos) do
-				LrTasks.yield()
-				LrTasks.sleep(0.01)
-				-- Process responses if validation is enabled or just save metadata
-				local photoId, photoIdErr = SearchIndexAPI.getPhotoIdForPhoto(photo)
-				if photoId then
+			local function finishHandoffItem(photoId, state, itemError)
+				local updateOk, updateError = SearchIndexAPI.updateOperationItems(operationId, {
+					{ item_id = photoId, state = state, error = itemError },
+				})
+				if not updateOk then
+					error("Could not persist Lightroom metadata handoff: " .. tostring(updateError))
+				end
+			end
+
+			local handoffOk, handoffError = LrTasks.pcall(function()
+				for _, photo in ipairs(processedPhotos) do
+					LrTasks.yield()
+					LrTasks.sleep(0.01)
+					local photoId, photoIdErr = SearchIndexAPI.getPhotoIdForPhoto(photo)
+					if not photoId then
+						error("Could not identify photo during metadata handoff: " .. tostring(photoIdErr))
+					end
 					local response = SearchIndexAPI.getPhotoData(photoId)
 
 					-- Pre-compute deduped keywords; the validation dialog shows both
@@ -1025,7 +1046,12 @@ LrTasks.startAsyncTask(function()
 					log:trace("Got generated data for photo: " .. (photo:getFormattedMetadata("fileName") or "unknown"))
 					log:trace("Response: " .. (Util.dumpTable(response) or "nil"))
 
-					if props.enableValidation and props.enableMetadata and response and response.metadata then
+					if not response or not response.metadata then
+						local message = "Generated metadata unavailable during Lightroom handoff"
+						finishHandoffItem(photoId, "failed", message)
+						failed = failed + 1
+						skippedCount = skippedCount + 1
+					elseif props.enableValidation then
 						local result, validatedData
 
 						if not skipFromHere then
@@ -1062,13 +1088,20 @@ LrTasks.startAsyncTask(function()
 								)
 
 								savedCount = savedCount + 1
+								finishHandoffItem(photoId, "succeeded")
 							elseif result == "other" then
 								skippedCount = skippedCount + 1
 								-- Clear only metadata so the photo stays in the index and can be regenerated later
 								SearchIndexAPI.removePhotoMetadata(photoId)
 								Util.addPhotoToRejectedDescriptionsCollection(photo, Defaults.catalogWriteAccessOptions)
+								finishHandoffItem(photoId, "canceled", "Metadata review rejected")
 							elseif result == "cancel" then
+								handoffCanceled = true
 								break
+							else
+								finishHandoffItem(photoId, "failed", "Metadata review returned no usable result")
+								failed = failed + 1
+								skippedCount = skippedCount + 1
 							end
 						else
 							-- Validation has been skipped from here on; apply metadata without showing dialog
@@ -1091,8 +1124,9 @@ LrTasks.startAsyncTask(function()
 							)
 
 							savedCount = savedCount + 1
+							finishHandoffItem(photoId, "succeeded")
 						end
-					elseif props.enableMetadata and response and response.metadata then
+					else
 						-- Directly save generated metadata without validation
 						if dedupedKeywords then
 							response.metadata.keywords = dedupedKeywords
@@ -1107,10 +1141,25 @@ LrTasks.startAsyncTask(function()
 							appendMetadata = props.appendMetadata,
 						})
 						savedCount = savedCount + 1
+						finishHandoffItem(photoId, "succeeded")
 					end
-				else
-					log:error("Skipping photo data retrieval due to missing photo_id: " .. tostring(photoIdErr))
-					skippedCount = skippedCount + 1
+				end
+			end)
+			if handoffCanceled then
+				SearchIndexAPI.cancelOperation(operationId)
+				status = "canceled"
+			elseif not handoffOk then
+				failed = failed + 1
+				status = "somefailed"
+				combinedError = tostring(handoffError)
+				log:error("Deferred Lightroom metadata handoff failed: " .. tostring(handoffError))
+			else
+				local completeOk, completeError = SearchIndexAPI.completeOperation(operationId)
+				if not completeOk then
+					failed = failed + 1
+					status = "somefailed"
+					combinedError = "Could not finalize metadata operation: " .. tostring(completeError)
+					log:error(combinedError)
 				end
 			end
 		end

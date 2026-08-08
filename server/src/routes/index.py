@@ -911,11 +911,42 @@ def enqueue_photo():
         is_index_queue_accepting,
     )
 
-    enqueued = 0
-    rejected = 0
+    accepted_photo_ids: list[str] = []
+    rejected_items: list[dict[str, object]] = []
+
+    def reject(photo_id, reason: str, *, retryable: bool) -> None:
+        normalized_id = str(photo_id or "").strip()
+        rejected_items.append(
+            {
+                "photo_id": normalized_id,
+                "reason": reason,
+                "retryable": retryable,
+            }
+        )
+        if job_id and normalized_id and not retryable:
+            operations.set_item_state(
+                config.DB_PATH,
+                job_id,
+                normalized_id,
+                "failed",
+                error=reason,
+            )
+
     if not is_index_queue_accepting():
+        for item in images_data:
+            reject(
+                item.get("photo_id") or item.get("uuid"),
+                "index queue is stopping",
+                retryable=True,
+            )
         return jsonify(
-            {"status": "stopping", "enqueued": 0, "rejected": len(images_data)}
+            {
+                "status": "stopping",
+                "enqueued": 0,
+                "rejected": len(rejected_items),
+                "accepted_photo_ids": [],
+                "rejected_items": rejected_items,
+            }
         ), 503
 
     for item in images_data:
@@ -924,13 +955,20 @@ def enqueue_photo():
         lr_uuid = item.get("lr_uuid")
         filename = item.get("filename")
 
-        if not image_base64 or not photo_id or not filename:
+        if not photo_id:
+            reject(None, "photo_id is required", retryable=False)
+            continue
+        if not image_base64:
+            reject(photo_id, "image data is required", retryable=False)
+            continue
+        if not filename:
+            reject(photo_id, "filename is required", retryable=False)
             continue
 
         # Check capacity before decoding base64: decoding an image only to drop
         # it was a major transient-memory spike under large Lightroom batches.
         if index_queue.full():
-            rejected += 1
+            reject(photo_id, "index queue is full", retryable=True)
             continue
 
         image_was_cached = False
@@ -950,7 +988,7 @@ def enqueue_photo():
                 from services import image_cache
 
                 if not image_cache.store_image(photo_id, image_bytes):
-                    rejected += 1
+                    reject(photo_id, "metadata image cache is full", retryable=True)
                     continue
                 image_was_cached = True
 
@@ -973,19 +1011,29 @@ def enqueue_photo():
                 if image_was_cached:
                     image_cache.remove_image(photo_id)
                 queue_item.clear()
-                rejected += 1
+                reject(photo_id, "index queue filled during admission", retryable=True)
                 continue
-            enqueued += 1
+            accepted_photo_ids.append(str(photo_id))
         except Exception as e:
             active_embeddings_uuids.discard(photo_id)
             if image_was_cached:
                 image_cache.remove_image(photo_id)
-            logger.error(f"Error enqueueing image: {e}")
+            reason = f"invalid index queue item: {e}"
+            reject(photo_id, reason, retryable=False)
+            logger.error("Error enqueueing image %s: %s", photo_id, e, exc_info=True)
 
+    enqueued = len(accepted_photo_ids)
+    rejected = len(rejected_items)
     status = "accepted" if rejected == 0 else "backpressure"
-    if job_id and enqueued > 0:
+    if job_id and accepted_photo_ids:
         operations.set_job_state(config.DB_PATH, job_id, "running")
-    response = {"status": status, "enqueued": enqueued, "rejected": rejected}
+    response = {
+        "status": status,
+        "enqueued": enqueued,
+        "rejected": rejected,
+        "accepted_photo_ids": accepted_photo_ids,
+        "rejected_items": rejected_items,
+    }
     if job_id:
         response["job_id"] = job_id
     return jsonify(response), 202

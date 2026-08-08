@@ -157,7 +157,19 @@ def test_index_queue_rejects_before_decoding_when_full(client, monkeypatch):
 
     assert response.status_code == 202
     payload = response.get_json()["results"]
-    assert payload == {"status": "backpressure", "enqueued": 0, "rejected": 1}
+    assert payload == {
+        "status": "backpressure",
+        "enqueued": 0,
+        "rejected": 1,
+        "accepted_photo_ids": [],
+        "rejected_items": [
+            {
+                "photo_id": "rejected",
+                "reason": "index queue is full",
+                "retryable": True,
+            }
+        ],
+    }
 
 
 def test_index_queue_backpressures_when_metadata_cache_is_full(client, monkeypatch):
@@ -180,8 +192,87 @@ def test_index_queue_backpressures_when_metadata_cache_is_full(client, monkeypat
         "status": "backpressure",
         "enqueued": 0,
         "rejected": 1,
+        "accepted_photo_ids": [],
+        "rejected_items": [
+            {
+                "photo_id": "a",
+                "reason": "metadata image cache is full",
+                "retryable": True,
+            }
+        ],
     }
     assert bounded_queue.empty()
+
+
+def test_index_queue_reports_interleaved_admission_by_photo_id(client, monkeypatch):
+    bounded_queue = queue.Queue(maxsize=3)
+    monkeypatch.setattr(index_service, "index_queue", bounded_queue)
+    index_service._index_queue_accepting.set()
+    admitted = {"a", "c"}
+    monkeypatch.setattr(
+        image_cache,
+        "store_image",
+        lambda photo_id, _data: photo_id in admitted,
+    )
+    encoded = base64.b64encode(b"image").decode("ascii")
+
+    response = client.post(
+        "/index_queue",
+        json={
+            "images": [
+                {"image": encoded, "photo_id": photo_id, "filename": f"{photo_id}.jpg"}
+                for photo_id in ("a", "b", "c")
+            ],
+            "options": {"cache_images": True},
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.get_json()["results"]
+    assert payload["accepted_photo_ids"] == ["a", "c"]
+    assert payload["enqueued"] == 2
+    assert payload["rejected"] == 1
+    assert payload["rejected_items"] == [
+        {
+            "photo_id": "b",
+            "reason": "metadata image cache is full",
+            "retryable": True,
+        }
+    ]
+    assert [bounded_queue.get_nowait()["uuid"] for _ in range(2)] == ["a", "c"]
+    index_service.active_embeddings_uuids.difference_update(admitted)
+
+
+def test_index_queue_terminal_rejection_updates_exact_operation_item(
+    client, monkeypatch, index_operation_db
+):
+    bounded_queue = queue.Queue(maxsize=2)
+    monkeypatch.setattr(index_service, "index_queue", bounded_queue)
+    index_service._index_queue_accepting.set()
+    job, _ = operations.create_job(
+        index_operation_db, kind="index", item_ids=["invalid-photo"]
+    )
+
+    response = client.post(
+        "/index_queue",
+        json={
+            "job_id": job["job_id"],
+            "images": [{"photo_id": "invalid-photo", "filename": "invalid.jpg"}],
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.get_json()["results"]
+    assert payload["accepted_photo_ids"] == []
+    assert payload["rejected_items"] == [
+        {
+            "photo_id": "invalid-photo",
+            "reason": "image data is required",
+            "retryable": False,
+        }
+    ]
+    stored = operations.get_job(index_operation_db, job["job_id"])
+    assert stored["items"][0]["state"] == "failed"
 
 
 def test_index_queue_updates_only_predeclared_operation_items(

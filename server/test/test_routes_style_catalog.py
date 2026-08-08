@@ -38,21 +38,79 @@ def test_get_style_found_and_not_found(client, mocker):
     assert res_404.status_code == 404
 
 
-def test_get_upgrade_recommendations(client, mocker):
-    mocker.patch(
-        "routes.style_catalog.policy_runtime.get_upgrade_recommendations",
-        return_value=[{"style_id": "style-1", "upgrade_score": 0.95}],
+def test_start_upgrade_recommendations_job(client, mocker):
+    create = mocker.patch(
+        "routes.style_catalog.operations.create_job",
+        return_value=(
+            {"job_id": "recommend-1", "state": "queued", "kind": "recommendations"},
+            True,
+        ),
     )
+    start = mocker.patch("routes.style_catalog._start_upgrade_recommendation_job")
 
-    response = client.get("/styles/upgrades/recommendations")
-    assert response.status_code == 200
+    response = client.post("/styles/upgrades/recommendations", json={"limit": 50})
+
+    assert response.status_code == 202
     json_data = response.get_json()
     assert json_data.get("error") is None
     res = json_data.get("results")
-    # If wrapped or direct envelope
-    data = res.get("results") if isinstance(res, dict) and "results" in res else res
-    assert len(data) == 1
-    assert data[0]["style_id"] == "style-1"
+    assert res == {"job_id": "recommend-1", "state": "queued", "attached": False}
+    assert create.call_args.kwargs["kind"] == "recommendations"
+    assert create.call_args.kwargs["request_fingerprint"] == (
+        "upgrade-recommendations:50"
+    )
+    start.assert_called_once_with("recommend-1", 50)
+
+
+def test_get_completed_upgrade_recommendations(client, mocker):
+    mocker.patch(
+        "routes.style_catalog.operations.get_job",
+        return_value={
+            "job_id": "recommend-1",
+            "kind": "recommendations",
+            "state": "succeeded",
+            "details": {
+                "styles": [{"style_id": "style-1", "upgrade_score": 0.95}],
+                "count": 1,
+            },
+        },
+    )
+
+    response = client.get("/styles/upgrades/recommendations?job_id=recommend-1")
+
+    assert response.status_code == 200
+    res = response.get_json()["results"]
+    assert set(res) == {"job_id", "state", "styles", "count"}
+    assert res["count"] == 1
+    assert res["styles"][0]["style_id"] == "style-1"
+
+
+def test_upgrade_recommendation_worker_persists_result(mocker):
+    cancel_signal = mocker.MagicMock()
+    cancel_signal.is_set.return_value = False
+    mocker.patch(
+        "routes.style_catalog.operations.JobCancelSignal",
+        return_value=cancel_signal,
+    )
+    set_state = mocker.patch("routes.style_catalog.operations.set_job_state")
+    generate = mocker.patch(
+        "routes.style_catalog.policy_runtime.get_upgrade_recommendations",
+        return_value=[{"style_id": "style-1"}],
+    )
+
+    from routes import style_catalog
+
+    style_catalog._run_upgrade_recommendation_job("recommend-1", 25)
+
+    generate.assert_called_once_with(
+        top_policies_limit=25,
+        cancel_event=cancel_signal,
+    )
+    assert set_state.call_args_list[-1].args[2] == "succeeded"
+    assert set_state.call_args_list[-1].kwargs["details"] == {
+        "styles": [{"style_id": "style-1"}],
+        "count": 1,
+    }
 
 
 def test_record_upgrade_feedback(client, mocker):

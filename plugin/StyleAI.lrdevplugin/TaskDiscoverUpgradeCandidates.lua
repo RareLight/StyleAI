@@ -188,7 +188,7 @@ LrTasks.startAsyncTask(function()
 			end
 
 			props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/Progress=Discovering style upgrade candidates...")
-			local success, results = SearchIndexAPI.getUpgradeRecommendations(100)
+			local success, results = SearchIndexAPI.getUpgradeRecommendations(100, progressScope)
 			progressScope:done()
 
 			if not success then

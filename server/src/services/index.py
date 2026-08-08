@@ -903,6 +903,136 @@ def stop_index_queue() -> int:
     return discarded
 
 
+def _process_dynamic_gpu_batch(batch: list[dict]) -> None:
+    """Process and commit one admitted batch while its workflow gate is held."""
+    from services import operations
+
+    work_batch = []
+    image_triplets = []
+    options = []
+    try:
+        for item in batch:
+            job_id = item.get("job_id")
+            if job_id and config.DB_PATH:
+                try:
+                    if operations.is_cancel_requested(config.DB_PATH, job_id):
+                        operations.set_item_state(
+                            config.DB_PATH,
+                            job_id,
+                            item["uuid"],
+                            "canceled",
+                            error="Indexing operation canceled",
+                        )
+                        from services import image_cache
+
+                        image_cache.remove_image(item["uuid"])
+                        continue
+                    operations.set_item_state(
+                        config.DB_PATH, job_id, item["uuid"], "running"
+                    )
+                except Exception:
+                    logger.exception(
+                        "Could not update indexing operation state for %s",
+                        item["uuid"],
+                    )
+                    from services import image_cache
+
+                    image_cache.remove_image(item["uuid"])
+                    continue
+            work_batch.append(item)
+
+        image_triplets = [
+            (
+                item["image_bytes"],
+                item["uuid"],
+                item["filename"],
+                item.get("lr_uuid"),
+            )
+            for item in work_batch
+        ]
+        options = [item["options"] for item in work_batch]
+
+        item_results: list[dict] = []
+        try:
+            if work_batch:
+                cpu_claim = min(
+                    len(work_batch), operations.admission.capacities["cpu_prepare"]
+                )
+                with operations.admission.acquire(
+                    {"accelerator": 1, "cpu_prepare": max(1, cpu_claim)},
+                    priority=10,
+                ):
+                    success, fail, _errors, _warnings = process_image_task(
+                        image_triplets,
+                        options,
+                        item_results=item_results,
+                    )
+                logger.info(
+                    "Dynamic batch processed. Success: %s, Fail: %s",
+                    success,
+                    fail,
+                )
+        except Exception as exc:
+            logger.error(
+                "Error in dynamic GPU batch processing: %s", exc, exc_info=True
+            )
+            item_results = [
+                {
+                    "photo_id": item["uuid"],
+                    "status": "failed",
+                    "error": str(exc),
+                }
+                for item in work_batch
+            ]
+
+        results_by_id = {str(result.get("photo_id")): result for result in item_results}
+        for item in work_batch:
+            job_id = item.get("job_id")
+            if not job_id or not config.DB_PATH:
+                continue
+            result = results_by_id.get(item["uuid"])
+            try:
+                if result and result.get("status") == "succeeded":
+                    terminal_state = (
+                        "preparing"
+                        if item.get("options", {}).get("defer_terminal")
+                        else "succeeded"
+                    )
+                    if operations.is_cancel_requested(config.DB_PATH, job_id):
+                        terminal_state = "canceled"
+                    operations.set_item_state(
+                        config.DB_PATH,
+                        job_id,
+                        item["uuid"],
+                        terminal_state,
+                        result=result,
+                    )
+                else:
+                    operations.set_item_state(
+                        config.DB_PATH,
+                        job_id,
+                        item["uuid"],
+                        "failed",
+                        error=str(
+                            (result or {}).get("error")
+                            or "Indexing did not return a terminal result"
+                        ),
+                        result=result,
+                    )
+            except Exception:
+                logger.exception(
+                    "Could not persist indexing result for %s", item["uuid"]
+                )
+    finally:
+        for item in batch:
+            active_embeddings_uuids.discard(item["uuid"])
+            index_queue.task_done()
+        work_batch.clear()
+        image_triplets.clear()
+        options.clear()
+        _maybe_collect_garbage()
+
+
 def _dynamic_gpu_worker():
     """
     Background daemon thread that dynamically batches incoming images and runs GPU inference.
@@ -944,136 +1074,17 @@ def _dynamic_gpu_worker():
 
         logger.info(f"GPU Worker assembled dynamic batch of {len(batch)} images")
 
-        work_batch = []
-        for item in batch:
-            job_id = item.get("job_id")
-            if job_id and config.DB_PATH:
-                try:
-                    from services import operations
-
-                    if operations.is_cancel_requested(config.DB_PATH, job_id):
-                        operations.set_item_state(
-                            config.DB_PATH,
-                            job_id,
-                            item["uuid"],
-                            "canceled",
-                            error="Indexing operation canceled",
-                        )
-                        active_embeddings_uuids.discard(item["uuid"])
-                        from services import image_cache
-
-                        image_cache.remove_image(item["uuid"])
-                        continue
-                    operations.set_item_state(
-                        config.DB_PATH, job_id, item["uuid"], "running"
-                    )
-                except Exception:
-                    logger.exception(
-                        "Could not update indexing operation state for %s", item["uuid"]
-                    )
-                    active_embeddings_uuids.discard(item["uuid"])
-                    from services import image_cache
-
-                    image_cache.remove_image(item["uuid"])
-                    continue
-            work_batch.append(item)
-
-        # Reshape for process_image_task
-        image_triplets = []
-        options = []
-        for item in work_batch:
-            image_triplets.append(
-                (
-                    item["image_bytes"],
-                    item["uuid"],
-                    item["filename"],
-                    item.get("lr_uuid"),
-                )
-            )
-            options.append(item["options"])
-
-        item_results: list[dict] = []
+        # Keep database replacement/reset outside the complete inference-to-commit
+        # interval. ResourceAdmission is reentrant on this thread, so the nested
+        # accelerator claim below remains writer-safe without serializing peers.
         try:
-            if work_batch:
-                cpu_claim = min(
-                    len(work_batch), operations.admission.capacities["cpu_prepare"]
-                )
-                with operations.admission.acquire(
-                    {"accelerator": 1, "cpu_prepare": max(1, cpu_claim)},
-                    priority=10,
-                ):
-                    success, fail, _errors, _warnings = process_image_task(
-                        image_triplets,
-                        options,
-                        item_results=item_results,
-                    )
-                logger.info(
-                    f"Dynamic batch processed. Success: {success}, Fail: {fail}"
-                )
-        except Exception as e:
-            logger.error(f"Error in dynamic GPU batch processing: {e}", exc_info=True)
-            item_results = [
-                {
-                    "photo_id": item["uuid"],
-                    "status": "failed",
-                    "error": str(e),
-                }
-                for item in work_batch
-            ]
+            with operations.workflow_maintenance_gate.workflow():
+                _process_dynamic_gpu_batch(batch)
+        except Exception:
+            logger.exception("Unexpected dynamic GPU worker batch failure")
         finally:
-            for item in batch:
-                active_embeddings_uuids.discard(item["uuid"])
-
-        results_by_id = {str(result.get("photo_id")): result for result in item_results}
-        for item in work_batch:
-            job_id = item.get("job_id")
-            if not job_id or not config.DB_PATH:
-                continue
-            result = results_by_id.get(item["uuid"])
-            try:
-                from services import operations
-
-                if result and result.get("status") == "succeeded":
-                    terminal_state = (
-                        "preparing"
-                        if item.get("options", {}).get("defer_terminal")
-                        else "succeeded"
-                    )
-                    if operations.is_cancel_requested(config.DB_PATH, job_id):
-                        terminal_state = "canceled"
-                    operations.set_item_state(
-                        config.DB_PATH,
-                        job_id,
-                        item["uuid"],
-                        terminal_state,
-                        result=result,
-                    )
-                else:
-                    operations.set_item_state(
-                        config.DB_PATH,
-                        job_id,
-                        item["uuid"],
-                        "failed",
-                        error=str(
-                            (result or {}).get("error")
-                            or "Indexing did not return a terminal result"
-                        ),
-                        result=result,
-                    )
-            except Exception:
-                logger.exception(
-                    "Could not persist indexing result for %s", item["uuid"]
-                )
-
-        for _ in range(len(batch)):
-            index_queue.task_done()
-
-        # Explicitly clear local references to image bytes so they do not linger in the worker stack frame
-        try:
-            del batch, work_batch, image_triplets, options, first_item
-        except NameError:
-            pass
-        _maybe_collect_garbage()
+            batch.clear()
+            first_item = None
 
 
 # Start the daemon thread immediately

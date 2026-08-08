@@ -1,9 +1,9 @@
 # StyleAI UI Overhaul — Human Test Matrix
 
-Use a backed-up disposable Lightroom Classic catalog. Test the release
-configuration first (`developerBuild=false` in both manifest and
-`BuildConfig.lua`). Do not confirm deletion, pruning, or restore actions against
-the production catalog.
+Use a backed-up disposable Lightroom Classic catalog. Test the checked-in
+release configuration first (`developerBuild=false` in `BuildConfig.lua`). Do
+not confirm deletion, pruning, or restore actions against the production
+catalog.
 
 ## 1. Release navigation and Settings & Status
 
@@ -123,8 +123,10 @@ scroller access, dialog resize behavior, and status meaning without color.
 
 ## 8. Developer-build smoke suite
 
-In a separate development package, set both developer-build constants true.
-Confirm the four Help commands and one-time style override appear, then run
+Create a separate development package with
+`python scripts/package_lrc_plugin.py developer`. Confirm the four Help commands
+and one-time style override appear, then run
 **Developer: Run Automated Tests...**. Record Lightroom version, operating
 system, display scale, language, pass/fail totals, and the first error for any
-failure. Restore both constants to false before release packaging.
+failure. The generated package lives under ignored `build/`; the checked-in
+release manifest remains unchanged.

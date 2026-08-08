@@ -121,7 +121,7 @@ parser.add_argument(
     "--idle-shutdown-seconds",
     type=int,
     default=600,
-    help="Inactivity timeout before unloading models",
+    help="Inactivity timeout before shutting down the local backend (0 disables)",
 )
 parser.add_argument(
     "--backup-interval",

@@ -1514,11 +1514,14 @@ def get_upgrade_recommendations(
     *,
     top_policies_limit: int = 100,
     target_examples_per_policy: int = 50,
+    cancel_event: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Retrieve and rank bounded, untrained catalog neighbors for each policy."""
     from services import chroma as chroma_service
     from services.policy_feedback import capture_recommendation_review
 
+    if cancel_event is not None and cancel_event.is_set():
+        raise InterruptedError("Recommendation generation canceled")
     chroma_service._ensure_initialized()
     collection = chroma_service.collection
     if collection is None:
@@ -1534,6 +1537,8 @@ def get_upgrade_recommendations(
     payloads: list[dict[str, Any]] = []
     policy_budget = max(0, int(top_policies_limit))
     for artifact in sorted(artifacts.values(), key=lambda item: item.partition_key):
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("Recommendation generation canceled")
         remaining_budget = policy_budget - len(payloads)
         if remaining_budget <= 0:
             return payloads
@@ -1553,6 +1558,8 @@ def get_upgrade_recommendations(
         candidate_rows: list[tuple[str, dict[str, Any], np.ndarray, np.ndarray]] = []
         identities: dict[str, dict[str, str]] = {}
         for offset in range(0, len(neighbor_ids), 250):
+            if cancel_event is not None and cancel_event.is_set():
+                raise InterruptedError("Recommendation generation canceled")
             response = collection.get(
                 ids=neighbor_ids[offset : offset + 250],
                 include=["metadatas", "embeddings"],
@@ -1632,6 +1639,8 @@ def get_upgrade_recommendations(
             axis=1,
         )
         for neighbor_set_index, policy_index in enumerate(policy_indices):
+            if cancel_event is not None and cancel_event.is_set():
+                raise InterruptedError("Recommendation generation canceled")
             policy_id = artifact.policy_ids[policy_index]
             local_correctors = getattr(
                 artifact,
