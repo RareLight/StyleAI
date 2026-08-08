@@ -4,7 +4,7 @@ Prepare Photos powers the semantic-search and optional local-metadata capabiliti
 
 ## Accessing the Tool
 
-Open Lightroom Classic. Select the photos you wish to process in the Library module, then navigate to the top menu bar. Go to **Library > Plug-in Extras > AI Index & Auto-Tag Photos...**
+Open Lightroom Classic. Select the photos you wish to process, then navigate to the top menu bar. Go to **File > Plug-in Extras > Prepare Photos...**
 
 ## Workflow Modes
 

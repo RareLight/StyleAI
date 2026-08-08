@@ -51,7 +51,7 @@ Whether you want to cull a massive photo shoot, find a specific photo using natu
    - *Security Note:* Since our installers aren't code-signed yet, your OS may show a warning. 
      - **Windows:** Click *More info* -> *Run anyway*.
      - **macOS:** Right-click the `.pkg` -> *Open* -> *Open anyway*.
-4. **Usage:** Select photos in your Library, go to **Library -> Plug-in Extras**, and choose:
+4. **Usage:** Select photos in Lightroom, go to **File -> Plug-in Extras**, and choose:
    - **Prepare Photos...** for local visual analysis, semantic search, and optional metadata generation.
    - **Learn From My Edits...** to teach StyleAI your editing decisions from edited RAW and DNG photos.
    - **Apply My Style...** to apply learned edits with visible review and virtual-copy safeguards.

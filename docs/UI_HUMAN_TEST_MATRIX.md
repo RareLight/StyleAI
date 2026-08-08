@@ -7,7 +7,8 @@ the production catalog.
 
 ## 1. Release navigation and Settings & Status
 
-1. Install/reload the plugin and open **Library > Plug-in Extras**.
+1. Install/reload the plugin and open **File > Plug-in Extras** from both the
+   Library and Develop modules.
 2. Confirm the six production commands appear in the documented order, all
    dialog-opening commands use ellipses, no duplicates appear in Export, and no
    developer commands appear in Help.

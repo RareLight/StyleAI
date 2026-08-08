@@ -293,7 +293,7 @@ downstream ranking calibration.
 
 ## 16. Applied Edit Outcome Evaluation
 
-Use **Library → Plug-in Extras → Rate Selected AI Edits** on selected AI-edited photos to record
+Use **File → Plug-in Extras → Rate Selected AI Edits** on selected AI-edited photos to record
 one explicit result: Keep, Modified and Kept, or Reject. The action records
 feedback only; it never changes Develop settings. Keep is accepted only when
 the modeled Lightroom state still matches the confirmed application. Reopen
