@@ -18,8 +18,9 @@ The canonical cross-module entry point is **File > Plug-in Extras**.
 | Find More Training Examples... | `TaskDiscoverUpgradeCandidates.lua` | Review policy-specific candidate photos and record evaluation-only feedback |
 
 Release builds register one cross-module File-menu command set and no developer
-Help commands. Development packaging flips the self-contained `developerBuild`
-manifest constant and `BuildConfig.developerBuild` together, adding the
+Help commands. `python scripts/package_lrc_plugin.py developer` generates a
+separate package with literal Help-menu registrations and flips
+`BuildConfig.developerBuild`, adding the
 automated tests, benchmark, rendering capability spike, reconciliation command,
 and one-time style override only to developer builds. Runtime Debug never
 changes registered menus.

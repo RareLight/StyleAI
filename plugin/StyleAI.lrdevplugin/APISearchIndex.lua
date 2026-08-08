@@ -2203,32 +2203,74 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                         options.cache_images = enableMetadata
                         local success, enqueueResponse = SearchIndexAPI.enqueuePhotosBase64Batch(batchItemsToSend, options)
                         if success then
-                            local acceptedCount = math.min(
-                                tonumber(enqueueResponse and enqueueResponse.enqueued) or 0,
-                                #batchItemsToSend
-                            )
-                            -- The backend accepts queue items in request order. Keep
-                            -- backpressured items for retry rather than treating a
-                            -- 202 response as proof that every item was accepted.
-                            for i = #batchItemsToSend, acceptedCount + 1, -1 do
-                                table.insert(preparedQueue, 1, batchItemsToSend[i])
-                            end
-                            for i = 1, acceptedCount do
-                                local batchItem = batchItemsToSend[i]
-                                if enableMetadata then
-                                    batchItem.image = nil
-                                    table.insert(llmQueue, batchItem)
-                                else
-                                    -- Queue admission is not completion. The operation
-                                    -- item becomes successful only after GPU inference
-                                    -- and the Chroma commit both finish.
+                            local acceptedIds = {}
+                            local rejectedById = {}
+                            local hasIdentityResponse = type(enqueueResponse.accepted_photo_ids) == "table"
+                            if hasIdentityResponse then
+                                for _, photoId in ipairs(enqueueResponse.accepted_photo_ids) do
+                                    acceptedIds[tostring(photoId)] = true
+                                end
+                                for _, rejection in ipairs(enqueueResponse.rejected_items or {}) do
+                                    if rejection.photo_id and rejection.photo_id ~= "" then
+                                        rejectedById[tostring(rejection.photo_id)] = rejection
+                                    end
+                                end
+                            else
+                                -- Rolling-redeploy compatibility with a backend that only
+                                -- acknowledged an accepted request prefix.
+                                local acceptedCount = math.min(
+                                    tonumber(enqueueResponse and enqueueResponse.enqueued) or 0,
+                                    #batchItemsToSend
+                                )
+                                for i = 1, acceptedCount do
+                                    acceptedIds[tostring(batchItemsToSend[i].photo_id)] = true
                                 end
                             end
-                            if acceptedCount < #batchItemsToSend then
+
+                            local retryCount = 0
+                            local terminalFailures = {}
+                            for i = #batchItemsToSend, 1, -1 do
+                                local batchItem = batchItemsToSend[i]
+                                local photoId = tostring(batchItem.photo_id)
+                                if not acceptedIds[photoId] then
+                                    local rejection = rejectedById[photoId]
+                                    if rejection and rejection.retryable == false then
+                                        local reason = tostring(rejection.reason or "Index queue rejected the photo")
+                                        stats.failed = stats.failed + 1
+                                        stats.processed = stats.processed + 1
+                                        table.insert(errorMessages, batchItem.filename .. ": " .. reason)
+                                        table.insert(terminalFailures, {
+                                            item_id = batchItem.photo_id,
+                                            state = "failed",
+                                            error = reason,
+                                        })
+                                    else
+                                        table.insert(preparedQueue, 1, batchItem)
+                                        retryCount = retryCount + 1
+                                    end
+                                end
+                            end
+                            if #terminalFailures > 0 then
+                                SearchIndexAPI.updateOperationItems(operationId, terminalFailures)
+                            end
+
+                            for _, batchItem in ipairs(batchItemsToSend) do
+                                if acceptedIds[tostring(batchItem.photo_id)] then
+                                    if enableMetadata then
+                                        batchItem.image = nil
+                                        table.insert(llmQueue, batchItem)
+                                    else
+                                        -- Queue admission is not completion. The operation
+                                        -- item becomes successful only after GPU inference
+                                        -- and the Chroma commit both finish.
+                                    end
+                                end
+                            end
+                            if retryCount > 0 then
                                 local queueStatus = SearchIndexAPI.getIndexQueueStatus()
                                 local queued = queueStatus and queueStatus.queued or "?"
                                 local capacity = queueStatus and queueStatus.capacity or "?"
-                                log:trace("Backend index queue backpressure (" .. tostring(queued) .. "/" .. tostring(capacity) .. "); retrying " .. tostring(#batchItemsToSend - acceptedCount) .. " photo(s).")
+                                log:trace("Backend index queue backpressure (" .. tostring(queued) .. "/" .. tostring(capacity) .. "); retrying " .. tostring(retryCount) .. " photo(s).")
                                 LrTasks.sleep(0.15)
                             end
                             if not enableMetadata then
@@ -2359,6 +2401,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
 					-- Backend metadata success is a handoff, not terminal success: the
 					-- Lightroom callback above may still fail while writing catalog data.
+					local deferCatalogHandoff = options.deferCatalogHandoff == true
 					local operationUpdates = {}
 					for _, item in ipairs(batch) do
 						local result = itemStatuses[item.photo_id]
@@ -2373,7 +2416,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 						end
 						table.insert(operationUpdates, {
 							item_id = item.photo_id,
-							state = itemSucceeded and "succeeded" or "failed",
+							state = itemSucceeded and (deferCatalogHandoff and "committing" or "succeeded") or "failed",
 							error = operationError,
 						})
 					end
@@ -2471,8 +2514,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 canceled = true,
                 interrupted = true,
             }
-            local pollCount = 0
-            while operationJob and not terminal[operationJob.state] and pollCount < 7200 do
+			local pollCount = 0
+			while operationJob and not terminal[operationJob.state] and not options.deferCatalogHandoff and pollCount < 7200 do
                 if progressScope:isCanceled() then
                     SearchIndexAPI.cancelOperation(operationId)
                     break
@@ -2491,7 +2534,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 LrTasks.yield()
                 LrTasks.sleep(0.25)
             end
-            if operationJob and not terminal[operationJob.state] then
+			if operationJob and not terminal[operationJob.state] and not options.deferCatalogHandoff then
                 table.insert(errorMessages, "Backend operation status timed out before terminal completion")
             end
             local detailOk, detailResult = SearchIndexAPI.getOperation(operationId, true)
@@ -2569,7 +2612,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     if stats.processed > 0 then avgTimePerPhoto = batchDuration / stats.processed end
     log:info(string.format("Performance Tracking: Processed %d photos in %.2f seconds (%.2f s/photo).", stats.processed, batchDuration, avgTimePerPhoto))
 
-    return status, stats.processed, stats.failed, processedPhotos, combinedError, combinedWarnings
+	return status, stats.processed, stats.failed, processedPhotos, combinedError, combinedWarnings, operationId
 end
 
 
@@ -4318,19 +4361,39 @@ function SearchIndexAPI.getAllStylesWithExamples()
     return false, response.error or "Unexpected response"
 end
 
-function SearchIndexAPI.getUpgradeRecommendations(limit)
+function SearchIndexAPI.getUpgradeRecommendations(limit, progressScope)
     local url = getBaseUrl() .. ENDPOINTS.STYLE_UPGRADES_RECOMMENDATIONS
-    if limit and tonumber(limit) then
-        url = url .. "?limit=" .. tostring(limit)
+    local response, err = _request('POST', url, { limit = tonumber(limit) or 100 }, 15)
+    if not response or not response.job_id then
+        return false, err or "Backend did not create a recommendation job"
     end
-    local response, err = _request('GET', url, {}, 60)
-    if not response then
-        return false, err or "Unknown error"
+
+    local jobId = response.job_id
+    local pollCount = 0
+    while pollCount < 7200 do
+        if progressScope and progressScope:isCanceled() then
+            SearchIndexAPI.cancelOperation(jobId)
+            return false, "canceled"
+        end
+        local statusUrl = url .. "?job_id=" .. tostring(jobId)
+        local jobResponse, jobError = _request('GET', statusUrl, nil, 15)
+        if jobResponse and jobResponse.state == "succeeded" then
+            if type(jobResponse.styles) == "table" then
+                return true, jobResponse
+            end
+            return false, "Backend completed recommendation discovery without a valid payload"
+        end
+        if jobResponse and (jobResponse.state == "failed" or jobResponse.state == "canceled" or jobResponse.state == "interrupted") then
+            return false, jobResponse.error or ("Recommendation job " .. tostring(jobResponse.state))
+        end
+        if not jobResponse and jobError then
+            return false, jobError
+        end
+        pollCount = pollCount + 1
+        LrTasks.yield()
+        LrTasks.sleep(0.25)
     end
-    if type(response) == "table" then
-        return true, response
-    end
-    return false, response.error or "Unexpected response"
+    return false, "Recommendation discovery timed out"
 end
 
 function SearchIndexAPI.submitUpgradeFeedback(reviewId, policyId, labels)

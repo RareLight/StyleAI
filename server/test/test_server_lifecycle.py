@@ -36,6 +36,27 @@ def test_request_shutdown_is_idempotent(mocker):
     thread.assert_not_called()
 
 
+def test_idle_shutdown_requires_timeout_and_no_live_work(mocker):
+    mocker.patch.object(server_lifecycle, "IDLE_SHUTDOWN_SECONDS", 600)
+    mocker.patch.object(server_lifecycle, "_last_request_time", 1_000.0)
+    has_live_work = mocker.patch.object(
+        server_lifecycle, "_has_live_work", return_value=False
+    )
+
+    assert server_lifecycle._idle_shutdown_due(now=1_599.0) is False
+    assert server_lifecycle._idle_shutdown_due(now=1_600.0) is True
+    has_live_work.return_value = True
+    assert server_lifecycle._idle_shutdown_due(now=2_000.0) is False
+
+
+def test_idle_shutdown_can_be_disabled(mocker):
+    mocker.patch.object(server_lifecycle, "IDLE_SHUTDOWN_SECONDS", 0)
+    has_live_work = mocker.patch.object(server_lifecycle, "_has_live_work")
+
+    assert server_lifecycle._idle_shutdown_due(now=10_000.0) is False
+    has_live_work.assert_not_called()
+
+
 def test_recover_catalog_session_recovers_incomplete_policy_builds(mocker, tmp_path):
     db_path = tmp_path / "styleai.db"
     db_path.mkdir()

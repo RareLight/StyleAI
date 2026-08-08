@@ -12,6 +12,7 @@ model_scripts/**/*.bin
 **.weight
 **/venv/
 **/__pycache__/
+**/.coverage
 **/._.DS_Store
 **/.DS_Store
 build/

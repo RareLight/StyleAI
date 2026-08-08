@@ -392,17 +392,64 @@ def note_request():
     _resources_unloaded = False
 
 
+def _has_live_work() -> bool:
+    """Return whether this process is actively computing or holding queued bytes.
+
+    Durable jobs waiting for a Lightroom handoff are intentionally excluded: if
+    Lightroom has exited, those jobs cannot finish and shutdown recovery must
+    mark them interrupted instead of keeping the backend alive forever.
+    """
+    try:
+        from services import operations
+
+        if any(
+            amount > 0 for amount in operations.admission.snapshot()["in_use"].values()
+        ):
+            return True
+        gate = operations.workflow_maintenance_gate.snapshot()
+        if gate["active_workflows"] or gate["maintenance_active"]:
+            return True
+    except Exception:
+        logger.exception("Could not inspect operation admission during idle shutdown")
+        return True
+    try:
+        from services.index import get_index_queue_status
+
+        queue_status = get_index_queue_status()
+        return bool(queue_status.get("queued") or queue_status.get("active"))
+    except Exception:
+        logger.exception("Could not inspect indexing queue during idle shutdown")
+        return True
+
+
+def _idle_shutdown_due(now: float | None = None) -> bool:
+    if IDLE_SHUTDOWN_SECONDS <= 0 or GLOBAL_SHUTDOWN_EVENT.is_set():
+        return False
+    current_time = time.time() if now is None else float(now)
+    if current_time - _last_request_time < IDLE_SHUTDOWN_SECONDS:
+        return False
+    return not _has_live_work()
+
+
 def _idle_unloader_loop():
-    """Background thread which periodically checks whether the model should be unloaded."""
+    """Unload idle models and terminate a backend orphaned by Lightroom."""
     global _unloader_thread
     logger.info(
-        "Starting model idle monitor (unload after %ss)",
+        "Starting idle monitor (model unload after %ss; process shutdown after %ss)",
         IDLE_UNLOAD_SECONDS,
+        IDLE_SHUTDOWN_SECONDS,
     )
     try:
         while True:
-            time.sleep(60)
+            time.sleep(5)
             try:
+                if _idle_shutdown_due():
+                    logger.info(
+                        "No client activity for %ss; shutting down idle backend",
+                        IDLE_SHUTDOWN_SECONDS,
+                    )
+                    request_shutdown()
+                    return
                 if _needs_unload():
                     unload_all_resources()
             except Exception:

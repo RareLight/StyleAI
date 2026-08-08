@@ -236,6 +236,78 @@ def test_waiting_resource_claim_can_be_canceled():
     assert admission.snapshot()["waiting"] == 0
 
 
+def test_maintenance_gate_drains_work_and_blocks_late_workflows():
+    gate = operations.WorkflowMaintenanceGate()
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    maintenance_entered = threading.Event()
+    release_maintenance = threading.Event()
+    late_entered = threading.Event()
+
+    def first_workflow():
+        with gate.workflow():
+            first_entered.set()
+            release_first.wait(timeout=2)
+
+    def maintenance():
+        with gate.maintenance():
+            maintenance_entered.set()
+            release_maintenance.wait(timeout=2)
+
+    def late_workflow():
+        with gate.workflow():
+            late_entered.set()
+
+    first = threading.Thread(target=first_workflow)
+    writer = threading.Thread(target=maintenance)
+    late = threading.Thread(target=late_workflow)
+    first.start()
+    assert first_entered.wait(timeout=1)
+    writer.start()
+    deadline = time.time() + 1
+    while gate.snapshot()["maintenance_waiting"] == 0 and time.time() < deadline:
+        time.sleep(0.01)
+    late.start()
+
+    assert maintenance_entered.is_set() is False
+    assert late_entered.is_set() is False
+    release_first.set()
+    assert maintenance_entered.wait(timeout=1)
+    assert late_entered.is_set() is False
+    release_maintenance.set()
+
+    first.join(timeout=1)
+    writer.join(timeout=1)
+    late.join(timeout=1)
+    assert late_entered.is_set() is True
+    assert gate.snapshot() == {
+        "active_workflows": 0,
+        "maintenance_active": False,
+        "maintenance_waiting": 0,
+    }
+
+
+def test_nested_workflow_does_not_deadlock_behind_waiting_maintenance():
+    gate = operations.WorkflowMaintenanceGate()
+    maintenance_entered = threading.Event()
+
+    def maintenance():
+        with gate.maintenance():
+            maintenance_entered.set()
+
+    with gate.workflow():
+        writer = threading.Thread(target=maintenance)
+        writer.start()
+        deadline = time.time() + 1
+        while gate.snapshot()["maintenance_waiting"] == 0 and time.time() < deadline:
+            time.sleep(0.01)
+        with gate.workflow():
+            assert gate.snapshot()["active_workflows"] == 1
+
+    writer.join(timeout=1)
+    assert maintenance_entered.is_set() is True
+
+
 def test_memory_pressure_only_scales_effective_limits_downward():
     maximums = operations.admission.maximum_capacities
     try:

@@ -2,8 +2,8 @@ Info = {}
 
 Info.MAJOR = 0
 Info.MINOR = 8
-Info.REVISION = 1
-Info.BUILD = 20260604
+Info.REVISION = 2
+Info.BUILD = 20260808
 Info.VERSION = { major = Info.MAJOR, minor = Info.MINOR, revision = Info.REVISION, build = Info.BUILD }
 
 return {

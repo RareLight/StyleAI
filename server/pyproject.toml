@@ -1,6 +1,6 @@
 [project]
 name = "styleai-server"
-version = "0.8.1"
+version = "0.8.2"
 description = "Flask server to handle plugin requests to LLMs and Metadata"
 readme = "README.md"
 requires-python = ">=3.12.0"

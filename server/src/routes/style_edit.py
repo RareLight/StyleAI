@@ -12,6 +12,7 @@ the regular LLM-backed edit pipeline (re-using existing few-shot injection).
 
 from __future__ import annotations
 
+from functools import wraps
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -30,6 +31,23 @@ from utils.edit_persistence import _persist_edit_recipe, _success_payload
 from utils.request_parsing import _extract_options, _extract_photo_ids
 
 style_edit_bp = Blueprint("style_edit", __name__)
+
+
+def _maintenance_safe_workflow(function):
+    """Keep one edit inference coherent across maintenance replacement/reset."""
+
+    @wraps(function)
+    def guarded(*args, **kwargs):
+        job_id = str(kwargs.get("job_id") or "").strip() or None
+        cancel_signal = (
+            operations.JobCancelSignal(config.DB_PATH, job_id)
+            if config.DB_PATH and job_id
+            else None
+        )
+        with operations.workflow_maintenance_gate.workflow(cancel_event=cancel_signal):
+            return function(*args, **kwargs)
+
+    return guarded
 
 
 def _persist_inference(
@@ -87,6 +105,7 @@ def _get_clip_embedding(photo_id: str):
     return None
 
 
+@_maintenance_safe_workflow
 def _run_single_style_edit(
     photo_id: str,
     image_bytes: bytes,

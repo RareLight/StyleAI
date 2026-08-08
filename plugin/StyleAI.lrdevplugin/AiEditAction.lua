@@ -14,6 +14,46 @@ local UIFactory = require("UIFactory")
 local AiEditAction = {}
 
 local ENABLE_DEBUG_STYLE_OVERRIDE = require("BuildConfig").developerBuild == true
+local PENDING_APPLICATION_EVENT_KEY = "pendingAiEditApplicationEvent"
+
+local function readPendingApplicationEvent(photo)
+	local raw = photo:getPropertyForPlugin(_PLUGIN, PENDING_APPLICATION_EVENT_KEY)
+	if type(raw) ~= "string" or raw == "" then return nil end
+	local ok, decoded = LrTasks.pcall(function()
+		return JSON:decode(raw)
+	end)
+	if not ok or type(decoded) ~= "table" or type(decoded.event) ~= "table" then
+		return false, "Stored AI edit application receipt is invalid"
+	end
+	return decoded
+end
+
+local function writePendingApplicationEvent(photo, payload, progressScope)
+	local lease, leaseError = WorkCoordinator.acquire("catalog_write", progressScope)
+	if not lease then return false, leaseError end
+	local ok, result = LrTasks.pcall(function()
+		local encoded = JSON:encode(payload)
+		LrApplication.activeCatalog():withPrivateWriteAccessDo(function()
+			photo:setPropertyForPlugin(_PLUGIN, PENDING_APPLICATION_EVENT_KEY, encoded)
+		end, Defaults.catalogWriteAccessOptions)
+	end)
+	WorkCoordinator.release(lease)
+	if not ok then return false, result end
+	return true
+end
+
+local function clearPendingApplicationEvent(photo, progressScope)
+	local lease, leaseError = WorkCoordinator.acquire("catalog_write", progressScope)
+	if not lease then return false, leaseError end
+	local ok, result = LrTasks.pcall(function()
+		LrApplication.activeCatalog():withPrivateWriteAccessDo(function()
+			photo:setPropertyForPlugin(_PLUGIN, PENDING_APPLICATION_EVENT_KEY, "")
+		end, Defaults.catalogWriteAccessOptions)
+	end)
+	WorkCoordinator.release(lease)
+	if not ok then return false, result end
+	return true
+end
 
 local function copyOptions(source)
 	local copied = {}
@@ -823,22 +863,6 @@ function AiEditAction.run(editMode)
 		local errorMessages = {}
 		local backendWarnings = {}
 		local runLog = {}
-		local applicationEvents = {}
-
-		local function queueApplicationEvent(response, status, currentSettings, applyOptions, warnings, errorMessage)
-			local inferenceId = type(response) == "table" and response.edit_inference_id or nil
-			if not inferenceId or inferenceId == "" then return end
-			table.insert(applicationEvents, {
-				edit_inference_id = inferenceId,
-				idempotency_key = "application:" .. tostring(inferenceId),
-				status = status,
-				current_settings = currentSettings,
-				global_applied = applyOptions and applyOptions.applyGlobal == true or false,
-				masks_applied = applyOptions and applyOptions.applyMasks == true or false,
-				warnings = warnings or {},
-				error = errorMessage or "",
-			})
-		end
 
 		-- Queue state
 		local userContexts = {}
@@ -870,13 +894,95 @@ function AiEditAction.run(editMode)
 		end
 		local operationId = operation.job_id
 		local function finishOperationItem(photoId, state, operationError)
-			if not photoId then return end
+			if not photoId then return false, "Missing operation photo ID" end
 			local updated, updateError = SearchIndexAPI.updateOperationItems(operationId, {
 				{ item_id = photoId, state = state, error = operationError },
 			})
 			if not updated then
 				log:warn("Could not finalize edit operation item " .. tostring(photoId) .. ": " .. tostring(updateError))
+				return false, updateError
 			end
+			return true
+		end
+
+		local function flushApplicationReceipt(photo, payload)
+			local eventOk, eventResponse = SearchIndexAPI.submitStyleEditApplicationEvents({ payload.event })
+			if not eventOk then
+				return false, "Could not persist AI edit application history: " .. tostring(eventResponse)
+			end
+
+			local itemOk, itemError = SearchIndexAPI.updateOperationItems(payload.operation_job_id, {
+				{
+					item_id = payload.operation_item_id,
+					state = payload.terminal_state,
+					error = payload.terminal_error,
+				},
+			})
+			if not itemOk then
+				-- A receipt can survive beyond the operation's retention window, or
+				-- Lightroom may have crashed after both backend writes but before the
+				-- catalog outbox was cleared. Keep the receipt unless we can prove that
+				-- the desired terminal state is already durable.
+				local statusOk, job = SearchIndexAPI.getOperation(payload.operation_job_id, true)
+				local alreadyTerminal = false
+				if statusOk and type(job.items) == "table" then
+					for _, item in ipairs(job.items) do
+						if tostring(item.item_id) == tostring(payload.operation_item_id)
+							and item.state == payload.terminal_state
+						then
+							alreadyTerminal = true
+							break
+						end
+					end
+				end
+				if not alreadyTerminal then
+					return false, "Application history was stored, but its operation receipt was not: " .. tostring(itemError)
+				end
+			end
+
+			local clearOk, clearError = clearPendingApplicationEvent(photo, progressScope)
+			if not clearOk then
+				return false, "Application receipt was stored, but its Lightroom outbox could not be cleared: " .. tostring(clearError)
+			end
+			return true
+		end
+
+		local function recordApplicationEvent(
+			photo,
+			photoId,
+			response,
+			status,
+			terminalState,
+			currentSettings,
+			applyOptions,
+			warnings,
+			errorMessage
+		)
+			local inferenceId = type(response) == "table" and response.edit_inference_id or nil
+			if not inferenceId or inferenceId == "" then
+				return false, "Backend edit response omitted its inference ID"
+			end
+			local payload = {
+				operation_job_id = operationId,
+				operation_item_id = photoId,
+				terminal_state = terminalState,
+				terminal_error = errorMessage,
+				event = {
+					edit_inference_id = inferenceId,
+					idempotency_key = "application:" .. tostring(inferenceId),
+					status = status,
+					current_settings = currentSettings,
+					global_applied = applyOptions and applyOptions.applyGlobal == true or false,
+					masks_applied = applyOptions and applyOptions.applyMasks == true or false,
+					warnings = warnings or {},
+					error = errorMessage or "",
+				},
+			}
+			local pendingOk, pendingError = writePendingApplicationEvent(photo, payload, progressScope)
+			if not pendingOk then
+				return false, "Could not create durable Lightroom application receipt: " .. tostring(pendingError)
+			end
+			return flushApplicationReceipt(photo, payload)
 		end
 
 		-- Pre-fill contexts if no dialog is needed
@@ -940,7 +1046,21 @@ function AiEditAction.run(editMode)
 
 					local photoId = photoIdsByIndex[index]
 					local photoIdErr = photoIdErrorsByIndex[index]
-					if not photoId then
+					local pendingReceipt, pendingReceiptError = readPendingApplicationEvent(photo)
+					local pendingReady = true
+					if pendingReceipt == false then
+						pendingReady = false
+						pendingReceiptError = pendingReceiptError or "Stored application receipt is invalid"
+					elseif pendingReceipt then
+						pendingReady, pendingReceiptError = flushApplicationReceipt(photo, pendingReceipt)
+					end
+					if not pendingReady then
+						local message = "A previous AI edit receipt must be synchronized before another edit: "
+							.. tostring(pendingReceiptError)
+						log:error(message)
+						resultObj.errorMsg = fileName .. ": " .. message
+						resultObj.continueProcessing = false
+					elseif not photoId then
 						log:error("Failed to resolve photo ID for " .. fileName .. ": " .. tostring(photoIdErr))
 						resultObj.errorMsg = fileName .. ": " .. tostring(photoIdErr)
 						resultObj.continueProcessing = false
@@ -1133,8 +1253,22 @@ function AiEditAction.run(editMode)
 						if result == "cancel" then
 							skippedCount = skippedCount + 1
 							res.continueProcessing = false
-							finishOperationItem(photoIdsByIndex[index], "canceled", "Edit review canceled")
-							queueApplicationEvent(response, "not_applied", nil, applyOptions, nil, "review_canceled")
+							local receiptOk, receiptError = recordApplicationEvent(
+								photo,
+								photoIdsByIndex[index],
+								response,
+								"not_applied",
+								"canceled",
+								nil,
+								applyOptions,
+								nil,
+								"review_canceled"
+							)
+							if not receiptOk then
+								local message = "Could not finalize canceled edit history: " .. tostring(receiptError)
+								log:error(message)
+								table.insert(backendWarnings, message)
+							end
 						elseif validated then
 							applyOptions = validated
 						end
@@ -1143,8 +1277,22 @@ function AiEditAction.run(editMode)
 					if res.continueProcessing and not applyOptions.applyGlobal and not applyOptions.applyMasks then
 						skippedCount = skippedCount + 1
 						res.continueProcessing = false
-						finishOperationItem(photoIdsByIndex[index], "canceled", "All edit sections disabled")
-						queueApplicationEvent(response, "not_applied", nil, applyOptions, nil, "all_edit_sections_disabled")
+						local receiptOk, receiptError = recordApplicationEvent(
+							photo,
+							photoIdsByIndex[index],
+							response,
+							"not_applied",
+							"canceled",
+							nil,
+							applyOptions,
+							nil,
+							"all_edit_sections_disabled"
+						)
+						if not receiptOk then
+							local message = "Could not finalize skipped edit history: " .. tostring(receiptError)
+							log:error(message)
+							table.insert(backendWarnings, message)
+						end
 					end
 
 					if res.continueProcessing then
@@ -1163,14 +1311,39 @@ function AiEditAction.run(editMode)
 							log:error("AI edit application threw for " .. fileName .. ": " .. tostring(applyError))
 						end
 						if applied then
-							finishOperationItem(photoIdsByIndex[index], "succeeded", nil)
 							local readOk, readback = LrTasks.pcall(function()
 								return photo:getDevelopSettings()
 							end)
+							local receiptOk, receiptError
 							if readOk and type(readback) == "table" then
-								queueApplicationEvent(response, "apply_confirmed", readback, applyOptions, warnings, nil)
+								receiptOk, receiptError = recordApplicationEvent(
+									photo,
+									photoIdsByIndex[index],
+									response,
+									"apply_confirmed",
+									"succeeded",
+									readback,
+									applyOptions,
+									warnings,
+									nil
+								)
 							else
-								queueApplicationEvent(response, "apply_unconfirmed", nil, applyOptions, warnings, tostring(readback))
+								receiptOk, receiptError = recordApplicationEvent(
+									photo,
+									photoIdsByIndex[index],
+									response,
+									"apply_unconfirmed",
+									"succeeded",
+									nil,
+									applyOptions,
+									warnings,
+									tostring(readback)
+								)
+							end
+							if not receiptOk then
+								local message = "Edit was applied, but its durable receipt is pending: " .. tostring(receiptError)
+								log:error(message)
+								table.insert(backendWarnings, message)
 							end
 							successCount = successCount + 1
 							local styleInfo = "LLM Edit"
@@ -1184,8 +1357,22 @@ function AiEditAction.run(editMode)
 							end
 							table.insert(runLog, string.format("- %s: %s", fileName, styleInfo))
 						else
-							finishOperationItem(photoIdsByIndex[index], "failed", "Lightroom applyDevelopSettings failed")
-							queueApplicationEvent(response, "apply_failed", nil, applyOptions, warnings, "Lightroom applyDevelopSettings failed")
+							local receiptOk, receiptError = recordApplicationEvent(
+								photo,
+								photoIdsByIndex[index],
+								response,
+								"apply_failed",
+								"failed",
+								nil,
+								applyOptions,
+								warnings,
+								"Lightroom applyDevelopSettings failed"
+							)
+							if not receiptOk then
+								local message = "Could not finalize failed edit history: " .. tostring(receiptError)
+								log:error(message)
+								table.insert(backendWarnings, message)
+							end
 							errorCount = errorCount + 1
 							table.insert(errorMessages, fileName .. ": failed to apply recipe")
 						end
@@ -1211,15 +1398,6 @@ function AiEditAction.run(editMode)
 			SearchIndexAPI.cancelOperation(operationId)
 		end
 		SearchIndexAPI.completeOperation(operationId)
-
-		if #applicationEvents > 0 then
-			local eventOk, eventResponse = SearchIndexAPI.submitStyleEditApplicationEvents(applicationEvents)
-			if not eventOk then
-				local message = "Could not confirm AI edit application history: " .. tostring(eventResponse)
-				log:error(message)
-				table.insert(backendWarnings, message)
-			end
-		end
 
 		progressScope:done()
 

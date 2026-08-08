@@ -7,7 +7,7 @@ Lightroom task cannot multiply the machine's effective concurrency.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import json
 import os
@@ -525,16 +525,118 @@ class _Ticket:
     claim: Mapping[str, int]
 
 
+class WorkflowMaintenanceGate:
+    """Writer-preferring, reentrant barrier between live work and maintenance.
+
+    Resource ceilings alone cannot make a restore safe: an indexing worker can
+    hold the accelerator while a restore holds ``catalog_write``, then commit
+    output computed from the database that has just been replaced.  This gate
+    lets normal resource claims overlap, but drains all of them before admitting
+    a maintenance claim and blocks new work until maintenance finishes.
+    """
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._active_workflows = 0
+        self._maintenance_owner: int | None = None
+        self._maintenance_depth = 0
+        self._maintenance_waiters = 0
+        self._local = threading.local()
+
+    def _shared_depth(self) -> int:
+        return int(getattr(self._local, "shared_depth", 0))
+
+    @contextmanager
+    def workflow(
+        self, *, cancel_event: threading.Event | None = None
+    ) -> Iterator[None]:
+        thread_id = threading.get_ident()
+        bypass = False
+        with self._condition:
+            if self._maintenance_owner == thread_id:
+                bypass = True
+            elif self._shared_depth() > 0:
+                self._local.shared_depth = self._shared_depth() + 1
+                bypass = True
+            else:
+                while self._maintenance_owner is not None or self._maintenance_waiters:
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise InterruptedError("workflow admission canceled")
+                    self._condition.wait(timeout=0.1)
+                self._active_workflows += 1
+                self._local.shared_depth = 1
+        try:
+            yield
+        finally:
+            if not (bypass and self._maintenance_owner == thread_id):
+                with self._condition:
+                    depth = self._shared_depth()
+                    if depth > 1:
+                        self._local.shared_depth = depth - 1
+                    elif depth == 1:
+                        self._local.shared_depth = 0
+                        self._active_workflows -= 1
+                        self._condition.notify_all()
+
+    @contextmanager
+    def maintenance(
+        self, *, cancel_event: threading.Event | None = None
+    ) -> Iterator[None]:
+        thread_id = threading.get_ident()
+        with self._condition:
+            if self._maintenance_owner == thread_id:
+                self._maintenance_depth += 1
+            else:
+                if self._shared_depth() > 0:
+                    raise RuntimeError(
+                        "cannot upgrade an active workflow admission to maintenance"
+                    )
+                self._maintenance_waiters += 1
+                try:
+                    while self._maintenance_owner is not None or self._active_workflows:
+                        if cancel_event is not None and cancel_event.is_set():
+                            raise InterruptedError("maintenance admission canceled")
+                        self._condition.wait(timeout=0.1)
+                    self._maintenance_owner = thread_id
+                    self._maintenance_depth = 1
+                finally:
+                    self._maintenance_waiters -= 1
+                    self._condition.notify_all()
+        try:
+            yield
+        finally:
+            with self._condition:
+                if self._maintenance_owner == thread_id:
+                    self._maintenance_depth -= 1
+                    if self._maintenance_depth == 0:
+                        self._maintenance_owner = None
+                        self._condition.notify_all()
+
+    def snapshot(self) -> dict[str, int | bool]:
+        with self._condition:
+            return {
+                "active_workflows": self._active_workflows,
+                "maintenance_active": self._maintenance_owner is not None,
+                "maintenance_waiting": self._maintenance_waiters,
+            }
+
+
 class ResourceAdmission:
     """Atomically admit resource vectors with bounded, aging-aware fairness."""
 
-    def __init__(self, capacities: Mapping[str, int]):
+    def __init__(
+        self,
+        capacities: Mapping[str, int],
+        *,
+        maintenance_gate: WorkflowMaintenanceGate | None = None,
+    ):
         self._maximums = {key: max(1, int(value)) for key, value in capacities.items()}
         self._capacities = dict(self._maximums)
         self._in_use = {key: 0 for key in self._capacities}
         self._condition = threading.Condition()
         self._waiting: list[_Ticket] = []
         self._sequence = 0
+        self._maintenance_gate = maintenance_gate
 
     @property
     def capacities(self) -> dict[str, int]:
@@ -604,31 +706,43 @@ class ResourceAdmission:
         cancel_event: threading.Event | None = None,
     ) -> Iterator[None]:
         normalized = self._validate(claim)
-        with self._condition:
-            self._sequence += 1
-            ticket = _Ticket(self._sequence, int(priority), monotonic(), normalized)
-            self._waiting.append(ticket)
-            while True:
-                if cancel_event is not None and cancel_event.is_set():
-                    self._waiting.remove(ticket)
-                    self._condition.notify_all()
-                    raise InterruptedError("resource admission canceled")
-                if self._winner() is ticket:
-                    self._waiting.remove(ticket)
-                    for resource, amount in normalized.items():
-                        self._in_use[resource] += amount
-                    break
-                self._condition.wait(timeout=0.1)
-        try:
-            yield
-        finally:
+        gate_context = nullcontext()
+        if self._maintenance_gate is not None:
+            if "maintenance" in normalized:
+                gate_context = self._maintenance_gate.maintenance(
+                    cancel_event=cancel_event
+                )
+            else:
+                gate_context = self._maintenance_gate.workflow(
+                    cancel_event=cancel_event
+                )
+        with gate_context:
             with self._condition:
-                for resource, amount in normalized.items():
-                    self._in_use[resource] -= amount
-                self._condition.notify_all()
+                self._sequence += 1
+                ticket = _Ticket(self._sequence, int(priority), monotonic(), normalized)
+                self._waiting.append(ticket)
+                while True:
+                    if cancel_event is not None and cancel_event.is_set():
+                        self._waiting.remove(ticket)
+                        self._condition.notify_all()
+                        raise InterruptedError("resource admission canceled")
+                    if self._winner() is ticket:
+                        self._waiting.remove(ticket)
+                        for resource, amount in normalized.items():
+                            self._in_use[resource] += amount
+                        break
+                    self._condition.wait(timeout=0.1)
+            try:
+                yield
+            finally:
+                with self._condition:
+                    for resource, amount in normalized.items():
+                        self._in_use[resource] -= amount
+                    self._condition.notify_all()
 
 
 _cpu_capacity = max(1, min(config.STYLEAI_HTTP_THREADS - 2, (os.cpu_count() or 4) // 2))
+workflow_maintenance_gate = WorkflowMaintenanceGate()
 admission = ResourceAdmission(
     {
         "cpu_prepare": _cpu_capacity,
@@ -638,7 +752,8 @@ admission = ResourceAdmission(
         "training_upload": 1,
         "maintenance": 1,
         "image_bytes": config.STYLEAI_METADATA_CACHE_BYTES,
-    }
+    },
+    maintenance_gate=workflow_maintenance_gate,
 )
 
 _pressure_lock = threading.Lock()

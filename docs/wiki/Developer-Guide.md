@@ -2,6 +2,21 @@
 
 Welcome to the StyleAI Developer Guide! This document provides upstream maintainers and curious contributors with an overview of the recent massive architectural refactoring, and details on how to build and extend the plugin.
 
+## 0. Lightroom packages
+
+The checked-in `plugin/StyleAI.lrdevplugin` tree is the release source and does
+not register developer Help commands. Build a disposable package with literal
+developer menu registrations by running:
+
+```bash
+python scripts/package_lrc_plugin.py developer
+```
+
+The output is `build/StyleAI-dev.lrdevplugin`. Use
+`python scripts/package_lrc_plugin.py release` to stage a production
+`build/StyleAI.lrplugin`. Generated packages are ignored; never toggle the
+checked-in release manifest for local testing.
+
 ## 1. Global API Envelope
 
 Every single communication between the Lua plugin and the Python backend is strictly wrapped in a JSON envelope. This ensures the frontend never crashes due to unhandled API changes and allows graceful surfacing of warnings.
@@ -18,13 +33,15 @@ Every single communication between the Lua plugin and the Python backend is stri
 
 ## 2. Asynchronous Lua Pipeline (`Pipeline.lua`)
 
-To ensure Lightroom never hangs during batch processing, we abstracted all photo loops into `components/Pipeline.lua`.
+For simple sequential Lightroom loops, shared error/progress handling is
+available in `plugin/StyleAI.lrdevplugin/Pipeline.lua`.
 
 **Key Features:**
 - `Pipeline.runSequentialBatch(photos, progressScope, options, processFn)`
 - Automatically wraps your `processFn` in an `LrTasks.pcall` to catch native crashes.
 - Collects and tabulates successes and errors, returning them in a unified summary structure.
-- When building new features that iterate over selected photos, ALWAYS use this pipeline.
+- Use it when its sequential contract fits. GPU/LLM/indexing workflows instead
+  use durable backend operation jobs and bounded producer/consumer orchestration.
 
 ## 3. SQLite Schema Migrations (`migrations/`)
 
@@ -58,7 +75,7 @@ Lightroom SDK plugins are prone to C-stack overflows if coroutine yields and dat
 - **NEVER yield inside a database transaction:** Do not call `LrTasks.yield()` inside `withWriteAccessDo` or `withPrivateWriteAccessDo` closures. Doing so suspends the Lua coroutine while holding a C-level SQLite transaction lock. The orphaned C-stack frames will rapidly accumulate and crash Lightroom.
 - **The macOS Spin-Lock:** Using the pattern `if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end` is a dangerous anti-pattern. On macOS, `LrTasks.yield()` without a subsequent sleep does NOT reliably return control to the Lightroom UI loop. During heavy batch processing, this causes C-stack buildup. ALWAYS use `LrTasks.yield(); LrTasks.sleep(0.01)` regardless of OS to guarantee the transaction stack flushes.
 - **Transaction Bloat:** When applying multiple edits or metadata properties to a photo, combine them into a single `withWriteAccessDo` block. Firing multiple sequential database transactions per-photo exponentially increases SQLite overhead and stack pressure during batch operations.
-- **Native `pcall` in Shutdown/Teardown:** Shutdown hooks are the exception: use native `pcall` and non-yielding `os.execute` in `doneFunc`, because Lightroom's async scheduler is unreliable during teardown. Use `LrTasks.pcall` for normal asynchronous plugin work.
+- **Native `pcall` in Shutdown/Teardown:** Shutdown hooks are the exception: use native `pcall(doneFunc)` because Lightroom's async scheduler is unreliable during teardown. Keep the hook free of HTTP, filesystem, logging, and process-launch work; the backend performs its own bounded idle shutdown. Use `LrTasks.pcall` for normal asynchronous plugin work.
 
 ## 8. Python Backend Memory Efficiency
 
@@ -106,8 +123,10 @@ The Lightroom SDK `LrView` engine has several undocumented layout quirks, partic
 - Hardware detection establishes startup maxima. Runtime memory pressure may
   reduce CPU, GPU batch, and image-byte limits, but never raise them above the
   detected tier or explicit environment overrides.
-- Backups, restore, pruning, resets, and policy activation are mutually isolated
-  by the maintenance/training-upload/catalog-write lanes. Required pre-prune,
+- Backups, restore, pruning, resets, and policy rebuild/activation are isolated
+  by a writer-preferring maintenance barrier in addition to the resource lanes.
+  The barrier drains live inference-to-commit workflows and prevents new work
+  from slipping in before database replacement. Required pre-prune,
   pre-training-delete, pre-migration, and pre-restore snapshots must persist
   before mutation. Restore validates catalog ownership, checksums, archive
   paths, and SQLite integrity before an atomic swap with rollback.
@@ -129,7 +148,11 @@ The Lightroom SDK `LrView` engine has several undocumented layout quirks, partic
 ## 12. LLM Metadata Generation Anti-Patterns
 
 - **Sequential Processing:** Never iterate over items and call `/metadata/generate` sequentially in plugins or scripts. Always batch requests through `/metadata/generate_batch` so the backend can enforce bounded admission and serialize local-model work. Every photo must retain its own image bytes and receive its own vision result; do not clone captions, alt text, titles, or keywords from an embedding-cluster representative.
-- **Hard-Failing on Missing Image Cache:** The plugin supports "LLM-only" batch generation, where it relies on existing vision tags in the database to generate metadata, explicitly skipping the expensive JPEG export to the backend cache to save time. The backend endpoints (`/metadata/generate_batch`, `/metadata/generate`) MUST NOT fail with HTTP 400 errors when `image_bytes` are `None`. They must gracefully proceed and generate text-only metadata.
+- **Missing Image Bytes:** Text-only metadata enrichment may use already stored
+  per-photo evidence without a new JPEG. A vision prompt, however, must retain
+  and use that photo's own bytes; never run vision inference without pixels or
+  copy a burst representative's complete keywords, title, caption, or alt text.
+  Missing pixels must fail closed or explicitly abstain to the text-only path.
 
 ## 12.1 Edit Inference History and Undo Reconciliation
 
