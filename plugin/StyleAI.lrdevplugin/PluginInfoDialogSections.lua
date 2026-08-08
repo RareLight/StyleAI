@@ -36,7 +36,6 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.forceFreshPreviews = prefs.forceFreshPreviews or false
 	propertyTable.auditLlmInputs = prefs.auditLlmInputs or false
 	propertyTable.auditLlmInputsPath = prefs.auditLlmInputsPath or ""
-	propertyTable.backupRotationDays = prefs.backupRotationDays or "0"
 	propertyTable.usePreviewThumbnails = prefs.usePreviewThumbnails == nil and true or prefs.usePreviewThumbnails
 
 	-- Training/Style Profile stats (loaded asynchronously).
@@ -185,8 +184,6 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 						width = share("bottomButtons"),
 						alignment = "center",
 					}),
-				}),
-				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfoDialogSections/ShowLogfile=Show logfile"),
 						action = function(button)
@@ -494,19 +491,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/StyleAI/PluginInfo/BackupRotationDays=Days before DB backups rotate (0 = off)"),
-						alignment = "right",
-						width = share("labelWidth"),
-					}),
-					f:edit_field({
-						value = bind("backupRotationDays"),
-						fill_horizontal = 1,
-						width_in_chars = 4,
-					}),
-				}),
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
 						title = LOC("$$$/StyleAI/PluginInfo/ParallelTasks=Indexing speed"),
 						width = share("labelWidth"),
 						alignment = "right",
@@ -550,6 +534,12 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 				}),
 				f:separator({ fill_horizontal = 1 }),
+				f:static_text({
+					title = LOC("$$$/StyleAI/PluginInfo/BackupScopeNote=StyleAI backups protect AI indexes, training data, learned styles, and history. They do not back up the Lightroom catalog, photo files, or Develop edits."),
+					width = 570,
+					height_in_lines = 2,
+					text_color = LrColor(0.5, 0.5, 0.5),
+				}),
 				f:row({
 					fill_horizontal = 1,
 					f:checkbox({
@@ -593,6 +583,37 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							end)
 						end,
 					}),
+				}),
+				f:row({
+					f:push_button({
+						title = LOC("$$$/StyleAI/PluginInfo/RestoreDbBackup=Restore Backup..."),
+						action = function(button)
+							local confirm = LrDialogs.confirm(
+								LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupTitle=Restore StyleAI Database"),
+								LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupConfirm=This restores StyleAI's AI data only. It does not restore your Lightroom catalog, photo files, or Develop edits. StyleAI will validate the backup and create a pre-restore recovery snapshot before replacing its current database. Continue?"),
+								LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupAction=Choose Backup"),
+								LOC("$$$/StyleAI/common/Cancel=Cancel")
+							)
+							if confirm ~= "ok" then return end
+							LrTasks.startAsyncTask(function()
+								local ok, result = SearchIndexAPI.restoreDatabaseBackup()
+								if ok then
+									propertyTable.refreshStyleStats()
+									LrDialogs.message(
+										LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupComplete=StyleAI database restored"),
+										LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupCompleteMessage=The validated backup was restored successfully. Your Lightroom catalog and Develop edits were not changed."),
+										"info"
+									)
+								elseif result ~= "canceled" then
+									LrDialogs.message(
+										LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupFailed=Database restore failed"),
+										tostring(result or LOC("$$$/StyleAI/common/UnknownError=Unknown error")),
+										"critical"
+									)
+								end
+							end)
+						end,
+					}),
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/DownloadDbBackup=Download Backup"),
 						action = function(button)
@@ -607,6 +628,8 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							end)
 						end,
 					}),
+				}),
+				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PruneDatabase/MenuItem=Prune Database"),
 						tooltip = LOC("$$$/StyleAI/PluginInfo/PruneDatabaseTooltip=Removes deleted or missing photos from the AI database to free up space."),
@@ -677,8 +700,6 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 	end
 
 	prefs.periodicalUpdateCheck = propertyTable.periodicalUpdateCheck
-	prefs.backupRotationDays = propertyTable.backupRotationDays
-
 	prefs.forceFreshPreviews = propertyTable.forceFreshPreviews
 	prefs.auditLlmInputs = propertyTable.auditLlmInputs
 	prefs.auditLlmInputsPath = propertyTable.auditLlmInputsPath

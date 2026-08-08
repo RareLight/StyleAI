@@ -37,11 +37,22 @@ The background service exposes dedicated database endpoints for status and backu
 ### `GET /db/stats`
 Returns aggregated counters for the current backend databases, including total indexed photos, faces, and style training examples.
 
-### `GET /db/backup`
-Creates and returns a ZIP backup of the persistent backend data directory. This includes the Chroma data as well as accompanying JSON and SQLite files stored under the configured DB path.
+### `POST /db/backup`
+Creates a validated ZIP backup of the persistent backend data directory at the
+local `output_path` supplied by the Lightroom plugin. The archive includes a
+versioned manifest and checksums alongside Chroma, SQLite, and policy artifacts.
+
+### `POST /db/restore`
+Validates and restores a same-catalog backup. Restore rejects unsafe archive
+paths, corruption, checksum failures, unsupported formats, and backups owned by
+a different catalog. A required pre-restore snapshot and atomic rollback protect
+the current database.
 
 ### Lightroom plugin integration
-In `Plug-in Manager -> StyleAI -> Background Service`, the button `Download DB backup` downloads this ZIP from the backend and reveals the saved file.
+In `Plug-in Manager -> StyleAI -> Background Service`, use `Download Backup` to
+save an external copy or `Restore Backup...` to start the guarded restore flow.
+These backups cover StyleAI data only, not the Lightroom catalog or Develop
+edits.
 
 ---
 

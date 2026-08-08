@@ -60,24 +60,26 @@ def unload():
 
 @server_bp.route("/backup", methods=["POST"])
 def backup_db():
-    """Manually trigger a database backup with rotation settings."""
+    """Backward-compatible automatic backup trigger."""
     data = request.get_json() or {}
-    rotation_days = int(data.get("rotation_days", 0))
     try:
         from services import db as service_db
-        import os
+        from services import operations
 
-        zip_path, backup_name = service_db.build_backup_zip()
-        if rotation_days > 0:
-            service_db.prune_old_backups(max_keep=rotation_days)
+        raw_max_keep = data.get("max_keep", data.get("rotation_days", 14))
+        max_keep = max(1, int(raw_max_keep))
+        with operations.admission.acquire(
+            {"maintenance": 1, "training_upload": 1, "catalog_write": 1},
+            priority=15,
+        ):
+            path = service_db.create_persistent_backup(
+                reason="automatic",
+                max_keep=max_keep,
+            )
 
-        # Remove the temporary zip since it was copied to backups_dir by build_backup_zip
-        try:
-            os.remove(zip_path)
-        except OSError as e:
-            logger.warning("Could not remove temporary backup zip %s: %s", zip_path, e)
-
-        return jsonify({"results": {"status": "Backup created successfully."}})
+        return jsonify(
+            {"results": {"status": "Backup created successfully.", "path": path}}
+        )
     except Exception as e:
         logger.error(f"Backup failed: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -137,11 +139,13 @@ def initialize():
         return jsonify({"error": "db_path is required"}), 400
 
     from services import chroma as service_chroma
+    from services import db as service_db
     from services.chroma import CatalogOwnershipError
     from core.migrations import run_migrations
 
     try:
         switched = service_chroma.ensure_db_path(db_path)
+        service_db.ensure_catalog_ownership(db_path)
         # Run migrations on the catalog's database path immediately after binding
         if switched:
             run_migrations(db_path)

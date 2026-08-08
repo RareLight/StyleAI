@@ -849,14 +849,6 @@ function AiEditAction.run(editMode)
 			functionContext = ctx,
 		})
 
-		if #photos >= 50 then
-			log:info("Triggering database autosave before processing " .. tostring(#photos) .. " photos")
-			progressScope:setCaption(LOC("$$$/StyleAI/TaskAiEditPhotos/CreatingSafetyBackup=Creating safety backup..."))
-			local SearchIndexAPI = require("APISearchIndex")
-			local prefs = import("LrPrefs").prefsForPlugin(_PLUGIN)
-			SearchIndexAPI.triggerBackup(prefs.backupRotationDays)
-		end
-
 		progressScope:setCaption(progressTitle)
 		progressScope:setPortionComplete(0, #photos)
 

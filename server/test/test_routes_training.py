@@ -235,6 +235,7 @@ def test_retried_training_chunk_skips_already_succeeded_item(
 
 
 def test_delete_training_clears_examples_and_derived_policies(client, mocker):
+    backup = mocker.patch("services.db.create_persistent_backup")
     reset = mocker.patch("services.policy_runtime.reset_policy_state", return_value=3)
     clear = mocker.patch(
         "routes.training.training_service.clear_all_training_examples", return_value=7
@@ -248,3 +249,4 @@ def test_delete_training_clears_examples_and_derived_policies(client, mocker):
     assert payload["styles_removed"] == 3
     reset.assert_called_once_with()
     clear.assert_called_once_with()
+    backup.assert_called_once_with(reason="pre-delete-training")

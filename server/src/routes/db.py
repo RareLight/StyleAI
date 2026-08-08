@@ -46,16 +46,27 @@ def backup_database():
             ), 400
 
         with operations.admission.acquire(
-            {"maintenance": 1, "catalog_write": 1}, priority=15
+            {"maintenance": 1, "training_upload": 1, "catalog_write": 1},
+            priority=15,
         ):
-            zip_path, backup_name = service_db.build_backup_zip()
+            zip_path, _backup_name = service_db.build_backup_zip(
+                persist=False,
+                reason="manual-export",
+            )
 
-        # Copy the backup directly to the requested output_path
+        # Publish the export atomically so a canceled/failed copy is never
+        # mistaken for a valid backup.
+        partial_output_path = output_path + ".partial"
         try:
-            shutil.copy2(zip_path, output_path)
+            shutil.copy2(zip_path, partial_output_path)
+            os.replace(partial_output_path, output_path)
         finally:
             try:
                 os.remove(zip_path)
+            except OSError:
+                pass
+            try:
+                os.remove(partial_output_path)
             except OSError:
                 pass
 
@@ -69,6 +80,27 @@ def backup_database():
     except Exception as e:
         logger.error("Database backup failed: %s", e, exc_info=True)
         return jsonify({"results": None, "error": str(e), "warning": None}), 500
+
+
+@db_bp.route("/db/restore", methods=["POST"])
+def restore_database():
+    """Restore a validated backup belonging to the active Lightroom catalog."""
+    try:
+        data = request.get_json(silent=True) or {}
+        archive_path = data.get("archive_path")
+        if not archive_path:
+            return jsonify(
+                {"results": None, "error": "archive_path is required", "warning": None}
+            ), 400
+        with operations.admission.acquire(
+            {"maintenance": 1, "training_upload": 1, "catalog_write": 1},
+            priority=30,
+        ):
+            result = service_db.restore_backup_archive(str(archive_path))
+        return jsonify({"results": result, "error": None, "warning": None})
+    except Exception as exc:
+        logger.error("Database restore failed: %s", exc, exc_info=True)
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 500
 
 
 @db_bp.route("/db/prune", methods=["POST"])

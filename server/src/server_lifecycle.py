@@ -367,6 +367,13 @@ def unload_all_resources():
     except Exception as e:
         logger.error(f"Failed to unload ChromaDB: {e}")
 
+    try:
+        from services import training as service_training
+
+        service_training.unload_collections()
+    except Exception as e:
+        logger.error(f"Failed to unload training ChromaDB: {e}")
+
     # 4. Final GC
     import gc
 

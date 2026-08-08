@@ -1,4 +1,3 @@
-import os
 import sys
 import threading
 from flask import Flask, jsonify, request
@@ -56,10 +55,9 @@ def _start_housekeeping_scheduler() -> None:
     """
     Periodically run housekeeping tasks such as database backups.
 
-    Controlled via environment variables:
-      STYLEAI_BACKUP_ENABLED       (bool; default: false)
-      STYLEAI_BACKUP_INTERVAL      (seconds; default: 86400, min 600)
-      STYLEAI_BACKUP_MAX_KEEP      (int; number of backup files to keep; default: 14)
+    Controlled via --disable-backup, --backup-interval, and --backup-max-keep.
+    Due time is based on the newest persisted backup so backend restarts do not
+    postpone snapshots indefinitely.
     """
     if config.args.disable_backup:
         logger.info("DB backup scheduler disabled (--disable-backup is set).")
@@ -75,37 +73,30 @@ def _start_housekeeping_scheduler() -> None:
             interval,
             max_keep,
         )
-        # Do not perform a full database backup during startup. Besides adding
-        # avoidable I/O while models and databases initialize, the old ordering
-        # made every Lightroom restart look like a scheduled backup interval.
-        while not server_lifecycle.GLOBAL_SHUTDOWN_EVENT.wait(interval):
+        delay = service_db.seconds_until_scheduled_backup(interval)
+        while not server_lifecycle.GLOBAL_SHUTDOWN_EVENT.wait(delay):
             if config.DB_PATH:
                 try:
                     with operations.admission.acquire(
-                        {"maintenance": 1, "catalog_write": 1},
+                        {"maintenance": 1, "training_upload": 1, "catalog_write": 1},
                         priority=-10,
                         cancel_event=server_lifecycle.GLOBAL_SHUTDOWN_EVENT,
                     ):
-                        zip_path, backup_name = service_db.build_backup_zip()
+                        backup_path = service_db.create_persistent_backup(
+                            reason="scheduled",
+                            max_keep=max_keep,
+                        )
                         pruned_jobs = operations.prune_terminal_jobs(config.DB_PATH)
-                    logger.info(
-                        "Periodic DB backup created: %s (%s)", backup_name, zip_path
-                    )
-                    service_db.prune_old_backups(max_keep=max_keep)
+                    logger.info("Periodic DB backup created: %s", backup_path)
                     if pruned_jobs:
                         logger.info("Pruned %s old operation job(s)", pruned_jobs)
-                    try:
-                        os.remove(zip_path)
-                    except OSError as e:
-                        logger.warning(
-                            "Could not remove temporary backup zip %s: %s", zip_path, e
-                        )
                 except InterruptedError:
                     logger.info("Periodic DB backup canceled during shutdown")
                 except Exception as e:
                     logger.error("Periodic DB backup failed: %s", e, exc_info=True)
             else:
                 logger.debug("Skipping scheduled backup: no catalog is attached")
+            delay = interval
 
     t = threading.Thread(target=_loop, name="db-backup-scheduler", daemon=True)
     t.start()
@@ -144,6 +135,7 @@ def _auto_bind_db_path():
 
     try:
         if service_chroma.ensure_db_path(db_path):
+            service_db.ensure_catalog_ownership(db_path)
             run_migrations(db_path)
     except Exception as e:
         # Don't 500 here — let the route's own error handling report the
@@ -214,6 +206,7 @@ if __name__ == "__main__":
     logger.info("=" * 60)
 
     if config.DB_PATH:
+        service_db.ensure_catalog_ownership(config.DB_PATH)
         server_lifecycle.recover_catalog_session()
 
     # Mark server as ready for startup scripts

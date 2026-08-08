@@ -4,11 +4,57 @@ so chroma calls are mocked.
 """
 
 import os
+import json
+import shutil
+import sqlite3
 import time
+import zipfile
+from concurrent.futures import ThreadPoolExecutor
+import threading
+from types import SimpleNamespace
 
 import pytest
 
 from services import db as service_db
+
+
+def _make_sqlite(path, value="original"):
+    connection = sqlite3.connect(path)
+    connection.execute("CREATE TABLE state (value TEXT NOT NULL)")
+    connection.execute("INSERT INTO state VALUES (?)", (value,))
+    connection.commit()
+    connection.close()
+
+
+def _read_sqlite(path):
+    connection = sqlite3.connect(path)
+    try:
+        return connection.execute("SELECT value FROM state").fetchone()[0]
+    finally:
+        connection.close()
+
+
+def test_snapshot_construction_is_serialized(mocker):
+    active = 0
+    maximum_active = 0
+    guard = threading.Lock()
+
+    def build(**_kwargs):
+        nonlocal active, maximum_active
+        with guard:
+            active += 1
+            maximum_active = max(maximum_active, active)
+        time.sleep(0.02)
+        with guard:
+            active -= 1
+        return "/tmp/test.zip", "test.zip"
+
+    mocker.patch.object(service_db, "_build_backup_zip_unlocked", side_effect=build)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(service_db.build_backup_zip) for _ in range(2)]
+        [future.result() for future in futures]
+
+    assert maximum_active == 1
 
 
 class TestBackupsDir:
@@ -44,11 +90,16 @@ class TestBackupSafety:
         self, monkeypatch, mocker, tmp_path
     ):
         monkeypatch.setattr("config.DB_PATH", str(tmp_path))
-        (tmp_path / "chroma.sqlite3").write_bytes(b"database")
+        _make_sqlite(tmp_path / "chroma.sqlite3")
+        real_copy = shutil.copy2
+
+        def fail_persistent_copy(source, destination, *args, **kwargs):
+            if str(destination).endswith(".partial"):
+                raise OSError("disk full")
+            return real_copy(source, destination, *args, **kwargs)
+
         mocker.patch.object(
-            service_db.shutil,
-            "copy2",
-            side_effect=OSError("disk full"),
+            service_db.shutil, "copy2", side_effect=fail_persistent_copy
         )
 
         with pytest.raises(RuntimeError, match="persistent backup"):
@@ -69,8 +120,159 @@ class TestBackupSafety:
         )
 
         assert service_db.prune_database(["valid-photo"])["deleted"] == 0
-        build.assert_called_once_with(require_persistent=True)
+        build.assert_called_once_with(require_persistent=True, reason="pre-prune")
         assert temporary_backup.exists() is False
+
+    def test_validated_backup_contains_manifest_and_consistent_sqlite(
+        self, monkeypatch, tmp_path
+    ):
+        monkeypatch.setattr("config.DB_PATH", str(tmp_path))
+        _make_sqlite(tmp_path / "styles.sqlite", "snapshot")
+
+        archive_path, _ = service_db.build_backup_zip(reason="test")
+        try:
+            with zipfile.ZipFile(archive_path) as archive:
+                manifest = json.loads(
+                    archive.read(f"{tmp_path.name}/{service_db.BACKUP_MANIFEST_NAME}")
+                )
+                assert manifest["backup_format_version"] == 1
+                assert manifest["reason"] == "test"
+                assert {item["path"] for item in manifest["files"]} >= {
+                    "styles.sqlite",
+                    service_db.OWNERSHIP_MARKER_NAME,
+                }
+                assert archive.testzip() is None
+        finally:
+            os.remove(archive_path)
+
+    def test_restore_round_trip_and_preserves_backup_chain(
+        self, monkeypatch, mocker, tmp_path
+    ):
+        db_path = tmp_path / "styleai.db"
+        db_path.mkdir()
+        monkeypatch.setattr("config.DB_PATH", str(db_path))
+        _make_sqlite(db_path / "styles.sqlite", "before")
+        archive_path, _ = service_db.build_backup_zip(reason="round-trip")
+        connection = sqlite3.connect(db_path / "styles.sqlite")
+        connection.execute("UPDATE state SET value = 'after'")
+        connection.commit()
+        connection.close()
+        mocker.patch("core.migrations.run_migrations")
+        mocker.patch.object(service_db.chroma_service, "unload_collections")
+        mocker.patch.object(service_db.training_service, "unload_collections")
+        mocker.patch("services.policy_runtime.invalidate_runtime_cache")
+
+        result = service_db.restore_backup_archive(archive_path)
+
+        assert result["success"] is True
+        assert _read_sqlite(db_path / "styles.sqlite") == "before"
+        assert os.path.isfile(result["pre_restore_backup"])
+        os.remove(archive_path)
+
+    def test_restore_rejects_a_different_catalog(self, monkeypatch, tmp_path):
+        first = tmp_path / "first" / "styleai.db"
+        second = tmp_path / "second" / "styleai.db"
+        first.mkdir(parents=True)
+        second.mkdir(parents=True)
+        monkeypatch.setattr("config.DB_PATH", str(first))
+        _make_sqlite(first / "styles.sqlite")
+        archive_path, _ = service_db.build_backup_zip(reason="wrong-catalog")
+        monkeypatch.setattr("config.DB_PATH", str(second))
+        _make_sqlite(second / "styles.sqlite")
+        service_db.ensure_catalog_ownership(str(second))
+
+        with pytest.raises(ValueError, match="different Lightroom catalog"):
+            service_db.restore_backup_archive(archive_path)
+        os.remove(archive_path)
+
+    def test_restore_rejects_path_traversal(self, monkeypatch, tmp_path):
+        db_path = tmp_path / "styleai.db"
+        db_path.mkdir()
+        monkeypatch.setattr("config.DB_PATH", str(db_path))
+        ownership = service_db.ensure_catalog_ownership(str(db_path))
+        archive_path = tmp_path / "unsafe.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("../escape", "bad")
+
+        with pytest.raises(ValueError, match="Unsafe backup archive path"):
+            service_db.extract_and_validate_backup(
+                str(archive_path),
+                expected_catalog_database_id=ownership["catalog_database_id"],
+                staging_parent=str(tmp_path),
+            )
+
+    def test_restore_rejects_checksum_mismatch(self, monkeypatch, tmp_path):
+        db_path = tmp_path / "styleai.db"
+        db_path.mkdir()
+        monkeypatch.setattr("config.DB_PATH", str(db_path))
+        _make_sqlite(db_path / "styles.sqlite")
+        ownership = service_db.ensure_catalog_ownership(str(db_path))
+        valid_path, _ = service_db.build_backup_zip(reason="checksum")
+        corrupt_path = tmp_path / "corrupt.zip"
+        with (
+            zipfile.ZipFile(valid_path, "r") as source,
+            zipfile.ZipFile(corrupt_path, "w") as destination,
+        ):
+            for info in source.infolist():
+                data = source.read(info.filename)
+                if info.filename.endswith("styles.sqlite"):
+                    data += b"tampered"
+                destination.writestr(info, data)
+
+        with pytest.raises(ValueError, match="size mismatch"):
+            service_db.extract_and_validate_backup(
+                str(corrupt_path),
+                expected_catalog_database_id=ownership["catalog_database_id"],
+                staging_parent=str(tmp_path),
+            )
+        os.remove(valid_path)
+
+    def test_restore_checks_staging_disk_space(self, monkeypatch, mocker, tmp_path):
+        db_path = tmp_path / "styleai.db"
+        db_path.mkdir()
+        monkeypatch.setattr("config.DB_PATH", str(db_path))
+        _make_sqlite(db_path / "styles.sqlite")
+        ownership = service_db.ensure_catalog_ownership(str(db_path))
+        archive_path, _ = service_db.build_backup_zip(reason="disk-space")
+        mocker.patch.object(
+            service_db.shutil,
+            "disk_usage",
+            return_value=SimpleNamespace(total=1, used=1, free=0),
+        )
+
+        with pytest.raises(OSError, match="Insufficient free disk space"):
+            service_db.extract_and_validate_backup(
+                archive_path,
+                expected_catalog_database_id=ownership["catalog_database_id"],
+                staging_parent=str(tmp_path),
+            )
+        os.remove(archive_path)
+
+    def test_failed_restore_rolls_back_current_database(
+        self, monkeypatch, mocker, tmp_path
+    ):
+        db_path = tmp_path / "styleai.db"
+        db_path.mkdir()
+        monkeypatch.setattr("config.DB_PATH", str(db_path))
+        _make_sqlite(db_path / "styles.sqlite", "backup-version")
+        archive_path, _ = service_db.build_backup_zip(reason="rollback")
+        connection = sqlite3.connect(db_path / "styles.sqlite")
+        connection.execute("UPDATE state SET value = 'current-version'")
+        connection.commit()
+        connection.close()
+        mocker.patch.object(service_db.chroma_service, "unload_collections")
+        mocker.patch.object(service_db.training_service, "unload_collections")
+        mocker.patch("services.policy_runtime.invalidate_runtime_cache")
+        mocker.patch(
+            "core.migrations.run_migrations",
+            side_effect=RuntimeError("migration validation failed"),
+        )
+
+        with pytest.raises(RuntimeError, match="migration validation failed"):
+            service_db.restore_backup_archive(archive_path)
+
+        assert _read_sqlite(db_path / "styles.sqlite") == "current-version"
+        os.remove(archive_path)
 
 
 class TestPruneOldBackups:
@@ -130,3 +332,22 @@ class TestPruneOldBackups:
         assert deleted == 1
         # readme.txt survives even though it's "older"
         assert "readme.txt" in os.listdir(str(backups))
+
+
+def test_scheduled_backup_is_due_soon_when_none_exists(monkeypatch, tmp_path):
+    monkeypatch.setattr("config.DB_PATH", str(tmp_path))
+    assert service_db.seconds_until_scheduled_backup(86400, startup_grace=60) == 60
+
+
+def test_scheduled_backup_uses_persisted_backup_age(monkeypatch, tmp_path):
+    monkeypatch.setattr("config.DB_PATH", str(tmp_path))
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    backup = backups / "recent.zip"
+    backup.write_bytes(b"zip")
+    now = time.time()
+    os.utime(backup, (now - 100, now - 100))
+
+    delay = service_db.seconds_until_scheduled_backup(1000, startup_grace=60)
+
+    assert 899 <= delay <= 900

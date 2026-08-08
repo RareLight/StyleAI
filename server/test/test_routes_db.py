@@ -48,3 +48,23 @@ def test_db_stats_service_exception_returns_error(client, mocker):
     payload = _json.get("results") if _json.get("results") is not None else _json
     assert "error" in payload
     assert "chroma unavailable" in payload["error"]
+
+
+def test_restore_database_uses_guarded_service(client, mocker):
+    restore = mocker.patch(
+        "routes.db.service_db.restore_backup_archive",
+        return_value={"success": True},
+    )
+
+    response = client.post("/db/restore", json={"archive_path": "/tmp/backup.zip"})
+
+    assert response.status_code == 200
+    assert response.get_json()["results"]["success"] is True
+    restore.assert_called_once_with("/tmp/backup.zip")
+
+
+def test_restore_database_requires_archive_path(client):
+    response = client.post("/db/restore", json={})
+
+    assert response.status_code == 400
+    assert "archive_path" in response.get_json()["error"]

@@ -5,7 +5,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from config import logger
-from services import policy_runtime
+from services import operations, policy_runtime
 
 
 style_catalog_bp = Blueprint("style_catalog", __name__)
@@ -138,7 +138,10 @@ def discovery_status():
 @style_catalog_bp.route("/styles/reset-all", methods=["POST"])
 def reset_all_styles():
     try:
-        count = policy_runtime.reset_policy_state()
+        with operations.admission.acquire(
+            {"maintenance": 1, "catalog_write": 1}, priority=20
+        ):
+            count = policy_runtime.reset_policy_state()
         return jsonify({"status": "ok", "removed": count}), 200
     except Exception as exc:
         logger.error("Failed to reset editing policies: %s", exc, exc_info=True)

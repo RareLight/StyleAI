@@ -686,6 +686,9 @@ def clear_training_examples():
             {"training_upload": 1, "maintenance": 1, "catalog_write": 1},
             priority=20,
         ):
+            from services import db as service_db
+
+            service_db.create_persistent_backup(reason="pre-delete-training")
             styles_removed = policy_runtime.reset_policy_state()
             examples_removed = training_service.clear_all_training_examples()
         return jsonify(
@@ -709,6 +712,9 @@ def clear_all_data():
             {"training_upload": 1, "maintenance": 1, "catalog_write": 1},
             priority=20,
         ):
+            from services import db as service_db
+
+            service_db.create_persistent_backup(reason="pre-delete-training")
             styles_removed = policy_runtime.reset_policy_state()
             examples_removed = training_service.clear_all_training_examples()
         return jsonify(
