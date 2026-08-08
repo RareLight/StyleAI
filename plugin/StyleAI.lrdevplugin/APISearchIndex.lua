@@ -1090,6 +1090,10 @@ function SearchIndexAPI.generateMetadataBatch(items, options)
             photo_id = item.photo_id,
             uuid = item.photo_id,
             filename = item.filename or "photo.jpg",
+            -- Metadata-only regeneration skips the embedding queue, so its
+            -- JPEG has not been staged in the backend cache. Embedding-backed
+            -- jobs clear this field after cache admission and send only IDs.
+            image = item.image,
             options = item.options or {}
         })
     end
@@ -1762,6 +1766,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     
     
     local llmQueue = {}
+    local maxLlmQueueCapacity = math.max(12, math.min(calculatedBatchSize * 2, 24))
     local activeLlmWorkers = 0
 
     local readFileBinary = function(filepath)
@@ -1978,7 +1983,13 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
         
         while keepRunning and not progressScope:isCanceled() do
-            if #preparedQueue == 0 then
+            if enableMetadata and #llmQueue >= maxLlmQueueCapacity then
+                -- Keep base64 previews bounded while the serial local LLM
+                -- drains prior work. This is especially important for
+                -- metadata-only regeneration, where images are sent inline.
+                LrTasks.yield()
+                LrTasks.sleep(0.05)
+            elseif #preparedQueue == 0 then
                 if preparationDone then
                     break
                 else
