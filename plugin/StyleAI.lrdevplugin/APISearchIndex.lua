@@ -1820,6 +1820,12 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     stats.success = stats.success + 1
                 end
             end
+            log:info(string.format(
+                "Index preflight: scope contained %d photo(s); %d require processing and %d are already complete",
+                #selectedPhotos,
+                #photoToProcessStack,
+                stats.success
+            ))
         else
             log:warn("Pre-flight check failed, falling back to full process. Error: " .. tostring(err))
             for _, photo in ipairs(selectedPhotos) do

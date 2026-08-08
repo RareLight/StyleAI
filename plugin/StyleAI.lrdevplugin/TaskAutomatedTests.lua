@@ -11,6 +11,7 @@ require("APISearchIndex")
 local Pipeline = require("Pipeline")
 local DevelopEditManager = require("DevelopEditManager")
 local RenderingStateCapability = require("RenderingStateCapability")
+local PhotoSelector = require("PhotoSelector")
 
 ---
 -- Helper function to evaluate test conditions safely.
@@ -111,6 +112,20 @@ LrTasks.startAsyncTask(function()
 			local results, err = SearchIndexAPI.pruneDatabase({})
 			assertTrue(results == nil, "pruneDatabase must reject an empty valid-photo set")
 			assertTrue(err ~= nil, "pruneDatabase should explain the safety rejection")
+		end)
+
+		runTest("PhotoSelector preserves selected-photo snapshot", function()
+			local photoOne = { getRawMetadata = function(self, key) return key == "isVideo" and false or nil end }
+			local photoTwo = { getRawMetadata = function(self, key) return key == "isVideo" and false or nil end }
+			local video = { getRawMetadata = function(self, key) return key == "isVideo" and true or nil end }
+			local capturedSelection = { photoOne, photoTwo, video }
+			local resolved = PhotoSelector.getPhotosInScope("selected", nil, nil, capturedSelection)
+
+			-- Mutating the source array after resolution must not affect the task's list.
+			capturedSelection[2] = nil
+			assertEqual(2, #resolved, "Both selected photos should survive independently of live selection state")
+			assertEqual(photoOne, resolved[1], "Selection order should be preserved")
+			assertEqual(photoTwo, resolved[2], "Video filtering must not remove later selected photos")
 		end)
 
 		---------------------------------------------------------

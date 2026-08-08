@@ -752,6 +752,10 @@ end
 
 LrTasks.startAsyncTask(function()
 	LrFunctionContext.callWithContext("AnalyzeAndIndexTask", function(context)
+		-- Lightroom's target-photo set is live UI state. Capture it before the
+		-- modal dialog or backend checks can move focus to a single photo.
+		local selectedPhotosSnapshot = PhotoSelector.snapshotSelectedPhotos()
+
 		-- Show dialog
 		local props = showAnalyzeAndIndexDialog(context)
 		if not props then
@@ -868,7 +872,13 @@ LrTasks.startAsyncTask(function()
 		-- Use the main progress scope for "missing" lookup so the bar resets for import/analysis (nested child scopes complete the parent segment).
 		local lookupScope = (props.scope == "missing") and progressScope or nil
 		local photosToProcess, errorStatus =
-			PhotoSelector.getPhotosInScope(props.scope, taskOptionsForScope, lookupScope)
+			PhotoSelector.getPhotosInScope(props.scope, taskOptionsForScope, lookupScope, selectedPhotosSnapshot)
+		log:info(
+			"Resolved "
+				.. tostring(photosToProcess and #photosToProcess or 0)
+				.. " photo(s) for indexing scope "
+				.. tostring(props.scope)
+		)
 
 		if photosToProcess == nil or type(photosToProcess) ~= "table" or #photosToProcess == 0 then
 			progressScope:done()
