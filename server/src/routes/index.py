@@ -5,7 +5,7 @@ import queue
 
 from flask import Blueprint, request, jsonify
 
-from config import logger
+from config import logger, STYLEAI_METADATA_CACHE_BYTES
 from services import chroma as chroma_service
 from services.index import process_image_task, get_photo_ids_needing_processing
 import base64
@@ -338,10 +338,13 @@ def generate_metadata_batch():
     tasks = data.get("tasks", [])
     if not tasks:
         return jsonify({"error": "No tasks provided"}), 400
+    if len(tasks) > 12:
+        return jsonify({"error": "Metadata batches are limited to 12 photos"}), 413
 
     global_options = data.get("options", {})
     valid_tasks = []
     batch_options = []
+    inline_image_bytes_total = 0
 
     from services import image_cache
 
@@ -361,33 +364,63 @@ def generate_metadata_batch():
         photo_options["compute_metadata"] = True
         photo_options["compute_faces"] = False
 
-        valid_tasks.append((photo_id, filename))
+        inline_image = task.get("image")
+        inline_image_bytes = None
+        if inline_image:
+            try:
+                inline_image_bytes = base64.b64decode(inline_image.encode("ascii"))
+            except Exception as exc:
+                return jsonify(
+                    {"error": f"Failed to decode image for {photo_id}: {exc}"}
+                ), 400
+            if not inline_image_bytes:
+                return jsonify({"error": f"Empty image data for {photo_id}"}), 400
+            inline_image_bytes_total += len(inline_image_bytes)
+            if inline_image_bytes_total > STYLEAI_METADATA_CACHE_BYTES:
+                return jsonify(
+                    {"error": "Inline metadata image batch exceeds the byte budget"}
+                ), 413
+
+        valid_tasks.append((photo_id, filename, inline_image_bytes))
         batch_options.append(photo_options)
 
     if not valid_tasks:
-        return jsonify({"error": "No valid tasks with cached images found"}), 400
+        return jsonify({"error": "No valid metadata tasks found"}), 400
 
-    photo_ids = [photo_id for photo_id, _filename in valid_tasks]
+    photo_ids = [photo_id for photo_id, _filename, _image in valid_tasks]
     if len(photo_ids) != len(set(photo_ids)):
         return jsonify({"error": "Duplicate photo_id values are not allowed"}), 400
 
-    image_bytes_batch, missing_ids = image_cache.pop_images(photo_ids)
-    if image_bytes_batch is None:
-        logger.warning(
-            "Metadata batch rejected because %d image(s) were absent from the cache: %s",
-            len(missing_ids),
-            ", ".join(missing_ids[:5]),
-        )
-        return jsonify(
-            {
-                "error": "Image data expired or was not admitted; rerun metadata generation for this batch",
-                "missing_photo_ids": missing_ids,
-            }
-        ), 409
+    cached_photo_ids = [
+        photo_id
+        for photo_id, _filename, inline_image_bytes in valid_tasks
+        if inline_image_bytes is None
+    ]
+    cached_images = {}
+    if cached_photo_ids:
+        image_bytes_batch, missing_ids = image_cache.pop_images(cached_photo_ids)
+        if image_bytes_batch is None:
+            logger.warning(
+                "Metadata batch rejected because %d image(s) were absent from the cache: %s",
+                len(missing_ids),
+                ", ".join(missing_ids[:5]),
+            )
+            return jsonify(
+                {
+                    "error": "Image data expired or was not admitted; rerun metadata generation for this batch",
+                    "missing_photo_ids": missing_ids,
+                }
+            ), 409
+        cached_images = dict(zip(cached_photo_ids, image_bytes_batch))
 
     image_triplets = [
-        (image_bytes, photo_id, filename, None)
-        for image_bytes, (photo_id, filename) in zip(image_bytes_batch, valid_tasks)
+        (
+            inline_image_bytes or cached_images[photo_id],
+            photo_id,
+            filename,
+            None,
+        )
+        for photo_id, filename, inline_image_bytes in valid_tasks
     ]
 
     success_count, failure_count, error_messages, warnings = process_image_task(

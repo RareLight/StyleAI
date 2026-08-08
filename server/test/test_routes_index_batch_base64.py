@@ -198,6 +198,90 @@ def test_metadata_batch_missing_image_fails_without_consuming_present_image(
     image_cache.clear()
 
 
+def test_metadata_batch_accepts_inline_images_without_cache(client, mocker):
+    image_cache.clear()
+    process = mocker.patch(
+        "routes.index.process_image_task", return_value=(2, 0, [], [])
+    )
+
+    response = client.post(
+        "/metadata/generate_batch",
+        json={
+            "tasks": [
+                {
+                    "photo_id": "first",
+                    "filename": "first.jpg",
+                    "image": base64.b64encode(b"first image").decode("ascii"),
+                },
+                {
+                    "photo_id": "second",
+                    "filename": "second.jpg",
+                    "image": base64.b64encode(b"second image").decode("ascii"),
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    triplets = process.call_args.args[0]
+    assert triplets == [
+        (b"first image", "first", "first.jpg", None),
+        (b"second image", "second", "second.jpg", None),
+    ]
+
+
+def test_metadata_batch_rejects_unbounded_task_count(client, mocker):
+    process = mocker.patch("routes.index.process_image_task")
+
+    response = client.post(
+        "/metadata/generate_batch",
+        json={
+            "tasks": [
+                {
+                    "photo_id": f"photo-{index}",
+                    "filename": f"photo-{index}.jpg",
+                    "image": base64.b64encode(b"image").decode("ascii"),
+                }
+                for index in range(13)
+            ]
+        },
+    )
+
+    assert response.status_code == 413
+    assert "limited to 12 photos" in response.get_json()["error"]
+    process.assert_not_called()
+
+
+def test_metadata_batch_supports_mixed_inline_and_cached_images(client, mocker):
+    image_cache.clear()
+    assert image_cache.store_image("cached", b"cached image")
+    process = mocker.patch(
+        "routes.index.process_image_task", return_value=(2, 0, [], [])
+    )
+
+    response = client.post(
+        "/metadata/generate_batch",
+        json={
+            "tasks": [
+                {
+                    "photo_id": "inline",
+                    "filename": "inline.jpg",
+                    "image": base64.b64encode(b"inline image").decode("ascii"),
+                },
+                {"photo_id": "cached", "filename": "cached.jpg"},
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    triplets = process.call_args.args[0]
+    assert triplets == [
+        (b"inline image", "inline", "inline.jpg", None),
+        (b"cached image", "cached", "cached.jpg", None),
+    ]
+    assert image_cache.get_image("cached") is None
+
+
 def test_stop_index_queue_releases_pending_images(monkeypatch):
     bounded_queue = queue.Queue(maxsize=2)
     item = {"uuid": "queued", "image_bytes": b"image"}
