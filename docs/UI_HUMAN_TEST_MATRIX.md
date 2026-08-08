@@ -57,11 +57,13 @@ the production catalog.
    model or output field, and missing/unprocessed scope cannot select Replace.
 3. Test selected, current view, entire catalog, missing, and indexed scopes.
 4. Test keep/replace StyleAI data and catalog append/replace on known metadata.
-   Verify only the fields named in the warning are replaced.
-5. Toggle metadata off and confirm its tabs collapse without leaving a large
-   empty region.
+   Verify only the selected generated fields are replaced.
+5. Toggle metadata off and confirm the primary window remains compact. Toggle
+   it on, open Metadata Settings, and verify output, model/instructions, and
+   context tabs are available without enlarging the primary window.
 6. Test prompt add, rename, delete, duplicate/blank rejection, restore Default,
-   and Cancel. Confirm Cancel does not save prompt edits.
+   and Cancel. Confirm canceling Metadata Settings restores its entry-state
+   values and canceling Prepare Photos does not save prompt edits.
 7. Test long prompt text, long model names, long paths, hierarchy options,
    bilingual keywords, and per-photo context reuse.
 
@@ -101,6 +103,9 @@ the production catalog.
    candidate collection creation, and all three evaluation-only feedback labels.
 5. Confirm custom names survive rebuild and feedback does not automatically
    change thresholds or active models.
+6. Verify Find More Training Examples uses a compact informational window when
+   no styles need examples. With populated recommendations, verify the shorter
+   list, details-first flow, and Candidate Review actions remain usable.
 
 ## 7. Platform and accessibility matrix
 

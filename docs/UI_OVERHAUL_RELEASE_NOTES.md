@@ -38,6 +38,16 @@
 - Consolidated diagnostic details and available logs into one support-report
   folder.
 
+## Compact workflow windows
+
+- Prepare Photos now keeps its primary decision window limited to tasks, photo
+  scope, existing-data handling, and the effective run summary. Optional local
+  metadata controls open in a focused Metadata Settings dialog.
+- Find More Training Examples now resolves its recommendation state before
+  constructing the window. Empty results no longer allocate list and detail
+  panels; populated results use a shorter list and place review actions after
+  the selected policy details.
+
 ## Debug and preference migration
 
 - **Enable Debug options** defaults off. Diagnostic LLM image capture is hidden
