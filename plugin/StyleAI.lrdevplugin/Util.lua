@@ -207,7 +207,8 @@ function Util.getPhotoExif(photo)
 		exif.shutter_speed = ss
 	end
 
-	-- Camera Profile (from develop settings — critical for profile-aware style matching)
+	-- Rendering state. Keep profile and HDR independent; legacy backend readers
+	-- still receive camera_profile while newer contracts use is_hdr separately.
 	local okDev, devSettings = LrTasks.pcall(function()
 		return photo:getDevelopSettings()
 	end)
@@ -216,12 +217,12 @@ function Util.getPhotoExif(photo)
 			exif.camera_profile = devSettings.Look.Name
 		elseif type(devSettings.CameraProfile) == "string" and devSettings.CameraProfile ~= "" then
 			exif.camera_profile = devSettings.CameraProfile
+		elseif type(devSettings.CameraProfileRaw) == "string" and devSettings.CameraProfileRaw ~= "" then
+			exif.camera_profile = devSettings.CameraProfileRaw
 		end
-		-- HDR mode dramatically changes slider physics, so treat it as a separate profile
-		-- Note: Lightroom returns HDREditMode as an integer (1/0) or boolean depending on the API path.
-		if devSettings.HDREditMode == 1 or devSettings.HDREditMode == true or devSettings.HDR == true then
-			exif.camera_profile = (exif.camera_profile or "Unknown Profile") .. " + HDR"
-		end
+		exif.is_hdr = devSettings.HDREditMode == 1
+			or devSettings.HDREditMode == true
+			or devSettings.HDR == true
 	end
 
 	return exif

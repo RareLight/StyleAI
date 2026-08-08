@@ -141,6 +141,43 @@ def test_coverage_reranks_only_equally_admissible_candidates():
     assert "fills_coverage_gap" in selected[0].reasons
 
 
+def test_ranking_weights_are_configurable_and_normalized():
+    candidates = [
+        _candidate(
+            "membership",
+            [1.0, 0.0],
+            responsibilities=(0.95, 0.05),
+            coverage=0.0,
+        ),
+        _candidate(
+            "coverage",
+            [0.0, 1.0],
+            responsibilities=(0.75, 0.25),
+            coverage=1.0,
+        ),
+    ]
+
+    selected, _ = rank_policy_candidates(
+        candidates,
+        policy_index=0,
+        target_count=2,
+        membership_weight=1.0,
+        coverage_weight=0.0,
+        quality_weight=0.0,
+    )
+    assert [item.photo_id for item in selected] == ["membership", "coverage"]
+
+    selected, _ = rank_policy_candidates(
+        candidates,
+        policy_index=0,
+        target_count=2,
+        membership_weight=0.0,
+        coverage_weight=2.0,
+        quality_weight=0.0,
+    )
+    assert [item.photo_id for item in selected] == ["coverage", "membership"]
+
+
 def test_diversity_suppression_is_deterministic():
     candidates = [
         _candidate("a", [1.0, 0.0], coverage=0.5),

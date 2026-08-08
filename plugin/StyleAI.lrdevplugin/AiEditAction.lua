@@ -189,6 +189,8 @@ local function getAiEditOptions(ctx, editMode)
 	end
 	props.createVirtualCopies = prefs.aiEditCreateVirtualCopies ~= false
 	props.reviewBeforeApply = prefs.aiEditReviewBeforeApply ~= false
+	props.profileMode = prefs.aiEditProfileMode or "suggest"
+	props.hdrMode = prefs.aiEditHdrMode or "suggest"
 	props.applyMasks = prefs.aiEditApplyMasks ~= false
 	props.adjustWhiteBalance = prefs.aiEditAdjustWhiteBalance ~= false
 	props.adjustBasicTone = prefs.aiEditAdjustBasicTone ~= false
@@ -325,6 +327,36 @@ local function getAiEditOptions(ctx, editMode)
 					f:popup_menu({
 						value = bind("styleStrength"),
 						items = Defaults.editStyleStrengths,
+						width = 200,
+					}),
+				}),
+				f:row({
+					f:static_text({
+						title = LOC("$$$/StyleAI/TaskAiEditPhotos/ProfileSelection=Camera profile:"),
+						width = share("labelWidth"),
+					}),
+					f:popup_menu({
+						value = bind("profileMode"),
+						items = {
+							{ title = LOC("$$$/StyleAI/RenderingMode/Off=Off"), value = "off" },
+							{ title = LOC("$$$/StyleAI/RenderingMode/Suggest=Suggest"), value = "suggest" },
+							{ title = LOC("$$$/StyleAI/RenderingMode/Auto=Auto"), value = "auto" },
+						},
+						width = 200,
+					}),
+				}),
+				f:row({
+					f:static_text({
+						title = LOC("$$$/StyleAI/TaskAiEditPhotos/HdrSelection=HDR editing mode:"),
+						width = share("labelWidth"),
+					}),
+					f:popup_menu({
+						value = bind("hdrMode"),
+						items = {
+							{ title = LOC("$$$/StyleAI/RenderingMode/Off=Off"), value = "off" },
+							{ title = LOC("$$$/StyleAI/RenderingMode/Suggest=Suggest"), value = "suggest" },
+							{ title = LOC("$$$/StyleAI/RenderingMode/Auto=Auto"), value = "auto" },
+						},
 						width = 200,
 					}),
 				}),
@@ -587,6 +619,8 @@ local function getAiEditOptions(ctx, editMode)
 						props.styleStrength = 0.75
 						props.createVirtualCopies = true
 						props.reviewBeforeApply = true
+						props.profileMode = "suggest"
+						props.hdrMode = "suggest"
 						props.applyMasks = true
 						props.showPhotoContextDialog = true
 						props.submitKeywords = true
@@ -626,6 +660,8 @@ local function getAiEditOptions(ctx, editMode)
 	prefs.aiEditIntentCustomText = props.customEditIntentText
 	prefs.aiEditCreateVirtualCopies = props.createVirtualCopies
 	prefs.aiEditReviewBeforeApply = props.reviewBeforeApply
+	prefs.aiEditProfileMode = props.profileMode
+	prefs.aiEditHdrMode = props.hdrMode
 	prefs.aiEditApplyMasks = props.applyMasks
 	prefs.aiEditAdjustWhiteBalance = props.adjustWhiteBalance
 	prefs.aiEditAdjustBasicTone = props.adjustBasicTone
@@ -670,6 +706,8 @@ local function getAiEditOptions(ctx, editMode)
 		include_masks = props.applyMasks,
 		applyMasks = props.applyMasks,
 		reviewBeforeApply = props.reviewBeforeApply,
+		profile_mode = props.profileMode,
+		hdr_mode = props.hdrMode,
 		createVirtualCopies = props.createVirtualCopies,
 		submit_keywords = props.submitKeywords,
 		submit_folder_names = props.submitFolderName,
@@ -719,6 +757,7 @@ local function enrichPhotoOptions(photo, baseOptions, userContext)
 	for k, v in pairs(exif) do
 		photoOptions[k] = v
 	end
+	photoOptions.raw_filepath = photo:getRawMetadata("path")
 	photoOptions.user_context = userContext or photo:getPropertyForPlugin(_PLUGIN, "photoContext") or ""
 	return photoOptions
 end
@@ -837,6 +876,22 @@ function AiEditAction.run(editMode)
 		local errorMessages = {}
 		local backendWarnings = {}
 		local runLog = {}
+		local applicationEvents = {}
+
+		local function queueApplicationEvent(response, status, currentSettings, applyOptions, warnings, errorMessage)
+			local inferenceId = type(response) == "table" and response.edit_inference_id or nil
+			if not inferenceId or inferenceId == "" then return end
+			table.insert(applicationEvents, {
+				edit_inference_id = inferenceId,
+				idempotency_key = "application:" .. tostring(inferenceId),
+				status = status,
+				current_settings = currentSettings,
+				global_applied = applyOptions and applyOptions.applyGlobal == true or false,
+				masks_applied = applyOptions and applyOptions.applyMasks == true or false,
+				warnings = warnings or {},
+				error = errorMessage or "",
+			})
+		end
 
 		-- Queue state
 		local userContexts = {}
@@ -1051,6 +1106,7 @@ function AiEditAction.run(editMode)
 						if result == "cancel" then
 							skippedCount = skippedCount + 1
 							res.continueProcessing = false
+							queueApplicationEvent(response, "not_applied", nil, applyOptions, nil, "review_canceled")
 						elseif validated then
 							applyOptions = validated
 						end
@@ -1059,23 +1115,33 @@ function AiEditAction.run(editMode)
 					if res.continueProcessing and not applyOptions.applyGlobal and not applyOptions.applyMasks then
 						skippedCount = skippedCount + 1
 						res.continueProcessing = false
+						queueApplicationEvent(response, "not_applied", nil, applyOptions, nil, "all_edit_sections_disabled")
 					end
 
 					if res.continueProcessing then
 						local applied, warnings = DevelopEditManager.applyRecipe(photo, response, applyOptions)
 						if applied then
+							local readOk, readback = LrTasks.pcall(function()
+								return photo:getDevelopSettings()
+							end)
+							if readOk and type(readback) == "table" then
+								queueApplicationEvent(response, "apply_confirmed", readback, applyOptions, warnings, nil)
+							else
+								queueApplicationEvent(response, "apply_unconfirmed", nil, applyOptions, warnings, tostring(readback))
+							end
 							successCount = successCount + 1
 							local styleInfo = "LLM Edit"
 							if response.engine and response.engine ~= "llm" and response.engine ~= "none" then
 								local conf = response.confidence and math.floor(response.confidence * 100) or 0
 								local styleName = (response.matched_filenames and response.matched_filenames[1]) or "Unknown Style"
-									local examples = response.matched_examples or 0
+								local examples = response.matched_examples or 0
 
-									local strength = options.style_strength or "normal"
-									styleInfo = string.format("Editing Policy: %s (%d examples, %d%% conf, %s strength)", styleName, examples, conf, strength)
+								local strength = options.style_strength or "normal"
+								styleInfo = string.format("Editing Policy: %s (%d examples, %d%% conf, %s strength)", styleName, examples, conf, strength)
 							end
 							table.insert(runLog, string.format("- %s: %s", fileName, styleInfo))
 						else
+							queueApplicationEvent(response, "apply_failed", nil, applyOptions, warnings, "Lightroom applyDevelopSettings failed")
 							errorCount = errorCount + 1
 							table.insert(errorMessages, fileName .. ": failed to apply recipe")
 						end
@@ -1084,6 +1150,15 @@ function AiEditAction.run(editMode)
 						end
 					end
 				end
+			end
+		end
+
+		if #applicationEvents > 0 then
+			local eventOk, eventResponse = SearchIndexAPI.submitStyleEditApplicationEvents(applicationEvents)
+			if not eventOk then
+				local message = "Could not confirm AI edit application history: " .. tostring(eventResponse)
+				log:error(message)
+				table.insert(backendWarnings, message)
 			end
 		end
 

@@ -396,6 +396,9 @@ def rank_policy_candidates(
     burst_cosine_distance: float = 0.05,
     duplicate_cosine_distance: float = 0.05,
     selected_similarity_ceiling: float = 0.90,
+    membership_weight: float = 0.65,
+    coverage_weight: float = 0.20,
+    quality_weight: float = 0.15,
 ) -> tuple[list[RankedPolicyCandidate], RecommendationDiagnostics]:
     """Admit by policy precision, then rank by quality and coverage.
 
@@ -404,6 +407,17 @@ def rank_policy_candidates(
     """
     if target_count < 0:
         raise ValueError("target_count must be non-negative")
+    ranking_weights = np.asarray(
+        [membership_weight, coverage_weight, quality_weight],
+        dtype=np.float64,
+    )
+    if (
+        not np.all(np.isfinite(ranking_weights))
+        or np.any(ranking_weights < 0)
+        or float(np.sum(ranking_weights)) <= 0
+    ):
+        raise ValueError("ranking weights must be finite, non-negative, and non-zero")
+    ranking_weights /= np.sum(ranking_weights)
     existing_matrix = _normalized_embedding_matrix(existing_embeddings)
     preduplicate: list[tuple[PolicyCandidate, np.ndarray, float, float, float]] = []
     embedding_dimension: int | None = (
@@ -543,7 +557,11 @@ def rank_policy_candidates(
     base_ranked = []
     for candidate, embedding, confidence, margin, quality in survivors:
         coverage = min(1.0, max(0.0, float(candidate.coverage_gain)))
-        score = 0.65 * confidence + 0.20 * coverage + 0.15 * quality
+        score = (
+            ranking_weights[0] * confidence
+            + ranking_weights[1] * coverage
+            + ranking_weights[2] * quality
+        )
         reasons = ["high_policy_membership"]
         if coverage >= 0.5:
             reasons.append("fills_coverage_gap")

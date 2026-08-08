@@ -175,6 +175,110 @@ def test_reset_removes_all_derived_policy_state(store):
     )
 
 
+def test_recommendation_feedback_is_atomic_and_survives_policy_reset(store):
+    policy_store.upsert_recommendation_review(
+        store,
+        review_id="review-1",
+        generation_id="generation-1",
+        policy_id="policy-1",
+        policy_index=0,
+        hard_partition_key="sdr",
+        target_count=2,
+        existing_photo_ids=["trained-1"],
+        algorithm_version="v2",
+        feature_schema_version="f1",
+        recommendation_version="policy-v2",
+        candidates=[
+            {
+                "photo_id": "candidate-1",
+                "responsibilities": [0.9, 0.1],
+                "assignment_entropy": 0.2,
+                "coverage_gain": 0.6,
+                "metadata": {"rating": 4},
+                "recommended_rank": 1,
+            },
+            {
+                "photo_id": "candidate-2",
+                "responsibilities": [0.8, 0.2],
+                "assignment_entropy": 0.3,
+                "coverage_gain": 0.2,
+                "metadata": {},
+            },
+        ],
+    )
+    result = policy_store.record_recommendation_feedback(
+        store,
+        review_id="review-1",
+        policy_id="policy-1",
+        labels=[
+            {
+                "photo_id": "candidate-1",
+                "policy_match": True,
+                "useful": False,
+            }
+        ],
+    )
+    policy_store.reset_policy_v2(store)
+
+    assert result == {"updated": 1, "requested": 1}
+    reviews = policy_store.list_recommendation_reviews(store)
+    assert len(reviews) == 1
+    assert reviews[0]["existing_photo_ids"] == ["trained-1"]
+    assert reviews[0]["candidates"][0]["policy_match"] is True
+    assert reviews[0]["candidates"][0]["useful"] is False
+
+
+def test_recommendation_feedback_rejects_partial_or_invalid_updates(store):
+    policy_store.upsert_recommendation_review(
+        store,
+        review_id="review-1",
+        generation_id="generation-1",
+        policy_id="policy-1",
+        policy_index=0,
+        hard_partition_key="sdr",
+        target_count=1,
+        existing_photo_ids=[],
+        algorithm_version="v2",
+        feature_schema_version="f1",
+        recommendation_version="policy-v2",
+        candidates=[
+            {
+                "photo_id": "candidate-1",
+                "responsibilities": [1.0],
+                "assignment_entropy": 0.0,
+            }
+        ],
+    )
+
+    with pytest.raises(LookupError, match="not candidates"):
+        policy_store.record_recommendation_feedback(
+            store,
+            review_id="review-1",
+            policy_id="policy-1",
+            labels=[
+                {
+                    "photo_id": "missing",
+                    "policy_match": False,
+                    "useful": False,
+                }
+            ],
+        )
+    with pytest.raises(ValueError, match="must also match"):
+        policy_store.record_recommendation_feedback(
+            store,
+            review_id="review-1",
+            policy_id="policy-1",
+            labels=[
+                {
+                    "photo_id": "candidate-1",
+                    "policy_match": False,
+                    "useful": True,
+                }
+            ],
+        )
+    assert policy_store.list_recommendation_reviews(store) == []
+
+
 def test_artifact_name_must_be_relative_and_safe(store):
     generation = policy_store.create_generation(
         store,

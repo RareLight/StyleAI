@@ -35,6 +35,10 @@ return {
 			file = "TaskAiEditPredictive.lua",
 		},
 		{
+			title = LOC("$$$/StyleAI/EditOutcome/Menu=Review AI Edit Outcome..."),
+			file = "TaskReviewAIEditOutcome.lua",
+		},
+		{
 			title = LOC("$$$/StyleAI/StyleCatalog/MenuMyStylesIndex=Your Learned Styles"),
 			file = "TaskStyleCatalog.lua",
 		},
@@ -72,6 +76,14 @@ return {
 	},
 
 	LrHelpMenuItems = {
+		{
+			title = LOC("$$$/StyleAI/RenderingSpike/Menu=Developer: Test Profile and HDR SDK Support..."),
+			file = "TaskRenderingStateCapabilitySpike.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/ReconcileEdits/Menu=Developer: Reconcile Selected AI Edit State..."),
+			file = "TaskReconcileAIEditState.lua",
+		},
 		{
 			title = LOC("$$$/StyleAI/Developer/RunAutomatedTests=Developer: Run Automated Tests..."),
 			file = "TaskAutomatedTests.lua",

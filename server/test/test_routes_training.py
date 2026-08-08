@@ -52,7 +52,7 @@ def test_add_training_example_success_and_hdr_partitioning(client, mocker):
 
     mock_add.assert_called_once()
     kwargs = mock_add.call_args.kwargs
-    assert kwargs["label"] == "Cinematic (HDR)"
+    assert kwargs["label"] == "Cinematic"
 
 
 def test_training_list_endpoint(client, mocker):

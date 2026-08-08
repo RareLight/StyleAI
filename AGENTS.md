@@ -58,6 +58,10 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 | **Format & Lint** | `bash server/scripts/lint_format.sh` (runs ruff check and ruff format) |
 | **Run Backend Tests** | `cd server && uv run pytest test/` |
 | **Evaluate Editing Policies** | `cd server && uv run python scripts/evaluate_editing_policies.py` |
+| **Evaluate Local Catalog Policies** | `cd server && uv run python scripts/evaluate_catalog_policies.py --db-path /path/to/styleai.db` |
+| **Evaluate Applied Edit Outcomes** | `cd server && uv run python scripts/evaluate_applied_edits.py --db-path /path/to/styleai.db` |
+| **Export Recommendation Reviews** | `cd server && uv run python scripts/export_policy_recommendation_reviews.py --db-path /path/to/styleai.db --output /path/to/reviews.json` |
+| **Calibrate Recommendations** | `cd server && uv run python scripts/calibrate_policy_recommendations.py /path/to/reviews.json` |
 | **Benchmark Policy Scaling** | `cd server && uv run python scripts/benchmark_policy_scaling.py` |
 | **Start Backend Server** | `cd server && uv run python src/styleai_server.py` |
 | **Plugin Smoke Tests** | Run inside Lightroom via `TaskAutomatedTests.lua` |
@@ -106,7 +110,8 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 - **Burst Curation**: Cluster photos with capture time $\Delta t \le 10\text{s}$ and SigLIP2 distance $\le 0.05$. Select hero shots by star rating > pick status (`pick_status == 1`) > edit complexity. Weight hero shots by $w_i = 1.0 / |C|$.
 - **Supervised Regression**: Select the production expert family independently for each compatible partition using burst-grouped held-out validation across reduced-rank ridge, weighted PLS, and multi-task Elastic Net. Use the selected pickle-safe factory consistently for mixture discovery and shrunken hierarchical camera/profile residual calibration. Keep nonlinear challengers in the offline evaluation harness unless held-out evidence and adequate sample size justify production use.
 - **Math Defaults & Clamping**: Default missing targets to linear bounds (1.0 crops, 50.0 color blend, linear point curves). Universally clamp predictions to learned `slider_bounds` and blend recipes with linear interpolation ($\text{start} + \text{strength} \times (\text{target} - \text{start})$).
-- **HDR & Panoramas**: SigLIP2 SDR model uses base SDR JPEG + appends `+ HDR` profile suffix for HDR photos. Panoramas (`-Pano`, `_Pano`, `panorama` tag, aspect ratio $\ge 2.2:1$) are excluded from training and recommendations.
+- **HDR & Panoramas**: Keep HDR state separate from camera-profile identity. New writes must use the versioned rendering-state contract and must never append `+ HDR` to profile names; that suffix is accepted only when reading legacy metadata. SigLIP2 and categorical selectors use Lightroom-target-independent embedded RAW previews when available. Panoramas (`-Pano`, `_Pano`, `panorama` tag, aspect ratio $\ge 2.2:1$) are excluded from training and recommendations.
+- **Rendering selector safety**: Suggest and Auto have separate evidence gates. Auto requires burst-group-preserving cross-fitted evaluation, per-class precision, uncertainty bounds, camera compatibility, and an exact continuous artifact for the effective rendering state. Profile Auto must condition on effective HDR, never on an unapplied HDR suggestion. Selector scores are ranking confidence unless calibration is independently demonstrated.
 - **WB Threshold**: Categorical WB (`is_custom`) requires a 0.7 probability threshold to override "As Shot". Normalize crops via `avg_dim = (width + height) / 2.0`.
 
 ### Taxonomy-Free Policy Discovery
@@ -136,4 +141,24 @@ All Python dependencies are managed exclusively with [uv](https://docs.astral.sh
 - **Large-scale inference**: Never replace the validated global policy solely because a catalog crosses a fixed example count. A policy-restricted local corrector may learn only grouped out-of-fold residuals, remains enabled only after material held-out improvement, uses at most 100 neighbors within cosine distance 0.15, and must abstain on sparse or high-variance neighborhoods. Local correction is applied before the same learned target clamps; abstention falls back to the unchanged global prediction.
 - **Bounded discovery validation**: Repeated estimator and policy-count cross-validation must use a deterministic, burst-group-preserving bounded sample on large partitions. Local residual validation and its artifact bank must also remain bounded. Final global policy/calibration fitting still uses every curated example.
 - **Recommendation order**: Retrieve bounded multi-medoid neighborhoods in one batched Chroma query, exclude existing examples and hard-partition mismatches, apply calibrated membership/entropy admission, deduplicate bursts, then rank by membership, coverage gain, and user quality signals. Never blend competing policy targets or assign one candidate globally before its policy membership is known.
+- **Recommendation feedback**: Persist catalog-local review snapshots with generation, policy, and schema provenance. User labels are evaluation evidence and must never mutate active thresholds or models automatically. Keep embeddings canonical in Chroma and materialize them only for an explicit local export.
 - **Cohesion scaling**: Exact full cosine matrices are acceptable only for small groups. Large groups must use deterministic blockwise or bounded-neighbor graph construction so memory does not grow as `N²`.
+- **Edit inference history**: Persist every returned recipe as an immutable
+  inference with generation/policy/schema provenance plus canonical pre-edit
+  and absolute-target fingerprints. Append idempotent Lightroom application
+  and reconciliation events; never overwrite history or erase it during a
+  derived policy reset.
+- **Undo reconciliation**: Compare only the inference's modeled sliders against
+  Lightroom readback. Record `reverted` or `diverged` as observed state, never
+  as inferred user approval/rejection. Keep selected/recent reconciliation
+  bounded to at most 100 photos per request and consolidate Lightroom metadata
+  updates into one private write transaction.
+- **Explicit edit outcomes**: `accepted`, `rejected`, and
+  `modified_and_kept` must come from an explicit Lightroom action. Capture a
+  modeled-slider readback with each judgment. Rejections are preference labels,
+  not regression targets; only accepted or modified-and-kept final states may
+  contribute numeric correction metrics.
+- **Outcome calibration**: Applied-edit quality and confidence reports remain
+  `evaluation_only`. Require adequate per-generation review counts and
+  uncertainty intervals before recommending a challenger; never change active
+  models or thresholds automatically from user outcomes.

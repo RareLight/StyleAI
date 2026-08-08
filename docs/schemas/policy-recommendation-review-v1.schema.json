@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://styleai.local/schemas/policy-recommendation-review-v1.schema.json",
+  "title": "StyleAI Local Recommendation Reviews",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "reviews"],
+  "properties": {
+    "schema_version": {
+      "const": "policy-recommendation-review-v1"
+    },
+    "exported_at_utc": {
+      "type": "string"
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "review_id",
+          "generation_id",
+          "policy_id",
+          "algorithm_version",
+          "feature_schema_version",
+          "recommendation_version"
+        ],
+        "properties": {
+          "review_id": { "type": "string" },
+          "generation_id": { "type": "string" },
+          "policy_id": { "type": "string" },
+          "algorithm_version": { "type": "string" },
+          "feature_schema_version": { "type": "string" },
+          "recommendation_version": { "type": "string" }
+        }
+      }
+    },
+    "reviews": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "review_id",
+          "policy_index",
+          "target_count",
+          "hard_partition_key",
+          "candidates"
+        ],
+        "properties": {
+          "review_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "policy_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "target_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "hard_partition_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "existing_embeddings": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          },
+          "candidates": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "photo_id",
+                "embedding",
+                "responsibilities",
+                "assignment_entropy",
+                "policy_match",
+                "useful"
+              ],
+              "properties": {
+                "photo_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "embedding": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "responsibilities": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "assignment_entropy": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "coverage_gain": {
+                  "type": "number"
+                },
+                "hard_partition_key": {
+                  "type": "string"
+                },
+                "source_ambiguous": {
+                  "type": "boolean"
+                },
+                "metadata": {
+                  "type": "object"
+                },
+                "policy_match": {
+                  "type": ["boolean", "null"]
+                },
+                "useful": {
+                  "type": ["boolean", "null"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

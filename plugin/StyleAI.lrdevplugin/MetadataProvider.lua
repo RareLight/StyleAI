@@ -41,6 +41,14 @@ return {
 			browsable = true,
 		},
 		{
+			id = "aiEditInferenceId",
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditInferenceId=AI edit inference ID"),
+			dataType = "string",
+			readOnly = true,
+			searchable = true,
+			browsable = false,
+		},
+		{
 			id = "aiEditSummary",
 			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditSummary=AI edit summary"),
 			dataType = "string",
@@ -118,7 +126,7 @@ return {
 		},
 	},
 
-	schemaVersion = 31,
+	schemaVersion = 32,
 	updateFromEarlierSchemaVersion = function(catalog, previousSchemaVersion, progressScope)
 		catalog:assertHasPrivateWriteAccess("AIMetadataProvider.updateFromEarlierSchemaVersion")
 	end,

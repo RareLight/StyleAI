@@ -1,7 +1,6 @@
 import os
 import sys
 import threading
-import time
 from flask import Flask, jsonify, request
 from waitress import serve
 from werkzeug.exceptions import HTTPException
@@ -73,7 +72,10 @@ def _start_housekeeping_scheduler() -> None:
             interval,
             max_keep,
         )
-        while True:
+        # Do not perform a full database backup during startup. Besides adding
+        # avoidable I/O while models and databases initialize, the old ordering
+        # made every Lightroom restart look like a scheduled backup interval.
+        while not server_lifecycle.GLOBAL_SHUTDOWN_EVENT.wait(interval):
             if config.DB_PATH:
                 try:
                     zip_path, backup_name = service_db.build_backup_zip()
@@ -89,10 +91,8 @@ def _start_housekeeping_scheduler() -> None:
                         )
                 except Exception as e:
                     logger.error("Periodic DB backup failed: %s", e, exc_info=True)
-                time.sleep(interval)
             else:
-                # Wait 5 seconds and check again if the plugin has initialized us
-                time.sleep(5)
+                logger.debug("Skipping scheduled backup: no catalog is attached")
 
     t = threading.Thread(target=_loop, name="db-backup-scheduler", daemon=True)
     t.start()

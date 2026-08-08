@@ -10,6 +10,7 @@ require("Util")
 require("APISearchIndex")
 local Pipeline = require("Pipeline")
 local DevelopEditManager = require("DevelopEditManager")
+local RenderingStateCapability = require("RenderingStateCapability")
 
 ---
 -- Helper function to evaluate test conditions safely.
@@ -201,6 +202,48 @@ LrTasks.startAsyncTask(function()
 			}
 			local details = DevelopEditManager.formatRecipeDetails(response)
 			assertTrue(details ~= nil and details ~= "", "Formatted recipe details should not be empty")
+		end)
+
+		runTest("RenderingStateCapability - Profile and HDR remain separate", function()
+			local state = RenderingStateCapability.captureRenderingState({
+				CameraProfile = "Camera Standard + HDR",
+				CameraProfileRaw = "custom-profile-id",
+				HDREditMode = 1,
+			})
+			assertEqual("Camera Standard + HDR", RenderingStateCapability.profileDisplayName(state), "Profile name must be preserved verbatim")
+			assertTrue(RenderingStateCapability.isHdr(state), "HDR must be read from its own SDK field")
+		end)
+
+		runTest("RenderingStateCapability - Candidate settings preserve unrelated state", function()
+			local baseline = { Exposure2012 = 0.25, CameraProfile = "Adobe Color", HDREditMode = 0 }
+			local target = RenderingStateCapability.captureRenderingState({ CameraProfile = "Camera Neutral", HDREditMode = 1 })
+			local candidate = RenderingStateCapability.buildCandidateSettings(baseline, target, { "CameraProfile" })
+			assertEqual(0.25, candidate.Exposure2012, "Unrelated Develop settings must survive")
+			assertEqual("Camera Neutral", candidate.CameraProfile, "Observed target representation must be copied")
+			assertEqual(0, candidate.HDREditMode, "Independent profile tests must preserve HDR")
+		end)
+
+		runTest("RenderingStateCapability - Camera compatibility includes make and model", function()
+			local first = RenderingStateCapability.cameraCompatibilityKey("Canon", "EOS R5")
+			local second = RenderingStateCapability.cameraCompatibilityKey("Canon", "EOS R6")
+			assertTrue(first ~= second, "Profiles from different camera models must not share a compatibility key")
+			assertEqual(first, RenderingStateCapability.cameraCompatibilityKey("CANON", "EOS R5"), "Compatibility matching should be case-insensitive")
+			assertEqual(nil, RenderingStateCapability.cameraCompatibilityKey(nil, nil), "Missing camera identity must never form a compatibility group")
+		end)
+
+		runTest("RenderingStateCapability - Substituted profiles fail exact verification", function()
+			local requested = RenderingStateCapability.captureRenderingState({
+				CameraProfile = "Custom Profile",
+				HDREditMode = 0,
+			})
+			local substituted = RenderingStateCapability.captureRenderingState({
+				CameraProfile = "Adobe Color",
+				HDREditMode = 0,
+			})
+			assertTrue(
+				not RenderingStateCapability.keysMatch(substituted, requested, { "CameraProfile" }),
+				"A Lightroom profile substitution must trigger rollback"
+			)
 		end)
 
 		---------------------------------------------------------

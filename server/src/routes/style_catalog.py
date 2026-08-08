@@ -40,6 +40,51 @@ def get_upgrade_recommendations():
         return jsonify({"results": None, "error": str(exc), "warning": None}), 500
 
 
+@style_catalog_bp.route("/styles/upgrades/feedback", methods=["POST"])
+def record_upgrade_feedback():
+    try:
+        data = request.get_json(silent=True) or {}
+        review_id = str(data.get("review_id") or "").strip()
+        policy_id = str(data.get("policy_id") or "").strip()
+        raw_labels = data.get("labels")
+        if not review_id or not policy_id or not isinstance(raw_labels, list):
+            return jsonify(
+                {
+                    "results": None,
+                    "error": "review_id, policy_id, and labels are required",
+                    "warning": None,
+                }
+            ), 400
+        labels = []
+        for item in raw_labels:
+            if not isinstance(item, dict):
+                raise ValueError("every feedback label must be an object")
+            labels.append(
+                {
+                    "photo_id": str(
+                        item.get("photo_id") or item.get("globalPhotoId") or ""
+                    ).strip(),
+                    "policy_match": item.get("policy_match"),
+                    "useful": item.get("useful"),
+                }
+            )
+        result = policy_runtime.record_upgrade_feedback(
+            review_id=review_id,
+            policy_id=policy_id,
+            labels=labels,
+        )
+        return jsonify({"results": result, "error": None, "warning": None}), 200
+    except (ValueError, LookupError) as exc:
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 400
+    except Exception as exc:
+        logger.error(
+            "Failed to record policy upgrade feedback: %s",
+            exc,
+            exc_info=True,
+        )
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 500
+
+
 @style_catalog_bp.route("/styles/<path:policy_id>", methods=["GET"])
 def get_style(policy_id: str):
     try:

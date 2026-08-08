@@ -531,6 +531,13 @@ local function formatGlobalSettings(globalSettings)
 	return lines
 end
 
+local RenderingStateCapability = require("RenderingStateCapability")
+
+local function renderingProfileName(state)
+	local profile = type(state) == "table" and state.profile or {}
+	return tostring(profile.display_name or "Unknown Profile")
+end
+
 function DevelopEditManager.formatRecipeDetails(response)
 	local recipe = response and response.recipe
 	if not recipe then
@@ -559,6 +566,25 @@ function DevelopEditManager.formatRecipeDetails(response)
 	table.insert(lines, "Summary")
 	table.insert(lines, recipe.summary or "AI-generated Lightroom edit recipe")
 	table.insert(lines, "")
+
+	local rendering = recipe.rendering_intent
+	if type(rendering) == "table" then
+		local current = rendering.current or {}
+		local proposed = rendering.proposed or current
+		table.insert(lines, "Rendering intent")
+		table.insert(lines, "- Current profile: " .. renderingProfileName(current))
+		table.insert(lines, "- Proposed profile: " .. renderingProfileName(proposed))
+		table.insert(lines, "- Current HDR: " .. (current.is_hdr and "On" or "Off"))
+		table.insert(lines, "- Proposed HDR: " .. (proposed.is_hdr and "On" or "Off"))
+		table.insert(lines, "- Profile mode: " .. tostring(rendering.profile_mode or "suggest"))
+		table.insert(lines, "- HDR mode: " .. tostring(rendering.hdr_mode or "suggest"))
+		table.insert(lines, "- Profile confidence: " .. tostring(math.floor((rendering.profile_confidence or 0) * 100)) .. "%")
+		table.insert(lines, "- HDR confidence: " .. tostring(math.floor((rendering.hdr_confidence or 0) * 100)) .. "%")
+		if rendering.abstention_reason then
+			table.insert(lines, "- Fallback: " .. tostring(rendering.abstention_reason))
+		end
+		table.insert(lines, "")
+	end
 
 	local globalSettings = recipe.global or {}
 	table.insert(lines, "Global adjustments")
@@ -662,6 +688,9 @@ function DevelopEditManager.persistEditRecipe(photo, response, warnings, status)
 			photo:setPropertyForPlugin(_PLUGIN, "aiEditWarnings", warningText)
 			photo:setPropertyForPlugin(_PLUGIN, "aiEditRecipe", tostring(recipeJson or ""))
 			photo:setPropertyForPlugin(_PLUGIN, "aiEditStatus", tostring(status or "generated"))
+			if type(response) == "table" and response.edit_inference_id then
+				photo:setPropertyForPlugin(_PLUGIN, "aiEditInferenceId", tostring(response.edit_inference_id))
+			end
 		end, Defaults.catalogWriteAccessOptions)
 	end)
 	if not okWrite then
@@ -817,6 +846,88 @@ local function applyGlobalDevelopSettings(photo, recipe, warnings)
 	end
 	log:trace("DevelopEditManager.applyGlobalDevelopSettings: success")
 	return true
+end
+
+local function applyRenderingIntent(photo, recipe, warnings)
+	local intent = recipe and recipe.rendering_intent
+	if type(intent) ~= "table" or type(intent.effective) ~= "table" then
+		return true, nil
+	end
+	local profileAuto = intent.profile_mode == "auto"
+	local hdrAuto = intent.hdr_mode == "auto"
+	if not profileAuto and not hdrAuto then
+		return true, nil
+	end
+	local okBefore, before = LrTasks.pcall(function() return photo:getDevelopSettings() end)
+	if not okBefore or type(before) ~= "table" then
+		appendWarning(warnings, "Could not capture the pre-edit rendering state; profile/HDR Auto was canceled.")
+		return false, nil
+	end
+	local desired = RenderingStateCapability.deepCopy(before)
+	local target = intent.effective
+	local targetProfile = target.profile or {}
+	local sdk = targetProfile.sdk_representation or {}
+	local needsProfileChange = false
+	if profileAuto then
+		for key, value in pairs(sdk) do
+			if not RenderingStateCapability.deepEqual(before[key], value) then needsProfileChange = true break end
+		end
+	end
+	local beforeHdr = RenderingStateCapability.isHdr(RenderingStateCapability.captureRenderingState(before))
+	local needsHdrChange = hdrAuto and beforeHdr ~= (target.is_hdr == true)
+	if not needsProfileChange and not needsHdrChange then return true, nil end
+	if profileAuto then
+		for _, key in ipairs(RenderingStateCapability.PROFILE_KEYS) do
+			if sdk[key] ~= nil then desired[key] = RenderingStateCapability.deepCopy(sdk[key]) end
+		end
+	end
+	if hdrAuto then
+		desired.HDREditMode = target.is_hdr and 1 or 0
+	end
+	local catalog = LrApplication.activeCatalog()
+	local okApply, applyErr = LrTasks.pcall(function()
+		catalog:withWriteAccessDo("Apply StyleAI rendering state", function()
+			photo:applyDevelopSettings(desired)
+		end, Defaults.catalogWriteAccessOptions)
+	end)
+	local okRead, after = LrTasks.pcall(function() return photo:getDevelopSettings() end)
+	local verified = okApply and okRead and type(after) == "table"
+	if verified and profileAuto then
+		for key, value in pairs(sdk) do
+			if not RenderingStateCapability.deepEqual(after[key], value) then verified = false break end
+		end
+	end
+	if verified and hdrAuto then
+		verified = RenderingStateCapability.isHdr(RenderingStateCapability.captureRenderingState(after)) == (target.is_hdr == true)
+	end
+	if verified then
+		return true, before
+	end
+	local restoreOk, restoreErr = LrTasks.pcall(function()
+		catalog:withWriteAccessDo("Restore rendering state after failed StyleAI verification", function()
+			photo:applyDevelopSettings(before)
+		end, Defaults.catalogWriteAccessOptions)
+	end)
+	appendWarning(
+		warnings,
+		"Profile/HDR application could not be verified; sliders were not applied and the original rendering state was restored. "
+			.. tostring(applyErr or restoreErr or "Lightroom substituted the requested state")
+	)
+	if not restoreOk then log:error("Rendering-state restore failed: " .. tostring(restoreErr)) end
+	return false, before
+end
+
+local function restoreRenderingState(photo, before, warnings)
+	if type(before) ~= "table" then return end
+	local catalog = LrApplication.activeCatalog()
+	local ok, err = LrTasks.pcall(function()
+		catalog:withWriteAccessDo("Restore rendering state after failed StyleAI edit", function()
+			photo:applyDevelopSettings(before)
+		end, Defaults.catalogWriteAccessOptions)
+	end)
+	if not ok then
+		appendWarning(warnings, "Could not restore the original rendering state: " .. tostring(err))
+	end
 end
 
 local function supportsMaskAutomation()
@@ -1489,14 +1600,19 @@ function DevelopEditManager.applyRecipe(photo, response, options)
 		end)
 	end
 
-	if applyGlobal then
+	local renderingApplied, originalRenderingSettings = applyRenderingIntent(photo, recipe, warnings)
+	if not renderingApplied then
+		globalApplied = false
+	elseif applyGlobal then
 		globalApplied = applyGlobalDevelopSettings(photo, recipe, warnings)
+		if not globalApplied then restoreRenderingState(photo, originalRenderingSettings, warnings) end
 	end
-	if applyMasks then
+	if globalApplied and applyMasks then
 		applyMaskEdits(photo, recipe, warnings)
 	end
 
-	DevelopEditManager.persistEditRecipe(photo, response, warnings, "applied")
+	local applicationStatus = globalApplied and "applied" or "apply_failed"
+	DevelopEditManager.persistEditRecipe(photo, response, warnings, applicationStatus)
 	log:trace(
 		"DevelopEditManager.applyRecipe: done globalApplied="
 			.. tostring(globalApplied)

@@ -39,7 +39,6 @@ function SettingsManager.initializeDefaults()
         useLightroomKeywords = false,
         topLevelKeyword = Defaults.defaultTopLevelKeyword,
         knownTopLevelKeywords = Defaults.defaultTopLevelKeywords,
-        shutdownServerOnExit = true,
         searchInSemanticSiglip = true,
         searchInMetadata = true,
         searchInMetadataKeywords = true,

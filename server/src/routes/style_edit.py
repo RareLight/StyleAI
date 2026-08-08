@@ -16,14 +16,52 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
+import config
 from config import logger
 from services import chroma as chroma_service
+from services import edit_history
+from services import policy_runtime
 from services import style_engine as style_engine
+from services.policy_features import FEATURE_SCHEMA_VERSION
+from services.policy_targets import TARGET_SCHEMA_VERSION
 from services.style_engine import CONFIDENCE_LOW
 from utils.edit_persistence import _persist_edit_recipe, _success_payload
 from utils.request_parsing import _extract_options, _extract_photo_ids
 
 style_edit_bp = Blueprint("style_edit", __name__)
+
+
+def _persist_inference(
+    *,
+    photo_id: str,
+    recipe: dict[str, Any],
+    options: dict[str, Any],
+    result: Any,
+    engine: str,
+) -> str:
+    if not config.DB_PATH:
+        raise RuntimeError("StyleAI database path is not configured")
+    is_policy = engine == "policy_v2"
+    return edit_history.create_recipe_inference(
+        db_path=config.DB_PATH,
+        photo_id=photo_id,
+        recipe=recipe,
+        current_settings=options.get("current_settings") or {},
+        engine=engine,
+        algorithm_version=(
+            policy_runtime.POLICY_ALGORITHM_VERSION
+            if is_policy
+            else "local-llm-edit-v1"
+        ),
+        feature_schema_version=(FEATURE_SCHEMA_VERSION if is_policy else "local-llm"),
+        target_schema_version=TARGET_SCHEMA_VERSION,
+        generation_id=getattr(result, "generation_id", None),
+        policy_id=getattr(result, "policy_id", None),
+        hard_partition_key=getattr(result, "hard_partition_key", "default"),
+        confidence=getattr(result, "confidence", None),
+        entropy=getattr(result, "entropy", None),
+        strength=float(options.get("style_strength", 1.0)),
+    )
 
 
 def _get_clip_embedding(photo_id: str):
@@ -65,7 +103,23 @@ def _run_single_style_edit(
     use_llm_fallback: bool = False,
 ) -> dict[str, Any]:
     """Run the style engine for a single photo. Returns a result dict."""
-    clip_embedding = _get_clip_embedding(photo_id)
+    neutral_image_bytes = image_bytes
+    source_provenance = "unknown"
+    clip_embedding = None
+    raw_filepath = options.get("raw_filepath")
+    if raw_filepath:
+        from utils.image_processing import extract_exiftool_preview
+
+        try:
+            raw_preview = extract_exiftool_preview(str(raw_filepath))
+        except (PermissionError, TimeoutError) as exc:
+            logger.warning("Neutral preview unavailable for %s: %s", photo_id, exc)
+            raw_preview = None
+        if raw_preview:
+            neutral_image_bytes = raw_preview
+            source_provenance = "raw_preview"
+    if source_provenance != "raw_preview":
+        clip_embedding = _get_clip_embedding(photo_id)
     if clip_embedding is None:
         logger.info(
             f"CLIP embedding not found in database for photo_id={photo_id}. Generating dynamically via GPU..."
@@ -79,7 +133,7 @@ def _run_single_style_edit(
         clip_processor = server_lifecycle.get_processor()
         if clip_model and clip_processor:
             try:
-                img = Image.open(io.BytesIO(image_bytes))
+                img = Image.open(io.BytesIO(neutral_image_bytes))
                 img.thumbnail((512, 512))
                 img = img.convert("RGB")
                 analysis_service = get_analysis_service()
@@ -111,7 +165,7 @@ def _run_single_style_edit(
 
     result = style_engine.generate_style_edit(
         photo_id=photo_id,
-        image_bytes=image_bytes,
+        image_bytes=neutral_image_bytes,
         focal_length=focal_length,
         capture_time_unix=capture_time_unix,
         clip_embedding=clip_embedding,
@@ -124,6 +178,9 @@ def _run_single_style_edit(
         style_strength=options.get("style_strength"),
         style_override=options.get("style_override"),
         do_not_clip=options.get("do_not_clip", True),
+        profile_mode=options.get("profile_mode", "suggest"),
+        hdr_mode=options.get("hdr_mode", "suggest"),
+        source_provenance=source_provenance,
     )
 
     # An explicitly enabled local-LLM fallback also covers safe ML abstentions.
@@ -171,6 +228,13 @@ def _run_single_style_edit(
 
         _filter_recipe_crop_rotate(llm_response.recipe, options)
         _persist_edit_recipe(photo_id, filename, llm_response.recipe, options)
+        inference_id = _persist_inference(
+            photo_id=photo_id,
+            recipe=llm_response.recipe,
+            options=options,
+            result=result,
+            engine="llm",
+        )
         payload = _success_payload(
             photo_id, llm_response.recipe, options, warning=llm_response.warning
         )
@@ -180,6 +244,7 @@ def _run_single_style_edit(
         payload["style_engine_note"] = result.warning
         payload["input_tokens"] = llm_response.input_tokens
         payload["output_tokens"] = llm_response.output_tokens
+        payload["edit_inference_id"] = inference_id
         return payload
 
     # Style engine had an explicit error (e.g. predictive ML model failure)
@@ -232,11 +297,19 @@ def _run_single_style_edit(
 
     _filter_recipe_crop_rotate(result.recipe, options)
     _persist_edit_recipe(photo_id, filename, result.recipe, options)
+    inference_id = _persist_inference(
+        photo_id=photo_id,
+        recipe=result.recipe,
+        options=options,
+        result=result,
+        engine=result.engine,
+    )
     payload = _success_payload(photo_id, result.recipe, options, warning=result.warning)
     payload["engine"] = result.engine
     payload["confidence"] = round(result.confidence, 3)
     payload["matched_examples"] = result.matched_count
     payload["matched_filenames"] = result.matched_filenames
+    payload["edit_inference_id"] = inference_id
     return payload
 
 
@@ -254,6 +327,141 @@ def _filter_recipe_crop_rotate(recipe: dict, options: dict) -> None:
             crop_settings.pop(k, None)
     if not crop_settings:
         recipe["global"].pop("crop", None)
+
+
+@style_edit_bp.route("/style_edit/events/application", methods=["POST"])
+def record_style_edit_application():
+    """Record Lightroom application outcomes after Develop-setting readback."""
+    try:
+        data = request.get_json(silent=True) or {}
+        raw_events = data.get("events")
+        if not isinstance(raw_events, list) or not raw_events or len(raw_events) > 250:
+            raise ValueError("events must be a non-empty list of at most 250 items")
+        if not config.DB_PATH:
+            raise RuntimeError("StyleAI database path is not configured")
+        stored = []
+        for item in raw_events:
+            if not isinstance(item, dict):
+                raise ValueError("every application event must be an object")
+            inference_id = str(item.get("edit_inference_id") or "").strip()
+            idempotency_key = str(item.get("idempotency_key") or "").strip()
+            status = str(item.get("status") or "").strip()
+            stored.append(
+                edit_history.record_application(
+                    db_path=config.DB_PATH,
+                    inference_id=inference_id,
+                    event_kind=status,
+                    idempotency_key=idempotency_key,
+                    current_settings=item.get("current_settings"),
+                    details={
+                        "global_applied": bool(item.get("global_applied", False)),
+                        "masks_applied": bool(item.get("masks_applied", False)),
+                        "warnings": list(item.get("warnings") or []),
+                        "error": str(item.get("error") or ""),
+                    },
+                )
+            )
+        return jsonify(
+            {
+                "results": {"stored": len(stored), "events": stored},
+                "error": None,
+                "warning": None,
+            }
+        ), 200
+    except (ValueError, LookupError) as exc:
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 400
+    except Exception as exc:
+        logger.error(
+            "Failed to record Lightroom edit application: %s",
+            exc,
+            exc_info=True,
+        )
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 500
+
+
+@style_edit_bp.route("/style_edit/events/reconcile", methods=["POST"])
+def reconcile_style_edit_state():
+    """Reconcile a bounded set of Lightroom photos with applied edit history."""
+    try:
+        data = request.get_json(silent=True) or {}
+        items = data.get("items")
+        if not isinstance(items, list) or not items or len(items) > 100:
+            raise ValueError("items must be a non-empty list of at most 100 photos")
+        if not config.DB_PATH:
+            raise RuntimeError("StyleAI database path is not configured")
+        results = []
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("every reconciliation item must be an object")
+            results.append(
+                edit_history.reconcile_photo_state(
+                    db_path=config.DB_PATH,
+                    photo_id=str(item.get("photo_id") or "").strip(),
+                    current_settings=item.get("current_settings"),
+                )
+            )
+        return jsonify(
+            {
+                "results": {"checked": len(results), "photos": results},
+                "error": None,
+                "warning": None,
+            }
+        ), 200
+    except (ValueError, LookupError) as exc:
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 400
+    except Exception as exc:
+        logger.error("Failed to reconcile Lightroom edit state: %s", exc, exc_info=True)
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 500
+
+
+@style_edit_bp.route("/style_edit/events/outcomes", methods=["POST"])
+def record_style_edit_outcomes():
+    """Store bounded, explicit user judgments for applied edits."""
+    try:
+        data = request.get_json(silent=True) or {}
+        items = data.get("items")
+        if not isinstance(items, list) or not items or len(items) > 100:
+            raise ValueError("items must be a non-empty list of at most 100 photos")
+        if not config.DB_PATH:
+            raise RuntimeError("StyleAI database path is not configured")
+        results = []
+        failures = []
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("every outcome item must be an object")
+            inference_id = str(item.get("edit_inference_id") or "").strip()
+            try:
+                results.append(
+                    edit_history.record_user_outcome(
+                        db_path=config.DB_PATH,
+                        inference_id=inference_id,
+                        outcome=str(item.get("outcome") or "").strip(),
+                        current_settings=item.get("current_settings"),
+                    )
+                )
+            except (ValueError, LookupError) as exc:
+                failures.append({"edit_inference_id": inference_id, "error": str(exc)})
+        return jsonify(
+            {
+                "results": {
+                    "stored": len(results),
+                    "failed": len(failures),
+                    "photos": results,
+                    "failures": failures,
+                },
+                "error": None,
+                "warning": (
+                    f"{len(failures)} edit outcome(s) could not be stored"
+                    if failures
+                    else None
+                ),
+            }
+        ), 200
+    except (ValueError, LookupError) as exc:
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 400
+    except Exception as exc:
+        logger.error("Failed to record Lightroom edit outcomes: %s", exc, exc_info=True)
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 500
 
 
 @style_edit_bp.route("/style_edit", methods=["POST"])
@@ -280,7 +488,27 @@ def style_edit():
     images_dark = request.files.getlist("image_dark")
     images_bright = request.files.getlist("image_bright")
     photo_ids = _extract_photo_ids(request.form)
+    valid_rendering_modes = {"off", "suggest", "auto"}
+    for field in ("profile_mode", "hdr_mode"):
+        raw_mode = request.form.get(field)
+        if (
+            raw_mode is not None
+            and str(raw_mode).strip().lower() not in valid_rendering_modes
+        ):
+            return jsonify(
+                {
+                    "results": None,
+                    "error": (
+                        f"{field} must be one of: "
+                        + ", ".join(sorted(valid_rendering_modes))
+                    ),
+                    "warning": None,
+                }
+            ), 400
     options = _extract_options(request.form)
+    options["raw_filepath"] = request.form.get("filepath") or options.get(
+        "raw_filepath"
+    )
 
     if not images or not photo_ids or len(images) != len(photo_ids):
         return jsonify(

@@ -53,11 +53,26 @@ process bound to that database.
    artifacts, then atomically activates it. Failed or interrupted builds leave
    the prior active generation intact; successful activation prunes inactive
    derived generations and stale examples.
+11. Camera-profile and HDR selectors train only from
+   Lightroom-target-independent embedded RAW previews marked `raw_preview`.
+   Lightroom-rendered previews and legacy indexed
+   embeddings are rejected for categorical training because they can contain
+   the target rendering treatment. Grouped out-of-fold nearest-centroid
+   candidates must beat the compatible-camera majority baseline at high
+   selective precision; otherwise they abstain.
 
 ### ML editing
 
-1. The backend computes the new photo's source embedding and pixel metrics.
-2. The exact HDR/profile partition selects a global policy artifact. Calibrated
+1. The backend extracts the RAW embedded preview and computes
+   target-independent source embedding/pixel metrics. Missing target-independent
+   evidence forces categorical
+   abstention.
+2. A versioned selector proposes HDR first and then one catalog-observed,
+   camera-compatible profile conditional on that HDR state. Off and Suggest
+   preserve the applicable current state; Auto remains readback-gated. The
+   Profile Auto is conditioned on the effective HDR state, never an unapplied
+   HDR suggestion. The exact effective HDR/profile partition then selects a
+   global policy artifact. Calibrated
    source membership either selects one policy or abstains. Competing policies
    are never blended, and catalog size never causes an abrupt model switch.
 3. The selected policy predicts absolute Lightroom targets. When its local
@@ -69,6 +84,24 @@ process bound to that database.
    `current + strength * (target - current)`. At full strength the result equals
    the target exactly, regardless of prior edits, and repeated application is
    idempotent.
+5. Before returning the recipe, the backend persists an immutable inference
+   containing the photo, generation/policy provenance, modeled slider set,
+   pre-edit state fingerprint, and absolute target fingerprint. Lightroom
+   returns the inference ID with an application outcome and modeled-slider
+   readback; the backend appends this evidence without rewriting the inference.
+6. Later reconciliation compares only the modeled sliders with the stored
+   pre-edit and confirmed-application fingerprints. It records `reverted` or
+   `diverged` as observable states without assuming that Lightroom Undo, a
+   preset, or manual editing caused the change.
+7. An explicit, user-invoked review action may append `accepted`, `rejected`,
+   or `modified_and_kept` together with a fresh modeled-slider readback. Undo
+   and divergence remain state observations and never become preference labels
+   automatically.
+8. Lightroom applies an Auto rendering state before any sliders, reads it back,
+   and verifies the exact SDK representation. Failure prevents slider
+   application and triggers one bounded restoration attempt. Lightroom 15.5
+   reliably supports Undo for these SDK transactions but did not preserve Redo
+   in the capability spike; rerunning an edit is not treated as Redo.
 
 ### Upgrade recommendations
 
@@ -85,6 +118,12 @@ process bound to that database.
    empirical coverage gain, user rating/pick signals, and diversity.
 6. Keywords and local visual tags may provide open-vocabulary explanations
    after admission. They never determine membership.
+7. The backend stores one bounded, deterministic review snapshot per
+   generation and policy. Lightroom may label selected recommendations as
+   helpful, matching-but-redundant, or wrong-policy. Labels survive derived
+   policy resets, retain generation/schema provenance, and never change the
+   active model automatically. Embeddings remain canonical in Chroma and are
+   joined only during an explicit local analysis export.
 
 ## Resource scaling
 
@@ -103,9 +142,22 @@ artifacts and a maximum 16 MiB similarity workspace. Run
 `uv run python scripts/benchmark_policy_scaling.py` from `server/` to measure
 these paths at representative catalog sizes on the current machine.
 
+For quality evaluation on real edits, run
+`uv run python scripts/evaluate_catalog_policies.py --db-path
+"/path/to/catalog/styleai.db"`. This performs burst-safe cross-validation with
+the production fitting and inference path without persisting or activating the
+fold artifacts. The aggregate report is catalog-local and versioned by a
+deterministic dataset fingerprint.
+
 The Lightroom Style Index and Upgrade Assistant report the model selected by
 evidence (`Global conditional policy` or `Global + validated local refinement`);
 they do not infer quality tiers from arbitrary training-count thresholds.
+
+Applied-edit evaluation reads inference/event history in bounded, keyset-
+paginated batches. It reports application reliability, explicit outcomes,
+delivered-target corrections, confidence reliability, and per-generation
+Wilson intervals. Generation comparisons are evidence-only and never activate
+models or modify thresholds.
 
 Local LLM concurrency remains one by default. Increasing concurrent model
 requests usually reduces throughput through GPU context switching and unified
@@ -117,7 +169,7 @@ memory pressure.
   `image_embeddings`, `edit_training`, and face vectors.
 - `styleai.db/styles.sqlite`: policy generations, versioned examples, model
   registrations, soft memberships, descriptors, coverage, validation results,
-  and custom policy names.
+  custom policy names, immutable edit inferences, and append-only edit events.
 - `styleai.db/policy_v2_models/<generation>/`: immutable model artifacts for a
   generation.
 

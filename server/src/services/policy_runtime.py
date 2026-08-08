@@ -51,9 +51,15 @@ from .policy_targets import (
     interpolate_absolute_target,
     unflatten_absolute_target,
 )
+from .rendering_state import (
+    RenderingSelectorArtifact,
+    fit_rendering_selector,
+    rendering_partition_key,
+    rendering_state_from_metadata,
+)
 
 
-POLICY_ALGORITHM_VERSION = "editing-policy-v2.4"
+POLICY_ALGORITHM_VERSION = "editing-policy-v2.5"
 MIN_PARTITION_EXAMPLES = 12
 MAX_POLICIES_PER_PARTITION = 4
 # Policy-count validation is a guard against unnecessary expert proliferation,
@@ -76,6 +82,7 @@ _runtime_lock = threading.RLock()
 _cached_generation_id: str | None = None
 _cached_artifacts: dict[str, "PartitionPolicyArtifact"] = {}
 _cached_custom_names: dict[str, str] | None = None
+_cached_rendering_selector: RenderingSelectorArtifact | None = None
 _rebuild_lock = threading.Lock()
 _rebuild_requested = 0
 _rebuild_worker: threading.Thread | None = None
@@ -117,13 +124,24 @@ class PartitionPolicyArtifact:
 
 @dataclass(frozen=True)
 class PolicyPrediction:
+    generation_id: str
     policy_id: str
     policy_name: str
+    hard_partition_key: str
     confidence: float
     entropy: float
     target: dict[str, Any]
     applied: dict[str, Any]
     example_count: int
+    rendering_intent: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class PartitionArtifactPrediction:
+    policy_index: int
+    confidence: float
+    entropy: float
+    flat_target: dict[str, float]
 
 
 def _database_path() -> str:
@@ -138,19 +156,20 @@ def _normalized_profile(value: Any) -> str:
 
 
 def hard_partition_key(metadata: dict[str, Any]) -> str:
+    if metadata.get("rendering_state") or metadata.get("rendering_state_json"):
+        return rendering_partition_key(rendering_state_from_metadata(metadata))
     profile = _normalized_profile(metadata.get("camera_profile"))
     is_hdr = bool(metadata.get("is_hdr")) or "hdr" in profile.casefold()
     return f"{'hdr' if is_hdr else 'sdr'}|{profile.casefold()}"
 
 
 def _categories(metadata: dict[str, Any]) -> dict[str, str]:
-    profile = _normalized_profile(metadata.get("camera_profile"))
+    state = rendering_state_from_metadata(metadata)
+    profile = state["profile"].get("display_name") or _normalized_profile(
+        metadata.get("camera_profile")
+    )
     return {
-        "hdr_state": (
-            "hdr"
-            if bool(metadata.get("is_hdr")) or "hdr" in profile.casefold()
-            else "sdr"
-        ),
+        "hdr_state": ("hdr" if bool(state.get("is_hdr")) else "sdr"),
         "camera_make": str(metadata.get("camera_make") or "unknown"),
         "camera_model": str(metadata.get("camera_model") or "unknown"),
         "camera_profile": profile,
@@ -319,6 +338,7 @@ def _prepare_rows(raw_examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not flat_target:
             continue
         source, feature_names = _source_row(metadata, normalized_embedding)
+        rendering_state = rendering_state_from_metadata(metadata)
         prepared.append(
             {
                 "photo_id": str(item["photo_id"]),
@@ -331,6 +351,7 @@ def _prepare_rows(raw_examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "canonical_target": canonical,
                 "partition_key": hard_partition_key(metadata),
                 "categories": _categories(metadata),
+                "rendering_state": rendering_state,
             }
         )
     return prepared
@@ -1082,6 +1103,7 @@ def rebuild_active_generation(
         persisted_examples: list[dict[str, Any]] = []
         all_memberships: list[dict[str, Any]] = []
         validation_rows: list[dict[str, Any]] = []
+        selector_rows: list[dict[str, Any]] = []
         for partition_index, partition_key in enumerate(sorted(eligible)):
             started = perf_counter()
             curated, weights = _curate_bursts(eligible[partition_key])
@@ -1099,6 +1121,7 @@ def rebuild_active_generation(
                 seed=seed + partition_index * 100,
             )
             artifacts.append(artifact)
+            selector_rows.extend(curated)
             logger.info(
                 "Built policy partition %s in %.2fs with %d curated examples and %d policy(s)",
                 partition_key,
@@ -1225,6 +1248,20 @@ def rebuild_active_generation(
             raise ValueError(
                 "No partition retained enough examples after burst curation"
             )
+        selector = fit_rendering_selector(selector_rows, generation_id=generation_id)
+        selector_path = os.path.join(artifact_directory, "rendering_selector.joblib")
+        selector_temporary_path = f"{selector_path}.tmp"
+        joblib.dump(selector, selector_temporary_path)
+        os.replace(selector_temporary_path, selector_path)
+        validation_rows.extend(
+            {
+                "validation_scope": "rendering_selector",
+                "metric_key": key,
+                "metric_value": None,
+                "details": value,
+            }
+            for key, value in selector.validation.items()
+        )
         policy_store.upsert_policy_examples(connection, persisted_examples)
         policy_store.replace_policy_memberships(
             connection,
@@ -1268,11 +1305,42 @@ def rebuild_active_generation(
 
 
 def invalidate_runtime_cache() -> None:
-    global _cached_generation_id, _cached_artifacts, _cached_custom_names
+    global \
+        _cached_generation_id, \
+        _cached_artifacts, \
+        _cached_custom_names, \
+        _cached_rendering_selector
     with _runtime_lock:
         _cached_generation_id = None
         _cached_artifacts = {}
         _cached_custom_names = None
+        _cached_rendering_selector = None
+
+
+def _load_active_rendering_selector() -> RenderingSelectorArtifact | None:
+    global _cached_rendering_selector
+    artifacts = _load_active_artifacts()
+    if not artifacts:
+        return None
+    generation_id = next(iter(artifacts.values())).generation_id
+    with _runtime_lock:
+        if (
+            _cached_rendering_selector is not None
+            and _cached_rendering_selector.generation_id == generation_id
+        ):
+            return _cached_rendering_selector
+    path = os.path.join(_artifact_directory(generation_id), "rendering_selector.joblib")
+    if not os.path.exists(path):
+        return None
+    selector = joblib.load(path)
+    if (
+        not isinstance(selector, RenderingSelectorArtifact)
+        or selector.generation_id != generation_id
+    ):
+        raise ValueError("active rendering selector artifact is invalid or stale")
+    with _runtime_lock:
+        _cached_rendering_selector = selector
+    return selector
 
 
 def _load_active_artifacts() -> dict[str, PartitionPolicyArtifact]:
@@ -1448,6 +1516,7 @@ def get_upgrade_recommendations(
 ) -> list[dict[str, Any]]:
     """Retrieve and rank bounded, untrained catalog neighbors for each policy."""
     from services import chroma as chroma_service
+    from services.policy_feedback import capture_recommendation_review
 
     chroma_service._ensure_initialized()
     collection = chroma_service.collection
@@ -1596,30 +1665,62 @@ def get_upgrade_recommendations(
                 existing_embeddings=artifact.example_embeddings[policy_index],
                 hard_partition_key=artifact.partition_key,
             )
-            payloads.append(
-                build_policy_recommendation_payload(
-                    policy_id=policy_id,
-                    policy_name=custom_names.get(
-                        policy_id,
-                        artifact.policy_names[policy_index],
-                    ),
-                    camera_profile=artifact.camera_profile,
-                    current_count=current_count,
-                    needed_count=needed_count,
-                    ranked_candidates=ranked,
-                    diagnostics=diagnostics,
-                    policy_descriptors=artifact.descriptors[policy_index],
-                    photo_identities=identities,
-                    training_status=(
-                        "Global + validated local refinement"
-                        if local_enabled
-                        else "Global conditional policy"
-                    ),
-                    estimator_name=artifact.estimator_name,
-                    local_correction_enabled=local_enabled,
-                )
+            review_id = capture_recommendation_review(
+                db_path=_database_path(),
+                generation_id=artifact.generation_id,
+                policy_id=policy_id,
+                policy_index=policy_index,
+                hard_partition_key=artifact.partition_key,
+                target_count=needed_count,
+                existing_photo_ids=artifact.example_photo_ids[policy_index],
+                candidates=candidates,
+                ranked_candidates=ranked,
+                algorithm_version=POLICY_ALGORITHM_VERSION,
+                feature_schema_version=FEATURE_SCHEMA_VERSION,
             )
+            payload = build_policy_recommendation_payload(
+                policy_id=policy_id,
+                policy_name=custom_names.get(
+                    policy_id,
+                    artifact.policy_names[policy_index],
+                ),
+                camera_profile=artifact.camera_profile,
+                current_count=current_count,
+                needed_count=needed_count,
+                ranked_candidates=ranked,
+                diagnostics=diagnostics,
+                policy_descriptors=artifact.descriptors[policy_index],
+                photo_identities=identities,
+                training_status=(
+                    "Global + validated local refinement"
+                    if local_enabled
+                    else "Global conditional policy"
+                ),
+                estimator_name=artifact.estimator_name,
+                local_correction_enabled=local_enabled,
+            )
+            payload["generation_id"] = artifact.generation_id
+            payload["policy_index"] = policy_index
+            payload["review_id"] = review_id
+            payloads.append(payload)
     return payloads
+
+
+def record_upgrade_feedback(
+    *,
+    review_id: str,
+    policy_id: str,
+    labels: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Persist explicit Lightroom review labels without changing active models."""
+    from services.policy_feedback import record_feedback
+
+    return record_feedback(
+        db_path=_database_path(),
+        review_id=review_id,
+        policy_id=policy_id,
+        labels=labels,
+    )
 
 
 def predict_absolute_edit(
@@ -1629,14 +1730,126 @@ def predict_absolute_edit(
     current_settings: dict[str, Any] | None,
     strength: float = 1.0,
     policy_override: str | None = None,
+    profile_mode: str = "suggest",
+    hdr_mode: str = "suggest",
+    source_provenance: str = "unknown",
 ) -> PolicyPrediction | None:
     artifacts = _load_active_artifacts()
-    artifact = artifacts.get(hard_partition_key(metadata))
+    current_state = rendering_state_from_metadata(metadata)
+    rendering_intent = {
+        "schema_version": "rendering-state-v1",
+        "selector_algorithm_version": None,
+        "selector_feature_schema_version": None,
+        "current": current_state,
+        "proposed": current_state,
+        "effective": current_state,
+        "profile_mode": profile_mode,
+        "hdr_mode": hdr_mode,
+        "profile_confidence": 0.0,
+        "profile_entropy": 1.0,
+        "hdr_confidence": 0.0,
+        "hdr_entropy": 1.0,
+        "abstention_reason": "selector_unavailable",
+    }
+    selector = _load_active_rendering_selector()
+    if selector is not None and (profile_mode != "off" or hdr_mode != "off"):
+        rendering_intent = selector.select(
+            embedding=embedding,
+            current_state=current_state,
+            camera_make=metadata.get("camera_make"),
+            camera_model=metadata.get("camera_model"),
+            profile_mode=profile_mode,
+            hdr_mode=hdr_mode,
+            source_provenance=source_provenance,
+        )
+    effective_metadata = dict(metadata)
+    effective_metadata["rendering_state"] = rendering_intent["effective"]
+    artifact = artifacts.get(hard_partition_key(effective_metadata))
+    if artifact is None and not (
+        metadata.get("rendering_state") or metadata.get("rendering_state_json")
+    ):
+        artifact = artifacts.get(hard_partition_key(metadata))
+    if artifact is None:
+        # A categorical decision may only ship with a validated continuous
+        # artifact for the exact state Lightroom will use. Fall back atomically.
+        rendering_intent["effective"] = current_state
+        rendering_intent["abstention_reason"] = ",".join(
+            filter(
+                None,
+                [
+                    rendering_intent.get("abstention_reason"),
+                    "target_policy_unavailable",
+                ],
+            )
+        )
+        effective_metadata["rendering_state"] = current_state
+        artifact = artifacts.get(hard_partition_key(effective_metadata))
+        if artifact is None and not (
+            metadata.get("rendering_state") or metadata.get("rendering_state_json")
+        ):
+            artifact = artifacts.get(hard_partition_key(metadata))
     if artifact is None:
         return None
-    source, feature_names = _source_row(metadata, embedding)
+    source, feature_names = _source_row(effective_metadata, embedding)
     if feature_names != artifact.feature_names:
         logger.warning("Policy feature schema/dimension mismatch during inference")
+        return None
+    artifact_prediction = predict_partition_artifact(
+        artifact,
+        source=source,
+        metadata=effective_metadata,
+        embedding=embedding,
+        policy_override=policy_override,
+    )
+    if artifact_prediction is None:
+        return None
+    policy_index = artifact_prediction.policy_index
+    target = unflatten_absolute_target(artifact_prediction.flat_target)
+    absolute_target = AbsoluteTarget(
+        schema_version=TARGET_SCHEMA_VERSION,
+        process_version=str(metadata.get("process_version") or "Version 6"),
+        values=target,
+        modeled_paths=artifact.target_keys,
+    )
+    absolute_target.validate()
+    canonical_current = training_service.normalize_develop_settings_for_style(
+        current_settings or {}
+    )
+    applied = interpolate_absolute_target(
+        canonical_current,
+        absolute_target,
+        strength=strength,
+    )
+    return PolicyPrediction(
+        generation_id=artifact.generation_id,
+        policy_id=artifact.policy_ids[policy_index],
+        policy_name=_custom_policy_names().get(
+            artifact.policy_ids[policy_index],
+            artifact.policy_names[policy_index],
+        ),
+        hard_partition_key=artifact.partition_key,
+        confidence=artifact_prediction.confidence,
+        entropy=artifact_prediction.entropy,
+        target=target,
+        applied=applied,
+        example_count=len(artifact.example_photo_ids[policy_index]),
+        rendering_intent=rendering_intent,
+    )
+
+
+def predict_partition_artifact(
+    artifact: PartitionPolicyArtifact,
+    *,
+    source: np.ndarray,
+    metadata: dict[str, Any],
+    embedding: Any,
+    policy_override: str | None = None,
+) -> PartitionArtifactPrediction | None:
+    """Run production inference against an in-memory partition artifact."""
+    source = np.asarray(source, dtype=np.float64).reshape(-1)
+    if source.shape != (len(artifact.feature_names),) or not np.all(
+        np.isfinite(source)
+    ):
         return None
     assignments = artifact.mixture.assignments(source[np.newaxis, :])
     assignment = assignments[0]
@@ -1670,33 +1883,11 @@ def predict_absolute_edit(
     for target_index, key in enumerate(artifact.target_keys):
         lower, upper = artifact.slider_bounds[policy_index][key]
         flat_prediction[key] = float(np.clip(predicted[target_index], lower, upper))
-    target = unflatten_absolute_target(flat_prediction)
-    absolute_target = AbsoluteTarget(
-        schema_version=TARGET_SCHEMA_VERSION,
-        process_version=str(metadata.get("process_version") or "Version 6"),
-        values=target,
-        modeled_paths=artifact.target_keys,
-    )
-    absolute_target.validate()
-    canonical_current = training_service.normalize_develop_settings_for_style(
-        current_settings or {}
-    )
-    applied = interpolate_absolute_target(
-        canonical_current,
-        absolute_target,
-        strength=strength,
-    )
-    return PolicyPrediction(
-        policy_id=artifact.policy_ids[policy_index],
-        policy_name=_custom_policy_names().get(
-            artifact.policy_ids[policy_index],
-            artifact.policy_names[policy_index],
-        ),
+    return PartitionArtifactPrediction(
+        policy_index=policy_index,
         confidence=float(confidence),
         entropy=assignment.entropy,
-        target=target,
-        applied=applied,
-        example_count=len(artifact.example_photo_ids[policy_index]),
+        flat_target=flat_prediction,
     )
 
 

@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -8,6 +9,7 @@ from services import policy_runtime
 from services.policy_evaluation import make_synthetic_policy_dataset
 from services.policy_local import LocalResidualCorrector
 from services.policy_targets import flatten_absolute_target
+from services.rendering_state import rendering_state_from_settings
 
 
 def _examples(count=12, *, camera_profile="Adobe Color", photo_prefix="photo"):
@@ -103,6 +105,85 @@ def test_generation_round_trip_and_absolute_inference(policy_database, monkeypat
     policy_runtime.invalidate_runtime_cache()
     reloaded = policy_runtime.list_active_policies()
     assert reloaded == policies
+
+
+def test_rendering_auto_uses_effective_metadata_for_features_and_calibration(
+    monkeypatch,
+):
+    current = rendering_state_from_settings(
+        {"CameraProfile": "Current", "HDREditMode": 0},
+        camera_make="Example",
+        camera_model="Camera",
+    )
+    target = rendering_state_from_settings(
+        {"CameraProfile": "Target", "HDREditMode": 1},
+        camera_make="Example",
+        camera_model="Camera",
+    )
+    artifact = SimpleNamespace(
+        feature_names=("feature",),
+        generation_id="generation",
+        policy_ids=("policy",),
+        policy_names=("Policy",),
+        partition_key=policy_runtime.rendering_partition_key(target),
+        target_keys=("global.exposure",),
+        example_photo_ids=(("photo",),),
+    )
+    monkeypatch.setattr(
+        policy_runtime,
+        "_load_active_artifacts",
+        lambda: {artifact.partition_key: artifact},
+    )
+    monkeypatch.setattr(
+        policy_runtime,
+        "_load_active_rendering_selector",
+        lambda: SimpleNamespace(
+            select=lambda **_kwargs: {
+                "schema_version": "rendering-state-v1",
+                "current": current,
+                "proposed": target,
+                "effective": target,
+                "profile_mode": "auto",
+                "hdr_mode": "auto",
+                "abstention_reason": None,
+            }
+        ),
+    )
+    observed = {}
+
+    def source_row(metadata, _embedding):
+        observed["source_metadata"] = metadata
+        return np.asarray([1.0]), ("feature",)
+
+    def predict_artifact(_artifact, **kwargs):
+        observed["prediction_metadata"] = kwargs["metadata"]
+        return policy_runtime.PartitionArtifactPrediction(
+            policy_index=0,
+            confidence=1.0,
+            entropy=0.0,
+            flat_target={"global.exposure": 0.5},
+        )
+
+    monkeypatch.setattr(policy_runtime, "_source_row", source_row)
+    monkeypatch.setattr(policy_runtime, "predict_partition_artifact", predict_artifact)
+    monkeypatch.setattr(policy_runtime, "_custom_policy_names", lambda: {})
+
+    prediction = policy_runtime.predict_absolute_edit(
+        embedding=[1.0],
+        metadata={
+            "camera_make": "Example",
+            "camera_model": "Camera",
+            "rendering_state": current,
+        },
+        current_settings={"Exposure2012": 0.0},
+        profile_mode="auto",
+        hdr_mode="auto",
+        source_provenance="raw_preview",
+    )
+
+    assert prediction is not None
+    assert observed["source_metadata"]["rendering_state"] == target
+    assert observed["prediction_metadata"]["rendering_state"] == target
 
 
 def test_inference_does_not_cross_camera_profile_partitions(

@@ -83,7 +83,15 @@ def recover_catalog_session() -> bool:
         logger.warning("Could not read catalog session marker", exc_info=True)
         previous = {"state": "unknown", "active_work": True}
 
-    needs_recovery = previous.get("state") not in (None, "clean")
+    # /initialize may bind the same catalog again after command-line startup.
+    # A running marker owned by this process is the current session, not evidence
+    # of an interrupted previous one.
+    is_current_session = (
+        previous.get("state") == "running" and previous.get("pid") == os.getpid()
+    )
+    needs_recovery = (
+        previous.get("state") not in (None, "clean") and not is_current_session
+    )
     if needs_recovery:
         logger.warning(
             "Recovering catalog after incomplete backend session (state=%s)",

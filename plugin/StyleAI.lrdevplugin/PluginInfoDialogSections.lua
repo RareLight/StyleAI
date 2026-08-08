@@ -31,7 +31,6 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	end)
 
 	propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck == nil and true or prefs.periodicalUpdateCheck
-	propertyTable.shutdownServerOnExit = prefs.shutdownServerOnExit == nil and true or prefs.shutdownServerOnExit
 	propertyTable.indexingPerformanceProfile = tonumber(prefs.indexingPerformanceProfile) or 2
 	propertyTable.indexingBatchSize = tostring(prefs.indexingBatchSize or "32")
 	propertyTable.semanticClusteringThresholdInt = math.floor((tonumber(prefs.semanticClusteringThreshold) or 0.94) * 100)
@@ -585,13 +584,6 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						title = LOC("$$$/StyleAI/PluginInfo/UsePreviewThumbnails=Use Lightroom previews for faster indexing"),
 					}),
 				}),
-				f:row({
-					fill_horizontal = 1,
-					f:checkbox({
-						value = bind("shutdownServerOnExit"),
-						title = LOC("$$$/StyleAI/PluginInfo/ShutdownOnExit=Shut down background service when Lightroom exits"),
-					}),
-				}),
 				f:separator({ fill_horizontal = 1 }),
 				f:row({
 					fill_horizontal = 1,
@@ -721,7 +713,6 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 	end
 
 	prefs.periodicalUpdateCheck = propertyTable.periodicalUpdateCheck
-	prefs.shutdownServerOnExit = (propertyTable.shutdownServerOnExit ~= false)
 	prefs.backupRotationDays = propertyTable.backupRotationDays
 
 	prefs.forceFreshPreviews = propertyTable.forceFreshPreviews

@@ -22,6 +22,10 @@ V2_TABLES = (
     "policy_v2_coverage",
     "policy_v2_validation_results",
     "policy_v2_custom_names",
+    "policy_v2_recommendation_reviews",
+    "policy_v2_recommendation_candidates",
+    "policy_v2_edit_inferences",
+    "policy_v2_edit_events",
 )
 
 
@@ -430,11 +434,237 @@ def rename_policy(
 
 
 def reset_policy_v2(connection: sqlite3.Connection) -> None:
-    """Delete only v2 policy state, preserving search and legacy tables."""
+    """Delete derived policy state while preserving durable recommendation reviews."""
     with _immediate_transaction(connection):
         connection.execute("DELETE FROM policy_v2_examples")
         connection.execute("DELETE FROM policy_v2_generations")
         connection.execute("DELETE FROM policy_v2_custom_names")
+
+
+def upsert_recommendation_review(
+    connection: sqlite3.Connection,
+    *,
+    review_id: str,
+    generation_id: str,
+    policy_id: str,
+    policy_index: int,
+    hard_partition_key: str,
+    target_count: int,
+    existing_photo_ids: list[str],
+    algorithm_version: str,
+    feature_schema_version: str,
+    recommendation_version: str,
+    candidates: list[dict[str, Any]],
+) -> None:
+    """Store a replayable recommendation snapshot without duplicating embeddings."""
+    if (
+        not review_id
+        or not generation_id
+        or not policy_id
+        or policy_index < 0
+        or target_count <= 0
+        or not candidates
+    ):
+        raise ValueError("recommendation review identity and candidates are required")
+    now = _utc_now()
+    with _immediate_transaction(connection):
+        connection.execute(
+            """
+            INSERT INTO policy_v2_recommendation_reviews (
+                review_id, generation_id, policy_id, policy_index,
+                hard_partition_key, target_count, existing_photo_ids_json,
+                algorithm_version, feature_schema_version,
+                recommendation_version, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(review_id) DO UPDATE SET
+                existing_photo_ids_json = excluded.existing_photo_ids_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                review_id,
+                generation_id,
+                policy_id,
+                int(policy_index),
+                hard_partition_key or "default",
+                int(target_count),
+                json.dumps(existing_photo_ids, separators=(",", ":")),
+                algorithm_version,
+                feature_schema_version,
+                recommendation_version,
+                now,
+                now,
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO policy_v2_recommendation_candidates (
+                review_id, photo_id, responsibilities_json,
+                assignment_entropy, coverage_gain, hard_partition_key,
+                source_ambiguous, metadata_json, recommended_rank
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(review_id, photo_id) DO UPDATE SET
+                responsibilities_json = excluded.responsibilities_json,
+                assignment_entropy = excluded.assignment_entropy,
+                coverage_gain = excluded.coverage_gain,
+                hard_partition_key = excluded.hard_partition_key,
+                source_ambiguous = excluded.source_ambiguous,
+                metadata_json = excluded.metadata_json,
+                recommended_rank = excluded.recommended_rank
+            """,
+            [
+                (
+                    review_id,
+                    str(item["photo_id"]),
+                    json.dumps(item["responsibilities"], separators=(",", ":")),
+                    float(item["assignment_entropy"]),
+                    float(item.get("coverage_gain", 0.0)),
+                    str(
+                        item.get("hard_partition_key")
+                        or hard_partition_key
+                        or "default"
+                    ),
+                    int(bool(item.get("source_ambiguous", False))),
+                    json.dumps(
+                        item.get("metadata", {}), separators=(",", ":"), sort_keys=True
+                    ),
+                    (
+                        int(item["recommended_rank"])
+                        if item.get("recommended_rank") is not None
+                        else None
+                    ),
+                )
+                for item in candidates
+            ],
+        )
+
+
+def record_recommendation_feedback(
+    connection: sqlite3.Connection,
+    *,
+    review_id: str,
+    policy_id: str,
+    labels: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Atomically label candidates from one immutable recommendation snapshot."""
+    if not review_id or not policy_id or not labels:
+        raise ValueError("review_id, policy_id, and labels are required")
+    review = connection.execute(
+        """
+        SELECT 1 FROM policy_v2_recommendation_reviews
+        WHERE review_id = ? AND policy_id = ?
+        """,
+        (review_id, policy_id),
+    ).fetchone()
+    if not review:
+        raise LookupError("recommendation review was not found for this policy")
+    normalized: list[tuple[int | None, int | None, str, str]] = []
+    seen: set[str] = set()
+    for item in labels:
+        photo_id = str(item.get("photo_id") or "").strip()
+        if not photo_id or photo_id in seen:
+            raise ValueError("feedback photo IDs must be non-empty and unique")
+        seen.add(photo_id)
+        policy_match = item.get("policy_match")
+        useful = item.get("useful")
+        if policy_match is not None and not isinstance(policy_match, bool):
+            raise ValueError("policy_match must be true, false, or null")
+        if useful is not None and not isinstance(useful, bool):
+            raise ValueError("useful must be true, false, or null")
+        if useful is True and policy_match is not True:
+            raise ValueError("a useful candidate must also match the policy")
+        normalized.append(
+            (
+                None if policy_match is None else int(policy_match),
+                None if useful is None else int(useful),
+                review_id,
+                photo_id,
+            )
+        )
+    placeholders = ",".join("?" for _ in seen)
+    found = connection.execute(
+        f"""
+        SELECT COUNT(*) FROM policy_v2_recommendation_candidates
+        WHERE review_id = ? AND photo_id IN ({placeholders})
+        """,
+        [review_id, *sorted(seen)],
+    ).fetchone()[0]
+    if found != len(seen):
+        raise LookupError("one or more photos are not candidates in this review")
+    now = _utc_now()
+    with _immediate_transaction(connection):
+        connection.executemany(
+            """
+            UPDATE policy_v2_recommendation_candidates
+            SET policy_match = ?, useful = ?, reviewed_at = ?
+            WHERE review_id = ? AND photo_id = ?
+            """,
+            [
+                (policy_match, useful, now, stored_review_id, photo_id)
+                for policy_match, useful, stored_review_id, photo_id in normalized
+            ],
+        )
+        connection.execute(
+            "UPDATE policy_v2_recommendation_reviews SET updated_at = ? "
+            "WHERE review_id = ?",
+            (now, review_id),
+        )
+    return {"updated": len(normalized), "requested": len(labels)}
+
+
+def list_recommendation_reviews(
+    connection: sqlite3.Connection,
+    *,
+    labelled_only: bool = True,
+) -> list[dict[str, Any]]:
+    """Return review snapshots and candidates for local analysis/export."""
+    where = (
+        "WHERE EXISTS (SELECT 1 FROM policy_v2_recommendation_candidates AS c "
+        "WHERE c.review_id = r.review_id "
+        "AND (c.policy_match IS NOT NULL OR c.useful IS NOT NULL))"
+        if labelled_only
+        else ""
+    )
+    reviews = connection.execute(
+        f"""
+        SELECT r.* FROM policy_v2_recommendation_reviews AS r
+        {where}
+        ORDER BY r.created_at, r.review_id
+        """
+    ).fetchall()
+    result: list[dict[str, Any]] = []
+    for row in reviews:
+        review = dict(row)
+        review["existing_photo_ids"] = json.loads(review.pop("existing_photo_ids_json"))
+        candidates = connection.execute(
+            """
+            SELECT * FROM policy_v2_recommendation_candidates
+            WHERE review_id = ?
+            ORDER BY
+                CASE WHEN recommended_rank IS NULL THEN 1 ELSE 0 END,
+                recommended_rank, photo_id
+            """,
+            (review["review_id"],),
+        ).fetchall()
+        review["candidates"] = []
+        for candidate_row in candidates:
+            candidate = dict(candidate_row)
+            candidate.pop("review_id")
+            candidate["responsibilities"] = json.loads(
+                candidate.pop("responsibilities_json")
+            )
+            candidate["metadata"] = json.loads(candidate.pop("metadata_json"))
+            candidate["source_ambiguous"] = bool(candidate["source_ambiguous"])
+            candidate["policy_match"] = (
+                None
+                if candidate["policy_match"] is None
+                else bool(candidate["policy_match"])
+            )
+            candidate["useful"] = (
+                None if candidate["useful"] is None else bool(candidate["useful"])
+            )
+            review["candidates"].append(candidate)
+        result.append(review)
+    return result
 
 
 def policy_store_stats(connection: sqlite3.Connection) -> dict[str, int]:

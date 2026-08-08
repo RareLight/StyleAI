@@ -57,3 +57,8 @@ Local AI models (via LM Studio or Ollama) can take longer to process on machines
   usable if a rebuild fails.
 - **Minimum support**: Each compatible HDR/profile partition needs at least 12
   valid, non-panorama burst-curated examples.
+- **Rendering suggestions versus Auto**: A categorical selector can provide
+  suggestions with limited but separable evidence while Auto remains unavailable.
+  Auto additionally requires cross-fitted per-class precision and uncertainty
+  gates; six examples per selector class is only a fitting floor, not a promise
+  that Auto will be enabled.
