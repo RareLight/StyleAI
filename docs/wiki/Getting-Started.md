@@ -65,7 +65,7 @@ StyleAI automatically keeps 14 daily validated backend snapshots and creates
 required recovery points before destructive maintenance. To keep an additional
 copy outside the catalog folder:
 1. Open `File -> Plug-in Manager`.
-2. Navigate to `Background Service` and click **Download Backup**.
+2. Navigate to `Data & Recovery` and click **Export Backup...**.
 3. Save the resulting `.zip` somewhere safe. It contains StyleAI indexes,
    training data, learned styles, and history.
 

@@ -965,7 +965,6 @@ end
 
 function SearchIndexAPI.enqueuePhotosBase64Batch(batch, globalOptions)
     local url = getBaseUrl() .. "/index_queue"
-    local prefs = LrPrefs.prefsForPlugin()
 
     local bodyOptions = {
         regenerate_metadata = (globalOptions.regenerate_metadata == true),
@@ -1910,7 +1909,11 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end)
 
     local previewRequestState = {
-        enabled = (prefs and prefs.usePreviewThumbnails ~= false),
+        -- Preview acquisition is automatic. The existing timeout circuit
+        -- breaker falls back to a Lightroom export when previews are slow or
+        -- unavailable, so a permanent user-facing disable switch is no longer
+        -- needed.
+        enabled = true,
         timeoutSeconds = tonumber(prefs and prefs.previewThumbnailTimeoutSeconds) or 30,
         cooldownSeconds = tonumber(prefs and prefs.previewThumbnailCooldownSeconds) or 1,
         disableAfterConsecutiveTimeouts = tonumber(prefs and prefs.previewThumbnailDisableAfterTimeouts) or 10,
@@ -2862,6 +2865,19 @@ function SearchIndexAPI.restartBackend()
         LrTasks.sleep(1)
     end
     return false, "Restart timeout"
+end
+
+-- Repair the background service from either state. The legacy Restart button
+-- could only call a service that was already reachable, making it useless for
+-- the failure state where users actually needed help.
+function SearchIndexAPI.repairBackend()
+    if SearchIndexAPI.pingServer() then
+        return SearchIndexAPI.restartBackend()
+    end
+
+    local started = SearchIndexAPI.startServer({ readyTimeoutSeconds = 120 })
+    if started then return true, nil end
+    return false, LOC("$$$/StyleAI/PluginInfo/RepairStartFailed=The service did not start. Wait a moment and try again, then generate a support report if the problem continues.")
 end
 
 function SearchIndexAPI.initializeCatalog(dbPath)

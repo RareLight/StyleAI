@@ -12,14 +12,25 @@ the production catalog.
 2. Confirm the six production commands appear in the documented order, all
    dialog-opening commands use ellipses, no duplicates appear in Export, and no
    developer commands appear in Help.
-3. Open Plugin Manager and verify overall, background service, vision model,
-   optional metadata model, learned-style status, versions, and catalog-local
-   database path are readable without relying on color.
+3. Open Plugin Manager and verify the Status & Setup, Styles, Data & Recovery,
+   Support & Debug, Updates, and About sections appear in that order. Confirm
+   overall, background service, vision model, optional metadata model,
+   learned-style counts, versions, and the abbreviated catalog-local data path
+   are readable without relying on color.
 4. Resize the Plugin Manager pane narrow and wide. Verify paths and explanatory
    text wrap or elide without pushing buttons off-screen.
-5. Verify backup/restore, statistics, prune, restart, diagnostics, logs, credits,
-   documentation, license, and training deletion remain reachable.
-6. Open every destructive confirmation and cancel it. Confirm the exact scope
+5. With the service running, confirm Repair Background Service is hidden. Stop
+   the service, reopen Plugin Manager, confirm Repair appears, and verify it
+   restores service readiness without losing settings.
+6. Verify Reveal Data Folder, Export Backup, Restore Backup, Clean Up Removed
+   Photos, Generate Support Report, Open Logs Folder, credits, documentation,
+   and license remain reachable. Confirm no database-statistics, preview-source,
+   legacy restart, or training-deletion control remains in Plugin Manager.
+7. Open Styles & Training from Plugin Manager. Confirm Delete All Training Data
+   appears only in its maintenance area and its scope is clear.
+8. Enable Debug and verify the processing choices are Automatic, Lower Resource
+   Use, and Faster. Confirm Debug off leaves no empty or unbalanced layout area.
+9. Open every destructive confirmation and cancel it. Confirm the exact scope
    is stated and no data changes.
 
 ## 2. Debug-off and Debug-on capture

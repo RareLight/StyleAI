@@ -49,7 +49,7 @@ a different catalog. A required pre-restore snapshot and atomic rollback protect
 the current database.
 
 ### Lightroom plugin integration
-In `Plug-in Manager -> StyleAI -> Background Service`, use `Download Backup` to
+In `Plug-in Manager -> StyleAI -> Data & Recovery`, use `Export Backup...` to
 save an external copy or `Restore Backup...` to start the guarded restore flow.
 These backups cover StyleAI data only, not the Lightroom catalog or Develop
 edits.
