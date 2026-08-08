@@ -103,6 +103,36 @@ def test_shutdown_delegates_to_bounded_lifecycle(client, mocker):
     request_shutdown.assert_called_once()
 
 
+def test_debug_capture_info_uses_standard_envelope(client, mocker, tmp_path):
+    get_info = mocker.patch(
+        "services.audit.get_capture_info",
+        return_value={"capture_count": 0, "bytes": 0, "path": str(tmp_path)},
+    )
+
+    response = client.get("/debug/captures", query_string={"path": str(tmp_path)})
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "results": {"capture_count": 0, "bytes": 0, "path": str(tmp_path)},
+        "error": None,
+        "warning": None,
+    }
+    get_info.assert_called_once_with(str(tmp_path))
+
+
+def test_debug_capture_clear_deletes_only_via_audit_service(client, mocker, tmp_path):
+    clear = mocker.patch(
+        "services.audit.clear_diagnostic_captures",
+        return_value={"capture_count": 0, "bytes": 0, "deleted_files": 3},
+    )
+
+    response = client.post("/debug/captures", json={"path": str(tmp_path)})
+
+    assert response.status_code == 200
+    assert response.get_json()["results"]["deleted_files"] == 3
+    clear.assert_called_once_with(str(tmp_path))
+
+
 def test_initialize_rejects_switching_to_a_second_catalog(client, mocker, tmp_path):
     from services.chroma import CatalogOwnershipError
 

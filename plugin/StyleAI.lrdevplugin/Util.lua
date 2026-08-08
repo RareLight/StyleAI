@@ -1350,6 +1350,7 @@ end
 
 function Util.showDiagnosticFailureDialog(diag)
 	local f = LrView.osFactory()
+	local UIFactory = require("UIFactory")
 
 	local message =
 		LOC("$$$/StyleAI/Health/BackendCritical=The local backend server is not running and could not be started.")
@@ -1371,18 +1372,20 @@ function Util.showDiagnosticFailureDialog(diag)
 
 	local contents = f:column({
 		spacing = f:control_spacing(),
+		fill_horizontal = 1,
 		f:static_text({
 			title = message,
 			font = "<system/bold>",
 			text_color = LrColor(1, 0, 0),
+			fill_horizontal = 1,
+			wrap = true,
 		}),
 		f:static_text({
 			title = LOC("$$$/StyleAI/Health/FixIt=How to fix it:"),
 			font = "<system/bold>",
 		}),
-		f:static_text({
+		UIFactory.HelpText(f, {
 			title = hint,
-			width_in_chars = 60,
 		}),
 	})
 
@@ -1394,11 +1397,18 @@ function Util.showDiagnosticFailureDialog(diag)
 		)
 		table.insert(
 			contents,
-			f:edit_field({
-				value = diag.logSnippet,
-				width_in_chars = 60,
-				height_in_lines = 10,
-				enabled = false,
+			f:scrolled_view({
+				fill_horizontal = 1,
+				height = 180,
+				horizontal_scroller = false,
+				vertical_scroller = true,
+				f:edit_field({
+					value = diag.logSnippet,
+					fill_horizontal = 1,
+					height_in_lines = 10,
+					enabled = false,
+					allow_newlines = true,
+				}),
 			})
 		)
 	end
@@ -1408,6 +1418,7 @@ function Util.showDiagnosticFailureDialog(diag)
 		contents = contents,
 		actionVerb = LOC("$$$/StyleAI/Health/OpenWizard=Run Setup Wizard"),
 		cancelVerb = LOC("$$$/StyleAI/common/Close=Close"),
+		resizable = true,
 	})
 
 	if result == "ok" then
@@ -1468,14 +1479,18 @@ end
 
 function Util.showHealthIssuesDialog(report)
 	local f = LrView.osFactory()
+	local UIFactory = require("UIFactory")
 
 	local contents = f:column({
 		spacing = f:control_spacing(),
+		fill_horizontal = 1,
 		f:static_text({
 			title = LOC(
 				"$$$/StyleAI/Health/IssuesFound=We found some issues that might prevent the plugin from working correctly:"
 			),
 			font = "<system/bold>",
+			fill_horizontal = 1,
+			wrap = true,
 		}),
 	})
 
@@ -1492,14 +1507,7 @@ function Util.showHealthIssuesDialog(report)
 		)
 		table.insert(
 			contents,
-			f:row({
-				f:spacer({ width = 20 }),
-				f:static_text({
-					title = issue.hint,
-					width_in_chars = 60,
-					size = "small",
-				}),
-			})
+			UIFactory.HelpText(f, { title = issue.hint })
 		)
 	end
 
@@ -1510,6 +1518,7 @@ function Util.showHealthIssuesDialog(report)
 			or LOC("$$$/StyleAI/Health/IgnoreAndContinue=Ignore & Continue"),
 		cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
 		otherVerb = not report.critical and LOC("$$$/StyleAI/Health/OpenWizard=Run Setup Wizard") or nil,
+		resizable = true,
 	})
 
 	if result == "ok" then

@@ -21,7 +21,7 @@ process bound to that database.
 
 ### Editing-policy training
 
-1. `Train AI Style` stores unedited source evidence and the photo's absolute
+1. `Learn From My Edits` stores unedited source evidence and the photo's absolute
    Lightroom Develop target in the isolated `edit_training` collection.
 2. Panoramas are excluded. Photos within 10 seconds and SigLIP2 cosine distance
    0.05 are one burst; the deterministic hero receives weight `1 / burst_size`.

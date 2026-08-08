@@ -75,22 +75,26 @@ function KeywordConfigProvider.showKeywordCategoryDialog()
 		local dialogView = f:column({
 			bind_to_object = props,
 			spacing = f:control_spacing(),
-			width = 360,
+			fill_horizontal = 1,
+			fill_vertical = 1,
 
 			f:static_text({
 				title = LOC(
 					"$$$/StyleAI/KeywordConfig/Description=One category per line.\nEmpty lines are ignored when you save."
 				),
+				fill_horizontal = 1,
+				wrap = true,
 			}),
 
 			f:scrolled_view({
-				width = 360,
+				fill_horizontal = 1,
+				fill_vertical = 1,
 				height = 440,
 				horizontal_scroller = false,
 				vertical_scroller = true,
 				f:edit_field({
 					value = bind("categoriesText"),
-					width = 340,
+					fill_horizontal = 1,
 					height_in_lines = 30,
 					wraps = true,
 					allow_newlines = true,
@@ -113,6 +117,7 @@ function KeywordConfigProvider.showKeywordCategoryDialog()
 		local result = LrDialogs.presentModalDialog({
 			title = LOC("$$$/StyleAI/KeywordConfig/Title=Configure Keyword Categories"),
 			contents = dialogView,
+			resizable = true,
 		})
 
 		if result == "ok" then

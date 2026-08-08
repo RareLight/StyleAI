@@ -1,5 +1,25 @@
 PromptConfigProvider = {}
 
+local function trim(value)
+	return tostring(value or ""):match("^%s*(.-)%s*$")
+end
+
+local function sortPromptTitles(items)
+	table.sort(items, function(a, b)
+		if a.value == "Default" then return true end
+		if b.value == "Default" then return false end
+		return string.lower(a.title or "") < string.lower(b.title or "")
+	end)
+end
+
+local function copyPrompts(source)
+	local copied = {}
+	for name, prompt in pairs(source or {}) do
+		copied[name] = prompt
+	end
+	return copied
+end
+
 function PromptConfigProvider.deletePrompt(props)
 	local promptTitle = props.prompt
 	if promptTitle == "Default" then
@@ -11,14 +31,13 @@ function PromptConfigProvider.deletePrompt(props)
 
 	if
 		LrDialogs.confirm(
-			LOC("$$$/StyleAI/PromptConfig/DeletePromptConfirm=Do you really want to delete the prompt")
-				.. " "
-				.. promptTitle
+			LOC("$$$/StyleAI/PromptConfig/DeletePromptConfirm=Delete the prompt “^1”?", tostring(promptTitle))
 		) == "ok"
 	then
-		for k, v in pairs(props.promptTitles) do
+		for k, v in ipairs(props.promptTitles) do
 			if v.title == promptTitle then
-				props.promptTitles[k] = nil
+				table.remove(props.promptTitles, k)
+				break
 			end
 		end
 		props.prompts[promptTitle] = nil
@@ -30,37 +49,102 @@ function PromptConfigProvider.deletePrompt(props)
 	end
 end
 
+function PromptConfigProvider.renamePrompt(props)
+	local promptTitle = props.prompt
+	if promptTitle == "Default" then
+		LrDialogs.showError(LOC("$$$/StyleAI/PromptConfig/DefaultPromptCannotRename=The Default prompt cannot be renamed."))
+		return nil
+	end
+	local newName = LrDialogs.runTextInputDialog(
+		LOC("$$$/StyleAI/PromptConfig/RenameTitle=Rename Prompt"),
+		LOC("$$$/StyleAI/PromptConfig/RenameMessage=Enter a new name for this prompt:"),
+		promptTitle
+	)
+	newName = trim(newName)
+	if newName == "" or newName == promptTitle then return nil end
+	if props.prompts[newName] ~= nil then
+		LrDialogs.showError(LOC("$$$/StyleAI/PromptConfig/NameExists=A prompt with that name already exists."))
+		return nil
+	end
+	props.prompts[newName] = props.prompts[promptTitle]
+	props.prompts[promptTitle] = nil
+	for _, item in ipairs(props.promptTitles) do
+		if item.value == promptTitle then
+			item.title = newName
+			item.value = newName
+			break
+		end
+	end
+	sortPromptTitles(props.promptTitles)
+	props.prompt = newName
+	props.promptTitleMenu.items = props.promptTitles
+	return newName
+end
+
+function PromptConfigProvider.restoreDefaultPrompt(props, defaultText)
+	local confirmed = LrDialogs.confirm(
+		LOC("$$$/StyleAI/PromptConfig/RestoreTitle=Restore the Default Prompt?"),
+		LOC("$$$/StyleAI/PromptConfig/RestoreMessage=This replaces only the shipped Default prompt text. Your named custom prompts are not changed."),
+		LOC("$$$/StyleAI/PromptConfig/RestoreAction=Restore Default"),
+		LOC("$$$/StyleAI/common/Cancel=Cancel")
+	)
+	if confirmed ~= "ok" then return false end
+	props.prompts.Default = defaultText
+	local found = false
+	for _, item in ipairs(props.promptTitles) do
+		if item.value == "Default" then
+			found = true
+			break
+		end
+	end
+	if not found then
+		table.insert(props.promptTitles, { title = "Default", value = "Default" })
+		sortPromptTitles(props.promptTitles)
+	end
+	props.prompt = "Default"
+	props.selectedPrompt = defaultText
+	props.promptTitleMenu.items = props.promptTitles
+	return true
+end
+
 function PromptConfigProvider.addPrompt(props)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 	local share = LrView.share
 
 	local propertyTable = {}
+	propertyTable.name = ""
+	propertyTable.prompt = ""
 
 	local dialogView = f:column({
 		bind_to_object = propertyTable,
+		spacing = f:control_spacing(),
+		fill_horizontal = 1,
 		f:row({
+			fill_horizontal = 1,
 			f:static_text({
 				width = share("labelWidth"),
 				title = LOC("$$$/StyleAI/PromptConfig/PromptName=Prompt name"),
 			}),
 			f:edit_field({
 				value = bind("name"),
-				width = 500,
+				fill_horizontal = 1,
 			}),
 		}),
 		f:row({
+			fill_horizontal = 1,
 			f:static_text({
 				width = share("labelWidth"),
 				title = LOC("$$$/StyleAI/PromptConfig/PromptField=Prompt"),
 			}),
 			f:scrolled_view({
+				fill_horizontal = 1,
 				horizontal_scroller = false,
 				vertical_scroller = true,
-				width = 500,
+				height = 300,
 				f:edit_field({
 					value = bind("prompt"),
-					width = 480,
+					fill_horizontal = 1,
 					height_in_lines = 30,
 					wraps = true,
 					allow_newlines = true,
@@ -72,14 +156,26 @@ function PromptConfigProvider.addPrompt(props)
 	local result = LrDialogs.presentModalDialog({
 		title = LOC("$$$/StyleAI/PromptConfig/AddNewPrompt=Add new prompt"),
 		contents = dialogView,
+		resizable = true,
 	})
 
 	if result == "ok" then
-		props.prompts[propertyTable.name] = propertyTable.prompt
-		props.prompt = propertyTable.name
-		table.insert(props.promptTitles, { title = propertyTable.name, value = propertyTable.name })
+		local name = trim(propertyTable.name)
+		local prompt = trim(propertyTable.prompt)
+		if name == "" or prompt == "" then
+			LrDialogs.showError(LOC("$$$/StyleAI/PromptConfig/NameAndPromptRequired=A prompt name and prompt text are required."))
+			return nil
+		end
+		if props.prompts[name] ~= nil then
+			LrDialogs.showError(LOC("$$$/StyleAI/PromptConfig/NameExists=A prompt with that name already exists."))
+			return nil
+		end
+		props.prompts[name] = prompt
+		props.prompt = name
+		table.insert(props.promptTitles, { title = name, value = name })
+		sortPromptTitles(props.promptTitles)
 		props.promptTitleMenu.items = props.promptTitles
-		return propertyTable.name
+		return name
 	end
 
 	return nil
@@ -95,7 +191,7 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 		table.insert(propertyTable.promptTitles, { title = title, value = title })
 	end
 
-	propertyTable.prompts = prefs.prompts
+	propertyTable.prompts = copyPrompts(prefs.prompts)
 
 	propertyTable.prompt = prefs.prompt
 
@@ -113,10 +209,14 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 		items = bind("promptTitles"),
 		value = bind("prompt"),
 	})
+	propertyTable.promptTitleMenu = dropDown
 
 	local dialogView = f:column({
 		bind_to_object = propertyTable,
+		spacing = f:control_spacing(),
+		fill_horizontal = 1,
 		f:row({
+			fill_horizontal = 1,
 			f:static_text({
 				width = share("labelWidth"),
 				title = LOC("$$$/StyleAI/PromptConfig/PromptName=Prompt name"),
@@ -125,46 +225,39 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 			f:push_button({
 				title = LOC("$$$/StyleAI/PromptConfig/Add=Add"),
 				action = function(button)
-					local newName = PromptConfigProvider.addPrompt(propertyTable)
-					if newName ~= nil then
-						LrDialogs.stopModalWithResult(dropDown, "cancel")
-						PromptConfigProvider.showPromptConfigDialog(propertyTable)
-					end
+					PromptConfigProvider.addPrompt(propertyTable)
+				end,
+			}),
+			f:push_button({
+				title = LOC("$$$/StyleAI/PromptConfig/Rename=Rename"),
+				action = function()
+					PromptConfigProvider.renamePrompt(propertyTable)
 				end,
 			}),
 			f:push_button({
 				title = LOC("$$$/StyleAI/PromptConfig/Delete=Delete"),
 				action = function(button)
 					PromptConfigProvider.deletePrompt(propertyTable)
-					LrDialogs.stopModalWithResult(dropDown, "cancel")
-					PromptConfigProvider.showPromptConfigDialog(propertyTable)
 				end,
 			}),
-			-- f:push_button {
-			--     title = "Edit",
-			--     action = function(button)
-			--         editPrompt(propertyTable.prompt)
-			--         LrDialogs.stopModalWithResult(dropDown)
-			--         PromptConfigProvider.showPromptConfigDialog()
-			--     end,
-			-- },
-			-- f:push_button {
-			--     title = "Select",
-			--     action = function(button)
-			--         propertyTable.selectedPrompt = propertyTable.prompts[propertyTable.prompt]
-			--     end,
-			-- },
+			f:push_button({
+				title = LOC("$$$/StyleAI/PromptConfig/RestoreAction=Restore Default"),
+				action = function()
+					PromptConfigProvider.restoreDefaultPrompt(propertyTable, Defaults.defaultSystemInstruction)
+				end,
+			}),
 		}),
 		f:row({
+			fill_horizontal = 1,
 			f:static_text({
 				width = share("labelWidth"),
 				title = LOC("$$$/StyleAI/PromptConfig/PromptField=Prompt"),
 			}),
 			f:edit_field({
 				value = bind("selectedPrompt"),
-				width_in_chars = 50,
+				fill_horizontal = 1,
 				height_in_lines = 10,
-				-- enabled = false,
+				wraps = true,
 				allow_newlines = true,
 			}),
 		}),
@@ -173,15 +266,12 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 	local result = LrDialogs.presentModalDialog({
 		title = LOC("$$$/StyleAI/PromptConfig/ConfigurePrompts=Configure Prompts"),
 		contents = dialogView,
-		otherVerb = LOC("$$$/StyleAI/ResponseStructure/ResetToDefault=Reset to defaults"),
+		resizable = true,
 	})
 
 	if result == "ok" then
 		prefs.prompts = propertyTable.prompts
 		prefs.prompt = propertyTable.prompt
-	elseif result == "other" then
-		prefs.prompts = { Default = Defaults.defaultSystemInstruction }
-		prefs.prompt = "Default"
 	end
 end
 

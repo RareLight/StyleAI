@@ -1,5 +1,7 @@
 OnboardingWizard = {}
 
+local UIFactory = require("UIFactory")
+
 function OnboardingWizard.show(manualTrigger)
 	LrTasks.startAsyncTask(function()
 		LrFunctionContext.callWithContext("OnboardingWizard", function(context)
@@ -32,15 +34,11 @@ function OnboardingWizard.show(manualTrigger)
 			local bind = LrView.bind
 			local share = LrView.share
 
-			local function updateBackendStatus()
-				propertyTable.backendRunning = SearchIndexAPI.pingServer()
-			end
-
 			local function startBackend()
 				propertyTable.backendRunning = "starting"
 				LrTasks.startAsyncTask(function()
 					SearchIndexAPI.startServer({ readyTimeoutSeconds = 30 })
-					updateBackendStatus()
+					propertyTable.backendRunning = SearchIndexAPI.pingServer() and true or "failed"
 					if propertyTable.backendRunning == true and prefs.indexingPerformanceProfile == nil then
 						local vInfo = SearchIndexAPI.getBackendVersion()
 						if vInfo and vInfo.recommended_parallel_tasks then
@@ -56,17 +54,15 @@ function OnboardingWizard.show(manualTrigger)
 			local dialogContents = f:column({
 				bind_to_object = propertyTable,
 				spacing = f:control_spacing(),
-				width = 650,
+				fill_horizontal = 1,
 
 				f:group_box({
 					title = LOC("$$$/StyleAI/Onboarding/Step1Title=Start the StyleAI Service (Required)"),
 					fill_horizontal = 1,
-					f:static_text({
+					UIFactory.HelpText(f, {
 						title = LOC(
 							"$$$/StyleAI/Onboarding/Step1Desc=StyleAI runs a lightweight, local Python server in the background to handle heavy mathematical tasks without sending your photos to the cloud. This local server is the foundation of the AI Editing system."
 						),
-						width_in_chars = 60,
-						wrap = true,
 					}),
 					f:spacer({ height = 5 }),
 					f:row({
@@ -84,7 +80,10 @@ function OnboardingWizard.show(manualTrigger)
 									if v == "starting" then
 										return LOC("$$$/StyleAI/Onboarding/BackendStarting=Starting...")
 									end
-									return LOC("$$$/StyleAI/Onboarding/BackendError=Failed to start")
+									if v == "failed" then
+										return LOC("$$$/StyleAI/Onboarding/BackendError=Failed to start")
+									end
+									return LOC("$$$/StyleAI/Onboarding/BackendStopped=Not running")
 								end,
 							}),
 							text_color = bind({
@@ -112,25 +111,20 @@ function OnboardingWizard.show(manualTrigger)
 						}),
 					}),
 					f:spacer({ height = 5 }),
-					f:static_text({
+					UIFactory.HelpText(f, {
 						title = LOC(
 							"$$$/StyleAI/Onboarding/BackendHint=If the server fails to start, check if another application is using port 19819 or if your firewall is blocking it."
 						),
-						size = "small",
-						width_in_chars = 60,
-						wrap = true,
 					}),
 				}),
 
 				f:group_box({
 					title = LOC("$$$/StyleAI/Onboarding/Step2Title=Install the Vision Model (Required)"),
 					fill_horizontal = 1,
-					f:static_text({
+					UIFactory.HelpText(f, {
 						title = LOC(
 							"$$$/StyleAI/Onboarding/Step2Desc=To predict your unique editing style, StyleAI requires the SigLIP2 vision model. This local model analyzes the lighting, subject, and composition of your photos entirely offline. (~4GB download)"
 						),
-						width_in_chars = 60,
-						wrap = true,
 					}),
 					f:spacer({ height = 5 }),
 					f:row({
@@ -174,12 +168,10 @@ function OnboardingWizard.show(manualTrigger)
 				f:group_box({
 					title = LOC("$$$/StyleAI/Onboarding/Step3Title=Optional: Add Local AI Metadata"),
 					fill_horizontal = 1,
-					f:static_text({
+					UIFactory.HelpText(f, {
 						title = LOC(
 							"$$$/StyleAI/Onboarding/Step3Desc=StyleAI uses local-first LLMs (Ollama or LM Studio) to generate keywords, titles, and descriptions during indexing without sending images to the cloud."
 						),
-						width_in_chars = 60,
-						wrap = true,
 					}),
 					f:spacer({ height = 10 }),
 						f:row({
@@ -204,7 +196,7 @@ function OnboardingWizard.show(manualTrigger)
 				f:group_box({
 					title = LOC("$$$/StyleAI/Onboarding/FinishTitle=Next Step"),
 					fill_horizontal = 1,
-					f:static_text({
+					UIFactory.HelpText(f, {
 						title = bind({
 							key = "setupReady",
 							transform = function(ready)
@@ -214,8 +206,6 @@ function OnboardingWizard.show(manualTrigger)
 								return LOC("$$$/StyleAI/Onboarding/SetupIncomplete=Finish the required items above to enable style learning and editing. You can finish setup later.")
 							end,
 						}),
-						width_in_chars = 60,
-						wrap = true,
 					}),
 				}),
 			})
@@ -226,7 +216,7 @@ function OnboardingWizard.show(manualTrigger)
 				actionVerb = LOC("$$$/StyleAI/Onboarding/Done=Done"),
 				cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
 				otherVerb = LOC("$$$/StyleAI/Onboarding/Skip=Finish Later"),
-				resizable = false,
+				resizable = true,
 			})
 
 			if result == "ok" or result == "other" then

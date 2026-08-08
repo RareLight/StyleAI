@@ -1487,16 +1487,16 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 	props.confidenceLabel = string.format("%d%%", props.confidencePct)
 
 	local confColor = { 0.7, 0.7, 0.7 } -- gray
-	local qualityText = "Low Style Match"
+	local qualityText = LOC("$$$/StyleAI/DevelopEdit/MatchLow=Low style match")
 	if confVal >= 0.75 then
 		confColor = { 0.2, 0.8, 0.2 } -- green
-		qualityText = "Excellent Style Match"
+		qualityText = LOC("$$$/StyleAI/DevelopEdit/MatchExcellent=Excellent style match")
 	elseif confVal >= 0.50 then
 		confColor = { 0.8, 0.8, 0.2 } -- yellow/gold
-		qualityText = "Good Style Match"
+		qualityText = LOC("$$$/StyleAI/DevelopEdit/MatchGood=Good style match")
 	elseif confVal > 0 then
 		confColor = { 0.8, 0.4, 0.1 } -- orange
-		qualityText = "Weak Style Match"
+		qualityText = LOC("$$$/StyleAI/DevelopEdit/MatchWeak=Weak style match")
 	end
 	props.qualityText = qualityText
 	props.confColor = confColor
@@ -1507,7 +1507,7 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 		f:row({
 			f:static_text({
 				title = photo:getFormattedMetadata("fileName") or "Photo",
-				font = "<system_bold>",
+				font = "<system/bold>",
 			}),
 			f:spacer({ fill_horizontal = 1 }),
 			-- Confidence Badge
@@ -1519,7 +1519,7 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 				f:static_text({
 					title = bind("confidenceLabel"),
 					text_color = bind("confColor"),
-					font = "<system_bold>",
+					font = "<system/bold>",
 				}),
 				f:static_text({
 					title = string.format(" (%s)", qualityText),
@@ -1548,11 +1548,18 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 				font = "<system/bold>",
 			}),
 		}),
-		f:row({
+		f:scrolled_view({
+			fill_horizontal = 1,
+			fill_vertical = 1,
+			height = 360,
+			horizontal_scroller = false,
+			vertical_scroller = true,
 			f:edit_field({
 				value = bind("details"),
-				width_in_chars = 70,
+				fill_horizontal = 1,
 				height_in_lines = 22,
+				allow_newlines = true,
+				enabled = false,
 			}),
 		}),
 	})
@@ -1560,7 +1567,8 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 	local result = LrDialogs.presentModalDialog({
 		title = LOC("$$$/StyleAI/DevelopEdit/ReviewTitle=Review AI Lightroom Edit"),
 		contents = dialogView,
-		actionVerb = "Apply",
+		actionVerb = LOC("$$$/StyleAI/DevelopEdit/Apply=Apply Edit"),
+		resizable = true,
 	})
 	log:trace("DevelopEditManager.showValidationDialog: result=" .. tostring(result))
 

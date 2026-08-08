@@ -10,11 +10,11 @@ For detailed technical usage of the plugin component, please view the [`plugin/R
 
 The plugin handles the following core capabilities via the `Library -> Plug-in Extras` menu:
 
-### 1. Analyze and Index
+### 1. Prepare Photos
 Passes the image files, metadata, and optional context directly to the backend to generate tags, structural descriptions, and embeddings for Semantic Search. This operation relies on LLMs to generate keywords and descriptions.
 
-### 2. Train AI Style
-Learns your personal editing style. Select your manually edited photos and run this task. The system will extract your Lightroom develop settings and calculate a pure-math visual embedding (SigLIP2) without needing an LLM or slowing down for keyword generation. You do **not** need to run "Analyze and Index" on these photos first.
+### 2. Learn From My Edits
+Learns your personal editing style. Select your manually edited photos and run this task. The system will extract your Lightroom develop settings and calculate a pure-math visual embedding (SigLIP2) without needing an LLM or slowing down for keyword generation. You do **not** need to run **Prepare Photos** on these photos first.
 
 ### 3. AI Edit Photos
 Predicts and applies absolute edits from your trained editing policies. This is

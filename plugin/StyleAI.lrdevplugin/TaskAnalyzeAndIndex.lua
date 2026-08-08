@@ -3,6 +3,9 @@
 -- Combines the old TaskAnalyzeImage and TaskManageIndex into one streamlined workflow.
 
 local WorkCoordinator = require("WorkCoordinator")
+local Defaults = require("Defaults")
+local UIFactory = require("UIFactory")
+local SearchIndexAPI = require("APISearchIndex")
 
 ---
 -- Shows the main configuration dialog for analyze and index task.
@@ -19,6 +22,8 @@ local function showAnalyzeAndIndexDialog(ctx)
     -- Scope settings
     props.scope = prefs.indexScope or "selected"
     props.indexingMode = prefs.indexingMode or "both"
+	local selectedPhotos = LrApplication.activeCatalog():getTargetPhotos() or {}
+	props.selectedCount = #selectedPhotos
 
 
     -- Check if CLIP model is ready on server non-blockingly
@@ -63,6 +68,22 @@ local function showAnalyzeAndIndexDialog(ctx)
         end
     end)
 
+    local syncingTasks = false
+    local function syncModeFromTasks(properties)
+        if syncingTasks then return end
+        syncingTasks = true
+        if properties.enableEmbeddings and properties.enableMetadata then
+            properties.indexingMode = "both"
+        elseif properties.enableEmbeddings then
+            properties.indexingMode = "embed"
+        elseif properties.enableMetadata then
+            properties.indexingMode = "meta"
+        end
+        syncingTasks = false
+    end
+    props:addObserver('enableEmbeddings', syncModeFromTasks)
+    props:addObserver('enableMetadata', syncModeFromTasks)
+
     -- Force Re-index automatically switches write mode to overwrite (appendMetadata = false)
     props:addObserver('regenerateMetadata', function(properties, key, newValue)
         if newValue == true then
@@ -71,6 +92,11 @@ local function showAnalyzeAndIndexDialog(ctx)
             properties.appendMetadata = prefs.appendMetadata ~= false
         end
     end)
+	props:addObserver('scope', function(properties, key, newValue)
+		if newValue == 'missing' and properties.regenerateMetadata then
+			properties.regenerateMetadata = false
+		end
+	end)
 
     -- Metadata generation options
     props.temperature = prefs.temperature or 0.1
@@ -80,7 +106,10 @@ local function showAnalyzeAndIndexDialog(ctx)
     end
 
     props.prompt = prefs.prompt
-    props.prompts = prefs.prompts
+	props.prompts = {}
+	for name, prompt in pairs(prefs.prompts or {}) do
+		props.prompts[name] = prompt
+	end
 
     props.selectedPrompt = prefs.prompts[props.prompt]
 
@@ -169,24 +198,21 @@ local function showAnalyzeAndIndexDialog(ctx)
         local status = providers[provider]
 
         if status == "available" or status == "registered" then
-            properties.llmStatusText = string.upper(provider) .. ": Ready"
+			properties.llmStatusText = LOC("$$$/StyleAI/Prepare/ProviderReady=^1: Ready", string.upper(provider))
             properties.llmStatusColor = LrColor(0, 0.8, 0)
         elseif status == "failed" then
             local errMsg = health.llm_errors and health.llm_errors[provider] or "unknown error"
-            properties.llmStatusText = string.upper(provider) .. ": Failed (" .. tostring(errMsg) .. ")"
+			properties.llmStatusText = LOC("$$$/StyleAI/Prepare/ProviderFailed=^1: Failed (^2)", string.upper(provider), tostring(errMsg))
             properties.llmStatusColor = LrColor(0.8, 0, 0)
         elseif status == "not_configured" then
-            properties.llmStatusText = string.upper(provider) .. ": Not Configured"
+			properties.llmStatusText = LOC("$$$/StyleAI/Prepare/ProviderNotConfigured=^1: Not configured", string.upper(provider))
             properties.llmStatusColor = LrColor(0.8, 0.5, 0)
         else
-            properties.llmStatusText = string.upper(provider) .. ": Unknown"
+			properties.llmStatusText = LOC("$$$/StyleAI/Prepare/ProviderUnknown=^1: Status unknown", string.upper(provider))
             properties.llmStatusColor = LrColor(0.5, 0.5, 0.5)
         end
     end
 
-    local Defaults = require("Defaults")
-    local UIFactory = require("UIFactory")
-    local SearchIndexAPI = require("APISearchIndex")
     local healthData = SearchIndexAPI.getHealth()
     props.healthData = healthData or {}
 
@@ -202,6 +228,10 @@ local function showAnalyzeAndIndexDialog(ctx)
         value = bind 'prompt',
     }
 
+    -- The former mode-popup/overlapping-view implementation was removed after
+    -- payload parity verification; the outcome-based controls below are now
+    -- the single source of truth for this dialog.
+
     local contents = f:column {
         bind_to_object = props,
         spacing = f:control_spacing(),
@@ -209,378 +239,323 @@ local function showAnalyzeAndIndexDialog(ctx)
 
         UIFactory.Notice(f, {
             kind = "info",
-            title = LOC "$$$/StyleAI/AnalyzeAndIndex/Disclaimer=Indexing creates local visual analysis for catalog search and helps StyleAI learn and apply edits faster. Start here to prepare your catalog.",
+            title = LOC "$$$/StyleAI/Prepare/Intro=Prepare photos for StyleAI search, editing, and optional local metadata generation.",
         }),
 
         UIFactory.SettingsGroup(f, {
-            title = LOC "$$$/StyleAI/AnalyzeAndIndex/ModeLabel=Workflow Mode",
-            fill_horizontal = 1,
+            title = LOC "$$$/StyleAI/Prepare/Tasks=What should StyleAI do?",
             f:row {
-                f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/IndexingMode=Indexing Mode:", width = share 'labelWidth' },
-                f:popup_menu {
-                    value = bind 'indexingMode',
-                    tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/IndexingModeTooltip=Selects which AI features to run. Embedding enables semantic search; Metadata generates text tags.",
-                    items = {
-                        { title = LOC "$$$/StyleAI/UI/ModeEmbedOnly=Analyze photos for StyleAI", value = "embed" },
-                        { title = LOC "$$$/StyleAI/UI/ModeMetaOnly=Add keywords and descriptions", value = "meta" },
-                        { title = LOC "$$$/StyleAI/UI/ModeBoth=Do both (recommended)", value = "both" },
+                fill_horizontal = 1,
+                f:checkbox {
+                    value = bind 'enableEmbeddings',
+                    title = LOC "$$$/StyleAI/Prepare/Analyze=Analyze photos for StyleAI",
+                    enabled = bind 'clipReady',
+                },
+                f:static_text {
+                    title = bind {
+                        key = 'clipReady',
+                        transform = function(ready)
+                            return ready
+                                and LOC "$$$/StyleAI/Prepare/VisionReady=Vision model ready"
+                                or LOC "$$$/StyleAI/Prepare/VisionMissing=Vision model needs setup"
+                        end,
                     },
-                    width = 300,
                 },
             },
+            UIFactory.HelpText(f, {
+                title = LOC "$$$/StyleAI/Prepare/AnalyzeHelp=Creates local visual analysis used by semantic search and learned editing workflows.",
+            }),
             f:row {
-                f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/Scope=Scope:", width = share 'labelWidth' },
+                fill_horizontal = 1,
+                f:checkbox {
+                    value = bind 'enableMetadata',
+                    title = LOC "$$$/StyleAI/Prepare/Metadata=Generate keywords and descriptions",
+                },
+                f:static_text {
+                    title = bind 'llmStatusText',
+                    text_color = bind 'llmStatusColor',
+                },
+            },
+            UIFactory.HelpText(f, {
+                title = LOC "$$$/StyleAI/Prepare/MetadataHelp=Uses your selected local vision-language model to generate Lightroom metadata.",
+            }),
+			UIFactory.Notice(f, {
+				kind = "warning",
+				visible = bind {
+					keys = { 'enableEmbeddings', 'enableMetadata' },
+					transform = function()
+						return not props.enableEmbeddings and not props.enableMetadata
+					end,
+				},
+				title = LOC "$$$/StyleAI/Prepare/ChooseTask=Select at least one task before continuing.",
+			}),
+        }),
+
+        UIFactory.SettingsGroup(f, {
+            title = LOC "$$$/StyleAI/Prepare/Photos=Photos and existing data",
+            UIFactory.FormRow(f, {
+                label = LOC "$$$/StyleAI/common/Scope=Scope:",
+                labelWidth = share 'prepareLabelWidth',
                 f:popup_menu {
                     value = bind 'scope',
-                    tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeTooltip=Choose which photos to process in this run.",
-                    width = 300,
+                    fill_horizontal = 1,
                     items = {
-                        { title = LOC "$$$/StyleAI/common/ScopeSelected=Selected photos only",              value = 'selected' },
-                        { title = LOC "$$$/StyleAI/common/ScopeView=Current view",                          value = 'view' },
-                        { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeAll=All photos in catalog",         value = 'all' },
+                        { title = LOC "$$$/StyleAI/common/ScopeSelected=Selected photos only", value = 'selected' },
+                        { title = LOC "$$$/StyleAI/common/ScopeView=Current view", value = 'view' },
+                        { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeAll=All photos in catalog", value = 'all' },
                         { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", value = 'missing' },
                         { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeIndexed=Previously indexed photos", value = 'indexed' },
                     },
                 },
-            },
-            f:row {
-                f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ProcessingMode=Processing Mode:", width = share 'labelWidth' },
+            }),
+            UIFactory.FormRow(f, {
+                label = LOC "$$$/StyleAI/Prepare/Existing=Existing StyleAI data:",
+                labelWidth = share 'prepareLabelWidth',
                 f:column {
-                    f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/SkipExisting=Resume (Skip photos with existing data)", checked_value = false },
-                    f:radio_button { value = bind 'regenerateMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/RegenerateMetadata=Force Re-index (Overwrite existing AI data)", checked_value = true },
-                    UIFactory.Notice(f, {
-                        kind = "warning",
-                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/ForceReindexWarning=Reprocessing replaces the selected StyleAI-generated fields for processed photos.",
-                        visible = bind 'regenerateMetadata',
-                    }),
-                }
-            },
+                    f:radio_button {
+                        value = bind 'regenerateMetadata',
+                        checked_value = false,
+                        title = LOC "$$$/StyleAI/Prepare/SkipExisting=Keep existing data and process only what is needed",
+                    },
+                    f:radio_button {
+                        value = bind 'regenerateMetadata',
+                        checked_value = true,
+						enabled = bind {
+							key = 'scope',
+							transform = function(scope) return scope ~= 'missing' end,
+						},
+                        title = LOC "$$$/StyleAI/Prepare/ReplaceExisting=Replace selected StyleAI-generated data",
+                    },
+					UIFactory.HelpText(f, {
+						visible = bind { key = 'scope', transform = function(scope) return scope == 'missing' end },
+						title = LOC "$$$/StyleAI/Prepare/MissingKeepsExisting=New or unprocessed scope always keeps existing StyleAI data; choose another scope to replace data.",
+					}),
+                },
+            }),
+            UIFactory.Notice(f, {
+                kind = "warning",
+                visible = bind 'regenerateMetadata',
+                title = LOC "$$$/StyleAI/Prepare/ReplaceWarning=Replacement affects only the StyleAI data selected for this run. Review catalog-writing options before continuing.",
+            }),
         }),
 
-        f:view {
-            place = 'overlapping',
+        f:tab_view {
+            visible = bind 'enableMetadata',
             fill_horizontal = 1,
-
-            -- BRANCH A: Embed Only View (No Tabs)
-            f:view {
-
-                fill_horizontal = 1,
-            f:column {
-                visible = bind {
-                    key = "indexingMode",
-                    transform = function(v) return v == "embed" end,
-                },
-                fill_horizontal = 1,
-                
-                UIFactory.SettingsGroup(f, {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks=Photo Analysis",
-                    fill_horizontal = 1,
-                    visible = bind {
-                        key = "indexingMode",
-                        transform = function(v) return v == "embed" end,
-                    },
-                    f:row {
-                        visible = bind {
-                            key = "indexingMode",
-                            transform = function(v) return v == "embed" end,
-                        },
-
-                        f:static_text {
-                            visible = bind {
-                                key = "indexingMode",
-                                transform = function(v) return v == "embed" end,
-                            },
-                            title = bind {
-                                key = "clipReady",
-                                transform = function(v)
-                                    if v then return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPReady=SigLIP2: Ready (Model cached)")
-                                    else return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPNotReady=SigLIP2: Not Ready (Model missing)") end
-                                end,
-                            },
-                            text_color = bind {
-                                key = "clipReady",
-                                transform = function(v)
-                                    if v then return LrColor(0, 0.8, 0)
-                                    else return LrColor(0.8, 0, 0) end
-                                end
-                            },
-                        },
-                    },
-                }),
-            },
-            },
-
-            -- BRANCH B: Metadata or Both View (With Tabs)
-            f:view {
-
-                fill_horizontal = 1,
-            f:tab_view {
-                visible = bind {
-                    key = "indexingMode",
-                    transform = function(v) return v == "meta" or v == "both" end,
-                },
-                fill_horizontal = 1,
-
-                --------------------------------------------------------
-                -- 1. GENERAL SETTINGS
-                --------------------------------------------------------
-                f:tab_view_item {
-                    title = LOC "$$$/StyleAI/UI/TabGeneral=General Settings",
-                    identifier = 'general',
-
+            f:tab_view_item {
+                title = LOC "$$$/StyleAI/Prepare/TabOutput=Metadata Output",
+                identifier = 'prepare_output',
+                f:column {
+                    spacing = f:control_spacing(),
                     UIFactory.SettingsGroup(f, {
-                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/EmbeddingTasks=Photo Analysis",
-                        fill_horizontal = 1,
-                        visible = bind {
-                            key = "indexingMode",
-                            transform = function(v) return v == "both" end,
+                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/MetadataOptions=Generated Fields",
+                        f:row {
+                            f:checkbox { value = bind 'generateKeywords', title = LOC "$$$/StyleAI/PluginInfoDialogSections/keywords=Keywords" },
+                            f:checkbox { value = bind 'generateTitle', title = LOC "$$$/StyleAI/PluginInfoDialogSections/title=Title" },
+                            f:checkbox { value = bind 'generateCaption', title = LOC "$$$/StyleAI/PluginInfoDialogSections/caption=Caption" },
+                            f:checkbox { value = bind 'generateAltText', title = LOC "$$$/StyleAI/PluginInfoDialogSections/alttext=Alt Text" },
                         },
-                    f:row {
-                        visible = bind {
-                            key = "indexingMode",
-                            transform = function(v) return v == "both" end,
+                    }),
+                    UIFactory.SettingsGroup(f, {
+                        title = LOC "$$$/StyleAI/Prepare/KeywordOrganization=Keyword Organization",
+                        f:checkbox {
+                            value = bind 'useKeywordHierarchy',
+                            enabled = bind 'generateKeywords',
+                            title = LOC "$$$/StyleAI/UI/EnableHierarchy=Organize generated keywords in a hierarchy",
+                        },
+                        f:row {
+                            visible = bind 'useKeywordHierarchy',
+                            f:checkbox {
+                                value = bind 'useCatalogKeywordStructure',
+                                enabled = bind 'generateKeywords',
+                                title = LOC "$$$/StyleAI/UI/UseCatalogKeywordStructure=Use the existing catalog structure",
+                            },
+                            f:push_button {
+                                enabled = bind 'generateKeywords',
+                                title = LOC "$$$/StyleAI/PluginInfoDialogSections/editKeywordHierarchy=Edit categories...",
+                                action = function() KeywordConfigProvider.showKeywordCategoryDialog() end,
+                            },
+                        },
+                        f:row {
+                            f:checkbox {
+                                value = bind 'bilingualKeywords',
+                                enabled = bind 'generateKeywords',
+                                title = LOC "$$$/StyleAI/UI/BilingualKeywords=Add bilingual keyword synonyms",
+                            },
+                            f:combo_box {
+                                value = bind 'keywordSecondaryLanguage',
+                                items = Defaults.generateLanguages,
+                                enabled = bind 'bilingualKeywords',
+                            },
+                        },
+                    }),
+                    UIFactory.SettingsGroup(f, {
+                        title = LOC "$$$/StyleAI/Prepare/CatalogWriting=Lightroom Catalog",
+                        f:checkbox {
+                            value = bind 'saveDataToCatalog',
+                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalog=Write generated metadata to the Lightroom catalog",
                         },
                         f:checkbox {
-                            visible = bind {
-                                key = "indexingMode",
-                                transform = function(v) return v == "both" end,
-                            },
-                            value = bind 'enableEmbeddings',
-                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddings=Create search embeddings",
-                            tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableEmbeddingsTooltip=Analyzes image content visually to enable natural language semantic search.",
-                            enabled = props.clipReady,
+                            enabled = bind 'saveDataToCatalog',
+                            value = bind 'enableValidation',
+                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/validation=Review each photo before saving",
                         },
-                        f:static_text {
-                            visible = bind {
-                                key = "indexingMode",
-                                transform = function(v) return v == "both" end,
-                            },
-                            title = bind {
-                                key = "clipReady",
-                                transform = function(v)
-                                    if v then return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPReady=SigLIP2: Ready (Model cached)")
-                                    else return LOC("$$$/StyleAI/AnalyzeAndIndex/SigLIPNotReady=SigLIP2: Not Ready (Model missing)") end
-                                end,
-                            },
-                            text_color = bind {
-                                key = "clipReady",
-                                transform = function(v)
-                                    if v then return LrColor(0, 0.8, 0)
-                                    else return LrColor(0.8, 0, 0) end
-                                end
-                            },
-                        },
-                    },
-                }),
-
-                UIFactory.SettingsGroup(f, {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/LlmTasks=AI Auto-Tagging",
-                    fill_horizontal = 1,
-                    visible = bind {
-                        key = "indexingMode",
-                        transform = function(v) return v == "meta" or v == "both" end,
-                    },
-                    f:row {
-                        f:checkbox {
-                            value = bind 'enableMetadata',
-                            title = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableMetadata=Generate AI metadata (Keywords, Title, Caption)",
-                            tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/EnableMetadataTooltip=Uses a Vision LLM to automatically describe and tag your photos.",
-                        },
-                        f:static_text {
-                            title = bind 'llmStatusText',
-                            text_color = bind 'llmStatusColor',
-                        },
-                    },
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/aiModel=AI Model:", width = share 'labelWidth' },
                         f:column {
-                            f:popup_menu { value = bind 'modelKey', items = modelItems, width = 300 },
-
+                            enabled = bind 'saveDataToCatalog',
+                            f:radio_button {
+                                value = bind 'appendMetadata',
+                                checked_value = true,
+                                title = LOC "$$$/StyleAI/Prepare/Append=Append generated metadata to existing values",
+                            },
+                            f:radio_button {
+                                value = bind 'appendMetadata',
+                                checked_value = false,
+                                title = LOC "$$$/StyleAI/Prepare/Replace=Replace existing values for generated fields",
+                            },
                         },
-                    },
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/Temperature=Temperature:", width = share 'labelWidth' },
-                        f:slider { value = bind 'temperature', min = 0.0, max = 0.5, width = 200, tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/TemperatureTooltip=Lower values produce safer, more literal descriptions. Higher values are more creative." },
-                        f:static_text { title = bind 'temperature', width = 40 },
-                    },
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/generateLanguage=Language:", width = share 'labelWidth' },
-                        f:combo_box { value = bind 'language', items = Defaults.generateLanguages },
-                    },
-                }),
-
-            },
-
-            --------------------------------------------------------
-            -- 2. KEYWORDS & METADATA
-            --------------------------------------------------------
-            f:tab_view_item {
-                title = LOC "$$$/StyleAI/UI/TabKeywords=Keywords & Metadata",
-                identifier = 'metadata',
-
-                f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/MetadataOptions=Generated Fields",
-                    fill_horizontal = 1,
-                    f:row {
-                        f:checkbox { value = bind 'generateKeywords', title = LOC "$$$/StyleAI/PluginInfoDialogSections/keywords=Keywords" },
-                        f:spacer { width = 10 },
-                        f:checkbox { value = bind 'generateTitle', title = LOC "$$$/StyleAI/PluginInfoDialogSections/title=Title" },
-                        f:spacer { width = 10 },
-                        f:checkbox { value = bind 'generateCaption', title = LOC "$$$/StyleAI/PluginInfoDialogSections/caption=Caption" },
-                        f:spacer { width = 10 },
-                        f:checkbox { value = bind 'generateAltText', title = LOC "$$$/StyleAI/PluginInfoDialogSections/alttext=Alt Text" },
-                    },
-                },
-
-                f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/HierarchyOptions=Hierarchy & Language",
-                    fill_horizontal = 1,
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/useKeywordHierarchy=Keyword Hierarchy:", width = share 'labelWidth' },
-                        f:checkbox { value = bind 'useKeywordHierarchy', title = LOC "$$$/StyleAI/UI/EnableHierarchy=Enable" },
-                        f:push_button {
-                            enabled = bind 'useKeywordHierarchy',
-                            title = LOC "$$$/StyleAI/PluginInfoDialogSections/editKeywordHierarchy=Edit categories",
-                            action = function() KeywordConfigProvider.showKeywordCategoryDialog() end,
-                        },
-                    },
-                    f:row {
-                        f:spacer { width = share 'labelWidth' },
-                        f:checkbox { value = bind 'useCatalogKeywordStructure', title = LOC "$$$/StyleAI/UI/UseCatalogKeywordStructure=Use existing catalog structure" }
-                    },
-
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/UI/BilingualKeywords=Bilingual Synonyms:", width = share 'labelWidth' },
-                        f:checkbox { value = bind 'bilingualKeywords', enabled = bind 'generateKeywords' },
-                        f:combo_box { value = bind 'keywordSecondaryLanguage', items = Defaults.generateLanguages, enabled = bind 'bilingualKeywords', width = 160 },
-                    }
+						UIFactory.Notice(f, {
+							kind = "warning",
+							visible = bind {
+								keys = { 'saveDataToCatalog', 'appendMetadata' },
+								transform = function()
+									return props.saveDataToCatalog and not props.appendMetadata
+								end,
+							},
+							title = bind {
+								keys = { 'generateKeywords', 'generateTitle', 'generateCaption', 'generateAltText' },
+								transform = function()
+									local fields = {}
+									if props.generateKeywords then table.insert(fields, LOC "$$$/StyleAI/PluginInfoDialogSections/keywords=Keywords") end
+									if props.generateTitle then table.insert(fields, LOC "$$$/StyleAI/PluginInfoDialogSections/title=Title") end
+									if props.generateCaption then table.insert(fields, LOC "$$$/StyleAI/PluginInfoDialogSections/caption=Caption") end
+									if props.generateAltText then table.insert(fields, LOC "$$$/StyleAI/PluginInfoDialogSections/alttext=Alt Text") end
+									return LOC("$$$/StyleAI/Prepare/ReplaceFieldsWarning=Existing Lightroom values will be replaced for: ^1.", table.concat(fields, ", "))
+								end,
+							},
+						}),
+                    }),
                 },
             },
-
-            --------------------------------------------------------
-            -- 3. PROMPT & CONTEXT
-            --------------------------------------------------------
             f:tab_view_item {
-                title = LOC "$$$/StyleAI/UI/TabContext=Prompt & Context",
-                identifier = 'context',
-
-                f:group_box {
-                    title = LOC "$$$/StyleAI/UI/PromptTitle=Prompt Template",
-                    fill_horizontal = 1,
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/PluginInfoDialogSections/editPrompts=Template:", width = share 'labelWidth' },
-                        props.promptTitleMenu,
-                        f:push_button { title = LOC "$$$/StyleAI/PluginInfoDialogSections/add=Add", action = function() PromptConfigProvider.addPrompt(props) end },
-                        f:push_button { title = LOC "$$$/StyleAI/PluginInfoDialogSections/delete=Delete", action = function() PromptConfigProvider.deletePrompt(props) end },
-                    },
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/PromptConfig/PromptField=Custom Prompt:", width = share 'labelWidth' },
+                title = LOC "$$$/StyleAI/Prepare/TabInstructions=Model & Instructions",
+                identifier = 'prepare_instructions',
+                f:column {
+                    spacing = f:control_spacing(),
+                    UIFactory.SettingsGroup(f, {
+                        title = LOC "$$$/StyleAI/AnalyzeAndIndex/LlmTasks=Local Metadata Model",
+                        UIFactory.FormRow(f, {
+                            label = LOC "$$$/StyleAI/PluginInfoDialogSections/aiModel=Model:",
+                            labelWidth = share 'prepareMetadataLabel',
+                            f:popup_menu { value = bind 'modelKey', items = modelItems, fill_horizontal = 1 },
+                        }),
+                        UIFactory.FormRow(f, {
+                            label = LOC "$$$/StyleAI/PluginInfoDialogSections/generateLanguage=Language:",
+                            labelWidth = share 'prepareMetadataLabel',
+                            f:combo_box { value = bind 'language', items = Defaults.generateLanguages },
+                        }),
+                        UIFactory.FormRow(f, {
+                            label = LOC "$$$/StyleAI/AnalyzeAndIndex/Temperature=Creativity:",
+                            labelWidth = share 'prepareMetadataLabel',
+                            f:slider { value = bind 'temperature', min = 0.0, max = 0.5, fill_horizontal = 1 },
+                            f:static_text { title = bind 'temperature' },
+                        }),
+                    }),
+                    UIFactory.SettingsGroup(f, {
+                        title = LOC "$$$/StyleAI/UI/PromptTitle=Prompt Template",
+                        f:row {
+                            fill_horizontal = 1,
+                            props.promptTitleMenu,
+                            f:push_button { title = LOC "$$$/StyleAI/PluginInfoDialogSections/add=Add...", action = function() PromptConfigProvider.addPrompt(props) end },
+							f:push_button { title = LOC "$$$/StyleAI/PromptConfig/Rename=Rename", action = function() PromptConfigProvider.renamePrompt(props) end },
+                            f:push_button { title = LOC "$$$/StyleAI/PluginInfoDialogSections/delete=Delete", action = function() PromptConfigProvider.deletePrompt(props) end },
+							f:push_button { title = LOC "$$$/StyleAI/PromptConfig/RestoreAction=Restore Default", action = function() PromptConfigProvider.restoreDefaultPrompt(props, Defaults.defaultSystemInstruction) end },
+                        },
                         f:scrolled_view {
-                            height_in_lines = 8, fill_horizontal = 1, horizontal_scroller = false, vertical_scroller = true,
-                            f:edit_field { value = bind 'selectedPrompt', width = 430, height_in_lines = 20, wraps = true, allow_newlines = true },
-                        },
-                    },
-                },
-                f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextOptions=AI Context",
-                    fill_horizontal = 1,
-                    f:row {
-                        f:checkbox { value = bind 'submitGPS', title = LOC "$$$/StyleAI/MetadataProvider/GPS=GPS Coordinates", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextGPSTooltip=Sends GPS data to the AI to help identify locations and landmarks." },
-                        f:checkbox { value = bind 'submitKeywords', title = LOC "$$$/StyleAI/PluginInfoDialogSections/submitKeywords=Existing Keywords", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextKeywordsTooltip=Sends your existing Lightroom keywords to the AI to guide its focus." },
-                        f:checkbox { value = bind 'submitFolderName', title = LOC "$$$/StyleAI/PluginInfoDialogSections/folderNames=Folder Names", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextFolderTooltip=Sends the parent folder name to the AI to provide context for the event or subject." },
-                    },
-                    f:row {
-                        f:checkbox { value = bind 'showPhotoContextDialog', title = LOC "$$$/StyleAI/PluginInfoDialogSections/showPhotoContextDialog=Ask for context before each batch" },
-                    },
-                },
-            },
-
-            --------------------------------------------------------
-            -- 4. ADVANCED / MAINTENANCE
-            --------------------------------------------------------
-            f:tab_view_item {
-                title = LOC "$$$/StyleAI/UI/TabAdvanced=Advanced / Maintenance",
-                identifier = 'advanced',
-
-                f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/CatalogIntegration=Catalog Integration",
-                    fill_horizontal = 1,
-                    f:row {
-                        f:checkbox { value = bind 'saveDataToCatalog', title = LOC "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalog=Write generated data to Lightroom catalog", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalogTooltip=If unchecked, metadata is only stored in the backend AI database." },
-                        f:checkbox { enabled = bind 'saveDataToCatalog', value = bind 'enableValidation', title = LOC "$$$/StyleAI/PluginInfoDialogSections/validation=Review/Edit each photo before saving", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/ValidationTooltip=Opens a confirmation dialog for each photo before writing to the catalog." },
-                    },
-                },
-                f:group_box {
-                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/MetadataHandling=Metadata Handling",
-                    fill_horizontal = 1,
-                    f:row {
-                        f:static_text { title = LOC "$$$/StyleAI/AnalyzeAndIndex/WriteMode=Write:", width = share 'ctxLabelWidth' },
-                        f:column {
-                            f:checkbox { value = bind 'appendMetadata', title = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadata=Append to existing values instead of replacing", tooltip = LOC "$$$/StyleAI/AnalyzeAndIndex/AppendMetadataTooltip=Adds AI keywords and text without erasing your existing metadata." },
-                            f:static_text {
-                                title = LOC "$$$/StyleAI/AnalyzeAndIndex/ForceReindexWriteNotice=⚠️ Force Re-index active: Write mode is set to overwrite existing values.",
-                                visible = bind 'regenerateMetadata',
-                                text_color = LrColor(0.85, 0.4, 0),
+                            fill_horizontal = 1,
+                            height = 150,
+                            horizontal_scroller = false,
+                            vertical_scroller = true,
+                            f:edit_field {
+                                value = bind 'selectedPrompt',
+                                fill_horizontal = 1,
+                                height_in_lines = 10,
+                                wraps = true,
+                                allow_newlines = true,
                             },
                         },
-                    },
+                    }),
                 },
             },
-        },
-        },
+            f:tab_view_item {
+                title = LOC "$$$/StyleAI/Prepare/TabContext=Context",
+                identifier = 'prepare_context',
+                UIFactory.SettingsGroup(f, {
+                    title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextOptions=Optional Context Sent to the Local Model",
+                    f:checkbox { value = bind 'submitGPS', title = LOC "$$$/StyleAI/MetadataProvider/GPS=GPS coordinates" },
+                    f:checkbox { value = bind 'submitKeywords', title = LOC "$$$/StyleAI/PluginInfoDialogSections/submitKeywords=Existing Lightroom keywords" },
+                    f:checkbox { value = bind 'submitFolderName', title = LOC "$$$/StyleAI/PluginInfoDialogSections/folderNames=Parent folder names" },
+                    f:checkbox { value = bind 'showPhotoContextDialog', title = LOC "$$$/StyleAI/Prepare/AskContext=Ask for optional instructions for each photo" },
+                    UIFactory.HelpText(f, {
+                        title = LOC "$$$/StyleAI/Prepare/ContextLocal=All selected context remains on this computer and is sent only to the selected local model.",
+                    }),
+                }),
+            },
         },
 
-        f:row {
-            f:push_button {
-                title = LOC("$$$/StyleAI/common/ResetAllDefaults=Reset to Defaults"),
-                action = function()
-                    local confirm = LrDialogs.confirm(
-                        LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmTitle=Reset Settings"),
-                        LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmMessage=Are you sure you want to reset all options in this dialog to their default values?")
-                    )
-                    if confirm == "ok" then
-                        props.indexingMode = "both"
-                        props.scope = "selected"
-                        props.enableMetadata = true
-                        props.enableEmbeddings = props.clipReady
-                        props.regenerateMetadata = false
-                        props.temperature = 0.1
-                        props.prompt = "Default"
-                        props.selectedPrompt = Defaults.defaultSystemInstruction
-                        props.generateKeywords = true
-                        props.generateCaption = true
-                        props.generateTitle = true
-                        props.generateAltText = false
-                        props.useKeywordHierarchy = false
-                        props.useCatalogKeywordStructure = false
-                        props.useTopLevelKeyword = true
-                        props.topLevelKeyword = "StyleAI"
-                        props.bilingualKeywords = false
-                        props.keywordSecondaryLanguage = Defaults.defaultKeywordSecondaryLanguage
-                        props.modelKey = (modelItems and modelItems[1]) and modelItems[1].value or "none"
-                        props.language = "English"
-                        props.replaceSS = false
-                        props.submitGPS = false
-                        props.submitKeywords = false
-                        props.submitFolderName = false
-                        props.showPhotoContextDialog = false
-                        props.saveDataToCatalog = true
-                        props.appendMetadata = true
-                        props.enableValidation = false
-                    end
+        UIFactory.Summary(f, {
+            title = LOC "$$$/StyleAI/UI/Summary=Run Summary",
+            text = bind {
+				keys = { 'enableEmbeddings', 'enableMetadata', 'scope', 'regenerateMetadata', 'selectedCount' },
+                transform = function()
+                    local tasks = {}
+                    if props.enableEmbeddings then table.insert(tasks, LOC "$$$/StyleAI/Prepare/SummaryAnalyze=visual analysis") end
+                    if props.enableMetadata then table.insert(tasks, LOC "$$$/StyleAI/Prepare/SummaryMetadata=local metadata") end
+                    local taskText = #tasks > 0 and table.concat(tasks, " + ") or LOC "$$$/StyleAI/Prepare/SummaryNone=no task selected"
+                    local existingText = props.regenerateMetadata
+                        and LOC "$$$/StyleAI/Prepare/SummaryReplace=replace selected existing StyleAI data"
+                        or LOC "$$$/StyleAI/Prepare/SummaryKeep=keep existing data where available"
+					local scopeText = props.scope == 'selected'
+						and LOC("$$$/StyleAI/Prepare/SummarySelected=^1 selected photo(s)", tostring(props.selectedCount or 0))
+						or LOC "$$$/StyleAI/Prepare/SummaryChosenScope=the chosen photo scope"
+					return scopeText .. " — " .. taskText .. " — " .. existingText
                 end,
             },
-        },
+        }),
     }
+
     local result = LrDialogs.presentModalDialog {
-        title = LOC "$$$/StyleAI/AnalyzeAndIndex/WindowTitle=Analyze and Index Photos",
+        title = LOC "$$$/StyleAI/Prepare/WindowTitle=Prepare Photos",
         contents = contents,
-        actionVerb = LOC "$$$/StyleAI/common/Start=Start",
+        actionVerb = LOC "$$$/StyleAI/Prepare/Action=Prepare Photos",
         cancelVerb = LOC "$$$/StyleAI/common/Cancel=Cancel",
         resizable = true,
     }
 
     if result == 'ok' then
+		if not props.enableEmbeddings and not props.enableMetadata then
+			LrDialogs.message(
+				LOC "$$$/StyleAI/Prepare/NoTaskTitle=Nothing Selected",
+				LOC "$$$/StyleAI/Prepare/NoTaskMessage=Select Analyze photos for StyleAI, Generate keywords and descriptions, or both.",
+				"warning"
+			)
+			return nil
+		end
+		if props.enableMetadata and (not props.modelKey or props.modelKey == "" or props.modelKey == "none") then
+			LrDialogs.message(
+				LOC "$$$/StyleAI/Prepare/NoModelTitle=Local Metadata Model Required",
+				LOC "$$$/StyleAI/Prepare/NoModelMessage=Choose an available local Ollama or LM Studio model, or turn off metadata generation.",
+				"warning"
+			)
+			return nil
+		end
+		if props.enableMetadata and not (props.generateKeywords or props.generateCaption or props.generateTitle or props.generateAltText) then
+			LrDialogs.message(
+				LOC "$$$/StyleAI/Prepare/NoFieldsTitle=No Metadata Fields Selected",
+				LOC "$$$/StyleAI/Prepare/NoFieldsMessage=Select at least one generated metadata field, or turn off metadata generation.",
+				"warning"
+			)
+			return nil
+		end
         -- Save preferences
         prefs.indexingMode = props.indexingMode
         prefs.indexScope = props.scope
@@ -609,7 +584,6 @@ local function showAnalyzeAndIndexDialog(ctx)
         prefs.enableValidation = props.enableValidation
         prefs.saveDataToCatalog = props.saveDataToCatalog
         prefs.indexingPerformanceProfile = prefs.indexingPerformanceProfile or 2
-        prefs.indexingBatchSize = prefs.indexingBatchSize or 32
         prefs.prompt = props.prompt
         prefs.prompts = props.prompts
         prefs.useKeywordHierarchy = props.useKeywordHierarchy
@@ -647,26 +621,18 @@ local function showPhotoContextDialog(photo)
 
     local dialogView = f:column {
         bind_to_object = props,
+		spacing = f:control_spacing(),
+		fill_horizontal = 1,
         f:row {
             f:static_text {
                 title = photo:getFormattedMetadata('fileName'),
             },
         },
         f:row {
-            f:spacer {
-                height = 10,
-            },
-        },
-        f:row {
             alignment = "center",
             f:catalog_photo {
                 photo = photo,
-                width = 300,
-            },
-        },
-        f:row {
-            f:spacer {
-                height = 10,
+				width = 240, -- Bounded preview; avoids unbounded modal growth.
             },
         },
         f:row {
@@ -675,31 +641,25 @@ local function showPhotoContextDialog(photo)
             },
         },
         f:row {
-            f:spacer {
-                height = 10,
-            },
-        },
-        f:row {
+			fill_horizontal = 1,
             f:edit_field {
                 value = bind 'photoContextData',
-                width_in_chars = 40,
+				fill_horizontal = 1,
                 height_in_lines = 10,
-            },
-        },
-        f:row {
-            f:spacer {
-                height = 10,
+				wraps = true,
+				allow_newlines = true,
             },
         },
         f:checkbox {
             value = bind 'skipFromHere',
-            title = LOC "$$$/StyleAI/AnalyzeImageTask/SkipPreflightFromHere=Use for all following pictures.",
+			title = LOC "$$$/StyleAI/AnalyzeImageTask/SkipPreflightFromHere=Use this context for all remaining photos.",
         },
     }
 
     local result = LrDialogs.presentModalDialog({
         title = LOC "$$$/StyleAI/AnalyzeImageTask/PhotoContextDialogData=Photo Context",
         contents = dialogView,
+		resizable = true,
     })
 
     SkipPhotoContextDialog = props.skipFromHere
@@ -857,8 +817,6 @@ LrTasks.startAsyncTask(function()
 			functionContext = context,
 		})
 
-		local SearchIndexAPI = require("APISearchIndex")
-
 		-- Get photos to process
 		-- For scope 'missing', pass task options so backend checks which photos need the selected tasks
 		local taskOptionsForScope = (props.scope == "missing")
@@ -900,7 +858,6 @@ LrTasks.startAsyncTask(function()
 			return
 		end
 
-		local LrPathUtils = import("LrPathUtils")
 		-- Per-photo progress for import and analysis (denominator = photos to process, not 1)
 		progressScope:setCaption(
 			LOC("$$$/StyleAI/AnalyzeAndIndex/ProgressCount=^1 photos to process", tostring(#photosToProcess))

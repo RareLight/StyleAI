@@ -12,6 +12,8 @@ local Pipeline = require("Pipeline")
 local DevelopEditManager = require("DevelopEditManager")
 local RenderingStateCapability = require("RenderingStateCapability")
 local PhotoSelector = require("PhotoSelector")
+local StyleUI = require("StyleUI")
+local BuildConfig = require("BuildConfig")
 
 ---
 -- Helper function to evaluate test conditions safely.
@@ -126,6 +128,20 @@ LrTasks.startAsyncTask(function()
 			assertEqual(2, #resolved, "Both selected photos should survive independently of live selection state")
 			assertEqual(photoOne, resolved[1], "Selection order should be preserved")
 			assertEqual(photoTwo, resolved[2], "Video filtering must not remove later selected photos")
+		end)
+
+		runTest("Style UI keeps a valid filtered selection", function()
+			local items = {
+				{ title = "One", value = 2 },
+				{ title = "Two", value = 7 },
+			}
+			assertEqual(7, StyleUI.keepSelection(items, 7), "Visible selection should be preserved")
+			assertEqual(2, StyleUI.keepSelection(items, 99), "Missing selection should fall back deterministically")
+			assertEqual(7, StyleUI.resolveSelectedIndex({ value = 7 }, items), "Lightroom table selection should resolve")
+		end)
+
+		runTest("Build configuration exposes an explicit developer-build boolean", function()
+			assertEqual("boolean", type(BuildConfig.developerBuild), "Developer-build flag must be explicit")
 		end)
 
 		---------------------------------------------------------

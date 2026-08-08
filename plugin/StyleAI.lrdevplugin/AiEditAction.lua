@@ -13,7 +13,7 @@ local UIFactory = require("UIFactory")
 
 local AiEditAction = {}
 
-local ENABLE_DEBUG_STYLE_OVERRIDE = true
+local ENABLE_DEBUG_STYLE_OVERRIDE = require("BuildConfig").developerBuild == true
 
 local function copyOptions(source)
 	local copied = {}
@@ -30,7 +30,11 @@ local function safePromptTable(rawPrompts)
 		)
 		return { Default = Defaults.defaultEditSystemInstruction }
 	end
-	return rawPrompts
+	local copied = {}
+	for name, prompt in pairs(rawPrompts) do
+		copied[name] = prompt
+	end
+	return copied
 end
 
 local function buildModelItems()
@@ -84,15 +88,6 @@ local function buildEditIntentPresetItems()
 	return items
 end
 
-local function hasCompositionModeValue(value)
-	for _, item in ipairs(Defaults.compositionModes or {}) do
-		if item.value == value then
-			return true
-		end
-	end
-	return false
-end
-
 local function showPhotoInstructionDialog(ctx, photo)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
@@ -104,16 +99,17 @@ local function showPhotoInstructionDialog(ctx, photo)
 	local dialogView = f:column({
 		bind_to_object = props,
 		spacing = f:control_spacing(),
+		fill_horizontal = 1,
 		f:row({
 			f:static_text({
-				title = photo:getFormattedMetadata("fileName") or "Photo",
+				title = photo:getFormattedMetadata("fileName") or LOC("$$$/StyleAI/common/Photo=Photo"),
 			}),
 		}),
 		f:row({
 			alignment = "center",
 			f:catalog_photo({
 				photo = photo,
-				width = 300,
+				width = 240, -- Bounded preview; avoids unbounded modal growth.
 			}),
 		}),
 		f:row({
@@ -122,10 +118,12 @@ local function showPhotoInstructionDialog(ctx, photo)
 			}),
 		}),
 		f:row({
+			fill_horizontal = 1,
 			f:edit_field({
 				value = bind("photoContextData"),
-				width_in_chars = 50,
+				fill_horizontal = 1,
 				height_in_lines = 10,
+				wraps = true,
 				allow_newlines = true,
 			}),
 		}),
@@ -145,12 +143,13 @@ local function showPhotoInstructionDialog(ctx, photo)
 		title = LOC("$$$/StyleAI/TaskAiEditPhotos/PhotoSpecificInstructions=Photo-specific edit instructions"),
 		contents = dialogView,
 		actionVerb = LOC("$$$/StyleAI/common/Continue=Continue"),
+		resizable = true,
 	})
 
 	return result, props.photoContextData, props.skipFromHere
 end
 
-local function getAiEditOptions(ctx, editMode)
+local function getAiEditOptions(ctx, editMode, selectedPhotosSnapshot)
 	log:trace("getAiEditOptions: start, mode=" .. tostring(editMode))
 	local f = LrView.osFactory()
 	local bind = LrView.bind
@@ -158,6 +157,7 @@ local function getAiEditOptions(ctx, editMode)
 	local props = LrBinding.makePropertyTable(ctx)
 
 	props.scope = prefs.aiEditScope or "selected"
+	props.selectedCount = #(selectedPhotosSnapshot or {})
 	props.modelKey = prefs.aiEditModelKey or prefs.modelKey
 	props.temperature = prefs.aiEditTemperature or prefs.temperature or 0.1
 	props.language = prefs.aiEditLanguage or prefs.generateLanguage or "English"
@@ -193,31 +193,14 @@ local function getAiEditOptions(ctx, editMode)
 	props.profileMode = prefs.aiEditProfileMode or "suggest"
 	props.hdrMode = prefs.aiEditHdrMode or "suggest"
 	props.applyMasks = prefs.aiEditApplyMasks ~= false
-	props.adjustWhiteBalance = prefs.aiEditAdjustWhiteBalance ~= false
-	props.adjustBasicTone = prefs.aiEditAdjustBasicTone ~= false
-	props.adjustPresence = prefs.aiEditAdjustPresence ~= false
-	props.adjustColorMix = prefs.aiEditAdjustColorMix ~= false
-	props.doColorGrading = prefs.aiEditDoColorGrading ~= false
-	props.useToneCurve = prefs.aiEditUseToneCurve ~= false
-	props.usePointCurve = prefs.aiEditUsePointCurve ~= false
-	props.adjustDetail = prefs.aiEditAdjustDetail ~= false
-	props.adjustEffects = prefs.aiEditAdjustEffects ~= false
-	props.adjustLensCorrections = prefs.aiEditAdjustLensCorrections ~= false
 	props.allowAutoCrop = prefs.aiEditAllowAutoCrop == true
 	props.allowAutoRotate = prefs.aiEditAllowAutoRotate == true
-	props.compositionModes = Defaults.compositionModes or {}
-	props.compositionMode = prefs.aiEditCompositionMode or Defaults.defaultCompositionMode or "subtle"
-	if not hasCompositionModeValue(props.compositionMode) then
-		props.compositionMode = Defaults.defaultCompositionMode or "subtle"
-	end
 	props.submitKeywords = prefs.aiEditSubmitKeywords ~= false
 	props.submitFolderName = prefs.aiEditSubmitFolderName or false
 	props.showPhotoContextDialog = prefs.aiEditShowPhotoContextDialog ~= false
-	props.useTrainingStyle = prefs.aiEditUseTrainingStyle ~= false
 	
 	props.editingStyle = editMode or "trained"
 	props.styleStrength = getValidStyleStrength(prefs.aiEditStyleStrength)
-	props.showLlmOptions = (props.editingStyle == "creative")
 	
 	props.promptTitles = {}
 	props.prompts = safePromptTable(prefs.editPrompts or { Default = Defaults.defaultEditSystemInstruction })
@@ -271,9 +254,6 @@ local function getAiEditOptions(ctx, editMode)
 			properties.customEditIntentText = newValue
 		end
 	end)
-	props:addObserver("editingStyle", function(properties, key, newValue)
-		properties.showLlmOptions = (newValue == "creative")
-	end)
 	
 
 
@@ -311,6 +291,33 @@ local function getAiEditOptions(ctx, editMode)
 		return f:column({
 			bind_to_object = props,
 			spacing = f:control_spacing(),
+			UIFactory.SettingsGroup(f, {
+				title = LOC("$$$/StyleAI/common/Scope=Photos"),
+				UIFactory.FormRow(f, {
+					label = LOC("$$$/StyleAI/common/ApplyTo=Apply to:"),
+					labelWidth = share("applyLabelWidth"),
+					f:popup_menu({
+						value = bind("scope"),
+						fill_horizontal = 1,
+						items = {
+							{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
+							{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
+							{ title = LOC("$$$/StyleAI/common/ScopeAll=All photos in catalog"), value = "all" },
+						},
+					}),
+				}),
+				UIFactory.HelpText(f, {
+					title = bind({
+						key = "scope",
+						transform = function(scope)
+							if scope == "selected" then
+								return LOC("$$$/StyleAI/TaskAiEditPhotos/SelectedCount=^1 selected photo(s) will be considered.", tostring(props.selectedCount))
+							end
+							return LOC("$$$/StyleAI/TaskAiEditPhotos/ScopeCountPending=StyleAI will resolve the chosen scope after you continue.")
+						end,
+					}),
+				}),
+			}),
 			f:group_box({
 				title = LOC("$$$/StyleAI/TaskAiEditPhotos/Workflow=Style and safety"),
 				fill_horizontal = 1,
@@ -324,6 +331,9 @@ local function getAiEditOptions(ctx, editMode)
 						items = Defaults.editStyleStrengths,
 						width = 200,
 					}),
+				}),
+				UIFactory.HelpText(f, {
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/RenderingHelp=Suggest reports a compatible recommendation for review. Auto applies it only when the learned policy passes its evidence and compatibility gates."),
 				}),
 				f:row({
 					f:static_text({
@@ -365,11 +375,7 @@ local function getAiEditOptions(ctx, editMode)
 						value = bind("allowAutoRotate"),
 					}),
 				}),
-				f:row({
-					visible = bind({
-						key = "editingStyle",
-						transform = function(v) return ENABLE_DEBUG_STYLE_OVERRIDE and v == "trained" end
-					}),
+				LrView.conditionalItem(ENABLE_DEBUG_STYLE_OVERRIDE, f:row({
 					f:checkbox({
 						title = LOC("$$$/StyleAI/TaskAiEditPhotos/OverrideStyle=Override style (One-time test)"),
 						value = bind("overrideStyleEnabled"),
@@ -380,24 +386,44 @@ local function getAiEditOptions(ctx, editMode)
 						visible = bind("overrideStyleEnabled"),
 						width = 200,
 					}),
-				}),
+				})),
 			}),
-			f:group_box({
-				title = LOC("$$$/StyleAI/common/Scope=Scope"),
-				fill_horizontal = 1,
-				f:row({
-					f:static_text({
-						title = LOC("$$$/StyleAI/common/ApplyTo=Apply to:"),
-						width = share("labelWidth"),
-					}),
-					f:popup_menu({
-						value = bind("scope"),
-						width = 300,
-						items = {
-							{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
-							{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
-							{ title = LOC("$$$/StyleAI/common/ScopeAll=All photos in catalog"), value = "all" },
-						},
+			UIFactory.SettingsGroup(f, {
+				title = LOC("$$$/StyleAI/TaskAiEditPhotos/Safety=Application Safety"),
+				f:checkbox({
+					value = bind("createVirtualCopies"),
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/CreateVirtualCopies=Create virtual copies before applying edits"),
+				}),
+				f:checkbox({
+					value = bind("reviewBeforeApply"),
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/ReviewProposed=Review each proposed edit before applying it"),
+				}),
+				f:checkbox({
+					value = bind("applyMasks"),
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/ApplyMasks=Apply learned masks when the recipe contains supported masks"),
+				}),
+				UIFactory.Summary(f, {
+					title = LOC("$$$/StyleAI/UI/Summary=Safety Summary"),
+					text = bind({
+						keys = { "createVirtualCopies", "reviewBeforeApply", "applyMasks", "allowAutoCrop", "allowAutoRotate" },
+						transform = function()
+							local target = props.createVirtualCopies
+								and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryCopies=apply to new virtual copies")
+								or LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryOriginals=apply to the selected photos")
+						local review = props.reviewBeforeApply
+							and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryReview=review each edit")
+							or LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryAutomatic=apply without per-photo review")
+						local masks = props.applyMasks
+							and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryMasks=apply supported recipe masks")
+							or LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryNoMasks=do not apply masks")
+						local crop = props.allowAutoCrop
+							and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryCrop=crop allowed")
+							or LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryNoCrop=no crop")
+						local rotation = props.allowAutoRotate
+							and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryRotate=straighten/rotation allowed")
+							or LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryNoRotate=no straighten/rotation")
+						return target .. " — " .. review .. " — " .. masks .. " — " .. crop .. " — " .. rotation
+						end,
 					}),
 				}),
 			}),
@@ -408,6 +434,7 @@ local function getAiEditOptions(ctx, editMode)
 		return f:column({
 			bind_to_object = props,
 			spacing = f:control_spacing(),
+			fill_horizontal = 1,
 			f:group_box({
 				title = LOC("$$$/StyleAI/common/Scope=Scope"),
 				fill_horizontal = 1,
@@ -418,7 +445,7 @@ local function getAiEditOptions(ctx, editMode)
 					}),
 					f:popup_menu({
 						value = bind("scope"),
-						width = 300,
+						fill_horizontal = 1,
 						items = {
 							{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
 							{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
@@ -439,7 +466,7 @@ local function getAiEditOptions(ctx, editMode)
 						f:popup_menu({
 							value = bind("modelKey"),
 							items = modelItems,
-							width = 300,
+							fill_horizontal = 1,
 						}),
 
 					}),
@@ -501,6 +528,12 @@ local function getAiEditOptions(ctx, editMode)
 						end,
 					}),
 					f:push_button({
+						title = LOC("$$$/StyleAI/PromptConfig/Rename=Rename"),
+						action = function()
+						PromptConfigProvider.renamePrompt(props)
+					end,
+					}),
+					f:push_button({
 						title = LOC("$$$/StyleAI/common/Delete=Delete"),
 						action = function()
 							local ok, err = LrTasks.pcall(function()
@@ -523,8 +556,9 @@ local function getAiEditOptions(ctx, editMode)
 					}),
 					f:edit_field({
 						value = bind("selectedPrompt"),
-						width_in_chars = 50,
+						fill_horizontal = 1,
 						height_in_lines = 4,
+						wraps = true,
 						allow_newlines = true,
 					}),
 				}),
@@ -551,7 +585,7 @@ local function getAiEditOptions(ctx, editMode)
 					f:popup_menu({
 						value = bind("editIntentPreset"),
 						items = bind("editIntentPresetItems"),
-						width = 300,
+						fill_horizontal = 1,
 					}),
 				}),
 				f:row({
@@ -561,7 +595,7 @@ local function getAiEditOptions(ctx, editMode)
 					}),
 					f:edit_field({
 						value = bind("editIntent"),
-						width_in_chars = 50,
+						fill_horizontal = 1,
 						enabled = bind("isCustomEditIntent"),
 					}),
 				}),
@@ -586,42 +620,6 @@ local function getAiEditOptions(ctx, editMode)
 		bind_to_object = props,
 		spacing = f:control_spacing(),
 		innerContents,
-		f:row({
-			f:push_button({
-				title = LOC("$$$/StyleAI/common/ResetAllDefaults=Reset to Defaults"),
-				action = function()
-					local confirm = LrDialogs.confirm(
-						LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmTitle=Reset Settings"),
-						LOC("$$$/StyleAI/common/ResetAllDefaultsConfirmMessage=Are you sure you want to reset all options in this dialog to their default values?")
-					)
-					if confirm == "ok" then
-						props.editingStyle = editMode or "trained" 
-						props.scope = "selected"
-						props.modelKey = (modelItems and modelItems[1]) and modelItems[1].value or "none"
-						props.temperature = 0.1
-						props.prompt = "Default"
-						props.selectedPrompt = Defaults.defaultEditSystemInstruction
-						props.language = "English"
-						props.editIntentPreset = "natural_pro"
-						props.customEditIntentText = Defaults.defaultEditIntent
-						props.editIntent = "Natural professional Lightroom edit with balanced contrast, realistic color, and clean detail."
-						props.styleStrength = 0.75
-						props.createVirtualCopies = true
-						props.reviewBeforeApply = true
-						props.profileMode = "suggest"
-						props.hdrMode = "suggest"
-						props.applyMasks = true
-						props.showPhotoContextDialog = true
-						props.submitKeywords = true
-						props.submitFolderName = false
-						props.allowAutoCrop = false
-						props.allowAutoRotate = false
-						props.useTrainingStyle = true
-						props.faceBlurSensitivity = "balanced"
-					end
-				end,
-			}),
-		}),
 	})
 
 	local dialogTitle = editMode == "trained"
@@ -631,7 +629,8 @@ local function getAiEditOptions(ctx, editMode)
 	local result = LrDialogs.presentModalDialog({
 		title = dialogTitle,
 		contents = contents,
-		actionVerb = LOC("$$$/StyleAI/TaskAiEditPhotos/GenerateEdits=Apply edits"),
+		actionVerb = LOC("$$$/StyleAI/TaskAiEditPhotos/GenerateEdits=Apply My Style"),
+		resizable = true,
 	})
 	log:trace("getAiEditOptions: dialog result=" .. tostring(result))
 
@@ -652,23 +651,11 @@ local function getAiEditOptions(ctx, editMode)
 	prefs.aiEditProfileMode = props.profileMode
 	prefs.aiEditHdrMode = props.hdrMode
 	prefs.aiEditApplyMasks = props.applyMasks
-	prefs.aiEditAdjustWhiteBalance = props.adjustWhiteBalance
-	prefs.aiEditAdjustBasicTone = props.adjustBasicTone
-	prefs.aiEditAdjustPresence = props.adjustPresence
-	prefs.aiEditAdjustColorMix = props.adjustColorMix
-	prefs.aiEditDoColorGrading = props.doColorGrading
-	prefs.aiEditUseToneCurve = props.useToneCurve
-	prefs.aiEditUsePointCurve = props.usePointCurve
-	prefs.aiEditAdjustDetail = props.adjustDetail
-	prefs.aiEditAdjustEffects = props.adjustEffects
-	prefs.aiEditAdjustLensCorrections = props.adjustLensCorrections
 	prefs.aiEditAllowAutoCrop = props.allowAutoCrop
 	prefs.aiEditAllowAutoRotate = props.allowAutoRotate
-	prefs.aiEditCompositionMode = props.compositionMode
 	prefs.aiEditSubmitKeywords = props.submitKeywords
 	prefs.aiEditSubmitFolderName = props.submitFolderName
 	prefs.aiEditShowPhotoContextDialog = props.showPhotoContextDialog
-	prefs.aiEditUseTrainingStyle = props.useTrainingStyle
 	prefs.aiEditEditingStyle = props.editingStyle
 	prefs.editPrompts = props.prompts
 	prefs.editPrompt = props.prompt
@@ -758,14 +745,14 @@ function AiEditAction.run(editMode)
 		-- backend readiness checks can change Lightroom's live target set.
 		local selectedPhotosSnapshot = PhotoSelector.snapshotSelectedPhotos()
 
-		local options = getAiEditOptions(ctx, editMode)
+		local options = getAiEditOptions(ctx, editMode, selectedPhotosSnapshot)
 		if not options then
 			log:info("AI Edit task canceled by user in options dialog")
 			return
 		end
 
 		-- Now that user confirmed options, verify backend and training stats
-		if not Util.waitForServerDialog({ requireProviders = true }) then
+		if not Util.waitForServerDialog({ requireClip = true, requireProviders = editMode == "creative" }) then
 			log:warn("AI Edit task aborted: backend server unavailable")
 			return
 		end
@@ -774,7 +761,7 @@ function AiEditAction.run(editMode)
 		if not stats or (stats.count or 0) < 5 then
 			LrDialogs.showError(
 				LOC("$$$/StyleAI/TaskAiEditPhotos/ColdStartTitle=Cold Start"),
-				LOC("$$$/StyleAI/TaskAiEditPhotos/ColdStartMsg=StyleAI needs at least 5 examples to learn your baseline editing style. Please run 'Train AI Style (Save Edits)' first.")
+				LOC("$$$/StyleAI/TaskAiEditPhotos/ColdStartMsg=StyleAI needs at least 5 examples to learn your baseline editing style. Run 'Learn From My Edits' first.")
 			)
 			log:warn("AI Edit task aborted: Cold Start (<5 examples)")
 			return
@@ -793,32 +780,10 @@ function AiEditAction.run(editMode)
 				.. tostring(options.style_strength)
 				.. " masks="
 				.. tostring(options.applyMasks)
-				.. " wb="
-				.. tostring(options.adjust_white_balance)
-				.. " basicTone="
-				.. tostring(options.adjust_basic_tone)
-				.. " presence="
-				.. tostring(options.adjust_presence)
-				.. " colorMix="
-				.. tostring(options.adjust_color_mix)
-				.. " grading="
-				.. tostring(options.do_color_grading)
-				.. " toneCurve="
-				.. tostring(options.use_tone_curve)
-				.. " pointCurve="
-				.. tostring(options.use_point_curve)
-				.. " detail="
-				.. tostring(options.adjust_detail)
-				.. " effects="
-				.. tostring(options.adjust_effects)
-				.. " lens="
-				.. tostring(options.adjust_lens_corrections)
 				.. " crop="
 				.. tostring(options.allow_auto_crop)
 				.. " rotate="
 				.. tostring(options.allow_auto_rotate)
-				.. " composition="
-				.. tostring(options.composition_mode)
 		)
 
 		local photos = PhotoSelector.getPhotosInScope(options.scope, nil, nil, selectedPhotosSnapshot)
@@ -1137,9 +1102,9 @@ function AiEditAction.run(editMode)
 			if not res.continueProcessing then
 				if res.errorMsg then
 					table.insert(errorMessages, res.errorMsg)
-					table.insert(runLog, string.format("- %s: ❌ ERROR: %s", fileName, res.errorMsg))
+					table.insert(runLog, string.format("- %s: ERROR: %s", fileName, res.errorMsg))
 				else
-					table.insert(runLog, string.format("- %s: ❌ ERROR: Unknown error", fileName))
+					table.insert(runLog, string.format("- %s: ERROR: Unknown error", fileName))
 				end
 				errorCount = errorCount + 1
 				finishOperationItem(photoIdsByIndex[index], "failed", res.errorMsg or "Edit generation failed")

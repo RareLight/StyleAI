@@ -825,7 +825,7 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 				spacing = 4,
 				f:static_text({
 					title = LOC("$$$/StyleAI/MetadataManager/ColGenerated=Generated"),
-					width = 185,
+					width = 160,
 					font = "<system/bold>",
 					enabled = false,
 				}),
@@ -852,7 +852,7 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 					-- Left column: original name, dimmed when it was replaced
 					f:static_text({
 						title = origDisplay,
-						width = 185,
+						width = 160,
 						enabled = not changed,
 					}),
 					-- Arrow: visible only when the name changed
@@ -868,7 +868,7 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 					}),
 					f:edit_field({
 						value = bind("keywordsVal_" .. id),
-						width_in_chars = 26,
+						fill_horizontal = 1,
 						immediate = true,
 						enabled = bind("saveKeywords"),
 					}),
@@ -887,7 +887,7 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 					}),
 					f:edit_field({
 						value = bind("keywordsVal_" .. id),
-						width_in_chars = 45,
+						fill_horizontal = 1,
 						immediate = true,
 						enabled = bind("saveKeywords"),
 					}),
@@ -915,30 +915,34 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 	local dialogView = f:row({
 		bind_to_object = propertyTable,
 		spacing = 20,
+		fill_horizontal = 1,
+		fill_vertical = 1,
 
 		-- Left panel: photo thumbnail + skip checkbox
 		f:column({
-			width = 250,
+			width = 220,
 			f:static_text({
 				title = photo:getFormattedMetadata("fileName"),
 				font = "<system/bold>",
 				wrap = true,
-				width = 250,
+				width = 220,
 			}),
 			f:catalog_photo({
 				photo = photo,
-				width = 250,
-				height = 250,
+				width = 220,
+				height = 220,
 			}),
 			f:spacer({ height = 10 }),
 			f:checkbox({
 				value = bind("skipFromHere"),
-				title = LOC("$$$/StyleAI/MetadataManager/SkipRemaining=Save following without reviewing."),
+				title = LOC("$$$/StyleAI/MetadataManager/SkipRemaining=After saving this photo, save all remaining results without review."),
 			}),
 		}),
 
 		-- Right panel: keywords + metadata
 		f:column({
+			fill_horizontal = 1,
+			fill_vertical = 1,
 			f:group_box({
 				title = LOC("$$$/StyleAI/Keywords=Keywords"),
 				fill_horizontal = 1,
@@ -967,7 +971,10 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 				}),
 				f:scrolled_view({
 					height = 250,
-					width = hasDiff and 590 or 560,
+					fill_horizontal = 1,
+					fill_vertical = 1,
+					horizontal_scroller = false,
+					vertical_scroller = true,
 					f:column(keywordRows),
 				}),
 			}),
@@ -1018,8 +1025,9 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 	local result = LrDialogs.presentModalDialog({
 		title = LOC("$$$/StyleAI/AnalyzeImageTask/ReviewWindowTitle=Review results")
 			.. (photo and (": " .. photo:getFormattedMetadata("fileName")) or ""),
-		otherVerb = LOC("$$$/StyleAI/AnalyzeImageTask/discard=Discard"),
+		otherVerb = LOC("$$$/StyleAI/AnalyzeImageTask/discard=Discard This Result"),
 		contents = dialogView,
+		resizable = true,
 	})
 
 	-- ── Result extraction ─────────────────────────────────────────────────

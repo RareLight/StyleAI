@@ -254,8 +254,12 @@ def _extract_options(data) -> dict[str, Any]:
     options["compute_metadata"] = "metadata" in tasks
     options["compute_faces"] = "faces" in tasks
 
-    # Audit logging
-    options["audit_llm_inputs"] = _bool_from_data(data, "audit_llm_inputs", False)
+    # Diagnostic image capture is deliberately double-gated.  Legacy clients
+    # that send only audit_llm_inputs cannot turn capture back on.
+    options["diagnostic_mode"] = _bool_from_data(data, "diagnostic_mode", False)
+    options["audit_llm_inputs"] = options["diagnostic_mode"] and _bool_from_data(
+        data, "audit_llm_inputs", False
+    )
     options["audit_llm_inputs_path"] = data.get("audit_llm_inputs_path")
 
     return options

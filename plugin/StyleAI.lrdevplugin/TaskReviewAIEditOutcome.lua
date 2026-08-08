@@ -21,7 +21,7 @@ LrTasks.startAsyncTask(function()
 			local photos = catalog:getTargetPhotos()
 			if not photos or #photos == 0 then
 				LrDialogs.message(
-					LOC("$$$/StyleAI/EditOutcome/Title=Review AI Edit Outcome"),
+					LOC("$$$/StyleAI/EditOutcome/Title=Rate Selected AI Edits"),
 					LOC("$$$/StyleAI/EditOutcome/NoPhotos=Select at least one AI-edited photo first."),
 					"info"
 				)
@@ -38,7 +38,7 @@ LrTasks.startAsyncTask(function()
 			end
 			if #tracked == 0 then
 				LrDialogs.message(
-					LOC("$$$/StyleAI/EditOutcome/Title=Review AI Edit Outcome"),
+					LOC("$$$/StyleAI/EditOutcome/Title=Rate Selected AI Edits"),
 					LOC("$$$/StyleAI/EditOutcome/NoTracked=The selected photos do not have tracked AI edits."),
 					"info"
 				)
@@ -51,45 +51,42 @@ LrTasks.startAsyncTask(function()
 			local contents = f:column({
 				bind_to_object = props,
 				spacing = f:control_spacing(),
-				width = 600,
 				f:static_text({
 					title = LOC(
-						"$$$/StyleAI/EditOutcome/Prompt=Record one outcome for ^1 selected AI-edited photo(s). This records feedback only; it does not change or undo Develop settings.",
+						"$$$/StyleAI/EditOutcome/Prompt=Choose one outcome for ^1 tracked selected photo(s). The same outcome will be recorded for all of them. This records feedback only and never changes or undoes Develop settings.",
 						tostring(#tracked)
 					),
-					width = 600,
+					fill_horizontal = 1,
 					wrap = true,
 				}),
-				f:popup_menu({
+				f:radio_button({
 					value = LrView.bind("outcome"),
-					width = 600,
-					items = {
-						{
-							title = LOC("$$$/StyleAI/EditOutcome/Accepted=Keep AI Edit"),
-							value = "accepted",
-						},
-						{
-							title = LOC("$$$/StyleAI/EditOutcome/Modified=Modified and Kept"),
-							value = "modified_and_kept",
-						},
-						{
-							title = LOC("$$$/StyleAI/EditOutcome/Rejected=Reject AI Edit"),
-							value = "rejected",
-						},
-					},
+					checked_value = "accepted",
+					title = LOC("$$$/StyleAI/EditOutcome/Accepted=Keep AI Edit — I kept the modeled edit unchanged"),
+				}),
+				f:radio_button({
+					value = LrView.bind("outcome"),
+					checked_value = "modified_and_kept",
+					title = LOC("$$$/StyleAI/EditOutcome/Modified=Modified and Kept — I adjusted the edit and kept the result"),
+				}),
+				f:radio_button({
+					value = LrView.bind("outcome"),
+					checked_value = "rejected",
+					title = LOC("$$$/StyleAI/EditOutcome/Rejected=Not Useful — the result did not work for these photos"),
 				}),
 				f:static_text({
 					title = LOC(
-						"$$$/StyleAI/EditOutcome/Guidance=Choose Keep only when the modeled AI edit is unchanged. Choose Modified and Kept after adjusting it. Choose Reject when the AI result was not useful, whether or not you have already undone it."
+						"$$$/StyleAI/EditOutcome/Guidance=Not Useful is a feedback label. It does not undo an edit; use Lightroom Undo or History separately when needed."
 					),
-					width = 600,
+					fill_horizontal = 1,
 					wrap = true,
 				}),
 			})
 			local result = LrDialogs.presentModalDialog({
-				title = LOC("$$$/StyleAI/EditOutcome/Title=Review AI Edit Outcome"),
+				title = LOC("$$$/StyleAI/EditOutcome/Title=Rate Selected AI Edits"),
 				contents = contents,
 				actionVerb = LOC("$$$/StyleAI/EditOutcome/Save=Save Review"),
+				resizable = true,
 			})
 			if result ~= "ok" then
 				return
@@ -141,7 +138,7 @@ LrTasks.startAsyncTask(function()
 					.. "\n\n"
 					.. LOC("$$$/StyleAI/EditOutcome/Bounded=Only the first 100 selected photos were reviewed.")
 			end
-			LrDialogs.message(LOC("$$$/StyleAI/EditOutcome/Title=Review AI Edit Outcome"), summary, "info")
+			LrDialogs.message(LOC("$$$/StyleAI/EditOutcome/Title=Rate Selected AI Edits"), summary, "info")
 		end)
 
 		if not ok then

@@ -30,9 +30,9 @@ function TaskPruneDatabase.process()
         end
 
         local confirm = LrDialogs.confirm(
-            LOC "$$$/StyleAI/PruneDatabase/ConfirmTitle=⚠️ Clean Database?",
+			LOC "$$$/StyleAI/PruneDatabase/ConfirmTitle=Clean StyleAI Database?",
             LOC "$$$/StyleAI/PruneDatabase/ConfirmMessage=This will remove any AI metadata and embeddings from the backend for photos that are no longer in this Lightroom catalog. This cannot be undone.\n\n(A database backup will be automatically generated before pruning).",
-            LOC "$$$/StyleAI/common/Continue=⚠️ Continue",
+			LOC "$$$/StyleAI/common/Continue=Continue",
             LOC "$$$/StyleAI/common/Cancel=Cancel"
         )
         if confirm ~= "ok" then

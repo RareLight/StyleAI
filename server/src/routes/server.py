@@ -263,6 +263,26 @@ def health():
     return jsonify(health_data)
 
 
+@server_bp.route("/debug/captures", methods=["GET", "POST"])
+def diagnostic_captures():
+    """Inspect or clear local diagnostic image captures."""
+    from services import audit
+
+    data = request.get_json(silent=True) or {}
+    output_dir = data.get("path") or request.args.get("path")
+    try:
+        if request.method == "POST":
+            result = audit.clear_diagnostic_captures(output_dir)
+        else:
+            result = audit.get_capture_info(output_dir)
+        return jsonify({"results": result, "error": None, "warning": None})
+    except ValueError as exc:
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 400
+    except Exception as exc:
+        logger.error("Diagnostic capture maintenance failed", exc_info=True)
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 500
+
+
 @server_bp.route("/logs", methods=["GET"])
 def get_logs():
     """

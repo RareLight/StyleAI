@@ -2,6 +2,9 @@
 -- Browse and manage the AI-discovered style catalog.
 -- Allows viewing, deleting, and re-discovering styles.
 
+local StyleUI = require("StyleUI")
+local StyleDiscovery = require("StyleDiscovery")
+
 LrTasks.startAsyncTask(function()
 	LrFunctionContext.callWithContext("StyleCatalogTask", function(ctx)
 		LrDialogs.attachErrorDialogToFunctionContext(ctx)
@@ -23,35 +26,19 @@ LrTasks.startAsyncTask(function()
 		props.detailName = ""
 		props.detailGenre = ""
 		props.detailProfile = ""
+		props.detailPartition = ""
 		props.detailCount = ""
 		props.detailStrengthText = ""
-		props.detailStrengthColor = LrColor(0.7, 0.7, 0.7)
 		props.detailDesc = ""
 
 		local function updateDetailView()
-			local rawIdx = props.selectedStyleIndex
-			local idx = tonumber(rawIdx)
-			
-			if type(rawIdx) == "table" then
-				if rawIdx.value then
-					idx = tonumber(rawIdx.value)
-				elseif rawIdx[1] ~= nil then
-					-- Lightroom sometimes returns an array of the 'value' fields of selected items
-					idx = tonumber(rawIdx[1])
-				else
-					for _, item in ipairs(props.listItems or {}) do
-						if item == rawIdx or item.title == rawIdx.title then
-							idx = item.value
-							break
-						end
-					end
-				end
-			end
+			local idx = StyleUI.resolveSelectedIndex(props.selectedStyleIndex, props.listItems)
 			
 			if not idx or idx < 1 or not props.styles or idx > #props.styles then
-				props.detailName = "Select a style to view details."
+				props.detailName = LOC("$$$/StyleAI/StyleCatalog/SelectPrompt=Select a style to view details.")
 				props.detailGenre = ""
 				props.detailProfile = ""
+				props.detailPartition = ""
 				props.detailCount = ""
 				props.detailStrengthText = ""
 				props.detailDesc = ""
@@ -69,6 +56,7 @@ LrTasks.startAsyncTask(function()
 			props.detailGenre = #cueNames > 0 and table.concat(cueNames, ", ") or
 				LOC("$$$/StyleAI/StyleCatalog/NoCues=No explanatory cues yet")
 			props.detailProfile = s.camera_profile or ""
+			props.detailPartition = s.hard_partition_key or s.camera_profile or ""
 			
 			local count = tonumber(s.example_count) or 0
 			props.detailCount = tostring(count)
@@ -89,7 +77,7 @@ LrTasks.startAsyncTask(function()
 			for i, style in ipairs(props.styles or {}) do
 				local profile = style.camera_profile or "default"
 				if filter == "All Profiles" or profile == filter then
-					local name = style.style_name or style.style_id or "Unknown"
+					local name = style.style_name or style.style_id or LOC("$$$/StyleAI/common/Unknown=Unknown")
 					local count = style.example_count or 0
 					local cleanName = name
 					
@@ -99,12 +87,9 @@ LrTasks.startAsyncTask(function()
 					table.insert(items, { title = label, value = i })
 				end
 			end
+			local previousSelection = props.selectedStyleIndex
 			props.listItems = items
-			if #items > 0 then
-				props.selectedStyleIndex = items[1].value
-			else
-				props.selectedStyleIndex = 0
-			end
+			props.selectedStyleIndex = StyleUI.keepSelection(items, previousSelection)
 		end
 
 		props:addObserver("selectedProfileFilter", updateListItems)
@@ -186,7 +171,7 @@ LrTasks.startAsyncTask(function()
 
 		-- Rename the selected style
 		local function renameSelectedStyle()
-			local idx = props.selectedStyleIndex
+			local idx = StyleUI.resolveSelectedIndex(props.selectedStyleIndex, props.listItems)
 			if not idx or idx < 1 or idx > #props.styles then
 				return
 			end
@@ -223,32 +208,6 @@ LrTasks.startAsyncTask(function()
 		end
 
 		-- Reset and Discover styles
-		local function waitForDiscoveryCompletion()
-			-- The backend owns the expensive rebuild; polling keeps Lightroom's
-			-- network call short and lets this dialog remain responsive for large
-			-- training sets.
-			for _ = 1, 3600 do
-				local success, discovery = SearchIndexAPI.discoveryStatus()
-				if success then
-					if discovery.status == "succeeded" then
-						return true, discovery.generation or {}
-					end
-					if discovery.status == "failed" then
-						return false, discovery.error or "Unknown discovery error"
-					end
-					if discovery.phase == "fitting_partitions" then
-						props.statusMessage = LOC(
-							"$$$/StyleAI/StyleCatalog/DiscoveringProgress=Discovering policies: ^1 of ^2 compatible camera/profile partitions...",
-							tostring(discovery.completed_partitions or 0),
-							tostring(discovery.eligible_partitions or 0)
-						)
-					end
-				end
-				LrTasks.sleep(1)
-			end
-			return false, "Discovery status timed out"
-		end
-
 		local function resetAndDiscoverStyles()
 			local confirm = LrDialogs.confirm(
 				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverTitle=Rebuild Styles"),
@@ -267,7 +226,17 @@ LrTasks.startAsyncTask(function()
 			LrTasks.startAsyncTask(function()
 				local dSuccess, result = SearchIndexAPI.discoverStyles(nil)
 				if dSuccess then
-					local completed, discoveryResult = waitForDiscoveryCompletion()
+					local completed, discoveryResult = StyleDiscovery.waitForCompletion(function(discovery)
+						if discovery.phase == "fitting_partitions" then
+							props.statusMessage = LOC(
+								"$$$/StyleAI/StyleCatalog/DiscoveringProgress=Discovering policies: ^1 of ^2 compatible camera/profile partitions...",
+								tostring(discovery.completed_partitions or 0),
+								tostring(discovery.eligible_partitions or 0)
+							)
+						elseif discovery.phase == "activating" then
+							props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Activating=Validating and activating the replacement style generation...")
+						end
+					end)
 					if completed then
 						loadStyles()
 					else
@@ -289,12 +258,7 @@ LrTasks.startAsyncTask(function()
 
 		-- Show Photos for a specific style
 		local function showPhotos()
-			local rawIdx = props.selectedStyleIndex
-			local idx = tonumber(rawIdx)
-			if type(rawIdx) == "table" then
-				if rawIdx.value then idx = tonumber(rawIdx.value)
-				elseif rawIdx[1] ~= nil then idx = tonumber(rawIdx[1]) end
-			end
+			local idx = StyleUI.resolveSelectedIndex(props.selectedStyleIndex, props.listItems)
 			if not idx or idx < 1 or not props.styles or idx > #props.styles then return end
 			local s = props.styles[idx]
 
@@ -423,7 +387,7 @@ LrTasks.startAsyncTask(function()
 				-- Title
 				f:row({
 					f:static_text({
-						title = LOC("$$$/StyleAI/StyleCatalog/Title=Your Learned Styles"),
+						title = LOC("$$$/StyleAI/StyleCatalog/Title=Styles & Training"),
 						font = "bold",
 						size = "large",
 					}),
@@ -431,9 +395,11 @@ LrTasks.startAsyncTask(function()
 
 				-- Status bar
 				f:row({
+					fill_horizontal = 1,
 					f:static_text({
 						title = bind("statusMessage"),
-						width_in_chars = 80,
+						fill_horizontal = 1,
+						wrap = true,
 					}),
 				}),
 
@@ -466,58 +432,49 @@ LrTasks.startAsyncTask(function()
 							transform = function(v) return not v end,
 						}),
 					}),
-				}),
-
-				-- Style list
-				f:group_box({
-					title = LOC("$$$/StyleAI/StyleCatalog/StyleList=Learned Styles"),
-					fill_horizontal = 1,
-					fill_vertical = 1,
-					f:column({
-						spacing = f:control_spacing(),
-						fill_horizontal = 1,
-						fill_vertical = 1,
-						f:row({
-							f:spacer({ fill_horizontal = 1 }),
-							f:column({
-								spacing = f:control_spacing(),
-								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/FilterByProfile=Filter by Profile:") }),
-								f:popup_menu({
-									items = bind("profileFilters"),
-									value = bind("selectedProfileFilter"),
-									width = 600,
-								}),
-								f:simple_list({
-									items = bind("listItems"),
-									value = bind("selectedStyleIndex"),
-									allows_multiple_selection = false,
-									height_in_lines = 12,
-									width = 600,
-								}),
-							}),
-							f:spacer({ fill_horizontal = 1 }),
+					f:push_button({
+						title = LOC("$$$/StyleAI/Menu/FindExamples=Find More Training Examples..."),
+						action = function()
+							LrDialogs.stopModalWithResult(ctx, "other")
+						end,
+						enabled = bind({
+							key = "isLoading",
+							transform = function(v) return not v end,
 						}),
 					}),
+				}),
+
+				StyleUI.filteredListGroup(f, {
+					title = LOC("$$$/StyleAI/StyleCatalog/StyleList=Learned Styles"),
+					filterLabel = LOC("$$$/StyleAI/StyleCatalog/FilterByProfile=Filter by Profile:"),
+					filterItems = bind("profileFilters"),
+					filterValue = bind("selectedProfileFilter"),
+					listItems = bind("listItems"),
+					selectedValue = bind("selectedStyleIndex"),
 				}),
 
 				-- Style detail panel
 				f:group_box({
 					title = LOC("$$$/StyleAI/StyleCatalog/StyleDetails=Style Details"),
 					fill_horizontal = 1,
-					f:row({
-						f:column({
+					f:column({
+						fill_horizontal = 1,
 							f:row({
 								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailName=Name:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailName"), width = 250 }),
+								f:static_text({ title = bind("detailName"), fill_horizontal = 1, wrap = true }),
 							}),
 							f:row({
 									f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailGenre=Evidence cues:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailGenre"), width = 250 }),
+								f:static_text({ title = bind("detailGenre"), fill_horizontal = 1, wrap = true }),
 							}),
 
 							f:row({
 								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailProfile=Profile:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailProfile"), width = 250 }),
+								f:static_text({ title = bind("detailProfile"), fill_horizontal = 1, wrap = true }),
+							}),
+							f:row({
+								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailPartition=Rendering partition:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
+								f:static_text({ title = bind("detailPartition"), fill_horizontal = 1, wrap = true }),
 							}),
 							f:row({
 								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailExamples=Examples:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
@@ -525,11 +482,10 @@ LrTasks.startAsyncTask(function()
 								f:spacer({ width = 10 }),
 								f:static_text({ title = bind("detailStrengthText"), font = "<system/bold>" }),
 							}),
-						}),
-						f:column({
-							f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailDescription=Description:"), font = "<system/bold>" }),
-							f:static_text({ title = bind("detailDesc"), width_in_chars = 40, height_in_lines = 6, wrap = true }),
-						}),
+							f:row({
+								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailDescription=Description:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
+								f:static_text({ title = bind("detailDesc"), fill_horizontal = 1, wrap = true }),
+							}),
 					}),
 				}),
 
@@ -537,9 +493,10 @@ LrTasks.startAsyncTask(function()
 					title = LOC("$$$/StyleAI/StyleCatalog/Maintenance=Style Maintenance"),
 					fill_horizontal = 1,
 					f:row({
+						fill_horizontal = 1,
 						f:static_text({
 							title = LOC("$$$/StyleAI/StyleCatalog/RebuildHelp=Rebuild learned styles from your saved training examples after changing or refreshing training data."),
-							width_in_chars = 55,
+							fill_horizontal = 1,
 							wrap = true,
 						}),
 						f:push_button({
@@ -559,11 +516,15 @@ LrTasks.startAsyncTask(function()
 		loadStyles()
 
 		-- Show the dialog
-		LrDialogs.presentModalDialog({
-			title = LOC("$$$/StyleAI/StyleCatalog/DialogTitle=Your Learned Styles"),
+		local result = LrDialogs.presentModalDialog({
+			title = LOC("$$$/StyleAI/StyleCatalog/DialogTitle=Styles & Training"),
 			contents = buildDialog(),
 			actionVerb = LOC("$$$/StyleAI/common/Close=Close"),
+			resizable = true,
 		})
+		if result == "other" then
+			dofile(_PLUGIN.path .. "/TaskDiscoverUpgradeCandidates.lua")
+		end
 
 		log:info("Style Catalog task finished")
 	end)
