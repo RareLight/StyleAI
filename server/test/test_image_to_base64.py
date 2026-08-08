@@ -37,11 +37,13 @@ class ImageToBase64Tests(unittest.TestCase):
     def setUp(self):
         self.provider = _StubProvider({})
 
-    def test_jpeg_input_skips_re_encode(self):
+    def test_jpeg_input_is_validated_and_reencoded(self):
         jpeg_bytes = _make_jpeg_bytes()
         result = self.provider._image_to_base64(jpeg_bytes)
-        # Fast path: returned base64 must decode back to the exact original bytes
-        self.assertEqual(base64.b64decode(result), jpeg_bytes)
+        decoded = base64.b64decode(result)
+        self.assertTrue(decoded.startswith(b"\xff\xd8\xff"))
+        with Image.open(io.BytesIO(decoded)) as image:
+            self.assertEqual(image.size, (8, 8))
 
     def test_jpeg_magic_number_detected(self):
         jpeg_bytes = _make_jpeg_bytes()
@@ -71,12 +73,19 @@ class ImageToBase64Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.provider._image_to_base64(b"")
 
-    def test_jpeg_fast_path_trusts_magic_header(self):
-        # Pin current behavior: the fast path doesn't validate the JPEG body.
-        # A header followed by garbage is still encoded without error.
+    def test_invalid_jpeg_magic_header_is_not_trusted(self):
         bogus = b"\xff\xd8\xff" + b"garbage payload"
-        result = self.provider._image_to_base64(bogus)
-        self.assertEqual(base64.b64decode(result), bogus)
+        with self.assertRaises(ValueError):
+            self.provider._image_to_base64(bogus)
+
+    def test_large_jpeg_is_bounded_before_base64_encoding(self):
+        buffer = io.BytesIO()
+        with Image.new("RGB", (4096, 3072), (10, 20, 30)) as image:
+            image.save(buffer, format="JPEG")
+
+        decoded = base64.b64decode(self.provider._image_to_base64(buffer.getvalue()))
+        with Image.open(io.BytesIO(decoded)) as image:
+            self.assertLessEqual(max(image.size), 2048)
 
 
 if __name__ == "__main__":

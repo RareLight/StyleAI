@@ -2,6 +2,8 @@
 
 import json
 import pytest
+from core.migrations import run_migrations
+from services import operations
 from styleai_server import app
 
 
@@ -10,6 +12,14 @@ def client():
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c
+
+
+@pytest.fixture
+def training_operation_db(tmp_path, mocker):
+    db_path = str(tmp_path / "styleai.db")
+    run_migrations(db_path)
+    mocker.patch("routes.training.config.DB_PATH", db_path)
+    return db_path
 
 
 def test_add_training_example_missing_photo_id_returns_400(client):
@@ -88,7 +98,7 @@ def test_batch_can_defer_policy_rebuild_until_all_chunks_are_saved(client, mocke
     mocker.patch("routes.training.training_service.add_training_example")
     mocker.patch("routes.training.training_service.get_training_count", return_value=1)
     rebuild = mocker.patch(
-        "services.policy_runtime.rebuild_active_generation",
+        "services.policy_runtime.request_rebuild",
         return_value={"generation_id": "unused"},
     )
 
@@ -110,7 +120,7 @@ def test_batch_surfaces_policy_rebuild_failure(client, mocker):
     mocker.patch("routes.training.training_service.add_training_example")
     mocker.patch("routes.training.training_service.get_training_count", return_value=1)
     mocker.patch(
-        "services.policy_runtime.rebuild_active_generation",
+        "services.policy_runtime.request_rebuild",
         side_effect=ValueError("at least 12 examples are required"),
     )
 
@@ -123,3 +133,118 @@ def test_batch_surfaces_policy_rebuild_failure(client, mocker):
     payload = response.get_json()["results"]
     assert payload["policy_generation"] is None
     assert payload["policy_warning"] == "at least 12 examples are required"
+
+
+def test_batch_updates_predeclared_training_job_item(
+    client, mocker, training_operation_db
+):
+    mocker.patch("routes.training.training_service.add_training_example")
+    mocker.patch("routes.training.training_service.get_training_count", return_value=1)
+    job, _ = operations.create_job(
+        training_operation_db, kind="training", item_ids=["p1"]
+    )
+
+    response = client.post(
+        "/training/add-batch",
+        json={
+            "job_id": job["job_id"],
+            "examples": [{"photo_id": "p1", "develop_settings": {}}],
+            "rebuild_policies": False,
+        },
+    )
+
+    assert response.status_code == 200
+    stored = operations.get_job(training_operation_db, job["job_id"])
+    assert stored["state"] == "running"
+    assert stored["items"][0]["state"] == "succeeded"
+    completed = operations.complete_submission(training_operation_db, job["job_id"])
+    assert completed["state"] == "succeeded"
+
+
+def test_batch_rejects_photo_not_predeclared_by_training_job(
+    client, mocker, training_operation_db
+):
+    add_example = mocker.patch("routes.training.training_service.add_training_example")
+    job, _ = operations.create_job(
+        training_operation_db, kind="training", item_ids=["p1"]
+    )
+
+    response = client.post(
+        "/training/add-batch",
+        json={
+            "job_id": job["job_id"],
+            "examples": [{"photo_id": "p2", "develop_settings": {}}],
+            "rebuild_policies": False,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "not admitted" in response.get_json()["error"]
+    add_example.assert_not_called()
+
+
+def test_batch_honors_training_job_cancel_before_work(
+    client, mocker, training_operation_db
+):
+    add_example = mocker.patch("routes.training.training_service.add_training_example")
+    job, _ = operations.create_job(
+        training_operation_db, kind="training", item_ids=["p1"]
+    )
+    operations.request_cancel(training_operation_db, job["job_id"])
+
+    response = client.post(
+        "/training/add-batch",
+        json={
+            "job_id": job["job_id"],
+            "examples": [{"photo_id": "p1", "develop_settings": {}}],
+            "rebuild_policies": False,
+        },
+    )
+
+    assert response.status_code == 409
+    add_example.assert_not_called()
+
+
+def test_retried_training_chunk_skips_already_succeeded_item(
+    client, mocker, training_operation_db
+):
+    add_example = mocker.patch("routes.training.training_service.add_training_example")
+    mocker.patch("routes.training.training_service.get_training_count", return_value=1)
+    job, _ = operations.create_job(
+        training_operation_db, kind="training", item_ids=["p1", "p2"]
+    )
+    operations.set_item_state(training_operation_db, job["job_id"], "p1", "succeeded")
+
+    response = client.post(
+        "/training/add-batch",
+        json={
+            "job_id": job["job_id"],
+            "examples": [
+                {"photo_id": "p1", "develop_settings": {}},
+                {"photo_id": "p2", "develop_settings": {}},
+            ],
+            "rebuild_policies": False,
+        },
+    )
+
+    assert response.status_code == 200
+    results = response.get_json()["results"]["results"]
+    assert results[0]["warning"] == "Already completed in this operation"
+    assert add_example.call_count == 1
+    assert add_example.call_args.kwargs["photo_id"] == "p2"
+
+
+def test_delete_training_clears_examples_and_derived_policies(client, mocker):
+    reset = mocker.patch("services.policy_runtime.reset_policy_state", return_value=3)
+    clear = mocker.patch(
+        "routes.training.training_service.clear_all_training_examples", return_value=7
+    )
+
+    response = client.delete("/training")
+
+    assert response.status_code == 200
+    payload = response.get_json()["results"]
+    assert payload["removed"] == 7
+    assert payload["styles_removed"] == 3
+    reset.assert_called_once_with()
+    clear.assert_called_once_with()

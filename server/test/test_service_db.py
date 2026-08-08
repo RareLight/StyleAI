@@ -6,6 +6,7 @@ so chroma calls are mocked.
 import os
 import time
 
+import pytest
 
 from services import db as service_db
 
@@ -36,6 +37,40 @@ class TestGetDatabaseStats:
         stats = service_db.get_database_stats()
         assert stats["photos"]["total"] == 7
         assert stats["photos"]["with_embedding"] == 6
+
+
+class TestBackupSafety:
+    def test_required_persistent_copy_failure_aborts_backup(
+        self, monkeypatch, mocker, tmp_path
+    ):
+        monkeypatch.setattr("config.DB_PATH", str(tmp_path))
+        (tmp_path / "chroma.sqlite3").write_bytes(b"database")
+        mocker.patch.object(
+            service_db.shutil,
+            "copy2",
+            side_effect=OSError("disk full"),
+        )
+
+        with pytest.raises(RuntimeError, match="persistent backup"):
+            service_db.build_backup_zip(require_persistent=True)
+
+    def test_prune_removes_temporary_backup_after_persistent_copy(
+        self, mocker, tmp_path
+    ):
+        temporary_backup = tmp_path / "temporary.zip"
+        temporary_backup.write_bytes(b"zip")
+        build = mocker.patch.object(
+            service_db,
+            "build_backup_zip",
+            return_value=(str(temporary_backup), "persistent.zip"),
+        )
+        mocker.patch.object(
+            service_db.chroma_service, "get_all_image_ids", return_value=[]
+        )
+
+        assert service_db.prune_database(["valid-photo"])["deleted"] == 0
+        build.assert_called_once_with(require_persistent=True)
+        assert temporary_backup.exists() is False
 
 
 class TestPruneOldBackups:

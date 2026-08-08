@@ -15,7 +15,7 @@ import os
 import shutil
 import tempfile
 import zipfile
-from datetime import datetime
+from datetime import UTC, datetime
 
 
 # Ordner für serverseitig aufgehobene Backups: Docker /data/db/backups, Standalone <db-path>/backups
@@ -39,7 +39,7 @@ def get_database_stats() -> dict:
     }
 
 
-def build_backup_zip() -> tuple[str, str]:
+def build_backup_zip(*, require_persistent: bool = False) -> tuple[str, str]:
     """Create a temporary ZIP containing all persistent DB files."""
     db_path = config.DB_PATH
     if not db_path or not os.path.isdir(db_path):
@@ -48,7 +48,7 @@ def build_backup_zip() -> tuple[str, str]:
         )
 
     backup_name = (
-        f"styleai-backend-backup-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.zip"
+        f"styleai-backend-backup-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.zip"
     )
     fd, zip_path = tempfile.mkstemp(prefix="styleai-backup-", suffix=".zip")
     os.close(fd)
@@ -89,6 +89,20 @@ def build_backup_zip() -> tuple[str, str]:
             logger.info("DB backup saved server-side to %s", persistent_path)
         except Exception as e:
             logger.warning("Could not save backup to %s: %s", backups_dir, e)
+            if require_persistent:
+                try:
+                    os.remove(zip_path)
+                except OSError:
+                    pass
+                raise RuntimeError(
+                    f"Could not save persistent backup to {backups_dir}: {e}"
+                ) from e
+    elif require_persistent:
+        try:
+            os.remove(zip_path)
+        except OSError:
+            pass
+        raise RuntimeError("Persistent backup directory is unavailable")
 
     return zip_path, backup_name
 
@@ -156,11 +170,17 @@ def prune_database(valid_photo_ids: list) -> dict:
         )
 
     try:
-        backup_path, _ = build_backup_zip()
+        backup_path, _ = build_backup_zip(require_persistent=True)
         logger.info(f"Created automatic pre-prune backup at {backup_path}")
     except Exception as e:
         logger.error(f"Failed to create pre-prune backup: {e}")
         raise RuntimeError("Database backup failed. Aborting prune operation.")
+    finally:
+        if "backup_path" in locals():
+            try:
+                os.remove(backup_path)
+            except OSError:
+                pass
 
     valid_set = set(valid_photo_ids)
     all_ids = chroma_service.get_all_image_ids()

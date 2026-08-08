@@ -2,6 +2,7 @@
 -- Provides functions to interact with the Python-based search index server.
 
 SearchIndexAPI = {}
+local WorkCoordinator = require("WorkCoordinator")
 
 local function getBaseUrl()
     -- StyleAI is a catalog-local service.  Do not permit a remote backend:
@@ -35,6 +36,7 @@ local ENDPOINTS = {
     CANCEL_ALL_TASKS = "/cancel_all_tasks",
     CLEAR_CANCEL_TASKS = "/clear_cancel_tasks",
     INDEX_QUEUE_STATUS = "/index_queue/status",
+    OPERATIONS = "/operations",
     CHECK_UNPROCESSED = "/index/check-unprocessed",
     DB_BACKUP = "/db/backup",
     DB_PRUNE = "/db/prune",
@@ -45,8 +47,8 @@ local ENDPOINTS = {
     TRAINING_COUNT = "/training/count",
     BACKUP = "/backup",
     TRAINING_DELETE = "/training", -- DELETE /training/<photo_id>
-    TRAINING_CLEAR = "/training",  -- DELETE /training (all)
-    TRAINING_CLEAR_ALL = "/training/all",  -- DELETE /training/all (all data)
+    TRAINING_CLEAR = "/training",  -- DELETE /training (examples and derived policies)
+    TRAINING_CLEAR_ALL = "/training/all",  -- Backward-compatible clear-all alias
     TRAINING_STATS = "/training/stats",
     STYLE_EDIT = "/style_edit",
     STYLE_EDIT_APPLICATION_EVENTS = "/style_edit/events/application",
@@ -84,6 +86,25 @@ local EXPORT_SETTINGS = {
     LR_collisionHandling = 'rename',
     LR_includeVideoFiles = false,
 }
+
+local _exportSequence = 0
+
+local function makeOwnedExportDirectory()
+    _exportSequence = _exportSequence + 1
+    local tempRoot = LrPathUtils.getStandardFilePath('temp')
+    local token = string.format(
+        "styleai-export-%d-%d",
+        math.floor(LrDate.currentTime() * 1000),
+        _exportSequence
+    )
+    local directory = LrPathUtils.child(tempRoot, token)
+    local created = LrFileUtils.createAllDirectories(directory)
+    if created == false then
+        log:error("Could not create owned export directory: " .. tostring(directory))
+        return nil
+    end
+    return directory
+end
 
 
 -- Forward declarations for private helper functions
@@ -687,7 +708,17 @@ function SearchIndexAPI.exportPhotoForIndexing(photo, overrideSettings)
         return nil
     end
 
-    local tempDir = LrPathUtils.getStandardFilePath('temp')
+    local renderLease, leaseError = WorkCoordinator.acquire("render")
+    if not renderLease then
+        log:error("Could not acquire Lightroom render lane: " .. tostring(leaseError))
+        return nil
+    end
+
+    local tempDir = makeOwnedExportDirectory()
+    if not tempDir then
+        WorkCoordinator.release(renderLease)
+        return nil
+    end
     local photoName = LrPathUtils.leafName(photo:getFormattedMetadata('fileName'))
     
     local settings = {}
@@ -714,12 +745,36 @@ function SearchIndexAPI.exportPhotoForIndexing(photo, overrideSettings)
         log:trace("Export completed for photo: " ..
             photoName .. " Success: " .. tostring(success) .. " Path: " .. tostring(path))
         if success then -- Export successful
+            WorkCoordinator.release(renderLease)
             return path
         else
             -- Error during export
             log:error("Failed to export photo for indexing. " .. (path or 'unknown error'))
+            LrTasks.pcall(function() LrFileUtils.delete(tempDir) end)
+            WorkCoordinator.release(renderLease)
             return nil
         end
+    end
+
+    LrTasks.pcall(function() LrFileUtils.delete(tempDir) end)
+    WorkCoordinator.release(renderLease)
+    return nil
+end
+
+function SearchIndexAPI.cleanupExportedPhoto(path)
+    if not path or path == "" then return end
+    local parent = LrPathUtils.parent(path)
+    LrTasks.pcall(function()
+        if LrFileUtils.exists(path) then
+            LrFileUtils.delete(path)
+        end
+    end)
+    if parent and string.match(LrPathUtils.leafName(parent) or "", "^styleai%-export%-%d+%-%d+$") then
+        LrTasks.pcall(function()
+            if LrFileUtils.exists(parent) then
+                LrFileUtils.delete(parent)
+            end
+        end)
     end
 end
 
@@ -957,7 +1012,8 @@ function SearchIndexAPI.enqueuePhotosBase64Batch(batch, globalOptions)
 
     local body = {
         images = bodyImages,
-        options = bodyOptions
+        options = bodyOptions,
+        job_id = globalOptions.operation_id,
     }
 
     local response, err = _request('POST', url, body, 15) -- Short timeout, just enqueueing
@@ -977,6 +1033,59 @@ end
 
 function SearchIndexAPI.getIndexQueueStatus()
     return _request('GET', getBaseUrl() .. ENDPOINTS.INDEX_QUEUE_STATUS, nil, 3)
+end
+
+function SearchIndexAPI.startOperation(kind, itemIds, details, requestFingerprint, priority, coalesce)
+    local response, err = _request('POST', getBaseUrl() .. ENDPOINTS.OPERATIONS, {
+        kind = kind,
+        item_ids = itemIds or {},
+        details = details or {},
+        request_fingerprint = requestFingerprint,
+        priority = priority or 0,
+        coalesce = coalesce == true,
+    }, 30)
+    if not response or not response.job or not response.job.job_id then
+        return false, err or "Backend did not create an operation job"
+    end
+    return true, response.job
+end
+
+function SearchIndexAPI.getOperation(jobId, includeItems)
+    if not jobId or jobId == "" then return false, "Missing operation job ID" end
+    local suffix = includeItems == false and "?include_items=false" or ""
+    local response, err = _request('GET', getBaseUrl() .. ENDPOINTS.OPERATIONS .. "/" .. tostring(jobId) .. suffix, nil, 15)
+    if not response or not response.job then
+        return false, err or "Operation status unavailable"
+    end
+    return true, response.job
+end
+
+function SearchIndexAPI.cancelOperation(jobId)
+    if not jobId or jobId == "" then return false, "Missing operation job ID" end
+    local response, err = _request('POST', getBaseUrl() .. ENDPOINTS.OPERATIONS .. "/" .. tostring(jobId) .. "/cancel", {}, 15)
+    if not response or not response.job then
+        return false, err or "Operation cancellation failed"
+    end
+    return true, response.job
+end
+
+function SearchIndexAPI.updateOperationItems(jobId, items)
+    if not jobId or jobId == "" then return false, "Missing operation job ID" end
+    if not items or #items == 0 then return true, nil end
+    local response, err = _request('POST', getBaseUrl() .. ENDPOINTS.OPERATIONS .. "/" .. tostring(jobId) .. "/items", {
+        items = items,
+    }, 30)
+    if not response then return false, err or "Operation item update failed" end
+    return true, response.job
+end
+
+function SearchIndexAPI.completeOperation(jobId)
+    if not jobId or jobId == "" then return false, "Missing operation job ID" end
+    local response, err = _request('POST', getBaseUrl() .. ENDPOINTS.OPERATIONS .. "/" .. tostring(jobId) .. "/complete", {}, 30)
+    if not response or not response.job then
+        return false, err or "Operation completion failed"
+    end
+    return true, response.job
 end
 
 
@@ -1082,7 +1191,8 @@ function SearchIndexAPI.generateMetadataBatch(items, options)
 
     local body = {
         options = bodyOptions,
-        tasks = {}
+        tasks = {},
+        job_id = options.operation_id,
     }
 
     for _, item in ipairs(items) do
@@ -1598,7 +1708,6 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     if not SearchIndexAPI.pingServer() then
         return "allfailed", numPhotos, numPhotos, {}
     end
-    SearchIndexAPI.clearBackendCancelTasks()
 
     options = options or {}
     local shouldCloseScope = (closeProgressScope ~= false)
@@ -1665,6 +1774,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local stats = { processed = 0, success = 0, failed = 0 }
 
     local photoToProcessStack = {}
+    local photoIdByPhoto = {}
     
     local isServerEmpty = SearchIndexAPI.isServerEmpty()
 
@@ -1682,6 +1792,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
             if photoId then
                 table.insert(allPhotoIds, photoId)
                 photoIdToPhotoMap[photoId] = photo
+                photoIdByPhoto[photo] = photoId
             end
             if i % updateInterval == 0 then
                 progressScope:setPortionComplete(i, totalSelected)
@@ -1721,6 +1832,52 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         end
     end
 
+    local operationItemIds = {}
+    local operationPhotoById = {}
+	for _, photo in ipairs(photoToProcessStack) do
+        local photoId = photoIdByPhoto[photo]
+        if not photoId then
+            photoId = getPhotoIdForPhoto(photo, options)
+            if photoId then photoIdByPhoto[photo] = photoId end
+        end
+        if photoId then
+            table.insert(operationItemIds, photoId)
+            operationPhotoById[photoId] = photo
+		end
+	end
+	if #operationItemIds == 0 then
+		return "allfailed", #photoToProcessStack, #photoToProcessStack, {},
+			"No stable Lightroom photo IDs could be resolved."
+	end
+	local fingerprintIds = {}
+    for _, photoId in ipairs(operationItemIds) do table.insert(fingerprintIds, photoId) end
+    table.sort(fingerprintIds)
+    local requestFingerprint = LrMD5.digest(JSON:encode({
+        kind = "index",
+        photo_ids = fingerprintIds,
+        tasks = options.tasks or {},
+        regenerate_metadata = options.regenerate_metadata == true,
+        provider = options.provider,
+        model = options.model,
+    }))
+    local operationOk, operation = SearchIndexAPI.startOperation(
+        "index",
+        operationItemIds,
+        { tasks = options.tasks or {}, photo_count = #operationItemIds },
+        requestFingerprint,
+        enableMetadata and 5 or 0,
+        false
+    )
+    if not operationOk then
+        log:error("Could not create indexing operation: " .. tostring(operation))
+        return "allfailed", 0, numPhotos, {}, tostring(operation)
+    end
+    local operationId = operation.job_id
+    options.operation_id = operationId
+    local preOperationProcessed = stats.processed
+    local preOperationSuccess = stats.success
+    local untrackedOperationItems = #photoToProcessStack - #operationItemIds
+
 
 
     local modelDisplay = ""
@@ -1739,12 +1896,12 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local activeWorkers = 0
     local keepRunning = true
 
-    -- Watchdog worker: immediately sends a cancellation signal to the backend if the user clicks the "X" in LrC UI.
-    -- This unblocks sender workers that are hung waiting for a long-running batch response.
+    -- Cancellation is scoped to this operation. Other Lightroom windows and
+    -- their cached image payloads must continue independently.
     LrTasks.startAsyncTask(function()
         while keepRunning do
             if progressScope and progressScope:isCanceled() then
-                SearchIndexAPI.cancelBackendTasks()
+                SearchIndexAPI.cancelOperation(operationId)
                 break
             end
             LrTasks.yield()
@@ -1779,12 +1936,12 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         return data
     end
 
-        local preparationDone = false
-    
+    local preparationDone = false
+    local catalog = LrApplication.activeCatalog()
     local batchRawMetaMap = {}
     if catalog and catalog.batchGetRawMetadata then
         LrTasks.pcall(function()
-            batchRawMetaMap = catalog:batchGetRawMetadata(photosToProcess, { "path", "dateTime", "rating", "pickStatus", "gps" }) or {}
+            batchRawMetaMap = catalog:batchGetRawMetadata(selectedPhotos, { "path", "dateTime", "rating", "pickStatus", "gps" }) or {}
         end)
     end
     local function getPhotoRawMeta(photo, key)
@@ -1812,7 +1969,12 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 if photo then
                     local filename = photo:getFormattedMetadata("fileName")
                 local hashStart = LrDate.currentTime()
-                local photoId, photoIdErr = getPhotoIdForPhoto(photo, options)
+                local photoId = photoIdByPhoto[photo]
+                local photoIdErr
+                if not photoId then
+                    photoId, photoIdErr = getPhotoIdForPhoto(photo, options)
+                    if photoId then photoIdByPhoto[photo] = photoId end
+                end
                 if photoId then
                     log:trace("Using photo_id for " ..
                         filename ..
@@ -1929,7 +2091,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                             else
                                 log:error("Failed to read exported JPEG file: " .. tostring(readErr))
                             end
-                            LrFileUtils.delete(exportedPhotoPath)
+                            SearchIndexAPI.cleanupExportedPhoto(exportedPhotoPath)
                         end
                     end
 
@@ -1951,6 +2113,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                         local item = {
                             type = "error",
                             photo = photo,
+                            photo_id = photoId,
                             filename = filename,
                             errorMsg = "Could not obtain image data (preview or export failed)"
                         }
@@ -1971,16 +2134,10 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
             end
         end
         
-        activeWorkers = activeWorkers - 1
-        log:trace("Analyze worker thread finished. activeWorkers=" .. tostring(activeWorkers))
-        if activeWorkers == 0 then
-            preparationDone = true
-        end
-    end
+	end
 
-    local senderWorker = function()
-        activeSenderWorkers = activeSenderWorkers + 1
-        local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
+	local senderWorker = function()
+		local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
         
         while keepRunning and not progressScope:isCanceled() do
             if enableMetadata and #llmQueue >= maxLlmQueueCapacity then
@@ -2019,11 +2176,22 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 end
 
                 if #localFailures > 0 then
+                    local operationFailures = {}
                     for _, failItem in ipairs(localFailures) do
                         stats.failed = stats.failed + 1
                         stats.processed = stats.processed + 1
                         table.insert(errorMessages, failItem.errorMsg)
                         log:error("Failed to prepare photo: " .. failItem.filename .. " Error: " .. failItem.errorMsg)
+                        if failItem.photo_id then
+                            table.insert(operationFailures, {
+                                item_id = failItem.photo_id,
+                                state = "failed",
+                                error = failItem.errorMsg,
+                            })
+                        end
+                    end
+                    if #operationFailures > 0 then
+                        SearchIndexAPI.updateOperationItems(operationId, operationFailures)
                     end
                 end
 
@@ -2048,16 +2216,9 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                                     batchItem.image = nil
                                     table.insert(llmQueue, batchItem)
                                 else
-                                    stats.processed = stats.processed + 1
-                                    stats.success = stats.success + 1
-                                    table.insert(processedPhotos, batchItem.photo)
-                                    if options.onPhotoAnalyzed then
-                                        LrTasks.yield()
-                                        LrTasks.sleep(0.01)
-                                        LrTasks.pcall(function()
-                                            options.onPhotoAnalyzed(batchItem.photo, batchItem.photo_id, progressScope)
-                                        end)
-                                    end
+                                    -- Queue admission is not completion. The operation
+                                    -- item becomes successful only after GPU inference
+                                    -- and the Chroma commit both finish.
                                 end
                             end
                             if acceptedCount < #batchItemsToSend then
@@ -2075,11 +2236,20 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                                 )
                             end
                         else
+                            local operationFailures = {}
                             for _, failItem in ipairs(batchItemsToSend) do
                                 stats.failed = stats.failed + 1
                                 stats.processed = stats.processed + 1
                                 table.insert(errorMessages, failItem.filename .. ": " .. tostring(enqueueResponse))
                                 log:error("Failed to enqueue photo: " .. failItem.filename .. " Error: " .. tostring(enqueueResponse))
+                                table.insert(operationFailures, {
+                                    item_id = failItem.photo_id,
+                                    state = "failed",
+                                    error = tostring(enqueueResponse),
+                                })
+                            end
+                            if #operationFailures > 0 then
+                                SearchIndexAPI.updateOperationItems(operationId, operationFailures)
                             end
                         end
                     else
@@ -2090,15 +2260,12 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 end
             end
         end
-        activeSenderWorkers = activeSenderWorkers - 1
-        log:trace("Sender worker thread finished. activeSenderWorkers=" .. tostring(activeSenderWorkers))
-    end
+	end
 
     
 
-    local llmWorker = function()
-        activeLlmWorkers = activeLlmWorkers + 1
-        while keepRunning and not progressScope:isCanceled() do
+	local llmWorker = function()
+		while keepRunning and not progressScope:isCanceled() do
             if #llmQueue == 0 then
                 if preparationDone and activeSenderWorkers == 0 then
                     break
@@ -2124,40 +2291,92 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 
                 if #batch > 0 then
                     local success, llmResponse = SearchIndexAPI.generateMetadataBatch(batch, options)
-                    
-                    if success and options.onBatchAnalyzed then
+                    local itemStatuses = {}
+                    local successfulBatch = {}
+                    if success and type(llmResponse) == "table" and type(llmResponse.items) == "table" then
+                        for _, result in ipairs(llmResponse.items) do
+                            if result.photo_id then
+                                itemStatuses[result.photo_id] = result
+                            end
+                        end
+                        for _, item in ipairs(batch) do
+                            local result = itemStatuses[item.photo_id]
+                            if result and result.status == "succeeded" then
+                                table.insert(successfulBatch, item)
+                            end
+                        end
+                    elseif success then
+                        -- Compatibility with an older backend during a rolling redeploy.
+                        successfulBatch = batch
+                    end
+
+                    if #successfulBatch > 0 and options.onBatchAnalyzed then
                         LrTasks.yield()
                         LrTasks.sleep(0.01)
                         local okCb, cbErr = LrTasks.pcall(function()
-                            options.onBatchAnalyzed(batch, progressScope)
+                            options.onBatchAnalyzed(successfulBatch, progressScope)
                         end)
                         if not okCb then
                             log:error("onBatchAnalyzed callback failed: " .. tostring(cbErr))
-                            success = false
-                            llmResponse = { error = "Batch metadata callback failed: " .. tostring(cbErr) }
+                            for _, item in ipairs(successfulBatch) do
+                                itemStatuses[item.photo_id] = {
+                                    photo_id = item.photo_id,
+                                    status = "failed",
+                                    error = "Batch metadata callback failed: " .. tostring(cbErr),
+                                }
+                            end
+                            successfulBatch = {}
                         end
                     end
 
-                    for _, item in ipairs(batch) do
-                        stats.processed = stats.processed + 1
-                        table.insert(processedPhotos, item.photo)
-                        
-                        if success then
+					for _, item in ipairs(batch) do
+						stats.processed = stats.processed + 1
+						local result = itemStatuses[item.photo_id]
+                        local itemSucceeded = success and (
+                            result == nil or result.status == "succeeded"
+                        )
+
+                        if itemSucceeded then
                             stats.success = stats.success + 1
+                            table.insert(processedPhotos, item.photo)
                         else
                             stats.failed = stats.failed + 1
                             local errText = "Metadata generation failed for batch"
-                            if type(llmResponse) == "string" then
+                            if result and result.error then
+                                errText = tostring(result.error)
+                            elseif type(llmResponse) == "string" then
                                 errText = llmResponse
                             elseif type(llmResponse) == "table" and llmResponse.error then
                                 errText = tostring(llmResponse.error)
                             end
                             table.insert(errorMessages, item.filename .. ": " .. errText)
                             log:error("LLM Generation failed for " .. item.filename .. ": " .. errText)
-                        end
-                    end
+						end
+					end
 
-                    progressScope:setPortionComplete(stats.processed, numPhotos)
+					-- Backend metadata success is a handoff, not terminal success: the
+					-- Lightroom callback above may still fail while writing catalog data.
+					local operationUpdates = {}
+					for _, item in ipairs(batch) do
+						local result = itemStatuses[item.photo_id]
+						local itemSucceeded = success and (
+							result == nil or result.status == "succeeded"
+						)
+						local operationError = nil
+						if not itemSucceeded then
+							operationError = (result and result.error)
+								or (type(llmResponse) == "string" and llmResponse)
+								or "Metadata generation failed"
+						end
+						table.insert(operationUpdates, {
+							item_id = item.photo_id,
+							state = itemSucceeded and "succeeded" or "failed",
+							error = operationError,
+						})
+					end
+					SearchIndexAPI.updateOperationItems(operationId, operationUpdates)
+
+					progressScope:setPortionComplete(stats.processed, numPhotos)
                     progressScope:setCaption(
                         LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
                             stats.success, numPhotos, stats.failed)
@@ -2165,32 +2384,55 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 end
             end
         end
-        activeLlmWorkers = activeLlmWorkers - 1
-        log:trace("LLM worker thread finished.")
-    end
+	end
 
-    -- Start worker threads
-    -- Scale analyze workers according to the performance profile (controlled via prefs)
-    for i = 1, maxAnalyzeWorkers do
-        LrTasks.startAsyncTask(analyzeWorker)
-        log:trace("Started analyze worker #" .. tostring(i))
-        activeWorkers = activeWorkers + 1
-    end
+	local function recordWorkerFailure(workerName, workerError)
+		keepRunning = false
+		local message = workerName .. " failed: " .. tostring(workerError)
+		log:error(message)
+		table.insert(errorMessages, message)
+	end
 
-    maxSenderWorkers = 1
-    for i = 1, maxSenderWorkers do
-        LrTasks.startAsyncTask(senderWorker)
-        log:trace("Started sender worker #" .. tostring(i))
-    end
+	-- Start worker threads
+	-- Scale analyze workers according to the performance profile (controlled via prefs)
+	for i = 1, maxAnalyzeWorkers do
+		activeWorkers = activeWorkers + 1
+		LrTasks.startAsyncTask(function()
+			local workerOk, workerError = LrTasks.pcall(analyzeWorker)
+			activeWorkers = activeWorkers - 1
+			if not workerOk then recordWorkerFailure("Analyze worker", workerError) end
+			log:trace("Analyze worker thread finished. activeWorkers=" .. tostring(activeWorkers))
+			if activeWorkers == 0 then preparationDone = true end
+		end)
+		log:trace("Started analyze worker #" .. tostring(i))
+	end
+
+	maxSenderWorkers = 1
+	for i = 1, maxSenderWorkers do
+		activeSenderWorkers = activeSenderWorkers + 1
+		LrTasks.startAsyncTask(function()
+			local workerOk, workerError = LrTasks.pcall(senderWorker)
+			activeSenderWorkers = activeSenderWorkers - 1
+			if not workerOk then recordWorkerFailure("Sender worker", workerError) end
+			log:trace("Sender worker thread finished. activeSenderWorkers=" .. tostring(activeSenderWorkers))
+		end)
+		log:trace("Started sender worker #" .. tostring(i))
+	end
 
     -- Local models own a single GPU/unified-memory context.  Serializing LLM
     -- batches avoids context thrash and leaves MPS capacity for embeddings.
     local maxLlmWorkers = 1
 
-    if enableMetadata then
-        for i = 1, maxLlmWorkers do
-            LrTasks.startAsyncTask(llmWorker)
-            log:trace("Started LLM worker #" .. tostring(i))
+	if enableMetadata then
+		for i = 1, maxLlmWorkers do
+			activeLlmWorkers = activeLlmWorkers + 1
+			LrTasks.startAsyncTask(function()
+				local workerOk, workerError = LrTasks.pcall(llmWorker)
+				activeLlmWorkers = activeLlmWorkers - 1
+				if not workerOk then recordWorkerFailure("Metadata worker", workerError) end
+				log:trace("LLM worker thread finished. activeLlmWorkers=" .. tostring(activeLlmWorkers))
+			end)
+			log:trace("Started LLM worker #" .. tostring(i))
         end
     end
 
@@ -2203,11 +2445,76 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
 
     -- Wait for workers to stop in case of server failure
-    if not keepRunning then
-        while activeWorkers > 0 or activeSenderWorkers > 0 do
+	if not keepRunning then
+		while activeWorkers > 0 or activeSenderWorkers > 0 do
             LrTasks.yield()
-            LrTasks.sleep(0.5)
+			LrTasks.sleep(0.5)
+		end
+		SearchIndexAPI.cancelOperation(operationId)
+	end
+
+    local operationJob
+    if progressScope:isCanceled() then
+        SearchIndexAPI.cancelOperation(operationId)
+    else
+        local completed, completionResult = SearchIndexAPI.completeOperation(operationId)
+        if not completed then
+            table.insert(errorMessages, tostring(completionResult))
+        else
+            operationJob = completionResult
+            local terminal = {
+                succeeded = true,
+                failed = true,
+                canceled = true,
+                interrupted = true,
+            }
+            local pollCount = 0
+            while operationJob and not terminal[operationJob.state] and pollCount < 7200 do
+                if progressScope:isCanceled() then
+                    SearchIndexAPI.cancelOperation(operationId)
+                    break
+                end
+                local statusOk, statusResult = SearchIndexAPI.getOperation(operationId, false)
+                if statusOk then
+                    operationJob = statusResult
+                    local counts = operationJob.details and operationJob.details.item_state_counts or {}
+                    progressScope:setCaption(
+                        LOC("$$$/StyleAI/AnalyzeAndIndex/WaitingForBackend=Waiting for backend completion (^1 succeeded, ^2 failed)...",
+                            tostring(counts.succeeded or 0),
+                            tostring((counts.failed or 0) + (counts.canceled or 0)))
+                    )
+                end
+                pollCount = pollCount + 1
+                LrTasks.yield()
+                LrTasks.sleep(0.25)
+            end
+            if operationJob and not terminal[operationJob.state] then
+                table.insert(errorMessages, "Backend operation status timed out before terminal completion")
+            end
+            local detailOk, detailResult = SearchIndexAPI.getOperation(operationId, true)
+            if detailOk then operationJob = detailResult end
         end
+    end
+    keepRunning = false
+
+    if not enableMetadata and operationJob and type(operationJob.items) == "table" then
+        local succeeded = 0
+        local failed = untrackedOperationItems
+        for _, result in ipairs(operationJob.items) do
+            if result.state == "succeeded" then
+                succeeded = succeeded + 1
+                local photo = operationPhotoById[result.item_id]
+                if photo then table.insert(processedPhotos, photo) end
+            elseif result.state == "failed" or result.state == "canceled" or result.state == "interrupted" then
+                failed = failed + 1
+                if result.error and result.error ~= "" then
+                    table.insert(errorMessages, tostring(result.item_id) .. ": " .. tostring(result.error))
+                end
+            end
+        end
+        stats.success = preOperationSuccess + succeeded
+        stats.failed = failed
+        stats.processed = preOperationProcessed + succeeded + failed
     end
 
     if shouldCloseScope then
@@ -2368,14 +2675,21 @@ local function getServerLockFilePath()
     return LrPathUtils.child(getServerControlDir(), SERVER_LOCK_FILENAME)
 end
 
-local function cleanupServerPidAndOkFiles()
+local readPidFromPidFile
+
+local function cleanupServerPidAndOkFiles(expectedPid)
+	if expectedPid and readPidFromPidFile() ~= expectedPid then
+		log:warn("Skipping lifecycle marker cleanup because backend ownership changed")
+		return false
+	end
     local pidPath = getServerPidFilePath()
     local okPath = getServerOkFilePath()
     if LrFileUtils.exists(pidPath) then LrTasks.pcall(function() LrFileUtils.delete(pidPath) end) end
     if LrFileUtils.exists(okPath) then LrTasks.pcall(function() LrFileUtils.delete(okPath) end) end
+	return true
 end
 
-local function readPidFromPidFile()
+readPidFromPidFile = function()
     local pidFilePath = getServerPidFilePath()
     local pidFile = io.open(pidFilePath, "r")
     if not pidFile then return nil end
@@ -2443,6 +2757,7 @@ function SearchIndexAPI.shutdownServer(opts)
     local graceSeconds = opts.graceSeconds or 10
     local pollIntervalSeconds = opts.pollIntervalSeconds or 0.5
     local shutdownRequestTimeoutSeconds = opts.shutdownRequestTimeoutSeconds or 5
+	local shutdownPid = readPidFromPidFile()
 
     -- Cancel any active tasks so Waitress threads can process the shutdown
     LrTasks.pcall(function()
@@ -2451,7 +2766,7 @@ function SearchIndexAPI.shutdownServer(opts)
 
     if not SearchIndexAPI.pingServer() then
         log:trace("Search index server is not running (or unreachable)")
-        cleanupServerPidAndOkFiles()
+        cleanupServerPidAndOkFiles(shutdownPid)
         return true
     end
 
@@ -2465,21 +2780,25 @@ function SearchIndexAPI.shutdownServer(opts)
 
     if opts.skipWait then
         log:trace("Skipping shutdown wait loop (skipWait enabled)")
-        cleanupServerPidAndOkFiles()
+        cleanupServerPidAndOkFiles(shutdownPid)
         return true
     end
 
     local deadline = LrDate.currentTime() + graceSeconds
     while LrDate.currentTime() < deadline do
         if not SearchIndexAPI.pingServer() then
-            cleanupServerPidAndOkFiles()
+            cleanupServerPidAndOkFiles(shutdownPid)
             return true
         end
         LrTasks.sleep(pollIntervalSeconds)
     end
 
     log:trace("Graceful shutdown timed out; escalating to kill")
-    return SearchIndexAPI.killServer({ killMode = "force", forceWaitSeconds = opts.forceWaitSeconds or 10 })
+    return SearchIndexAPI.killServer({
+		killMode = "force",
+		forceWaitSeconds = opts.forceWaitSeconds or 10,
+		expectedPid = shutdownPid,
+	})
 end
 
 function SearchIndexAPI.unloadResources(opts)
@@ -2547,6 +2866,10 @@ function SearchIndexAPI.killServer(opts)
     local pollIntervalSeconds = opts.pollIntervalSeconds or 0.5
 
     local pid = readPidFromPidFile()
+	if opts.expectedPid and pid ~= opts.expectedPid then
+		log:error("killServer: backend PID ownership changed; refusing to kill replacement process.")
+		return false
+	end
     if not pid then
         -- Without a pid file, we can only do a best-effort ping check.
         if not SearchIndexAPI.pingServer() then
@@ -2558,7 +2881,7 @@ function SearchIndexAPI.killServer(opts)
     end
 
     if not isPidAlive(pid) then
-        cleanupServerPidAndOkFiles()
+        cleanupServerPidAndOkFiles(pid)
         return true
     end
 
@@ -2585,13 +2908,13 @@ function SearchIndexAPI.killServer(opts)
     local deadline = LrDate.currentTime() + forceWaitSeconds
     while LrDate.currentTime() < deadline do
         if not SearchIndexAPI.pingServer() then
-            cleanupServerPidAndOkFiles()
+            cleanupServerPidAndOkFiles(pid)
             return true
         end
         LrTasks.sleep(pollIntervalSeconds)
     end
 
-    cleanupServerPidAndOkFiles()
+    cleanupServerPidAndOkFiles(pid)
     return false
 end
 
@@ -2627,7 +2950,7 @@ function SearchIndexAPI.startServer(opts)
         -- If pid/OK are stale, clean them before starting.
         local pid = readPidFromPidFile()
         if pid and not isPidAlive(pid) then
-            cleanupServerPidAndOkFiles()
+            cleanupServerPidAndOkFiles(pid)
         end
 
         -- Check standard system locations first (if installed via PKG/EXE)
@@ -2920,9 +3243,6 @@ function SearchIndexAPI.pruneDatabase(validPhotoIds)
     local res, err = _request('POST', url, body)
     if err then
         return nil, err
-    end
-    if type(res) == "table" and res.results then
-        return res.results, nil
     end
     return res, nil
 end
@@ -3551,7 +3871,7 @@ end
 -- @param examples table        List of training examples.
 -- @return boolean success, table|string response or error message
 ---
-function SearchIndexAPI.addTrainingBatch(examples, forceRetrain, rebuildPolicies)
+function SearchIndexAPI.addTrainingBatch(examples, forceRetrain, rebuildPolicies, jobId)
     if not examples or #examples == 0 then
         return false, "No examples provided"
     end
@@ -3560,6 +3880,7 @@ function SearchIndexAPI.addTrainingBatch(examples, forceRetrain, rebuildPolicies
         examples = examples,
         force_retrain = forceRetrain or false,
         rebuild_policies = rebuildPolicies ~= false,
+		job_id = jobId,
     }
     log:trace("addTrainingBatch: uploading " .. tostring(#examples) .. " examples")
     local response, err = _request('POST', url, body, 120)
@@ -3659,7 +3980,7 @@ end
 
 ---
 -- Get aggregate style-profile statistics from the backend.
--- @return table|nil { count, readiness, scene_distribution, exposure, focal_buckets, time_of_day, ... }
+-- @return table|nil { count, readiness, descriptor_distribution, exposure, focal_buckets, time_of_day, ... }
 -- @return string|nil error message
 ---
 function SearchIndexAPI.getTrainingStats()
@@ -3708,6 +4029,7 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
     addStr("camera_profile")
     addStr("profile_mode")
     addStr("hdr_mode")
+    addStr("job_id")
     addStr("iso")
     addStr("aperture")
     addStr("shutter_speed")
@@ -3800,11 +4122,8 @@ function SearchIndexAPI.submitStyleEditApplicationEvents(events)
         if not response then
             return false, err or "Unknown error"
         end
-        if not response.results then
-            return false, response.error or "Unexpected response"
-        end
-        combined.stored = combined.stored + (response.results.stored or 0)
-        for _, storedEvent in ipairs(response.results.events or {}) do
+        combined.stored = combined.stored + (response.stored or 0)
+        for _, storedEvent in ipairs(response.events or {}) do
             table.insert(combined.events, storedEvent)
         end
     end
@@ -3820,8 +4139,8 @@ function SearchIndexAPI.reconcileStyleEditStates(items)
     if not response then
         return false, err or "Unknown error"
     end
-    if response.results then
-        return true, response.results
+    if response.checked ~= nil and type(response.photos) == "table" then
+        return true, response
     end
     return false, response.error or "Unexpected response"
 end
@@ -3835,8 +4154,8 @@ function SearchIndexAPI.recordStyleEditOutcomes(items)
     if not response then
         return false, err or "Unknown error"
     end
-    if response.results then
-        return true, response.results
+    if response.stored ~= nil and type(response.photos) == "table" then
+        return true, response
     end
     return false, response.error or "Unexpected response"
 end
@@ -3952,8 +4271,8 @@ function SearchIndexAPI.getUpgradeRecommendations(limit)
     if not response then
         return false, err or "Unknown error"
     end
-    if response.status == "ok" and response.results then
-        return true, response.results
+    if type(response) == "table" then
+        return true, response
     end
     return false, response.error or "Unexpected response"
 end
@@ -3968,8 +4287,8 @@ function SearchIndexAPI.submitUpgradeFeedback(reviewId, policyId, labels)
     if not response then
         return false, err or "Unknown error"
     end
-    if response.results then
-        return true, response.results
+    if response.updated ~= nil or response.requested ~= nil then
+        return true, response
     end
     return false, response.error or "Unexpected response"
 end

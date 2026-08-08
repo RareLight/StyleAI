@@ -39,87 +39,6 @@ EMBEDDING_DIM = (
 )
 
 # ---------------------------------------------------------------------------
-# Scene-type probe texts for CLIP zero-shot classification
-# ---------------------------------------------------------------------------
-
-_CANONICAL_EDITING_REGIMES: dict[str, tuple[str, ...]] = {
-    "scene_portrait": (
-        "a close portrait photograph of one person where the face is the main subject",
-        "a posed portrait photograph of a couple or family looking at the camera",
-        "a close pet portrait photograph of a domestic dog or cat looking at the camera",
-        "a candid family photograph centered on a child, parent, couple, or pet",
-    ),
-    "scene_landscape": (
-        "a wide scenic natural landscape photograph with mountains, valleys, forest, or countryside",
-        "a wide seascape or coastal landscape photograph with a broad natural vista",
-        "an outdoor scenic landscape photograph where terrain, sky, and the horizon dominate",
-        "a forest landscape photograph showing a broad woodland scene",
-    ),
-    "scene_architecture": (
-        "an architectural photograph where a building facade dominates the frame",
-        "a real estate photograph of an interior room or house",
-        "an architectural detail photograph emphasizing structural geometry",
-    ),
-    "scene_studio": (
-        "a commercial studio photograph of a product on a controlled background",
-        "a tabletop food or still-life photograph under controlled lighting",
-        "a studio photograph of a toy or small manufactured object",
-    ),
-    "scene_macro": (
-        "a true high-magnification macro photograph showing a tiny subject extremely close",
-        "an extreme close-up photograph of an insect with fine detail filling the frame",
-        "an extreme close-up photograph of a flower stamen, water droplet, or tiny texture",
-    ),
-    "scene_night": (
-        "an astrophotography photograph of the milky way, stars, or aurora",
-        "a nightscape photograph made outdoors after dark",
-        "an extreme low-light photograph where the night environment dominates",
-    ),
-    "scene_action": (
-        "a sports photograph of athletes actively competing",
-        "an action photograph showing fast movement or peak athletic motion",
-        "a motorsport, aviation, racing, or extreme sports photograph",
-    ),
-    "scene_street": (
-        "a candid street photography image visibly set on a city street",
-        "an urban documentary photograph with storefronts, sidewalks, or city traffic",
-        "an outdoor urban street scene where the city environment dominates",
-    ),
-    "scene_event": (
-        "a candid event photograph of people interacting at an indoor or outdoor gathering",
-        "a wedding photograph of a ceremony, reception, or dance floor",
-        "a concert, festival, performance, conference, or celebration photograph",
-        "a candid family celebration, birthday party, reunion, or social gathering",
-    ),
-    "scene_wildlife": (
-        "a wildlife photograph of a wild animal in its natural habitat",
-        "a bird photography image of a wild bird perched or in flight",
-        "a photograph of a wild mammal, reptile, or amphibian outdoors, not a pet",
-    ),
-    "scene_nature": (
-        "a medium close botanical photograph of leaves and plant stems filling the frame",
-        "a photograph of a single flower or foliage at ordinary scale",
-        "a woodland detail photograph of moss, bark, or undergrowth with no visible horizon",
-    ),
-}
-
-_AESTHETIC_PROBES: dict[str, str] = {
-    "style_high_key": "a bright, airy, high-key photograph with soft light",
-    "style_low_key": "a dark, moody, low-key photograph with deep shadows",
-    "style_minimalist": "a minimalist photograph with negative space",
-    "style_vintage": "a vintage, retro, or film-like photograph",
-    "style_cinematic": "a cinematic or dramatic photograph",
-    "style_neon": "a cyberpunk or neon-lit photograph",
-}
-
-_SCENE_PROBES: dict[str, str] = {
-    **{name: prompts[0] for name, prompts in _CANONICAL_EDITING_REGIMES.items()},
-    **_AESTHETIC_PROBES,
-}
-
-_SCENE_THRESHOLD = 0.15  # cosine similarity threshold for a tag to be "present"
-
-# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
@@ -192,14 +111,17 @@ def _load_thumbnail(image_bytes: bytes) -> tuple[np.ndarray, tuple[int, int]]:
     from PIL import Image
     import io
 
-    image = Image.open(io.BytesIO(image_bytes))
-    orig_size = image.size
-    image.thumbnail(
-        (_THUMBNAIL_LONG_EDGE, _THUMBNAIL_LONG_EDGE), Image.Resampling.LANCZOS
-    )
-    image = image.convert("RGB")
-    rgb = np.asarray(image, dtype=np.float32) / 255.0
-    return rgb, orig_size
+    with Image.open(io.BytesIO(image_bytes)) as source_image:
+        orig_size = source_image.size
+        source_image.thumbnail(
+            (_THUMBNAIL_LONG_EDGE, _THUMBNAIL_LONG_EDGE), Image.Resampling.LANCZOS
+        )
+        image = source_image.convert("RGB")
+    try:
+        rgb = np.asarray(image, dtype=np.float32) / 255.0
+        return rgb, orig_size
+    finally:
+        image.close()
 
 
 # ---------------------------------------------------------------------------
@@ -311,12 +233,15 @@ def compute_dominant_colors(image_bytes: bytes, n_colors: int = 5) -> list[str]:
         from PIL import Image
 
         # Load a very small thumbnail for extremely fast clustering
-        image = Image.open(io.BytesIO(image_bytes))
-        image.thumbnail((100, 100), Image.Resampling.LANCZOS)
-        image = image.convert("RGB")
+        with Image.open(io.BytesIO(image_bytes)) as source_image:
+            source_image.thumbnail((100, 100), Image.Resampling.LANCZOS)
+            image = source_image.convert("RGB")
+        try:
+            pixels = np.asarray(image).copy()
+        finally:
+            image.close()
 
         # Reshape the image to be a list of pixels
-        pixels = np.asarray(image)
         pixels = pixels.reshape(-1, 3)
         unique_colors, unique_counts = np.unique(
             pixels,
@@ -520,106 +445,6 @@ def histogram_distance(sig1: dict[str, Any], sig2: dict[str, Any]) -> float:
     except Exception as exc:
         logger.debug("histogram_distance failed: %s", exc)
         return 1.0
-
-
-# ---------------------------------------------------------------------------
-# Scene-type tagging via CLIP zero-shot probing
-# ---------------------------------------------------------------------------
-
-
-_cached_probe_vectors: dict[str, Any] = {}
-
-
-def compute_scene_tags(image_embedding: list[float] | None) -> list[str]:
-    """Return the best relative scene regime plus independent aesthetic tags.
-
-    Each regime is represented by an ensemble of normalized text prompts. The
-    ensemble reduces prompt sensitivity, and relative ranking always supplies a
-    primary regime when an embedding exists. An absolute Softmax floor is not
-    meaningful across varied photo collections and previously left most photos as
-    ``scene_general``, allowing weak EXIF priors to become de-facto labels.
-    """
-    if image_embedding is None:
-        return []
-
-    try:
-        import torch
-        import torch.nn.functional as F
-        import server_lifecycle
-        from config import get_torch_device
-
-        clip_model = server_lifecycle.get_model()
-        clip_processor = server_lifecycle.get_processor()
-        if clip_model is None or clip_processor is None:
-            return []
-
-        img_vec = (
-            torch.tensor(image_embedding, dtype=torch.float32)
-            .unsqueeze(0)
-            .to(get_torch_device())
-        )
-        img_vec = F.normalize(img_vec, p=2, dim=1)
-
-        tokenize_fn = (
-            getattr(clip_model, "tokenize", None) or server_lifecycle.get_tokenizer()
-        )
-        if tokenize_fn is None:
-            return []
-
-        with torch.no_grad():
-            canonical_names = list(_CANONICAL_EDITING_REGIMES)
-
-            # Cache one normalized prototype per regime. Batch text encoding is
-            # substantially faster than one model invocation per prompt.
-            global _cached_probe_vectors
-            if not _cached_probe_vectors:
-                prompt_names: list[str] = []
-                prompt_texts: list[str] = []
-                for name, prompts in _CANONICAL_EDITING_REGIMES.items():
-                    for prompt in prompts:
-                        prompt_names.append(name)
-                        prompt_texts.append(prompt)
-                for name, text in _AESTHETIC_PROBES.items():
-                    prompt_names.append(name)
-                    prompt_texts.append(text)
-
-                tokens = tokenize_fn(prompt_texts).to(get_torch_device())
-                encoded = F.normalize(clip_model.encode_text(tokens), p=2, dim=1)
-                for name in canonical_names:
-                    indices = [
-                        i
-                        for i, prompt_name in enumerate(prompt_names)
-                        if prompt_name == name
-                    ]
-                    prototype = encoded[indices].mean(dim=0, keepdim=True)
-                    _cached_probe_vectors[name] = F.normalize(prototype, p=2, dim=1)
-                for name in _AESTHETIC_PROBES:
-                    index = prompt_names.index(name)
-                    _cached_probe_vectors[name] = encoded[index : index + 1]
-
-            sims: list[float] = []
-            for name in canonical_names:
-                text_vec = _cached_probe_vectors[name]
-                sims.append(float((img_vec * text_vec).sum().cpu()))
-
-            ranked = sorted(
-                zip(sims, canonical_names, strict=False),
-                key=lambda x: x[0],
-                reverse=True,
-            )
-            result_tags: list[str] = [ranked[0][1]] if ranked else ["scene_general"]
-
-            for style_tag in _AESTHETIC_PROBES.keys():
-                text_vec = _cached_probe_vectors[style_tag]
-                sim = float((img_vec * text_vec).sum().cpu())
-                if sim >= _SCENE_THRESHOLD:
-                    result_tags.append(style_tag)
-
-            return result_tags
-
-    except Exception as exc:
-        logger.debug("compute_scene_tags failed (non-critical): %s", exc)
-        return []
 
 
 def _get_clip_tokenize():
@@ -951,11 +776,12 @@ def add_training_example(
     if summary:
         metadata["summary"] = summary
     if user_keywords:
-        # Store as comma-separated, normalized (lowercase, no spaces)
+        # User-authored, open-vocabulary descriptors remain explanatory evidence.
         normalized = [
             k.strip().lower().replace(" ", "_") for k in user_keywords if k.strip()
         ]
         metadata["user_keywords"] = json.dumps(normalized, ensure_ascii=False)
+        metadata["content_tags"] = json.dumps(normalized, ensure_ascii=False)
 
     # EXIF categorical fields
     metadata["focal_length_bucket"] = focal_length_bucket(focal_length)
@@ -1006,27 +832,7 @@ def add_training_example(
         dom_colors = compute_dominant_colors(image_bytes, n_colors=5)
         metadata["dominant_colors"] = json.dumps(dom_colors, ensure_ascii=False)
 
-    # Scene-type tags from CLIP zero-shot
-    scene_tags = compute_scene_tags(embedding)
-    metadata["scene_tags"] = json.dumps(scene_tags, ensure_ascii=False)
-
-    # Auto-assign label from top scene tag if missing or Uncategorized
-    if not label or label == "Uncategorized" or label.strip() == "":
-        if scene_tags:
-            top_tag = scene_tags[0]
-            auto_label = (
-                top_tag.replace("scene_", "")
-                .replace("style_", "")
-                .replace("_", " ")
-                .title()
-            )
-            metadata["label"] = auto_label
-            label = auto_label
-        else:
-            metadata["label"] = "Uncategorized"
-            label = "Uncategorized"
-    elif label:
-        metadata["label"] = label
+    metadata["label"] = label if label and label.strip() else "Uncategorized"
 
     emb = embedding if embedding is not None else _dummy_embedding()
 
@@ -1035,14 +841,10 @@ def add_training_example(
         _training_collection.update(
             ids=[photo_id], embeddings=[emb], metadatas=[metadata]
         )
-        logger.info(
-            "Updated training example photo_id=%s scene_tags=%s", photo_id, scene_tags
-        )
+        logger.info("Updated training example photo_id=%s", photo_id)
     else:
         _training_collection.add(ids=[photo_id], embeddings=[emb], metadatas=[metadata])
-        logger.info(
-            "Added training example photo_id=%s scene_tags=%s", photo_id, scene_tags
-        )
+        logger.info("Added training example photo_id=%s", photo_id)
 
     # Update style catalog
     if not skip_discovery:
@@ -1238,7 +1040,7 @@ def list_training_examples() -> list[dict[str, Any]]:
                 "has_embedding": bool(meta.get("has_embedding", False)),
                 "focal_length_bucket": meta.get("focal_length_bucket", "unknown"),
                 "time_of_day_bucket": meta.get("time_of_day_bucket", "unknown"),
-                "scene_tags": meta.get("scene_tags") or meta.get("tags") or "[]",
+                "content_tags": meta.get("content_tags") or "[]",
                 "user_keywords": meta.get("user_keywords") or "[]",
                 "camera_make": meta.get("camera_make", ""),
                 "camera_model": meta.get("camera_model", ""),
@@ -1307,7 +1109,7 @@ def get_training_stats() -> dict[str, Any]:
             "count": int,
             "has_enough_examples": bool,
             "readiness": "cold_start" | "limited" | "active",
-            "scene_distribution": { "scene_portrait": 3, ... },
+            "descriptor_distribution": { "family": 3, ... },
             "exposure": { "mean_luminance": 0.45, "mean_contrast": 0.6, ... },
             "focal_buckets": { "normal": 5, "tele": 2, ... },
             "time_of_day": { "afternoon": 7, ... },
@@ -1319,7 +1121,7 @@ def get_training_stats() -> dict[str, Any]:
             "count": 0,
             "has_enough_examples": False,
             "readiness": "cold_start",
-            "scene_distribution": {},
+            "descriptor_distribution": {},
             "focal_buckets": {},
             "time_of_day": {},
             "camera_distribution": {},
@@ -1327,7 +1129,7 @@ def get_training_stats() -> dict[str, Any]:
         }
     count = get_training_count()
 
-    scene_dist: dict[str, int] = {}
+    descriptor_dist: dict[str, int] = {}
     focal_dist: dict[str, int] = {}
     tod_dist: dict[str, int] = {}
     camera_dist: dict[str, int] = {}
@@ -1340,9 +1142,11 @@ def get_training_stats() -> dict[str, Any]:
             for meta in page.get("metadatas") or []:
                 if not isinstance(meta, dict):
                     continue
-                tags = _safe_json_list(meta.get("scene_tags", "[]"))
+                tags = _safe_json_list(
+                    meta.get("content_tags") or meta.get("user_keywords") or "[]"
+                )
                 for tag in tags:
-                    scene_dist[tag] = scene_dist.get(tag, 0) + 1
+                    descriptor_dist[tag] = descriptor_dist.get(tag, 0) + 1
 
                 fb = meta.get("focal_length_bucket", "unknown")
                 focal_dist[fb] = focal_dist.get(fb, 0) + 1
@@ -1403,7 +1207,7 @@ def get_training_stats() -> dict[str, Any]:
         "count": count,
         "has_enough_examples": count >= 10,
         "readiness": readiness,
-        "scene_distribution": scene_dist,
+        "descriptor_distribution": descriptor_dist,
         "focal_buckets": focal_dist,
         "time_of_day": tod_dist,
         "camera_distribution": camera_dist,
@@ -1421,7 +1225,7 @@ def query_similar_training_examples(
 
     Each result dict contains:
         photo_id, develop_settings (dict), canonical_settings (dict),
-        label, filename, summary, distance, scene_tags, exp_luminance_mean,
+        label, filename, summary, distance, content_tags, exp_luminance_mean,
         exp_contrast, focal_length_bucket, time_of_day_bucket.
 
     Returns an empty list when no training examples exist or embedding is None.
@@ -1484,7 +1288,9 @@ def query_similar_training_examples(
                 "filename": meta.get("filename", ""),
                 "summary": meta.get("summary", ""),
                 "distance": float(distances[i]) if i < len(distances) else 1.0,
-                "scene_tags": _safe_json_list(meta.get("scene_tags", "[]")),
+                "content_tags": _safe_json_list(
+                    meta.get("content_tags") or meta.get("user_keywords") or "[]"
+                ),
                 "exp_luminance_mean": float(meta.get("exp_luminance_mean", 0.5)),
                 "exp_contrast": float(meta.get("exp_contrast", 0.0)),
                 "exp_colorfulness": float(meta.get("exp_colorfulness", 0.0)),

@@ -2,6 +2,7 @@ import time
 from collections import deque
 import os
 import queue
+import config
 
 from flask import Blueprint, request, jsonify
 
@@ -333,15 +334,41 @@ def generate_metadata_batch():
     Retrieves images from the in-memory cache and delegates to process_image_task.
     """
     logger.info("Metadata generate batch request received")
-    data = request.get_json(silent=True) or {}
+    from services import operations
+
+    operations.refresh_system_pressure()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    job_id = str(data.get("job_id") or "").strip() or None
+    job = None
+    cancel_signal = None
+
+    if job_id:
+        if not config.DB_PATH:
+            return jsonify({"error": "StyleAI database path is not configured"}), 500
+        job = operations.get_job(config.DB_PATH, job_id, include_items=True)
+        if job is None:
+            return jsonify({"error": f"operation job not found: {job_id}"}), 404
+        if job["kind"] not in {"index", "metadata"}:
+            return jsonify({"error": "operation job cannot generate metadata"}), 409
+        if job["state"] in operations.TERMINAL_STATES:
+            return jsonify({"error": "operation job is already complete"}), 409
+        if job["cancel_requested"]:
+            return jsonify({"error": "operation job has been canceled"}), 409
+        cancel_signal = operations.JobCancelSignal(config.DB_PATH, job_id)
 
     tasks = data.get("tasks", [])
     if not tasks:
         return jsonify({"error": "No tasks provided"}), 400
+    if not isinstance(tasks, list) or not all(isinstance(task, dict) for task in tasks):
+        return jsonify({"error": "tasks must be an array of objects"}), 400
     if len(tasks) > 12:
         return jsonify({"error": "Metadata batches are limited to 12 photos"}), 413
 
     global_options = data.get("options", {})
+    if not isinstance(global_options, dict):
+        return jsonify({"error": "options must be an object"}), 400
     valid_tasks = []
     batch_options = []
     inline_image_bytes_total = 0
@@ -356,7 +383,10 @@ def generate_metadata_batch():
             continue
 
         merged_options = dict(global_options)
-        merged_options.update(task.get("options", {}))
+        task_options = task.get("options", {})
+        if not isinstance(task_options, dict):
+            return jsonify({"error": "task options must be an object"}), 400
+        merged_options.update(task_options)
         photo_options = _extract_options(merged_options)
 
         # Force overrides for metadata route
@@ -365,23 +395,20 @@ def generate_metadata_batch():
         photo_options["compute_faces"] = False
 
         inline_image = task.get("image")
-        inline_image_bytes = None
+        inline_image_payload = None
         if inline_image:
-            try:
-                inline_image_bytes = base64.b64decode(inline_image.encode("ascii"))
-            except Exception as exc:
-                return jsonify(
-                    {"error": f"Failed to decode image for {photo_id}: {exc}"}
-                ), 400
-            if not inline_image_bytes:
-                return jsonify({"error": f"Empty image data for {photo_id}"}), 400
-            inline_image_bytes_total += len(inline_image_bytes)
-            if inline_image_bytes_total > STYLEAI_METADATA_CACHE_BYTES:
+            inline_image_payload = str(inline_image)
+            inline_image_bytes_total += (len(inline_image_payload) * 3) // 4
+            byte_limit = min(
+                STYLEAI_METADATA_CACHE_BYTES,
+                operations.admission.capacities["image_bytes"],
+            )
+            if inline_image_bytes_total > byte_limit:
                 return jsonify(
                     {"error": "Inline metadata image batch exceeds the byte budget"}
                 ), 413
 
-        valid_tasks.append((photo_id, filename, inline_image_bytes))
+        valid_tasks.append((photo_id, filename, inline_image_payload))
         batch_options.append(photo_options)
 
     if not valid_tasks:
@@ -390,42 +417,133 @@ def generate_metadata_batch():
     photo_ids = [photo_id for photo_id, _filename, _image in valid_tasks]
     if len(photo_ids) != len(set(photo_ids)):
         return jsonify({"error": "Duplicate photo_id values are not allowed"}), 400
-
-    cached_photo_ids = [
-        photo_id
-        for photo_id, _filename, inline_image_bytes in valid_tasks
-        if inline_image_bytes is None
-    ]
-    cached_images = {}
-    if cached_photo_ids:
-        image_bytes_batch, missing_ids = image_cache.pop_images(cached_photo_ids)
-        if image_bytes_batch is None:
-            logger.warning(
-                "Metadata batch rejected because %d image(s) were absent from the cache: %s",
-                len(missing_ids),
-                ", ".join(missing_ids[:5]),
+    if job is not None:
+        expected_ids = {item["item_id"] for item in job.get("items", [])}
+        unexpected_ids = sorted(set(photo_ids) - expected_ids)
+        if unexpected_ids:
+            return (
+                jsonify(
+                    {
+                        "error": "metadata batch contains photos not admitted to this job",
+                        "photo_ids": unexpected_ids,
+                    }
+                ),
+                400,
             )
-            return jsonify(
-                {
-                    "error": "Image data expired or was not admitted; rerun metadata generation for this batch",
-                    "missing_photo_ids": missing_ids,
-                }
-            ), 409
-        cached_images = dict(zip(cached_photo_ids, image_bytes_batch))
 
-    image_triplets = [
-        (
-            inline_image_bytes or cached_images[photo_id],
-            photo_id,
-            filename,
-            None,
-        )
-        for photo_id, filename, inline_image_bytes in valid_tasks
-    ]
+    item_results: list[dict] = []
+    cpu_claim = min(len(valid_tasks), operations.admission.capacities["cpu_prepare"])
+    try:
+        with operations.admission.acquire(
+            {
+                "accelerator": 1,
+                "llm": 1,
+                "cpu_prepare": max(1, cpu_claim),
+            },
+            priority=5,
+            cancel_event=cancel_signal,
+        ):
+            decoded_tasks = []
+            decoded_inline_bytes = 0
+            for photo_id, filename, inline_image_payload in valid_tasks:
+                inline_image_bytes = None
+                if inline_image_payload is not None:
+                    try:
+                        inline_image_bytes = base64.b64decode(
+                            inline_image_payload.encode("ascii"), validate=True
+                        )
+                    except Exception as exc:
+                        return jsonify(
+                            {"error": f"Failed to decode image for {photo_id}: {exc}"}
+                        ), 400
+                    if not inline_image_bytes:
+                        return (
+                            jsonify({"error": f"Empty image data for {photo_id}"}),
+                            400,
+                        )
+                    decoded_inline_bytes += len(inline_image_bytes)
+                decoded_tasks.append((photo_id, filename, inline_image_bytes))
+            byte_limit = min(
+                STYLEAI_METADATA_CACHE_BYTES,
+                operations.admission.capacities["image_bytes"],
+            )
+            if decoded_inline_bytes > byte_limit:
+                return jsonify(
+                    {"error": "Inline metadata image batch exceeds the byte budget"}
+                ), 413
 
-    success_count, failure_count, error_messages, warnings = process_image_task(
-        image_triplets, options=batch_options
-    )
+            cached_photo_ids = [
+                photo_id
+                for photo_id, _filename, inline_image_bytes in decoded_tasks
+                if inline_image_bytes is None
+            ]
+            cached_images = {}
+            if cached_photo_ids:
+                image_bytes_batch, missing_ids = image_cache.pop_images(
+                    cached_photo_ids
+                )
+                if image_bytes_batch is None:
+                    logger.warning(
+                        "Metadata batch rejected because %d image(s) were absent from the cache: %s",
+                        len(missing_ids),
+                        ", ".join(missing_ids[:5]),
+                    )
+                    return jsonify(
+                        {
+                            "error": "Image data expired or was not admitted; rerun metadata generation for this batch",
+                            "missing_photo_ids": missing_ids,
+                        }
+                    ), 409
+                cached_images = dict(zip(cached_photo_ids, image_bytes_batch))
+
+            image_triplets = [
+                (
+                    inline_image_bytes or cached_images[photo_id],
+                    photo_id,
+                    filename,
+                    None,
+                )
+                for photo_id, filename, inline_image_bytes in decoded_tasks
+            ]
+            if job_id:
+                operations.set_job_state(config.DB_PATH, job_id, "running")
+                for photo_id in photo_ids:
+                    operations.set_item_state(
+                        config.DB_PATH, job_id, photo_id, "running"
+                    )
+
+            success_count, failure_count, error_messages, warnings = process_image_task(
+                image_triplets,
+                options=batch_options,
+                item_results=item_results,
+            )
+    except InterruptedError:
+        return jsonify({"error": "operation job has been canceled"}), 409
+
+    if job_id:
+        results_by_id = {str(result.get("photo_id")): result for result in item_results}
+        for photo_id in photo_ids:
+            result = results_by_id.get(photo_id)
+            if result and result.get("status") == "succeeded":
+                operations.set_item_state(
+                    config.DB_PATH,
+                    job_id,
+                    photo_id,
+                    "committing",
+                    result=result,
+                )
+            else:
+                operations.set_item_state(
+                    config.DB_PATH,
+                    job_id,
+                    photo_id,
+                    "failed",
+                    error=str(
+                        (result or {}).get("error")
+                        or "Metadata generation did not return a terminal result"
+                    ),
+                    result=result,
+                )
 
     status_code = 500 if success_count == 0 else 200
 
@@ -434,6 +552,8 @@ def generate_metadata_batch():
             "status": "processed",
             "success_count": success_count,
             "failure_count": failure_count,
+            "items": item_results,
+            "job_id": job_id,
             "error_messages": error_messages,
             "warnings": warnings or [],
         }
@@ -739,9 +859,51 @@ def enqueue_photo():
     Accepts a single base64 encoded image (or small batch) and places it into the asynchronous
     GPU dynamic batching queue. Returns 202 Accepted immediately so Lightroom doesn't block.
     """
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
     images_data = data.get("images", [])
+    if not isinstance(images_data, list):
+        return jsonify({"error": "images must be an array"}), 400
+    if not all(isinstance(item, dict) for item in images_data):
+        return jsonify({"error": "every image must be an object"}), 400
     global_options = data.get("options", {})
+    job_id = str(data.get("job_id") or "").strip() or None
+
+    if job_id:
+        from services import operations
+
+        if not config.DB_PATH:
+            return jsonify({"error": "StyleAI database path is not configured"}), 500
+        job = operations.get_job(config.DB_PATH, job_id, include_items=True)
+        if job is None:
+            return jsonify({"error": f"operation job not found: {job_id}"}), 404
+        if job["kind"] != "index":
+            return jsonify({"error": "operation job is not an indexing job"}), 409
+        if job["state"] in operations.TERMINAL_STATES:
+            return jsonify({"error": "indexing operation is already complete"}), 409
+        if job["cancel_requested"]:
+            return jsonify({"error": "operation job has been canceled"}), 409
+        supplied_ids = [
+            str(item.get("photo_id") or item.get("uuid") or "").strip()
+            for item in images_data
+        ]
+        if len(supplied_ids) != len(set(supplied_ids)):
+            return jsonify({"error": "Duplicate photo IDs are not allowed"}), 400
+        expected_ids = {item["item_id"] for item in job.get("items", [])}
+        unexpected_ids = sorted(
+            item_id for item_id in supplied_ids if item_id not in expected_ids
+        )
+        if unexpected_ids:
+            return (
+                jsonify(
+                    {
+                        "error": "index batch contains photos not admitted to this job",
+                        "photo_ids": unexpected_ids,
+                    }
+                ),
+                400,
+            )
 
     from services.index import (
         active_embeddings_uuids,
@@ -783,6 +945,7 @@ def enqueue_photo():
             image_bytes = base64.b64decode(image_base64.encode("ascii"))
 
             cache_images = global_options.get("cache_images", False)
+            photo_options["defer_terminal"] = bool(cache_images)
             if cache_images:
                 from services import image_cache
 
@@ -797,9 +960,12 @@ def enqueue_photo():
                 "filename": filename,
                 "lr_uuid": lr_uuid,
                 "options": photo_options,
+                "job_id": job_id,
             }
 
             active_embeddings_uuids.add(photo_id)
+            if job_id:
+                operations.set_item_state(config.DB_PATH, job_id, photo_id, "queued")
             try:
                 index_queue.put_nowait(queue_item)
             except queue.Full:
@@ -811,12 +977,18 @@ def enqueue_photo():
                 continue
             enqueued += 1
         except Exception as e:
+            active_embeddings_uuids.discard(photo_id)
             if image_was_cached:
                 image_cache.remove_image(photo_id)
             logger.error(f"Error enqueueing image: {e}")
 
     status = "accepted" if rejected == 0 else "backpressure"
-    return jsonify({"status": status, "enqueued": enqueued, "rejected": rejected}), 202
+    if job_id and enqueued > 0:
+        operations.set_job_state(config.DB_PATH, job_id, "running")
+    response = {"status": status, "enqueued": enqueued, "rejected": rejected}
+    if job_id:
+        response["job_id"] = job_id
+    return jsonify(response), 202
 
 
 @index_bp.route("/index_queue/status", methods=["GET"])

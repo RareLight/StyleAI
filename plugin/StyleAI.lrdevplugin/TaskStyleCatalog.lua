@@ -251,9 +251,9 @@ LrTasks.startAsyncTask(function()
 
 		local function resetAndDiscoverStyles()
 			local confirm = LrDialogs.confirm(
-				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverTitle=Reset & Discover Styles"),
-				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverConfirm=This will clear your current index of styles and rediscover them from your saved training examples. Are you sure you want to proceed?"),
-				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverAction=Reset & Discover"),
+				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverTitle=Rebuild Styles"),
+				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverConfirm=This will build a replacement style generation from your saved training examples. Your current styles remain available unless the rebuild succeeds. Continue?"),
+				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverAction=Rebuild Styles"),
 				LOC("$$$/StyleAI/common/Cancel=Cancel")
 			)
 
@@ -262,35 +262,25 @@ LrTasks.startAsyncTask(function()
 			end
 
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/ResettingAll=Resetting all styles...")
+			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Discovering=Discovering styles from training examples...")
 
 			LrTasks.startAsyncTask(function()
-				local success, err = SearchIndexAPI.resetAllStyles()
-				if success then
-					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Discovering=Discovering styles from training examples...")
-					local dSuccess, result = SearchIndexAPI.discoverStyles(nil)
-					if dSuccess then
-						local completed, discoveryResult = waitForDiscoveryCompletion()
-						if completed then
-							loadStyles()
-						else
-							props.statusMessage = LOC(
-								"$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1",
-								tostring(discoveryResult)
-							)
-							props.isLoading = false
-						end
+				local dSuccess, result = SearchIndexAPI.discoverStyles(nil)
+				if dSuccess then
+					local completed, discoveryResult = waitForDiscoveryCompletion()
+					if completed then
+						loadStyles()
 					else
 						props.statusMessage = LOC(
 							"$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1",
-							tostring(result)
+							tostring(discoveryResult)
 						)
 						props.isLoading = false
 					end
 				else
 					props.statusMessage = LOC(
-						"$$$/StyleAI/StyleCatalog/ResetAllError=Reset failed: ^1",
-						tostring(err)
+						"$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1",
+						tostring(result)
 					)
 					props.isLoading = false
 				end

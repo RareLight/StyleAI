@@ -92,16 +92,15 @@ def detect_faces(
     app = _get_face_app()
     if pil_image is not None:
         source = pil_image
+        img = np.array(source)
     else:
-        img_temp = Image.open(io.BytesIO(image_bytes))
-        img_temp.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
-        source = img_temp.convert("RGB")
-    img = np.array(source)
-    if pil_image is None and "img_temp" in locals():
+        with Image.open(io.BytesIO(image_bytes)) as img_temp:
+            img_temp.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+            source = img_temp.convert("RGB")
         try:
-            img_temp.close()
-        except Exception:
-            pass
+            img = np.array(source)
+        finally:
+            source.close()
 
     faces = app.get(img)
 

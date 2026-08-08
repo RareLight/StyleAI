@@ -101,10 +101,24 @@ class TestProcessImageTask(unittest.TestCase):
         mock_cancel_event.is_set.return_value = True
         triplets = [(b"data", "uuid-1", "test.jpg", "lr-1")]
         options = {"provider": "ollama", "model": "qwen3-vl"}
-        success, failure, errors, warnings = process_image_task(triplets, options)
+        item_results = []
+        success, failure, errors, warnings = process_image_task(
+            triplets, options, item_results=item_results
+        )
         self.assertEqual(success, 0)
         self.assertEqual(failure, 1)
         self.assertIn("Batch canceled by watchdog.", errors)
+        self.assertEqual(
+            item_results,
+            [
+                {
+                    "photo_id": "uuid-1",
+                    "filename": "test.jpg",
+                    "status": "canceled",
+                    "error": "Batch canceled by watchdog.",
+                }
+            ],
+        )
 
     @patch("server_lifecycle.GLOBAL_CANCEL_EVENT")
     @patch("services.index.chroma_service")

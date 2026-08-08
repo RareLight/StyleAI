@@ -9,6 +9,7 @@ import styleai_server
 def test_backup_scheduler_waits_before_first_backup(mocker):
     backup = mocker.patch("styleai_server.service_db.build_backup_zip")
     prune = mocker.patch("styleai_server.service_db.prune_old_backups")
+    prune_jobs = mocker.patch("styleai_server.operations.prune_terminal_jobs")
     mocker.patch.object(styleai_server.config.args, "disable_backup", False)
     mocker.patch.object(styleai_server.config.args, "backup_interval", 86400)
     mocker.patch.object(styleai_server.config.args, "backup_max_keep", 14)
@@ -40,5 +41,6 @@ def test_backup_scheduler_waits_before_first_backup(mocker):
 
     backup.assert_called_once()
     prune.assert_called_once_with(max_keep=14)
+    prune_jobs.assert_called_once_with("/catalog/styleai.db")
     assert wait_calls == 2
     thread.start.assert_called_once()

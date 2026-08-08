@@ -16,7 +16,6 @@ from .chroma import DatabaseNotReadyError
 from .metadata import get_analysis_service
 import server_lifecycle as server_lifecycle
 from . import exif as exif_service
-from . import training as training_service
 import gc
 import json
 from datetime import datetime as time
@@ -157,22 +156,21 @@ def _flatten_keywords(keywords):
 
 
 def _load_analysis_grayscale(image_bytes: bytes, max_side: int = 512) -> np.ndarray:
-    image = Image.open(io.BytesIO(image_bytes))
-    image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
-    image = image.convert("RGB")
-    rgb = np.asarray(image, dtype=np.float32) / 255.0
-    return (0.299 * rgb[:, :, 0]) + (0.587 * rgb[:, :, 1]) + (0.114 * rgb[:, :, 2])
+    with Image.open(io.BytesIO(image_bytes)) as source_image:
+        source_image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+        image = source_image.convert("RGB")
+    try:
+        rgb = np.asarray(image, dtype=np.float32) / 255.0
+        return (0.299 * rgb[:, :, 0]) + (0.587 * rgb[:, :, 1]) + (0.114 * rgb[:, :, 2])
+    finally:
+        image.close()
 
 
 def _decode_image(image_bytes: bytes) -> Image.Image | None:
     try:
-        img = Image.open(io.BytesIO(image_bytes))
-        # Defensive resizing to prevent OOM (12GB+ RAM spikes) on massive images.
-        # SigLIP2 uses 384px, InsightFace uses 640px, so 1024px is plenty.
-        max_dim = 1024
-        if max(img.size) > max_dim:
-            img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
-        return img.convert("RGB")
+        with Image.open(io.BytesIO(image_bytes)) as source_image:
+            source_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+            return source_image.convert("RGB")
     except Exception as exc:
         logger.warning("Could not decode image: %s", exc)
         return None
@@ -254,8 +252,11 @@ def get_photo_ids_needing_processing(
 
 
 def process_image_task(
-    image_triplets: list[tuple[bytes, str, str, str | None]], options: dict
-) -> tuple[int, int, list[str]]:
+    image_triplets: list[tuple[bytes, str, str, str | None]],
+    options: dict,
+    *,
+    item_results: list[dict] | None = None,
+) -> tuple[int, int, list[str], list[str]]:
     """
     Process a batch of images for indexing.
 
@@ -272,10 +273,41 @@ def process_image_task(
     warnings = []
     total_images = len(image_triplets)
 
+    def record_item(
+        photo_id: str,
+        filename: str,
+        status: str,
+        *,
+        error: str | None = None,
+        warning: str | None = None,
+    ) -> None:
+        if item_results is None:
+            return
+        result = {
+            "photo_id": photo_id,
+            "filename": filename,
+            "status": status,
+        }
+        if error:
+            result["error"] = error
+        if warning:
+            result["warning"] = warning
+        item_results.append(result)
+
+    def record_unfinished(status: str, error: str) -> None:
+        if item_results is None:
+            return
+        recorded = {result["photo_id"] for result in item_results}
+        for _image_bytes, photo_id, filename, _lr_uuid in image_triplets:
+            if photo_id not in recorded:
+                record_item(photo_id, filename, status, error=error)
+
     from server_lifecycle import GLOBAL_CANCEL_EVENT
 
     if GLOBAL_CANCEL_EVENT.is_set():
-        error_messages.append("Batch canceled by watchdog.")
+        message = "Batch canceled by watchdog."
+        error_messages.append(message)
+        record_unfinished("canceled", message)
         return 0, total_images, error_messages, warnings
 
     try:
@@ -294,7 +326,7 @@ def process_image_task(
             f"compute_metadata={compute_metadata}, compute_faces={compute_faces}"
         )
 
-        # Always check existing records to preserve fields (like scene_tags, has_embedding)
+        # Always check existing records to preserve previously stored metadata.
         # even when regenerating specific metadata.
         existing_records = {}
         logger.info(
@@ -371,6 +403,8 @@ def process_image_task(
             logger.info(
                 "No generation required (regenerate_metadata=False and all fields present). Returning success without changes."
             )
+            for _image_bytes, photo_id, filename, _lr_uuid in image_triplets:
+                record_item(photo_id, filename, "succeeded")
             return len(image_triplets), 0, [], []
 
         analysis_service = get_analysis_service()
@@ -443,11 +477,15 @@ def process_image_task(
             )
         except Exception as e:
             logger.error(f"Error in analyze_batch: {str(e)}", exc_info=True)
-            error_messages.append(str(e))
+            message = str(e)
+            error_messages.append(message)
+            record_unfinished("failed", message)
             return 0, total_images, error_messages, warnings
 
         for i, (image_bytes, uuid, filename, lr_uuid) in enumerate(image_triplets):
             try:
+                item_error = None
+                item_warning = None
                 embedding = embeddings[i] if embeddings is not None else None
                 metadata_data = metadata_results[i] if metadata_results else None
 
@@ -459,8 +497,10 @@ def process_image_task(
                 # Validate that required new data was generated if needed
                 if need_embedding and embedding is None:
                     logger.error(f"Embedding generation failed for {uuid}. Skipping.")
-                    error_messages.append(f"{filename}: Embedding generation failed")
+                    item_error = "Embedding generation failed"
+                    error_messages.append(f"{filename}: {item_error}")
                     failure_count += 1
+                    record_item(uuid, filename, "failed", error=item_error)
                     continue
 
                 if need_metadata and (not metadata_data or not metadata_data.success):
@@ -474,18 +514,27 @@ def process_image_task(
                     )
                     error_messages.append(f"{filename}: {error_txt}")
                     failure_count += 1
+                    item_error = error_txt
                     # Do not discard a successfully generated embedding just because metadata failed
                     if not (need_embedding and embedding is not None):
+                        record_item(uuid, filename, "failed", error=item_error)
                         continue
 
                 if metadata_data and metadata_data.warning:
-                    warnings.append(f"{filename}: {metadata_data.warning}")
+                    item_warning = str(metadata_data.warning)
+                    warnings.append(f"{filename}: {item_warning}")
 
                 # If nothing needed for this UUID (already complete) and no face processing, skip
                 # When compute_faces is True we must not skip - we need to reach face detection
                 if not need_embedding and not need_metadata and not regenerate_metadata:
                     logger.info(f"UUID {uuid}: already fully indexed; skipping update.")
                     success_count += 1
+                    record_item(
+                        uuid,
+                        filename,
+                        "succeeded",
+                        warning=item_warning,
+                    )
                     continue
 
                 if existing:
@@ -620,17 +669,6 @@ def process_image_task(
                 # Update embedding status
                 if embedding is not None:
                     main_metadata["has_embedding"] = True
-                    try:
-                        scene_tags = training_service.compute_scene_tags(embedding)
-                        if scene_tags:
-                            main_metadata["scene_tags"] = json.dumps(
-                                scene_tags, ensure_ascii=False
-                            )
-                    except Exception as exc:
-                        logger.debug(
-                            "Failed to compute zero-shot scene tags during indexing: %s",
-                            exc,
-                        )
                 elif existing and existing.get("has_embedding", False):
                     # Preserve existing embedding - we didn't generate a new one (e.g. only faces)
                     main_metadata["has_embedding"] = True
@@ -651,11 +689,16 @@ def process_image_task(
                         f"UUID {uuid} already exists. Updating (embedding: {update_embedding is not None})."
                     )
                     try:
-                        chroma_service.update_image(
-                            uuid,
-                            main_metadata,
-                            embedding=update_embedding,
-                        )
+                        from services import operations
+
+                        with operations.admission.acquire(
+                            {"catalog_write": 1}, priority=10
+                        ):
+                            chroma_service.update_image(
+                                uuid,
+                                main_metadata,
+                                embedding=update_embedding,
+                            )
                     except Exception as e:
                         logger.error(
                             f"Failed to update image {uuid} in ChromaDB: {e}",
@@ -665,21 +708,32 @@ def process_image_task(
                             f"{filename}: Database update failed: {str(e)}"
                         )
                         failure_count += 1
+                        record_item(
+                            uuid,
+                            filename,
+                            "failed",
+                            error=f"Database update failed: {e}",
+                        )
                         continue
                 elif regenerate_metadata:
                     logger.info(
                         f"UUID {uuid} set to regenerate. Updating (embedding: {update_embedding is not None})."
                     )
-                    existing_in_chroma = chroma_service.get_image(uuid)
                     try:
-                        if existing_in_chroma and existing_in_chroma.get("ids"):
-                            chroma_service.update_image(
-                                uuid,
-                                main_metadata,
-                                embedding=update_embedding,
-                            )
-                        else:
-                            chroma_service.add_image(uuid, embedding, main_metadata)
+                        from services import operations
+
+                        with operations.admission.acquire(
+                            {"catalog_write": 1}, priority=10
+                        ):
+                            existing_in_chroma = chroma_service.get_image(uuid)
+                            if existing_in_chroma and existing_in_chroma.get("ids"):
+                                chroma_service.update_image(
+                                    uuid,
+                                    main_metadata,
+                                    embedding=update_embedding,
+                                )
+                            else:
+                                chroma_service.add_image(uuid, embedding, main_metadata)
                     except Exception as e:
                         logger.error(
                             f"Failed to regenerate image {uuid} in ChromaDB: {e}",
@@ -689,6 +743,12 @@ def process_image_task(
                             f"{filename}: Database update failed: {str(e)}"
                         )
                         failure_count += 1
+                        record_item(
+                            uuid,
+                            filename,
+                            "failed",
+                            error=f"Database update failed: {e}",
+                        )
                         continue
                 else:
                     # New record
@@ -699,7 +759,12 @@ def process_image_task(
                             f"UUID {uuid} is new. Indexing metadata-only entry (no embedding)."
                         )
                     try:
-                        chroma_service.add_image(uuid, embedding, main_metadata)
+                        from services import operations
+
+                        with operations.admission.acquire(
+                            {"catalog_write": 1}, priority=10
+                        ):
+                            chroma_service.add_image(uuid, embedding, main_metadata)
                     except Exception as e:
                         logger.error(
                             f"Failed to add image {uuid} to ChromaDB: {e}",
@@ -709,23 +774,49 @@ def process_image_task(
                             f"{filename}: Database indexing failed: {str(e)}"
                         )
                         failure_count += 1
+                        record_item(
+                            uuid,
+                            filename,
+                            "failed",
+                            error=f"Database indexing failed: {e}",
+                        )
                         continue
 
-                success_count += 1
+                if item_error:
+                    record_item(
+                        uuid,
+                        filename,
+                        "partial",
+                        error=item_error,
+                        warning=item_warning,
+                    )
+                else:
+                    success_count += 1
+                    record_item(
+                        uuid,
+                        filename,
+                        "succeeded",
+                        warning=item_warning,
+                    )
 
             except Exception as e:
                 logger.error(f"Error processing image {uuid}: {str(e)}", exc_info=True)
                 error_messages.append(f"{filename}: {str(e)}")
                 failure_count += 1
+                record_item(uuid, filename, "failed", error=str(e))
 
         return success_count, failure_count, error_messages, warnings
     except DatabaseNotReadyError as e:
         logger.warning(f"Batch processing aborted: {str(e)}")
-        error_messages.append(str(e))
+        message = str(e)
+        error_messages.append(message)
+        record_unfinished("failed", message)
         return 0, total_images, error_messages, warnings
     except Exception as e:
         logger.error(f"Error during batch processing task: {str(e)}", exc_info=True)
-        error_messages.append(f"Batch processing error: {str(e)}")
+        message = f"Batch processing error: {str(e)}"
+        error_messages.append(message)
+        record_unfinished("failed", message)
         return 0, total_images, error_messages, warnings
     finally:
         # Removed aggressive torch.mps.empty_cache() call here.
@@ -778,6 +869,20 @@ def discard_pending_index_queue() -> int:
             from services import image_cache
 
             image_cache.remove_image(uuid)
+            job_id = item.get("job_id")
+            if job_id and config.DB_PATH:
+                try:
+                    from services import operations
+
+                    operations.set_item_state(
+                        config.DB_PATH,
+                        job_id,
+                        uuid,
+                        "canceled",
+                        error="Indexing canceled before execution",
+                    )
+                except Exception:
+                    logger.exception("Could not cancel queued indexing item %s", uuid)
             item.clear()
             discarded += 1
         index_queue.task_done()
@@ -821,9 +926,13 @@ def _dynamic_gpu_worker():
 
         time.sleep(0.05)
 
+        from services import operations
+
+        operations.refresh_system_pressure()
+        batch_limit = operations.recommended_gpu_batch_size()
+
         batch = [first_item]
-        # Pull up to 31 more images if available instantly
-        while len(batch) < config.STYLEAI_GPU_BATCH_SIZE:
+        while len(batch) < batch_limit:
             try:
                 item = index_queue.get_nowait()
                 if item is not None:
@@ -835,10 +944,44 @@ def _dynamic_gpu_worker():
 
         logger.info(f"GPU Worker assembled dynamic batch of {len(batch)} images")
 
+        work_batch = []
+        for item in batch:
+            job_id = item.get("job_id")
+            if job_id and config.DB_PATH:
+                try:
+                    from services import operations
+
+                    if operations.is_cancel_requested(config.DB_PATH, job_id):
+                        operations.set_item_state(
+                            config.DB_PATH,
+                            job_id,
+                            item["uuid"],
+                            "canceled",
+                            error="Indexing operation canceled",
+                        )
+                        active_embeddings_uuids.discard(item["uuid"])
+                        from services import image_cache
+
+                        image_cache.remove_image(item["uuid"])
+                        continue
+                    operations.set_item_state(
+                        config.DB_PATH, job_id, item["uuid"], "running"
+                    )
+                except Exception:
+                    logger.exception(
+                        "Could not update indexing operation state for %s", item["uuid"]
+                    )
+                    active_embeddings_uuids.discard(item["uuid"])
+                    from services import image_cache
+
+                    image_cache.remove_image(item["uuid"])
+                    continue
+            work_batch.append(item)
+
         # Reshape for process_image_task
         image_triplets = []
         options = []
-        for item in batch:
+        for item in work_batch:
             image_triplets.append(
                 (
                     item["image_bytes"],
@@ -849,21 +992,85 @@ def _dynamic_gpu_worker():
             )
             options.append(item["options"])
 
+        item_results: list[dict] = []
         try:
-            success, fail, errs, warns = process_image_task(image_triplets, options)
-            logger.info(f"Dynamic batch processed. Success: {success}, Fail: {fail}")
+            if work_batch:
+                cpu_claim = min(
+                    len(work_batch), operations.admission.capacities["cpu_prepare"]
+                )
+                with operations.admission.acquire(
+                    {"accelerator": 1, "cpu_prepare": max(1, cpu_claim)},
+                    priority=10,
+                ):
+                    success, fail, _errors, _warnings = process_image_task(
+                        image_triplets,
+                        options,
+                        item_results=item_results,
+                    )
+                logger.info(
+                    f"Dynamic batch processed. Success: {success}, Fail: {fail}"
+                )
         except Exception as e:
             logger.error(f"Error in dynamic GPU batch processing: {e}", exc_info=True)
+            item_results = [
+                {
+                    "photo_id": item["uuid"],
+                    "status": "failed",
+                    "error": str(e),
+                }
+                for item in work_batch
+            ]
         finally:
             for item in batch:
                 active_embeddings_uuids.discard(item["uuid"])
+
+        results_by_id = {str(result.get("photo_id")): result for result in item_results}
+        for item in work_batch:
+            job_id = item.get("job_id")
+            if not job_id or not config.DB_PATH:
+                continue
+            result = results_by_id.get(item["uuid"])
+            try:
+                from services import operations
+
+                if result and result.get("status") == "succeeded":
+                    terminal_state = (
+                        "preparing"
+                        if item.get("options", {}).get("defer_terminal")
+                        else "succeeded"
+                    )
+                    if operations.is_cancel_requested(config.DB_PATH, job_id):
+                        terminal_state = "canceled"
+                    operations.set_item_state(
+                        config.DB_PATH,
+                        job_id,
+                        item["uuid"],
+                        terminal_state,
+                        result=result,
+                    )
+                else:
+                    operations.set_item_state(
+                        config.DB_PATH,
+                        job_id,
+                        item["uuid"],
+                        "failed",
+                        error=str(
+                            (result or {}).get("error")
+                            or "Indexing did not return a terminal result"
+                        ),
+                        result=result,
+                    )
+            except Exception:
+                logger.exception(
+                    "Could not persist indexing result for %s", item["uuid"]
+                )
 
         for _ in range(len(batch)):
             index_queue.task_done()
 
         # Explicitly clear local references to image bytes so they do not linger in the worker stack frame
         try:
-            del batch, image_triplets, options, first_item
+            del batch, work_batch, image_triplets, options, first_item
         except NameError:
             pass
         _maybe_collect_garbage()

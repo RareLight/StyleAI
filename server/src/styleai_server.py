@@ -22,8 +22,10 @@ from routes.training import training_bp
 from routes.style_edit import style_edit_bp
 from routes.style_catalog import style_catalog_bp
 from routes.clip import clip_bp
+from routes.operations import operations_bp
 from services import chroma as service_chroma
 from services import db as service_db
+from services import operations
 
 app = Flask(__name__)
 logger.info("Flask app created")
@@ -47,6 +49,7 @@ app.register_blueprint(training_bp)
 app.register_blueprint(style_edit_bp)
 app.register_blueprint(style_catalog_bp)
 app.register_blueprint(clip_bp)
+app.register_blueprint(operations_bp)
 
 
 def _start_housekeeping_scheduler() -> None:
@@ -78,17 +81,27 @@ def _start_housekeeping_scheduler() -> None:
         while not server_lifecycle.GLOBAL_SHUTDOWN_EVENT.wait(interval):
             if config.DB_PATH:
                 try:
-                    zip_path, backup_name = service_db.build_backup_zip()
+                    with operations.admission.acquire(
+                        {"maintenance": 1, "catalog_write": 1},
+                        priority=-10,
+                        cancel_event=server_lifecycle.GLOBAL_SHUTDOWN_EVENT,
+                    ):
+                        zip_path, backup_name = service_db.build_backup_zip()
+                        pruned_jobs = operations.prune_terminal_jobs(config.DB_PATH)
                     logger.info(
                         "Periodic DB backup created: %s (%s)", backup_name, zip_path
                     )
                     service_db.prune_old_backups(max_keep=max_keep)
+                    if pruned_jobs:
+                        logger.info("Pruned %s old operation job(s)", pruned_jobs)
                     try:
                         os.remove(zip_path)
                     except OSError as e:
                         logger.warning(
                             "Could not remove temporary backup zip %s: %s", zip_path, e
                         )
+                except InterruptedError:
+                    logger.info("Periodic DB backup canceled during shutdown")
                 except Exception as e:
                     logger.error("Periodic DB backup failed: %s", e, exc_info=True)
             else:

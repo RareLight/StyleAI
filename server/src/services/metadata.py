@@ -129,9 +129,9 @@ class AnalysisService:
         else:
 
             def _load_img(d):
-                img = Image.open(io.BytesIO(d))
-                img.thumbnail((512, 512))
-                return img.convert("RGB")
+                with Image.open(io.BytesIO(d)) as source_image:
+                    source_image.thumbnail((512, 512))
+                    return source_image.convert("RGB")
 
             images = [_load_img(data) for data in image_data]
 

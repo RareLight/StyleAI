@@ -1,11 +1,16 @@
 import os
 import sqlite3
 import importlib.util
+import threading
 
 from config import logger
 
 
-def run_migrations(db_path: str):
+_migration_lock = threading.Lock()
+_migrated_paths: set[str] = set()
+
+
+def _run_migrations_uncached(db_path: str):
     """
     Run all pending migrations for the StyleAI database.
     This includes both SQLite schema migrations and ChromaDB metadata migrations.
@@ -97,3 +102,15 @@ def run_migrations(db_path: str):
 
     conn.close()
     logger.info("All migrations applied successfully.")
+
+
+def run_migrations(db_path: str):
+    """Run migrations once per bound catalog path for this process lifetime."""
+    if not db_path:
+        raise ValueError("db_path must be provided to run migrations.")
+    normalized = os.path.realpath(os.path.abspath(db_path))
+    with _migration_lock:
+        if normalized in _migrated_paths:
+            return
+        _run_migrations_uncached(normalized)
+        _migrated_paths.add(normalized)
