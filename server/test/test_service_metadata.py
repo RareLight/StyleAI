@@ -205,6 +205,20 @@ def test_generate_metadata_single_provider_exception_caught(service):
     assert "boom" in resp.error
 
 
+def test_generate_metadata_single_refuses_missing_image(service):
+    provider = service.providers["ollama"]
+
+    resp = service.generate_metadata_single(
+        "uuid-x",
+        None,
+        {"provider": "ollama"},
+    )
+
+    assert resp.success is False
+    assert "Image bytes are required" in resp.error
+    provider.generate_metadata.assert_not_called()
+
+
 def test_analyze_batch_with_list_options(service):
     from routes.index import _extract_options
 
@@ -223,3 +237,48 @@ def test_analyze_batch_with_list_options(service):
     assert len(metadata) == 2
     assert metadata[0] is not None
     assert metadata[1] is not None
+
+
+def test_analyze_batch_never_clones_metadata_between_similar_images(service):
+    provider = service.providers["ollama"]
+
+    def response_for(request):
+        return MetadataGenerationResponse(
+            uuid=request.uuid,
+            success=True,
+            keywords={"subject": [request.uuid]},
+            caption=f"Caption for {request.uuid}",
+        )
+
+    provider.generate_metadata.side_effect = response_for
+    options = {
+        "provider": "ollama",
+        "model": "vision-model",
+        "generate_keywords": True,
+        "generate_caption": True,
+        "generate_title": False,
+        "generate_alt_text": False,
+        "language": "English",
+        "temperature": 0.2,
+        "submit_keywords": False,
+        "submit_folder_names": False,
+        # This legacy option previously caused whole-response cloning.
+        "semantic_clustering_threshold": 0.8,
+    }
+
+    _, metadata = service.analyze_batch(
+        image_triplets=[
+            (_jpeg_bytes((120, 0, 0)), "uuid-1", ""),
+            (_jpeg_bytes((121, 0, 0)), "uuid-2", ""),
+        ],
+        options=options,
+        image_model=None,
+        image_processor=None,
+        uuids_needing_embeddings=[],
+        uuids_needing_metadata=["uuid-1", "uuid-2"],
+    )
+
+    assert provider.generate_metadata.call_count == 2
+    assert [item.uuid for item in metadata] == ["uuid-1", "uuid-2"]
+    assert metadata[0].caption != metadata[1].caption
+    assert metadata[0] is not metadata[1]

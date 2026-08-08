@@ -45,7 +45,6 @@ function SettingsManager.initializeDefaults()
         searchInMetadataCaption = true,
         searchInMetadataTitle = true,
         searchInMetadataAltText = true,
-        semanticClusteringThreshold = 75, -- Validated bounding
     }
 
     for key, defaultValue in pairs(defaultMap) do
@@ -89,10 +88,6 @@ end
 --- Set a preference with optional validation
 function SettingsManager.set(key, value)
     -- Add validation rules for specific keys
-    if key == "semanticClusteringThreshold" then
-        if type(value) ~= "number" then return false end
-        value = math.max(50, math.min(100, value))
-    end
     if key == "temperature" then
         if type(value) ~= "number" then return false end
         value = math.max(0.0, math.min(2.0, value))

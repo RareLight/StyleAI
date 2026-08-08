@@ -1,6 +1,6 @@
 """Tests for bounded hardware-aware ingestion recommendations."""
 
-from config import get_index_resource_limits
+from config import get_index_resource_limits, get_metadata_cache_limits
 
 
 def test_apple_silicon_memory_tiers_are_bounded():
@@ -26,4 +26,19 @@ def test_non_macos_hosts_keep_conservative_defaults():
         "gpu_batch_size": 12,
         "queue_capacity": 48,
         "http_threads": 12,
+    }
+
+
+def test_metadata_cache_has_count_and_byte_budgets():
+    assert get_metadata_cache_limits(16, "darwin") == {
+        "entries": 32,
+        "bytes": 256 * 1024 * 1024,
+    }
+    assert get_metadata_cache_limits(32, "darwin") == {
+        "entries": 48,
+        "bytes": 384 * 1024 * 1024,
+    }
+    assert get_metadata_cache_limits(64, "darwin") == {
+        "entries": 64,
+        "bytes": 512 * 1024 * 1024,
     }

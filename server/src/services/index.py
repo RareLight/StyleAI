@@ -773,7 +773,11 @@ def discard_pending_index_queue() -> int:
         except queue.Empty:
             break
         if item is not None:
-            active_embeddings_uuids.discard(item["uuid"])
+            uuid = item["uuid"]
+            active_embeddings_uuids.discard(uuid)
+            from services import image_cache
+
+            image_cache.remove_image(uuid)
             item.clear()
             discarded += 1
         index_queue.task_done()

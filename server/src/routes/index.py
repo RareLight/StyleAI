@@ -188,6 +188,7 @@ def index_images_batch_base64_v2():
 
     image_triplets = []
     per_image_options = []
+    cached_photo_ids = []
 
     for item in images_data:
         image_base64 = item.get("image")
@@ -211,7 +212,15 @@ def index_images_batch_base64_v2():
             image_triplets.append((image_bytes, photo_id, filename, lr_uuid))
 
             if cache_images:
-                image_cache.store_image(photo_id, image_bytes)
+                if not image_cache.store_image(photo_id, image_bytes):
+                    for cached_photo_id in cached_photo_ids:
+                        image_cache.remove_image(cached_photo_id)
+                    return jsonify(
+                        {
+                            "error": "Metadata image cache is full; retry after current metadata work advances"
+                        }
+                    ), 429
+                cached_photo_ids.append(photo_id)
 
             per_image_options.append(photo_options)
         except Exception as e:
@@ -285,8 +294,13 @@ def generate_metadata_single():
 
     if not image_bytes:
         logger.warning(
-            "No image data provided and image not found in cache for single metadata generation. Proceeding for LLM text-only."
+            "No image data provided and image not found in cache for single metadata generation."
         )
+        return jsonify(
+            {
+                "error": "Image data expired or was not admitted; rerun metadata generation for this photo"
+            }
+        ), 409
 
     # Let process_image_task handle the robust database commit and metadata merging logic
     success_count, failure_count, error_messages, warnings = process_image_task(
@@ -326,7 +340,7 @@ def generate_metadata_batch():
         return jsonify({"error": "No tasks provided"}), 400
 
     global_options = data.get("options", {})
-    image_triplets = []
+    valid_tasks = []
     batch_options = []
 
     from services import image_cache
@@ -347,19 +361,34 @@ def generate_metadata_batch():
         photo_options["compute_metadata"] = True
         photo_options["compute_faces"] = False
 
-        image_bytes = image_cache.pop_image(photo_id)
-        if not image_bytes:
-            logger.warning(
-                f"Image bytes for {photo_id} not found in cache for batch metadata generation."
-            )
-            # We can still proceed if process_image_task handles it, but without image_bytes
-            # LLM cannot see the image.
-
-        image_triplets.append((image_bytes, photo_id, filename, None))
+        valid_tasks.append((photo_id, filename))
         batch_options.append(photo_options)
 
-    if not image_triplets:
+    if not valid_tasks:
         return jsonify({"error": "No valid tasks with cached images found"}), 400
+
+    photo_ids = [photo_id for photo_id, _filename in valid_tasks]
+    if len(photo_ids) != len(set(photo_ids)):
+        return jsonify({"error": "Duplicate photo_id values are not allowed"}), 400
+
+    image_bytes_batch, missing_ids = image_cache.pop_images(photo_ids)
+    if image_bytes_batch is None:
+        logger.warning(
+            "Metadata batch rejected because %d image(s) were absent from the cache: %s",
+            len(missing_ids),
+            ", ".join(missing_ids[:5]),
+        )
+        return jsonify(
+            {
+                "error": "Image data expired or was not admitted; rerun metadata generation for this batch",
+                "missing_photo_ids": missing_ids,
+            }
+        ), 409
+
+    image_triplets = [
+        (image_bytes, photo_id, filename, None)
+        for image_bytes, (photo_id, filename) in zip(image_bytes_batch, valid_tasks)
+    ]
 
     success_count, failure_count, error_messages, warnings = process_image_task(
         image_triplets, options=batch_options
@@ -709,6 +738,7 @@ def enqueue_photo():
             rejected += 1
             continue
 
+        image_was_cached = False
         try:
             merged_options = dict(global_options)
             merged_options.update(item.get("options", {}))
@@ -723,7 +753,10 @@ def enqueue_photo():
             if cache_images:
                 from services import image_cache
 
-                image_cache.store_image(photo_id, image_bytes)
+                if not image_cache.store_image(photo_id, image_bytes):
+                    rejected += 1
+                    continue
+                image_was_cached = True
 
             queue_item = {
                 "image_bytes": image_bytes,
@@ -738,11 +771,15 @@ def enqueue_photo():
                 index_queue.put_nowait(queue_item)
             except queue.Full:
                 active_embeddings_uuids.discard(photo_id)
+                if image_was_cached:
+                    image_cache.remove_image(photo_id)
                 queue_item.clear()
                 rejected += 1
                 continue
             enqueued += 1
         except Exception as e:
+            if image_was_cached:
+                image_cache.remove_image(photo_id)
             logger.error(f"Error enqueueing image: {e}")
 
     status = "accepted" if rejected == 0 else "backpressure"

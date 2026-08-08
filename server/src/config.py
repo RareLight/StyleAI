@@ -52,6 +52,29 @@ def get_index_resource_limits(
     return {"gpu_batch_size": 12, "queue_capacity": 48, "http_threads": 12}
 
 
+def get_metadata_cache_limits(
+    memory_gb: float | None = None,
+    platform_name: str | None = None,
+) -> dict[str, int]:
+    """Return bounded JPEG-cache limits for staged local-LLM metadata work.
+
+    Cache admission is backpressured rather than evicting an image that has
+    already been accepted for metadata generation.  The byte budget matters in
+    addition to the item count because Lightroom preview sizes vary widely.
+    """
+    platform_name = platform_name or sys.platform
+    memory_gb = _physical_memory_gb() if memory_gb is None else memory_gb
+
+    if platform_name == "darwin":
+        if memory_gb <= 16:
+            return {"entries": 32, "bytes": 256 * 1024 * 1024}
+        if memory_gb <= 32:
+            return {"entries": 48, "bytes": 384 * 1024 * 1024}
+        return {"entries": 64, "bytes": 512 * 1024 * 1024}
+
+    return {"entries": 48, "bytes": 384 * 1024 * 1024}
+
+
 def _positive_env_int(name: str, default: int) -> int:
     try:
         return max(1, int(os.environ.get(name, default)))
@@ -68,6 +91,13 @@ STYLEAI_GPU_BATCH_SIZE = _positive_env_int(
 )
 STYLEAI_HTTP_THREADS = _positive_env_int(
     "STYLEAI_HTTP_THREADS", _index_resource_limits["http_threads"]
+)
+_metadata_cache_limits = get_metadata_cache_limits()
+STYLEAI_METADATA_CACHE_ENTRIES = _positive_env_int(
+    "STYLEAI_METADATA_CACHE_ENTRIES", _metadata_cache_limits["entries"]
+)
+STYLEAI_METADATA_CACHE_BYTES = _positive_env_int(
+    "STYLEAI_METADATA_CACHE_BYTES", _metadata_cache_limits["bytes"]
 )
 
 # --- Argument Parsing ---

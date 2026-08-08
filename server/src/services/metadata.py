@@ -179,123 +179,36 @@ class AnalysisService:
             logger.info(
                 f"Generating metadata for {len(uuids_needing_metadata)} images out of {len(uuids)} total"
             )
-
-            # --- SEMANTIC CLUSTERING ---
-            # Group visually similar photos to avoid redundant LLM calls
-            import numpy as np
-            from . import chroma as chroma_service
-            from .index import active_embeddings_uuids
+            # Metadata may update the same Chroma records as the upstream
+            # embedding worker.  Keep the stages ordered without using a fixed
+            # timeout that can race a slow MPS batch.
             import time
 
-            # Metadata clustering must observe committed embeddings.  A fixed
-            # 15-second deadline races slow MPS batches and produces results
-            # from an incomplete index, so wait until the producer finishes or
-            # the operation is explicitly cancelled.
             from server_lifecycle import GLOBAL_CANCEL_EVENT
+            from services.index import active_embeddings_uuids
 
-            for uid in uuids:
-                while uid in active_embeddings_uuids:
+            for uuid in uuids:
+                while uuid in active_embeddings_uuids:
                     if GLOBAL_CANCEL_EVENT.is_set():
                         raise RuntimeError(
                             "Batch canceled while waiting for embeddings."
                         )
                     time.sleep(0.10)
 
-            # Bulk fetch missing embeddings from ChromaDB
-            fetched_embeddings = {}
-            missing_uids = [
-                uid
-                for i, uid in enumerate(uuids)
-                if (not embeddings or embeddings[i] is None)
-                and uid not in uuids_needing_embeddings
+            metadata_indices = [
+                i for i, uuid in enumerate(uuids) if uuid in uuids_needing_metadata
             ]
-            if missing_uids and chroma_service.collection is not None:
-                try:
-                    res = chroma_service.collection.get(
-                        ids=missing_uids, include=["embeddings"]
-                    )
-                    e_ids = res.get("ids", [])
-                    e_embs = res.get("embeddings", [])
-                    for i, eid in enumerate(e_ids):
-                        if i < len(e_embs) and e_embs[i] is not None:
-                            fetched_embeddings[eid] = e_embs[i]
-                except Exception as e:
-                    logger.warning(f"Failed bulk fetch for clustering: {e}")
-
-            cluster_mapping = {}  # maps uuid -> representative_uuid
-            clusters = []  # list of dicts: {'rep_uid': uid, 'rep_emb': np.array, 'members': [uid]}
-            similarity_threshold = opt.get("semantic_clustering_threshold", 0.94)
-
-            def get_embedding(idx, uid):
-                if embeddings and embeddings[idx] is not None:
-                    return embeddings[idx]
-                return fetched_embeddings.get(uid)
-
-            for i, uid in enumerate(uuids):
-                if uid not in uuids_needing_metadata:
-                    continue
-
-                emb = get_embedding(i, uid)
-                if emb is None:
-                    # No embedding available, cannot cluster
-                    cluster_mapping[uid] = uid
-                    continue
-
-                emb_arr = np.array(emb, dtype=np.float32)
-                norm = np.linalg.norm(emb_arr)
-                if norm > 0:
-                    emb_arr = emb_arr / norm
-
-                found_cluster = False
-                for cluster in clusters:
-                    similarity = np.dot(emb_arr, cluster["rep_emb"])
-                    if similarity >= similarity_threshold:
-                        cluster["members"].append(uid)
-                        cluster_mapping[uid] = cluster["rep_uid"]
-                        found_cluster = True
-                        break
-
-                if not found_cluster:
-                    clusters.append(
-                        {"rep_uid": uid, "rep_emb": emb_arr, "members": [uid]}
-                    )
-                    cluster_mapping[uid] = uid
-
-            rep_uids = set(cluster_mapping.values())
-            logger.info(
-                f"Semantic Clustering: Reduced {len(uuids_needing_metadata)} LLM calls to {len(rep_uids)} representatives (Threshold: {similarity_threshold})"
-            )
-
-            # Filter triplets to only the representatives
-            filtered_triplets = []
-            filtered_options = []
-            for i, uuid in enumerate(uuids):
-                if uuid in rep_uids:
-                    filtered_triplets.append((image_data[i], uuid, ""))
-                    filtered_options.append(
-                        options[i] if isinstance(options, list) else options
-                    )
-
-            partial_results = self._generate_metadata_batch(
-                [t[1] for t in filtered_triplets],
-                [t[0] for t in filtered_triplets],
-                filtered_options,
+            generated = self._generate_metadata_batch(
+                [uuids[i] for i in metadata_indices],
+                [image_data[i] for i in metadata_indices],
+                [options[i] for i in metadata_indices]
+                if isinstance(options, list)
+                else options,
                 exif_location_map=exif_location_map,
             )
-
-            # Map partial_results back to rep_uids for cloning
-            rep_results = {
-                uid: res
-                for uid, res in zip([t[1] for t in filtered_triplets], partial_results)
-            }
-
-            metadata_results = []
-            for i, uuid in enumerate(uuids):
-                if uuid in uuids_needing_metadata:
-                    rep_uid = cluster_mapping.get(uuid, uuid)
-                    metadata_results.append(rep_results.get(rep_uid))
-                else:
-                    metadata_results.append(None)
+            metadata_results = [None] * len(uuids)
+            for idx, response in zip(metadata_indices, generated):
+                metadata_results[idx] = response
         else:
             metadata_results = None
 
@@ -436,6 +349,16 @@ class AnalysisService:
         """
         Generate metadata for a single image.
         """
+        if not isinstance(image_data, bytes) or not image_data:
+            logger.error(
+                "Refusing metadata generation without image bytes for %s", uuid
+            )
+            return MetadataGenerationResponse(
+                uuid=uuid,
+                success=False,
+                error="Image bytes are required for vision metadata generation",
+            )
+
         provider = options.get("provider") or DEFAULT_METADATA_PROVIDER
 
         if provider not in self.providers:
