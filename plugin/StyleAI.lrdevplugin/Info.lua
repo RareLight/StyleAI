@@ -21,10 +21,10 @@ return {
 	LrMetadataProvider = "MetadataProvider.lua",
 	LrMetadataTagsetFactory = "MetadataTagset.lua",
 
-	-- Lightroom treats a present-but-empty menu array as one malformed menu
-	-- description and reports its missing title as nil. Keep release menu
-	-- declarations literal, and omit menu keys that have no entries.
-	LrLibraryMenuItems = {
+	-- LrExportMenuItems is Lightroom's cross-module File > Plug-in Extras
+	-- registration point. LrLibraryMenuItems disappears outside the Library
+	-- module. Keep this declaration literal and omit menu keys with no entries.
+	LrExportMenuItems = {
 		{
 			title = LOC("$$$/StyleAI/Menu/PreparePhotos=Prepare Photos..."),
 			file = "TaskAnalyzeAndIndex.lua",

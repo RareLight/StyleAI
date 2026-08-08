@@ -92,7 +92,7 @@ diagnostic image or prompt copies.
 
 ## Phase 4: Menus and build separation
 
-- [x] Make Library > Plug-in Extras the canonical workflow menu.
+- [x] Make File > Plug-in Extras the canonical cross-module workflow menu.
 - [x] Rename commands to the approved workflow language.
 - [x] Use ellipses consistently for dialog-opening commands.
 - [x] Remove duplicate Export-menu commands.

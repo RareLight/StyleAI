@@ -181,7 +181,8 @@ end
 
 ### 3. Reload the plugin and trigger
 
-In Lightroom: **Library → Plug-in Extras → Check for Updates**
+In Lightroom, open **File → Plug-in Manager → StyleAI**, then use
+**Check for updates** in the **Updates & Log Files** section.
 
 The confirmation dialog should show version 9.9.9 with the file counts from the manifest. Clicking **Install** fires the full chain.
 

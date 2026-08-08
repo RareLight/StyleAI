@@ -2,7 +2,7 @@
 
 ## Navigation and workflow names
 
-- Lightroom's **Library > Plug-in Extras** menu is now the canonical entry
+- Lightroom's cross-module **File > Plug-in Extras** menu is now the canonical entry
   point. Duplicate Export-menu entries were removed.
 - The primary workflows are now **Prepare Photos**, **Learn From My Edits**,
   **Apply My Style**, **Rate Selected AI Edits**, **Styles & Training**, and

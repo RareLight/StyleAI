@@ -35,7 +35,7 @@ When you try to open the `.pkg` installer or the backend binary:
 
 Once installed, we recommend using the new automated setup flow:
 1. Select any photo in your Lightroom Library grid.
-2. Navigate to `Library -> Plug-in Extras -> Prepare Photos...`.
+2. Navigate to `File -> Plug-in Extras -> Prepare Photos...`.
 3. If this is your first time using StyleAI, the **Onboarding Wizard** will automatically launch. 
 
 The Wizard will guide you step-by-step through:
@@ -54,7 +54,7 @@ If you prefer to configure settings manually, open the **Lightroom Plug-in Manag
 
 If you want to be able to search your photos using natural language (e.g., "red sports car in the rain") or automatically generate keywords and captions, you must "index" your photos. This uses a Large Language Model (LLM) to write text metadata.
 1. Select one or more photos in your Lightroom Library grid.
-2. Navigate to `Library -> Plug-in Extras -> Prepare Photos...`.
+2. Navigate to `File -> Plug-in Extras -> Prepare Photos...`.
 3. The plugin will pass the photos to the backend, generate descriptions, tags, and AI embeddings, and store them in the Search database.
 
 **Note:** You do **not** need to index photos if you only want to use the AI Editing or Style Training features! Those features run independently and skip the slow LLM keyword process entirely.

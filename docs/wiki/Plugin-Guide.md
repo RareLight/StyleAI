@@ -8,7 +8,7 @@ For detailed technical usage of the plugin component, please view the [`plugin/R
 
 ## Core Workflows
 
-The plugin handles the following core capabilities via the `Library -> Plug-in Extras` menu:
+The plugin handles the following core capabilities via the cross-module `File -> Plug-in Extras` menu:
 
 ### 1. Prepare Photos
 Passes the image files, metadata, and optional context directly to the backend to generate tags, structural descriptions, and embeddings for Semantic Search. This operation relies on LLMs to generate keywords and descriptions.

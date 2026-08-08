@@ -6,7 +6,7 @@ not a proposal to change the editing, training, or metadata models.
 
 ## Production navigation
 
-The canonical entry point is **Library > Plug-in Extras**.
+The canonical cross-module entry point is **File > Plug-in Extras**.
 
 | Command | Backing task | User-visible outcome |
 | --- | --- | --- |
