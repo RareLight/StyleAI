@@ -14,6 +14,7 @@ local LrBinding = import("LrBinding")
 local SearchIndexAPI = require("APISearchIndex")
 local Util = require("Util")
 local StyleUI = require("StyleUI")
+local UIFactory = require("UIFactory")
 
 local log = import("LrLogger")("StyleAI")
 
@@ -175,70 +176,74 @@ LrTasks.startAsyncTask(function()
 			props.isLoading = true
 			props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/ProgressWait=Waiting for StyleAI backend to load...")
 
-			LrTasks.startAsyncTask(function()
-				if not Util.waitForServerDialog({ suppressProgressDialog = true, skipHealthCheck = true }) then
-					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/ErrorNoServer=Backend server unavailable.")
-					props.isLoading = false
-					return
-				end
+			local progressScope = LrProgressScope({
+				title = LOC("$$$/StyleAI/UpgradeAssistant/Progress=Discovering style upgrade candidates..."),
+			})
 
-				props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/Progress=Discovering style upgrade candidates...")
-
-				local success, results = SearchIndexAPI.getUpgradeRecommendations(100)
-
-				if not success then
-					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/Error=Failed to get recommendations: ^1", tostring(results))
-					props.isLoading = false
-					return
-				end
-
-				local styles = (results and results.styles) or {}
-				if #styles == 0 then
-					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/NoStylesMsg=All signature styles in your database are already fully upgraded (50+ examples), or no styles were found yet. Great job!")
-					props.isLoading = false
-					return
-				end
-
-				props.styles = styles
-
-				-- Build profile filters
-				local uniqueProfiles = {}
-				local profileCounts = {}
-				for i, style in ipairs(props.styles) do
-					local profile = style.camera_profile or "Default"
-					if not uniqueProfiles[profile] then
-						uniqueProfiles[profile] = true
-						profileCounts[profile] = 1
-					else
-						profileCounts[profile] = profileCounts[profile] + 1
-					end
-				end
-
-				local sortedProfiles = {}
-				for profile, count in pairs(profileCounts) do
-					table.insert(sortedProfiles, { profile = profile, count = count })
-				end
-				table.sort(sortedProfiles, function(a, b)
-					if a.count == b.count then
-						return a.profile < b.profile
-					end
-					return a.count > b.count
-				end)
-
-				local profileList = { { title = LOC("$$$/StyleAI/StyleCatalog/AllProfiles=All Profiles"), value = "All Profiles" } }
-				for _, item in ipairs(sortedProfiles) do
-					table.insert(profileList, { 
-						title = string.format("%s (%d)", item.profile, item.count), 
-						value = item.profile 
-					})
-				end
-				props.profileFilters = profileList
-
-				updateListItems()
-
+			if not Util.waitForServerDialog({ suppressProgressDialog = true, skipHealthCheck = true }) then
+				progressScope:done()
+				props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/ErrorNoServer=Background service unavailable.")
 				props.isLoading = false
-				props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/LoadedCount=Loaded ^1 style upgrade candidates.", tostring(#props.styles))
+				return
+			end
+
+			props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/Progress=Discovering style upgrade candidates...")
+			local success, results = SearchIndexAPI.getUpgradeRecommendations(100)
+			progressScope:done()
+
+			if not success then
+				props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/Error=Failed to get recommendations: ^1", tostring(results))
+				props.isLoading = false
+				return
+			end
+
+			local styles = type(results) == "table" and results.styles or nil
+			if type(styles) ~= "table" or #styles == 0 then
+				props.styles = {}
+				props.listItems = {}
+				props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/NoStylesMsg=No styles currently need additional training examples. Styles with sufficient coverage are omitted; if you have not learned a style yet, start with Learn From My Edits.")
+				props.isLoading = false
+				return
+			end
+
+			props.styles = styles
+
+			-- Build profile filters only for the populated workspace.
+			local uniqueProfiles = {}
+			local profileCounts = {}
+			for _, style in ipairs(props.styles) do
+				local profile = style.camera_profile or "Default"
+				if not uniqueProfiles[profile] then
+					uniqueProfiles[profile] = true
+					profileCounts[profile] = 1
+				else
+					profileCounts[profile] = profileCounts[profile] + 1
+				end
+			end
+
+			local sortedProfiles = {}
+			for profile, count in pairs(profileCounts) do
+				table.insert(sortedProfiles, { profile = profile, count = count })
+			end
+			table.sort(sortedProfiles, function(a, b)
+				if a.count == b.count then return a.profile < b.profile end
+				return a.count > b.count
 			end)
+
+			local profileList = {
+				{ title = LOC("$$$/StyleAI/StyleCatalog/AllProfiles=All Profiles"), value = "All Profiles" },
+			}
+			for _, item in ipairs(sortedProfiles) do
+				table.insert(profileList, {
+					title = string.format("%s (%d)", item.profile, item.count),
+					value = item.profile,
+				})
+			end
+			props.profileFilters = profileList
+			updateListItems()
+
+			props.isLoading = false
+			props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/LoadedCount=^1 style(s) could benefit from more examples.", tostring(#props.styles))
 		end
 
 		-- Action: Show Candidate Photos for selected style
@@ -471,69 +476,35 @@ LrTasks.startAsyncTask(function()
 			end)
 		end
 
+		-- Resolve the state before constructing the window. Lightroom does not
+		-- reliably shrink a resizable dialog after a large list/detail workspace
+		-- becomes hidden, so an empty result gets a genuinely compact view.
+		loadRecommendations()
+		local hasStyles = #props.styles > 0
+
 		-- Build Dialog
 		local function buildDialog()
+			if not hasStyles then
+				return f:column({
+					bind_to_object = props,
+					spacing = f:control_spacing(),
+					fill_horizontal = 1,
+					UIFactory.Notice(f, {
+						kind = "info",
+						title = bind("statusMessage"),
+						width = 600,
+					}),
+				})
+			end
+
 			return f:column({
 				bind_to_object = props,
 				spacing = f:control_spacing(),
-
-				-- Title
-				f:row({
-					f:static_text({
-						title = LOC("$$$/StyleAI/UpgradeAssistant/Title=Find More Training Examples"),
-						font = "bold",
-						size = "large",
-					}),
-				}),
+				fill_horizontal = 1,
 
 				-- Status bar
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = bind("statusMessage"),
-						fill_horizontal = 1,
-						wrap = true,
-					}),
-				}),
-
-				-- Toolbar
-				f:row({
-					f:push_button({
-						title = LOC("$$$/StyleAI/UpgradeAssistant/ShowPhotos=Show Candidate Photos"),
-						action = showSelectedPhotos,
-						width = share("toolbarButton"),
-						enabled = bind("selectedActionEnabled"),
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/UpgradeAssistant/ShowAllPhotos=Show All Candidate Photos"),
-						action = showAllPhotos,
-						width = share("toolbarButton"),
-						enabled = bind("allActionEnabled"),
-					}),
-				}),
-
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackGuide=After reviewing a candidate collection in Library, select photos and label them here:"),
-						fill_horizontal = 1,
-						wrap = true,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackHelpful=Helpful Example"),
-						action = function() submitSelectedFeedback(true, true) end,
-						enabled = bind("feedbackActionEnabled"),
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackRedundant=Fits, But Redundant"),
-						action = function() submitSelectedFeedback(true, false) end,
-						enabled = bind("feedbackActionEnabled"),
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackWrong=Not This Policy"),
-						action = function() submitSelectedFeedback(false, false) end,
-						enabled = bind("feedbackActionEnabled"),
-					}),
+				UIFactory.HelpText(f, {
+					title = bind("statusMessage"),
 				}),
 
 				StyleUI.filteredListGroup(f, {
@@ -543,6 +514,8 @@ LrTasks.startAsyncTask(function()
 					filterValue = bind("selectedProfileFilter"),
 					listItems = bind("listItems"),
 					selectedValue = bind("selectedStyleIndex"),
+					heightInLines = 7,
+					fillVertical = false,
 				}),
 
 				-- Style detail panel
@@ -564,7 +537,7 @@ LrTasks.startAsyncTask(function()
 								f:static_text({ title = bind("detailProfile"), fill_horizontal = 1, wrap = true }),
 							}),
 							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/DetailTierLabel=ML Tier:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
+								f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/DetailTierLabel=Policy model:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
 								f:static_text({ title = bind("detailTier"), fill_horizontal = 1, wrap = true }),
 							}),
 							f:row({
@@ -580,18 +553,61 @@ LrTasks.startAsyncTask(function()
 								f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/DetailExplanationLabel=Recommendation Details:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
 								f:static_text({ title = bind("detailExplanation"), fill_horizontal = 1, wrap = true }),
 							}),
+						}),
+					}),
+
+				f:group_box({
+					title = LOC("$$$/StyleAI/UpgradeAssistant/Actions=Candidate Review"),
+					fill_horizontal = 1,
+					f:column({
+						fill_horizontal = 1,
+						spacing = f:control_spacing(),
+						UIFactory.HelpText(f, {
+							title = LOC("$$$/StyleAI/UpgradeAssistant/ShowGuide=Open candidate photos in Library before deciding whether they improve this style."),
+						}),
+						f:row({
+							f:push_button({
+								title = LOC("$$$/StyleAI/UpgradeAssistant/ShowPhotos=Show Candidate Photos"),
+								action = showSelectedPhotos,
+								enabled = bind("selectedActionEnabled"),
+							}),
+							f:push_button({
+								title = LOC("$$$/StyleAI/UpgradeAssistant/ShowAllPhotos=Show All Candidate Photos"),
+								action = showAllPhotos,
+								enabled = bind("allActionEnabled"),
+							}),
+						}),
+						f:separator({ fill_horizontal = 1 }),
+						UIFactory.HelpText(f, {
+							title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackGuide=After reviewing a candidate collection in Library, select photos and label them here:"),
+						}),
+						f:row({
+							f:push_button({
+								title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackHelpful=Helpful Example"),
+								action = function() submitSelectedFeedback(true, true) end,
+								enabled = bind("feedbackActionEnabled"),
+							}),
+							f:push_button({
+								title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackRedundant=Fits, But Redundant"),
+								action = function() submitSelectedFeedback(true, false) end,
+								enabled = bind("feedbackActionEnabled"),
+							}),
+							f:push_button({
+								title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackWrong=Not This Policy"),
+								action = function() submitSelectedFeedback(false, false) end,
+								enabled = bind("feedbackActionEnabled"),
+							}),
+						}),
 					}),
 				}),
 			})
 		end
 
-		loadRecommendations()
-
 		LrDialogs.presentModalDialog({
 			title = LOC("$$$/StyleAI/UpgradeAssistant/DialogTitle=Find More Training Examples"),
 			contents = buildDialog(),
 			actionVerb = LOC("$$$/StyleAI/common/Close=Close"),
-			resizable = true,
+			resizable = hasStyles,
 		})
 
 		log:info("Discover Style Upgrade Candidates task finished")

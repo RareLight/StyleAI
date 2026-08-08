@@ -36,14 +36,15 @@ function StyleUI.filteredListGroup(f, props)
 	-- share dynamic widths with mixed controls. Keep this one tested, bounded
 	-- width while allowing the surrounding resizable dialog to grow naturally.
 	local listWidth = props.listWidth or 600
+	local fillVertical = props.fillVertical == false and nil or (props.fillVertical or 1)
 	return f:group_box({
 		title = props.title,
 		fill_horizontal = 1,
-		fill_vertical = 1,
+		fill_vertical = fillVertical,
 		f:column({
 			spacing = f:control_spacing(),
 			fill_horizontal = 1,
-			fill_vertical = 1,
+			fill_vertical = fillVertical,
 			f:static_text({ title = props.filterLabel }),
 			f:popup_menu({
 				items = props.filterItems,

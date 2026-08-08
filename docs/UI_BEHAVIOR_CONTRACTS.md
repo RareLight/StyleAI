@@ -40,6 +40,13 @@ changes registered menus.
 | Keyword organization | hierarchy, catalog-structure, bilingual preferences | Changes generated keyword organization only |
 | Context | GPS, existing keywords, folder name, photo instructions | Sent only to the selected loopback local model |
 
+The primary Prepare Photos window remains compact. **Metadata Settings...**
+opens the generated-field, catalog-writing, local-model, prompt, and context
+controls in a focused secondary dialog only when metadata generation is
+selected. Canceling that secondary dialog restores its entry-state values;
+preferences are still written only when the primary Prepare Photos action is
+confirmed.
+
 The dialog rejects an empty task selection, metadata generation without a
 local model, and metadata generation with no output fields. `replaceSS` and the
 top-level keyword behavior remain compatibility-reserved pending a product
@@ -76,6 +83,10 @@ unchanged.
 - Edit review preserves global/mask choices and exposes recipe details as
   read-only bounded content.
 - Edit outcome labels never Undo Develop settings and remain evaluation-only.
+- Find More Training Examples resolves recommendations before constructing its
+  window. Empty results use a compact informational state; populated results
+  retain filtering, policy details, Library selection, and all three
+  evaluation-only feedback labels.
 - Rebuild creates and validates a replacement generation; the active generation
   remains available unless activation succeeds.
 - Training deletion removes saved training examples and learned styles only.
