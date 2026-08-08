@@ -4,6 +4,7 @@
 
 local StyleUI = require("StyleUI")
 local StyleDiscovery = require("StyleDiscovery")
+local UIFactory = require("UIFactory")
 
 LrTasks.startAsyncTask(function()
 	LrFunctionContext.callWithContext("StyleCatalogTask", function(ctx)
@@ -256,6 +257,39 @@ LrTasks.startAsyncTask(function()
 			end)
 		end
 
+		local function deleteAllTrainingData()
+			local deleteConfirm = LrDialogs.confirm(
+				LOC("$$$/StyleAI/Training/WipeConfirmTitle=Delete All Training Data"),
+				LOC("$$$/StyleAI/Training/WipeConfirmMsg=This permanently deletes all saved training examples and learned styles. Search data, Lightroom photos, and Develop edits are not changed. Continue?"),
+				LOC("$$$/StyleAI/Training/WipeConfirmOk=Delete Training Data"),
+				LOC("$$$/StyleAI/Training/WipeConfirmCancel=Cancel")
+			)
+			if deleteConfirm ~= "ok" then return end
+
+			props.isLoading = true
+			props.statusMessage = LOC("$$$/StyleAI/Training/Wiping=Deleting saved training data...")
+			LrTasks.startAsyncTask(function()
+				local ok, err = SearchIndexAPI.clearAllTrainingData()
+				if ok then
+					props.styles = {}
+					props.listItems = {}
+					props.statusMessage = LOC("$$$/StyleAI/Training/WipedMsg=Saved training examples and learned styles were permanently deleted.")
+					loadStyles()
+					LrDialogs.message(
+						LOC("$$$/StyleAI/Training/WipedTitle=Training Data Deleted"),
+						LOC("$$$/StyleAI/Training/WipedMsg=Saved training examples and learned styles were permanently deleted."),
+						"info"
+					)
+				else
+					props.isLoading = false
+					ErrorHandler.handleError(
+						LOC("$$$/StyleAI/Training/WipeFailedTitle=Delete Failed"),
+						tostring(err or LOC("$$$/StyleAI/common/UnknownError=Unknown error"))
+					)
+				end
+			end)
+		end
+
 		-- Show Photos for a specific style
 		local function showPhotos()
 			local idx = StyleUI.resolveSelectedIndex(props.selectedStyleIndex, props.listItems)
@@ -492,20 +526,31 @@ LrTasks.startAsyncTask(function()
 				f:group_box({
 					title = LOC("$$$/StyleAI/StyleCatalog/Maintenance=Style Maintenance"),
 					fill_horizontal = 1,
-					f:row({
+					f:column({
 						fill_horizontal = 1,
-						f:static_text({
+						spacing = f:control_spacing(),
+						UIFactory.HelpText(f, {
 							title = LOC("$$$/StyleAI/StyleCatalog/RebuildHelp=Rebuild learned styles from your saved training examples after changing or refreshing training data."),
-							fill_horizontal = 1,
-							wrap = true,
 						}),
-						f:push_button({
-							title = LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverAction=Rebuild Styles"),
-							action = resetAndDiscoverStyles,
+						f:row({
+							f:push_button({
+								title = LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverAction=Rebuild Styles"),
+								action = resetAndDiscoverStyles,
+								enabled = bind({
+									key = "isLoading",
+									transform = function(v) return not v end,
+								}),
+							}),
+						}),
+						f:separator({ fill_horizontal = 1 }),
+						UIFactory.DestructiveAction(f, {
+							title = LOC("$$$/StyleAI/Training/WipeAll=Delete All Training Data"),
+							explanation = LOC("$$$/StyleAI/Training/WipeMaintenanceHelp=Permanently delete saved training examples and learned styles. Search data, Lightroom photos, and Develop edits are not changed."),
 							enabled = bind({
 								key = "isLoading",
-								transform = function(v) return not v end,
+								transform = function(value) return not value end,
 							}),
+							action = deleteAllTrainingData,
 						}),
 					}),
 				}),

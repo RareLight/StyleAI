@@ -17,8 +17,8 @@ The canonical cross-module entry point is **File > Plug-in Extras**.
 | Styles & Training... | `TaskStyleCatalog.lua` | Browse, rename, reveal, and rebuild learned styles |
 | Find More Training Examples... | `TaskDiscoverUpgradeCandidates.lua` | Review policy-specific candidate photos and record evaluation-only feedback |
 
-Release builds have no duplicate Export-menu entries and no developer Help
-commands. Development packaging flips the self-contained `developerBuild`
+Release builds register one cross-module File-menu command set and no developer
+Help commands. Development packaging flips the self-contained `developerBuild`
 manifest constant and `BuildConfig.developerBuild` together, adding the
 automated tests, benchmark, rendering capability spike, reconciliation command,
 and one-time style override only to developer builds. Runtime Debug never
@@ -82,6 +82,26 @@ unchanged.
 - Database backup/restore does not back up or restore Lightroom catalogs,
   photo files, or Develop edits.
 
+### Plugin Manager
+
+- Status & Setup reports the background service, required vision model, and
+  optional local metadata provider without relying on color alone.
+- Repair Background Service starts an offline service or restarts a reachable
+  one; it does not delete catalog-local data.
+- The Styles summary reports factual saved-example and active-style counts.
+  Training deletion is available only in Styles & Training maintenance.
+- Data & Recovery retains validated backup export, same-catalog restore with
+  rollback, and removed-photo cleanup with a pre-cleanup backup.
+- Database statistics remain available to diagnostics and tests but are not a
+  user-facing Plugin Manager action.
+- Preview acquisition is automatic and falls back to Lightroom export after
+  failures or repeated timeouts.
+- Processing-load overrides are Debug-only and map to automatic,
+  lower-resource, or faster operation. Maximum is no longer a user-facing
+  choice.
+- Support reports contain system details and available StyleAI/provider logs,
+  never the Lightroom catalog or original photos.
+
 ## Debug capture contract
 
 Diagnostic LLM image capture is authorized only when both `debugMode` and
@@ -100,7 +120,7 @@ has been removed.
 | --- | --- | --- |
 | `debugMode`, `captureLlmInputs`, `captureLlmInputsPath` | Active | New double-gated Debug UI |
 | `auditLlmInputs`, `auditLlmInputsPath` | Migration-only | Never migrate enabled state; retain old path once |
-| `usePreviewThumbnails` | Active | Retained in Advanced settings |
+| `usePreviewThumbnails` | Compatibility-reserved, ignored by current UI orchestration | Preview acquisition is automatic with export fallback |
 | `exportSize`, `exportQuality` | Compatibility-reserved, currently unused | Removed from Plugin Manager state; defaults retained to avoid upgrade churn |
 | `indexingBatchSize` | Compatibility-reserved, currently unused by UI orchestration | Removed from Plugin Manager state and Prepare writes |
 | `forceFreshPreviews` | Ineffective | Removed from the UI; existing stored value is ignored |

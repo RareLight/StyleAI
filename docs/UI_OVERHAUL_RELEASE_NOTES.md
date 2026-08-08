@@ -2,8 +2,8 @@
 
 ## Navigation and workflow names
 
-- Lightroom's cross-module **File > Plug-in Extras** menu is now the canonical entry
-  point. Duplicate Export-menu entries were removed.
+- Lightroom's cross-module **File > Plug-in Extras** menu is now the canonical
+  entry point, with one command set and no module-specific duplicate.
 - The primary workflows are now **Prepare Photos**, **Learn From My Edits**,
   **Apply My Style**, **Rate Selected AI Edits**, **Styles & Training**, and
   **Find More Training Examples**.
@@ -21,6 +21,22 @@
   visible in **Apply My Style** with an effective safety summary.
 - Broad reset actions were removed from Prepare and Learn. Destructive actions
   state their exact scope and require confirmation.
+
+## Plugin Manager simplification
+
+- Split the former combined configuration form into Status & Setup, Styles,
+  Data & Recovery, Support & Debug, Updates, and About sections.
+- Replaced count-derived style-quality claims with factual saved-example and
+  active-style counts.
+- Moved Delete All Training Data into Styles & Training maintenance.
+- Retained validated backup export, protected restore, and removed-photo
+  cleanup while removing the non-actionable database-statistics button.
+- Replaced Restart Service with a health-aware repair action that can also
+  start an offline service.
+- Made Lightroom preview use automatic with the existing export fallback.
+- Moved processing-load overrides under Debug and removed the Maximum choice.
+- Consolidated diagnostic details and available logs into one support-report
+  folder.
 
 ## Debug and preference migration
 

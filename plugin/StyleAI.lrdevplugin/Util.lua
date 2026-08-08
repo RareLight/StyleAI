@@ -391,6 +391,7 @@ function Util.getGlobalPhotoIdForPhoto(photo, options)
 	local rebuildStartedAt = LrDate.currentTime()
 	local globalPhotoId, idErr = Util.computeStableMetadataPhotoId(photo)
 	local metadata = {}
+	local originalFilePath
 
 	if globalPhotoId then
 		metadata.algorithm = STABLE_ID_ALGO
@@ -404,7 +405,7 @@ function Util.getGlobalPhotoIdForPhoto(photo, options)
 			end
 		end
 
-		local originalFilePath = photo:getRawMetadata("path")
+		originalFilePath = photo:getRawMetadata("path")
 		local attributes, attrErr = getFileAttributes(originalFilePath)
 		if not attributes then
 			log:error(
@@ -471,7 +472,7 @@ function Util.getGlobalPhotoIdForPhoto(photo, options)
 	local rebuildElapsedMs = math.floor((LrDate.currentTime() - rebuildStartedAt) * 1000)
 	log:trace(
 		"getGlobalPhotoIdForPhoto: cache miss -> generated id for "
-			.. tostring(originalFilePath)
+			.. tostring(originalFilePath or "<metadata-only>")
 			.. " elapsedMs="
 			.. tostring(rebuildElapsedMs)
 			.. " idPrefix="
@@ -550,7 +551,7 @@ end
 
 function Util.copyLogfilesToDesktop(extraInfo)
 	local progressScope = LrProgressScope({
-		title = LOC("$$$/StyleAI/PluginInfo/CopyingLogs=Copying log files to Desktop..."),
+		title = LOC("$$$/StyleAI/PluginInfo/GeneratingSupportReport=Generating support report..."),
 		canCancel = true,
 	})
 
@@ -574,8 +575,8 @@ function Util.copyLogfilesToDesktop(extraInfo)
 		local reportPath = LrPathUtils.child(folder, "report.txt")
 		local f = io.open(reportPath, "w")
 		if f then
-			f:write("StyleAI Error Report\n")
-			f:write("======================\n\n")
+			f:write("StyleAI Support Report\n")
+			f:write("========================\n\n")
 			f:write("Date: " .. Util.formatTimestampSafe(LrDate.currentTime()) .. "\n")
 			if extraInfo.error then
 				f:write("Error: " .. tostring(extraInfo.error) .. "\n")

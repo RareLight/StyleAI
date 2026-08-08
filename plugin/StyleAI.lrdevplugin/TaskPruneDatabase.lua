@@ -25,7 +25,7 @@ function TaskPruneDatabase.process()
     LrTasks.startAsyncTask(function()
         local ok, err = SearchIndexAPI.ensureVersionCompatibility()
         if not ok then
-            ErrorHandler.handleError("Backend Version Mismatch", err)
+            ErrorHandler.handleError(LOC "$$$/StyleAI/PruneDatabase/VersionMismatch=Service Version Mismatch", err)
             return
         end
 
@@ -52,7 +52,7 @@ function TaskPruneDatabase.process()
         local catalog = LrApplication.activeCatalog()
 
 
-        progressScope:setCaption("Gathering all photo IDs from the catalog...")
+        progressScope:setCaption(LOC "$$$/StyleAI/PruneDatabase/Gathering=Checking photos in the Lightroom catalog...")
         local allPhotos = catalog:getAllPhotos()
         local validPhotoIds = {}
 
@@ -64,7 +64,11 @@ function TaskPruneDatabase.process()
 
             -- Update progress every 500 photos to avoid slowing down Lightroom
             if i % 500 == 0 then
-                progressScope:setCaption("Gathering IDs (" .. i .. " / " .. #allPhotos .. ")...")
+                progressScope:setCaption(LOC(
+                    "$$$/StyleAI/PruneDatabase/GatheringProgress=Checking photos (^1 of ^2)...",
+                    tostring(i),
+                    tostring(#allPhotos)
+                ))
                 LrTasks.yield()
                 LrTasks.sleep(0.01)
             end
@@ -86,28 +90,33 @@ function TaskPruneDatabase.process()
             return
         end
 
-        progressScope:setCaption("Sending prune request to backend...")
+        progressScope:setCaption(LOC "$$$/StyleAI/PruneDatabase/Sending=Cleaning StyleAI records...")
         progressScope:setPortionComplete(50, 100)
 
         local results, apiErr = SearchIndexAPI.pruneDatabase(validPhotoIds)
         progressScope:done()
 
         if apiErr then
-            ErrorHandler.handleError("Failed to prune database", apiErr)
+            ErrorHandler.handleError(LOC "$$$/StyleAI/PruneDatabase/FailedTitle=Database Cleanup Failed", apiErr)
             return
         end
 
-        local msg = ""
+        local msg
         if results and type(results) == "table" then
             local deleted = results.deleted or 0
             local disassociated = results.disassociated or 0
             local checked = results.checked or 0
-            msg = string.format("Database Prune Complete:\n\nA backup was automatically generated before pruning.\n\nChecked: %d photos\nDeleted: %d orphans\nDisassociated: %d from catalog", checked, deleted, disassociated)
+            msg = LOC(
+                "$$$/StyleAI/PruneDatabase/CompleteMessage=A backup was created before cleanup.\n\nChecked: ^1 photos\nRemoved: ^2 orphaned records\nDisassociated: ^3 records from this catalog",
+                tostring(checked),
+                tostring(deleted),
+                tostring(disassociated)
+            )
         else
-            msg = "Database prune completed successfully. A backup was automatically generated before pruning."
+            msg = LOC "$$$/StyleAI/PruneDatabase/CompleteSimple=Database cleanup completed successfully. A backup was created before cleanup."
         end
 
-        LrDialogs.message("Prune Database", msg, "info")
+        LrDialogs.message(LOC "$$$/StyleAI/PruneDatabase/CompleteTitle=Cleanup Complete", msg, "info")
     end)
 end
 
