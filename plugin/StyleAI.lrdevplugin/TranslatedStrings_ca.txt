@@ -379,7 +379,6 @@
 "$$$/StyleAI/TaskAiEditPhotos/CustomIntent" = "Custom intent:"
 "$$$/StyleAI/TaskAiEditPhotos/DialogTitle" = "AI Edit Photos in Lightroom"
 "$$$/StyleAI/TaskAiEditPhotos/DialogTitleML" = "Aplica el meu estil"
-"$$$/StyleAI/TaskAiEditPhotos/DoNotClip" = "Manteniu els ajustos dins de límits segurs"
 "$$$/StyleAI/TaskAiEditPhotos/EditInstructions" = "Edit Instructions"
 "$$$/StyleAI/TaskAiEditPhotos/GenerateEdits" = "Aplica els ajustos"
 "$$$/StyleAI/TaskAiEditPhotos/HdrSelection" = "HDR editing mode:"

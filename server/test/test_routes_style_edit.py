@@ -163,7 +163,7 @@ def test_style_edit_honors_scoped_operation_cancel(client, mocker, tmp_path):
 
 def test_no_policy_match_can_use_explicit_local_llm_fallback(mocker):
     mocker.patch("routes.style_edit._get_clip_embedding", return_value=[1.0, 0.0])
-    mocker.patch(
+    generate_style_edit = mocker.patch(
         "routes.style_edit.style_engine.generate_style_edit",
         return_value=StyleEngineResult(
             recipe={},
@@ -202,7 +202,7 @@ def test_no_policy_match_can_use_explicit_local_llm_fallback(mocker):
         "photo-1",
         b"jpeg",
         "photo.jpg",
-        {},
+        {"do_not_clip": False},
         camera_profile="Adobe Color",
         use_llm_fallback=True,
     )
@@ -210,6 +210,7 @@ def test_no_policy_match_can_use_explicit_local_llm_fallback(mocker):
     assert result["engine"] == "llm"
     assert result["edit_inference_id"] == "inference-1"
     assert inference.call_args.kwargs["engine"] == "llm"
+    assert "do_not_clip" not in generate_style_edit.call_args.kwargs
     query.assert_called_once_with(
         [1.0, 0.0],
         n_results=3,
