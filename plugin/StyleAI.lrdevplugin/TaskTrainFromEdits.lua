@@ -97,7 +97,9 @@ LrTasks.startAsyncTask(function()
 		LrDialogs.attachErrorDialogToFunctionContext(ctx)
 		log:info("Save Training Examples task started")
 
-
+		-- Preserve the user's target-photo selection before modal UI changes
+		-- Lightroom's live selection/focus state.
+		local selectedPhotosSnapshot = PhotoSelector.snapshotSelectedPhotos()
 
 		local options = showTrainDialog(ctx)
 		if not options then
@@ -105,7 +107,7 @@ LrTasks.startAsyncTask(function()
 			return
 		end
 
-		local photosToProcess = PhotoSelector.getPhotosInScope(options.scope)
+		local photosToProcess = PhotoSelector.getPhotosInScope(options.scope, nil, nil, selectedPhotosSnapshot)
 		if not photosToProcess or #photosToProcess == 0 then
 			LrDialogs.message(
 				LOC("$$$/StyleAI/Training/NoPhotosTitle=No Photos"),

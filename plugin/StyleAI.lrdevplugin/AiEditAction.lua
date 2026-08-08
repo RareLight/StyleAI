@@ -768,6 +768,9 @@ function AiEditAction.run(editMode)
 		LrFunctionContext.callWithContext("AiEditPhotosTask", function(ctx)
 		LrDialogs.attachErrorDialogToFunctionContext(ctx)
 		log:info("AI Edit task started")
+		-- Preserve the user's target-photo selection before modal UI and
+		-- backend readiness checks can change Lightroom's live target set.
+		local selectedPhotosSnapshot = PhotoSelector.snapshotSelectedPhotos()
 
 		local options = getAiEditOptions(ctx, editMode)
 		if not options then
@@ -832,7 +835,7 @@ function AiEditAction.run(editMode)
 				.. tostring(options.composition_mode)
 		)
 
-		local photos = PhotoSelector.getPhotosInScope(options.scope)
+		local photos = PhotoSelector.getPhotosInScope(options.scope, nil, nil, selectedPhotosSnapshot)
 		if not photos or #photos == 0 then
 			LrDialogs.message(
 				LOC("$$$/StyleAI/common/NoPhotosTitle=No Photos"),

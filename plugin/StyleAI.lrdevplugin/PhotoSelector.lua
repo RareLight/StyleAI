@@ -14,20 +14,52 @@ local function filterPhotos(photos)
 end
 
 ---
+-- Capture Lightroom's current target-photo selection as a new Lua array.
+-- Target photos are live UI state and can change while a modal dialog is open,
+-- so tasks using the "selected" scope must call this before showing any UI.
+-- @return table Array of selected, non-video LrPhoto objects.
+--
+function PhotoSelector.snapshotSelectedPhotos()
+	local catalog = LrApplication.activeCatalog()
+	if not catalog then
+		log:warn("Could not snapshot selected photos because no catalog is active")
+		return {}
+	end
+
+	local ok, targetPhotos = pcall(function() return catalog:getTargetPhotos() end)
+	if not ok then
+		log:error("Could not snapshot selected photos: " .. tostring(targetPhotos))
+		return {}
+	end
+
+	local snapshot = filterPhotos(targetPhotos)
+	log:info("Captured " .. tostring(#snapshot) .. " selected photo(s) before opening task UI")
+	return snapshot
+end
+
+---
 -- @param scope string 'selected'|'view'|'all'|'missing'
 -- @param taskOptions table|boolean|nil For scope 'missing': task options table
 --   { enableEmbeddings, enableMetadata, enableFaces, regenerateMetadata }
 --   to check backend for unprocessed photos. Or boolean for legacy (requireEmbeddings).
 --   Nil/omitted = legacy true (photos not in index with embeddings).
 -- @param lookupProgressScope LrProgressScope|nil For scope 'missing': optional progress for lookup (may be the task's main scope).
+-- @param selectedPhotosSnapshot table|nil Immutable target-photo snapshot captured
+--   before task UI is shown. Used only for the 'selected' scope.
 --
-function PhotoSelector.getPhotosInScope(scope, taskOptions, lookupProgressScope)
+function PhotoSelector.getPhotosInScope(scope, taskOptions, lookupProgressScope, selectedPhotosSnapshot)
 	local catalog = LrApplication.activeCatalog()
 	local photosToProcess = {}
 	local status = "ok"
 
 	if scope == "selected" then
-		photosToProcess = filterPhotos(catalog:getTargetPhotos())
+		if type(selectedPhotosSnapshot) == "table" then
+			-- Make another defensive copy so downstream stack mutation can never
+			-- alter the selection snapshot retained by the task.
+			photosToProcess = filterPhotos(selectedPhotosSnapshot)
+		else
+			photosToProcess = filterPhotos(catalog:getTargetPhotos())
+		end
 	elseif scope == "view" then
 		local sources = catalog:getActiveSources()
 		if not sources or #sources == 0 then
