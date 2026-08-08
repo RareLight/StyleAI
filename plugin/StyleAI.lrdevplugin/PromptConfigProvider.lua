@@ -98,7 +98,10 @@ function PromptConfigProvider.restoreDefaultPrompt(props, defaultText)
 		end
 	end
 	if not found then
-		table.insert(props.promptTitles, { title = "Default", value = "Default" })
+		table.insert(props.promptTitles, {
+			title = LOC("$$$/StyleAI/PromptConfig/DefaultName=Default"),
+			value = "Default",
+		})
 		sortPromptTitles(props.promptTitles)
 	end
 	props.prompt = "Default"

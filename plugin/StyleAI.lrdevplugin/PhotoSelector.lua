@@ -26,7 +26,7 @@ function PhotoSelector.snapshotSelectedPhotos()
 		return {}
 	end
 
-	local ok, targetPhotos = pcall(function() return catalog:getTargetPhotos() end)
+	local ok, targetPhotos = LrTasks.pcall(function() return catalog:getTargetPhotos() end)
 	if not ok then
 		log:error("Could not snapshot selected photos: " .. tostring(targetPhotos))
 		return {}
