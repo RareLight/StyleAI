@@ -215,12 +215,6 @@ local function getAiEditOptions(ctx, editMode)
 	props.showPhotoContextDialog = prefs.aiEditShowPhotoContextDialog ~= false
 	props.useTrainingStyle = prefs.aiEditUseTrainingStyle ~= false
 	
-	if prefs.aiEditDoNotClip == nil then
-		props.doNotClip = true
-	else
-		props.doNotClip = prefs.aiEditDoNotClip
-	end
-
 	props.editingStyle = editMode or "trained"
 	props.styleStrength = getValidStyleStrength(prefs.aiEditStyleStrength)
 	props.showLlmOptions = (props.editingStyle == "creative")
@@ -359,12 +353,6 @@ local function getAiEditOptions(ctx, editMode)
 							{ title = LOC("$$$/StyleAI/RenderingMode/Auto=Auto"), value = "auto" },
 						},
 						width = 200,
-					}),
-				}),
-				f:row({
-					f:checkbox({
-						title = LOC("$$$/StyleAI/TaskAiEditPhotos/DoNotClip=Keep edits within safe slider limits"),
-						value = bind("doNotClip"),
 					}),
 				}),
 				f:row({
@@ -682,7 +670,6 @@ local function getAiEditOptions(ctx, editMode)
 	prefs.aiEditShowPhotoContextDialog = props.showPhotoContextDialog
 	prefs.aiEditUseTrainingStyle = props.useTrainingStyle
 	prefs.aiEditEditingStyle = props.editingStyle
-	prefs.aiEditDoNotClip = props.doNotClip
 	prefs.editPrompts = props.prompts
 	prefs.editPrompt = props.prompt
 
@@ -716,7 +703,6 @@ local function getAiEditOptions(ctx, editMode)
 		use_training_style = false,
 		enableQuickEdit = props.editingStyle == "trained",
 		quickEditStyleStrength = props.styleStrength,
-		do_not_clip = props.doNotClip,
 		allow_auto_crop = props.allowAutoCrop,
 		allow_auto_rotate = props.allowAutoRotate,
 	}

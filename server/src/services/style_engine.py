@@ -98,13 +98,12 @@ def generate_style_edit(
     current_settings: dict[str, Any] | None = None,
     style_strength: float | None = None,
     style_override: str | None = None,
-    do_not_clip: bool = True,
     profile_mode: str = "suggest",
     hdr_mode: str = "suggest",
     source_provenance: str = "unknown",
 ) -> StyleEngineResult:
     """Predict one absolute edit, abstaining on unsupported or ambiguous input."""
-    del min_confidence, do_not_clip
+    del min_confidence
     if not policy_runtime.has_active_generation():
         return _no_result(
             "No trained editing-policy generation is active. "

@@ -199,7 +199,6 @@ def _run_single_style_edit(
             current_settings=options.get("current_settings"),
             style_strength=options.get("style_strength"),
             style_override=options.get("style_override"),
-            do_not_clip=options.get("do_not_clip", True),
             profile_mode=options.get("profile_mode", "suggest"),
             hdr_mode=options.get("hdr_mode", "suggest"),
             source_provenance=source_provenance,
