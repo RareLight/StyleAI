@@ -107,12 +107,10 @@ LrTasks.startAsyncTask(function()
 			assertTrue(type(ready) == "boolean", "isClipReady should return a boolean")
 		end)
 
-		runTest("Backend Connectivity - APISearchIndex.pruneDatabase (Dry Run)", function()
-			-- We do a dry run by sending a completely dummy photo ID. It shouldn't crash.
-			local results, err = SearchIndexAPI.pruneDatabase("automated-test-catalog", {"dummy_id_123"})
-			assertTrue(err == nil, "pruneDatabase should not return an error")
-			assertTrue(type(results) == "table", "pruneDatabase should return a results table")
-			assertTrue(results.deleted ~= nil, "pruneDatabase should return deleted count")
+		runTest("Database prune safety rejects an empty catalog", function()
+			local results, err = SearchIndexAPI.pruneDatabase({})
+			assertTrue(results == nil, "pruneDatabase must reject an empty valid-photo set")
+			assertTrue(err ~= nil, "pruneDatabase should explain the safety rejection")
 		end)
 
 		---------------------------------------------------------

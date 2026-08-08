@@ -107,7 +107,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 				end
 				table.insert(
 					issues,
-					LOC("$$$/StyleAI/Health/ApiKeysMissing=LLM not configured (AI Auto-Tagging disabled, but Semantic Search and Predictive AI Editing work).")
+					LOC("$$$/StyleAI/Health/LocalLlmOptional=Local LLM not configured (AI Auto-Tagging disabled, but Semantic Search and Predictive AI Editing work).")
 				)
 			end
 
@@ -362,7 +362,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					fill_horizontal = 1,
 					f:static_text({
-						title = LOC("$$$/StyleAI/Training/TopScenes=Top Scene Types:"),
+						title = LOC("$$$/StyleAI/Training/TopDescriptors=Top Content Descriptors:"),
 						alignment = "right",
 						width = share("labelWidth"),
 					}),
@@ -371,11 +371,11 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						title = bind({
 							key = "styleStats",
 							transform = function(s)
-								if not s or not s.scene_distribution then
+								if not s or not s.descriptor_distribution then
 									return "..."
 								end
 								local sorted = {}
-								for k, v in pairs(s.scene_distribution) do
+								for k, v in pairs(s.descriptor_distribution) do
 									table.insert(sorted, { name = k, count = v })
 								end
 								table.sort(sorted, function(a, b)
@@ -383,7 +383,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 								end)
 								local top = {}
 								for i = 1, math.min(3, #sorted) do
-									local name = sorted[i].name:gsub("^scene_", ""):gsub("_", " ")
+									local name = sorted[i].name:gsub("_", " ")
 									table.insert(top, name:sub(1, 1):upper() .. name:sub(2))
 								end
 								return #top > 0 and table.concat(top, ", ") or "None yet"

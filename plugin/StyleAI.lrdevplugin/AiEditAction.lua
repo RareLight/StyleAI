@@ -8,6 +8,7 @@
 ---
 
 require("DevelopEditManager")
+local WorkCoordinator = require("WorkCoordinator")
 local UIFactory = require("UIFactory")
 
 local AiEditAction = {}
@@ -898,6 +899,39 @@ function AiEditAction.run(editMode)
 		local contextReady = {}
 		local results = {}
 		local producerDone = false
+		local stopRequested = false
+		local photoIdsByIndex = {}
+		local photoIdErrorsByIndex = {}
+		local operationItemIds = {}
+		for index, photo in ipairs(photos) do
+			local photoId, photoIdErr = SearchIndexAPI.getPhotoIdForPhoto(photo)
+			photoIdsByIndex[index] = photoId
+			photoIdErrorsByIndex[index] = photoIdErr
+			if photoId then table.insert(operationItemIds, photoId) end
+		end
+		local operationOk, operation = SearchIndexAPI.startOperation(
+			"edit",
+			operationItemIds,
+			{ scope = tostring(options.scope), photo_count = #operationItemIds },
+			nil,
+			9,
+			false
+		)
+		if not operationOk then
+			progressScope:done()
+			ErrorHandler.handleError("Could not start AI edit operation", operation)
+			return
+		end
+		local operationId = operation.job_id
+		local function finishOperationItem(photoId, state, operationError)
+			if not photoId then return end
+			local updated, updateError = SearchIndexAPI.updateOperationItems(operationId, {
+				{ item_id = photoId, state = state, error = operationError },
+			})
+			if not updated then
+				log:warn("Could not finalize edit operation item " .. tostring(photoId) .. ": " .. tostring(updateError))
+			end
+		end
 
 		-- Pre-fill contexts if no dialog is needed
 		if not options.showPhotoContextDialog then
@@ -912,16 +946,30 @@ function AiEditAction.run(editMode)
 		local activeProducers = 0
 		local profile = tonumber(prefs.indexingPerformanceProfile) or 2
 		local maxWorkers = profile * 2
-		
-		if options.model and (string.find(string.lower(options.model), "lmstudio") or string.find(string.lower(options.model), "ollama")) then
-			-- Local LLMs process sequentially. Limit concurrent requests to prevent Waitress deadlock and HTTP timeouts
-			maxWorkers = math.min(profile * 2, 4)
-			log:info("Local LLM detected. Capping edit producers to " .. tostring(maxWorkers) .. " to prevent Waitress thread exhaustion.")
+		local compatibilityOk, _, hardwareInfo = SearchIndexAPI.ensureVersionCompatibility()
+		if compatibilityOk and hardwareInfo then
+			maxWorkers = math.min(
+				maxWorkers,
+				math.max(1, tonumber(hardwareInfo.recommended_parallel_tasks) or maxWorkers)
+			)
 		end
+		
+		local providerKey = string.lower(tostring(options.provider or ""))
+		local modelKey = string.lower(tostring(options.model or ""))
+		local usesLocalLlm = providerKey == "lmstudio"
+			or providerKey == "ollama"
+			or string.find(modelKey, "lmstudio::", 1, true) ~= nil
+			or string.find(modelKey, "ollama::", 1, true) ~= nil
+		if usesLocalLlm then
+			-- A local model owns the accelerator context while it is generating.
+			maxWorkers = 1
+			log:info("Local LLM detected. Serializing edit generation requests.")
+		end
+		local backendRequestLane = usesLocalLlm and "backend_llm_request" or "backend_edit_request"
+		WorkCoordinator.configureLane(backendRequestLane, usesLocalLlm and 1 or maxWorkers)
 
 		local function producerWorker()
-			activeProducers = activeProducers + 1
-			while not progressScope:isCanceled() do
+			while not progressScope:isCanceled() and not stopRequested do
 				local index = nextIndexToProcess
 				if index > #photos then break end
 
@@ -933,18 +981,19 @@ function AiEditAction.run(editMode)
 					nextIndexToProcess = nextIndexToProcess + 1
 
 					-- Wait for consumer to provide context (if dialogs are pending)
-					while not contextReady[index] and not progressScope:isCanceled() do
+					while not contextReady[index] and not progressScope:isCanceled() and not stopRequested do
 						LrTasks.yield()
 						LrTasks.sleep(0.1)
 					end
-					if progressScope:isCanceled() then break end
+					if progressScope:isCanceled() or stopRequested then break end
 
 					local userContext = userContexts[index]
 					local photo = photos[index]
 					local fileName = photo:getFormattedMetadata("fileName") or "Photo"
 					local resultObj = { fileName = fileName, continueProcessing = true }
 
-					local photoId, photoIdErr = SearchIndexAPI.getPhotoIdForPhoto(photo)
+					local photoId = photoIdsByIndex[index]
+					local photoIdErr = photoIdErrorsByIndex[index]
 					if not photoId then
 						log:error("Failed to resolve photo ID for " .. fileName .. ": " .. tostring(photoIdErr))
 						resultObj.errorMsg = fileName .. ": " .. tostring(photoIdErr)
@@ -958,6 +1007,7 @@ function AiEditAction.run(editMode)
 						if not photoOptions then
 							photoOptions = enrichPhotoOptions(photo, options, userContext)
 						end
+						photoOptions.job_id = operationId
 						if okSettings and currentSettings then
 							photoOptions.current_settings = currentSettings
 						end
@@ -966,21 +1016,32 @@ function AiEditAction.run(editMode)
 							log:error("Failed to export photo for AI edit generation: " .. fileName)
 							resultObj.errorMsg = fileName .. ": export failed"
 							resultObj.continueProcessing = false
+							SearchIndexAPI.updateOperationItems(operationId, {
+								{ item_id = photoId, state = "failed", error = "Lightroom preview export failed" },
+							})
 						else
-							local ok, apiOk, apiResponse = LrTasks.pcall(function()
-								photoOptions.isBatchProcessing = (#photos > 1)
-								photoOptions.style_strength = photoOptions.quickEditStyleStrength or photoOptions.style_strength
-								return SearchIndexAPI.styleEdit(photoId, base_path, photoOptions)
-							end)
+							local requestLease, requestLeaseError = WorkCoordinator.acquire(backendRequestLane, progressScope)
+							local ok, apiOk, apiResponse
+							if requestLease then
+								ok, apiOk, apiResponse = LrTasks.pcall(function()
+									photoOptions.isBatchProcessing = (#photos > 1)
+									photoOptions.style_strength = photoOptions.quickEditStyleStrength or photoOptions.style_strength
+									return SearchIndexAPI.styleEdit(photoId, base_path, photoOptions)
+								end)
+							else
+								ok, apiOk, apiResponse = false, requestLeaseError, nil
+							end
+							WorkCoordinator.release(requestLease)
 
-							LrTasks.pcall(function()
-								if base_path and LrFileUtils.exists(base_path) then LrFileUtils.delete(base_path) end
-							end)
+							SearchIndexAPI.cleanupExportedPhoto(base_path)
 
 							if not ok then
 								log:error("AI edit generation threw for " .. fileName .. ": " .. tostring(apiOk))
 								resultObj.errorMsg = fileName .. ": exception thrown: " .. tostring(apiOk)
 								resultObj.continueProcessing = false
+								SearchIndexAPI.updateOperationItems(operationId, {
+									{ item_id = photoId, state = "failed", error = tostring(apiOk) },
+								})
 							else
 								if apiOk and type(apiResponse) == "table" and apiResponse.status == "error" and (apiResponse.error == "profile_mismatch" or apiResponse.error == "low_confidence") then
 									local title = apiResponse.error == "profile_mismatch" 
@@ -1015,17 +1076,25 @@ function AiEditAction.run(editMode)
 					results[index] = resultObj
 				end
 			end
-			activeProducers = activeProducers - 1
-			if activeProducers <= 0 then
-				producerDone = true
-			end
 		end
 
+		activeProducers = maxWorkers
 		for i = 1, maxWorkers do
 			LrTasks.startAsyncTask(function()
-				LrFunctionContext.callWithContext("ProducerTask_" .. tostring(i), function(producerCtx)
-					producerWorker()
+				local workerOk, workerError = LrTasks.pcall(function()
+					LrFunctionContext.callWithContext("ProducerTask_" .. tostring(i), function(producerCtx)
+						producerWorker()
+					end)
 				end)
+				activeProducers = activeProducers - 1
+				if not workerOk then
+					stopRequested = true
+					local message = "Edit producer failed: " .. tostring(workerError)
+					log:error(message)
+					table.insert(errorMessages, message)
+					SearchIndexAPI.cancelOperation(operationId)
+				end
+				if activeProducers <= 0 then producerDone = true end
 			end)
 		end
 
@@ -1046,6 +1115,9 @@ function AiEditAction.run(editMode)
 					local result
 					result, sharedContext, reuseContext = showPhotoInstructionDialog(ctx, photo)
 					if result == "cancel" then
+						stopRequested = true
+						SearchIndexAPI.cancelOperation(operationId)
+						SearchIndexAPI.completeOperation(operationId)
 						progressScope:done()
 						return
 					end
@@ -1089,15 +1161,24 @@ function AiEditAction.run(editMode)
 					table.insert(runLog, string.format("- %s: ❌ ERROR: Unknown error", fileName))
 				end
 				errorCount = errorCount + 1
+				finishOperationItem(photoIdsByIndex[index], "failed", res.errorMsg or "Edit generation failed")
 			else
 				local response = res.response
-				local okPersist, persistErr = LrTasks.pcall(function()
-					DevelopEditManager.persistEditRecipe(photo, response, nil, "generated")
-				end)
+				local persistLease, persistLeaseError = WorkCoordinator.acquire("catalog_write", progressScope)
+				local okPersist, persistErr
+				if persistLease then
+					okPersist, persistErr = LrTasks.pcall(function()
+						DevelopEditManager.persistEditRecipe(photo, response, nil, "generated")
+					end)
+				else
+					okPersist, persistErr = false, persistLeaseError
+				end
+				WorkCoordinator.release(persistLease)
 				if not okPersist then
 					log:error("Persist generated recipe threw for " .. fileName .. ": " .. tostring(persistErr))
 					table.insert(errorMessages, fileName .. ": could not persist recipe: " .. tostring(persistErr))
 					errorCount = errorCount + 1
+					finishOperationItem(photoIdsByIndex[index], "failed", "Could not persist generated recipe")
 				else
 					local applyOptions = { applyGlobal = true, applyMasks = options.applyMasks }
 
@@ -1106,6 +1187,7 @@ function AiEditAction.run(editMode)
 						if result == "cancel" then
 							skippedCount = skippedCount + 1
 							res.continueProcessing = false
+							finishOperationItem(photoIdsByIndex[index], "canceled", "Edit review canceled")
 							queueApplicationEvent(response, "not_applied", nil, applyOptions, nil, "review_canceled")
 						elseif validated then
 							applyOptions = validated
@@ -1115,12 +1197,27 @@ function AiEditAction.run(editMode)
 					if res.continueProcessing and not applyOptions.applyGlobal and not applyOptions.applyMasks then
 						skippedCount = skippedCount + 1
 						res.continueProcessing = false
+						finishOperationItem(photoIdsByIndex[index], "canceled", "All edit sections disabled")
 						queueApplicationEvent(response, "not_applied", nil, applyOptions, nil, "all_edit_sections_disabled")
 					end
 
 					if res.continueProcessing then
-						local applied, warnings = DevelopEditManager.applyRecipe(photo, response, applyOptions)
+						local applyLease, applyLeaseError = WorkCoordinator.acquire("catalog_write", progressScope)
+						local applyOk, applied, warnings = LrTasks.pcall(function()
+							if not applyLease then
+								error("Catalog write canceled: " .. tostring(applyLeaseError))
+							end
+							return DevelopEditManager.applyRecipe(photo, response, applyOptions)
+						end)
+						WorkCoordinator.release(applyLease)
+						if not applyOk then
+							local applyError = applied
+							applied = false
+							warnings = { tostring(applyError) }
+							log:error("AI edit application threw for " .. fileName .. ": " .. tostring(applyError))
+						end
 						if applied then
+							finishOperationItem(photoIdsByIndex[index], "succeeded", nil)
 							local readOk, readback = LrTasks.pcall(function()
 								return photo:getDevelopSettings()
 							end)
@@ -1141,6 +1238,7 @@ function AiEditAction.run(editMode)
 							end
 							table.insert(runLog, string.format("- %s: %s", fileName, styleInfo))
 						else
+							finishOperationItem(photoIdsByIndex[index], "failed", "Lightroom applyDevelopSettings failed")
 							queueApplicationEvent(response, "apply_failed", nil, applyOptions, warnings, "Lightroom applyDevelopSettings failed")
 							errorCount = errorCount + 1
 							table.insert(errorMessages, fileName .. ": failed to apply recipe")
@@ -1152,6 +1250,21 @@ function AiEditAction.run(editMode)
 				end
 			end
 		end
+
+		if progressScope:isCanceled() then
+			stopRequested = true
+			SearchIndexAPI.cancelOperation(operationId)
+		end
+		while activeProducers > 0 do
+			LrTasks.yield()
+			LrTasks.sleep(0.05)
+		end
+		if stopRequested then
+			-- Catch items that completed backend inference after the first cancel
+			-- request but before their Lightroom handoff could run.
+			SearchIndexAPI.cancelOperation(operationId)
+		end
+		SearchIndexAPI.completeOperation(operationId)
 
 		if #applicationEvents > 0 then
 			local eventOk, eventResponse = SearchIndexAPI.submitStyleEditApplicationEvents(applicationEvents)

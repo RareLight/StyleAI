@@ -2,6 +2,7 @@
 -- Unified task for analyzing photos with AI metadata and indexing them.
 -- Combines the old TaskAnalyzeImage and TaskManageIndex into one streamlined workflow.
 
+local WorkCoordinator = require("WorkCoordinator")
 
 ---
 -- Shows the main configuration dialog for analyze and index task.
@@ -926,6 +927,25 @@ LrTasks.startAsyncTask(function()
 			end
 		end
 
+		-- Indexing and local metadata generation are machine-saturating workflows.
+		-- Queue a second Lightroom request instead of multiplying GPU/LLM contexts.
+		progressScope:setCaption(
+			LOC("$$$/StyleAI/AnalyzeAndIndex/WaitingForWorkflow=Waiting for an earlier indexing or tagging operation...")
+		)
+		local workflowLease, workflowLeaseError = WorkCoordinator.acquire(
+			"backend_index_workflow",
+			progressScope
+		)
+		if not workflowLease then
+			progressScope:done()
+			if workflowLeaseError ~= "canceled" then
+				ErrorHandler.handleError("Could not schedule indexing", workflowLeaseError)
+			end
+			return
+		end
+		context:addCleanupHandler(function()
+			WorkCoordinator.release(workflowLease)
+		end)
 
 		log:trace("Starting AnalyzeAndIndexTask with " .. #photosToProcess .. " photos")
 
@@ -941,25 +961,33 @@ LrTasks.startAsyncTask(function()
 		then
 			usedInlineApply = true
 			options.onBatchAnalyzed = function(batch, scope)
-				LrApplication.activeCatalog():withWriteAccessDo("Apply AI Metadata Batch", function()
-					for _, item in ipairs(batch) do
-						local photo = item.photo
-						local photoId = item.photo_id
-						local response = SearchIndexAPI.getPhotoData(photoId)
-						if response and response.metadata then
-							MetadataManager.applyMetadata(photo, response, nil, {
-								applyKeywords = props.generateKeywords,
-								applyTitle = props.generateTitle,
-								applyCaption = props.generateCaption,
-								applyAltText = props.generateAltText,
-								useTopLevelKeyword = props.useTopLevelKeyword,
-								topLevelKeyword = props.topLevelKeyword,
-								appendMetadata = props.appendMetadata,
-								useExistingTransaction = true,
-							})
+				local writeLease, leaseError = WorkCoordinator.acquire("catalog_write", scope)
+				if not writeLease then
+					error("Catalog write canceled: " .. tostring(leaseError))
+				end
+				local writeOk, writeError = LrTasks.pcall(function()
+					LrApplication.activeCatalog():withWriteAccessDo("Apply AI Metadata Batch", function()
+						for _, item in ipairs(batch) do
+							local photo = item.photo
+							local photoId = item.photo_id
+							local response = SearchIndexAPI.getPhotoData(photoId)
+							if response and response.metadata then
+								MetadataManager.applyMetadata(photo, response, nil, {
+									applyKeywords = props.generateKeywords,
+									applyTitle = props.generateTitle,
+									applyCaption = props.generateCaption,
+									applyAltText = props.generateAltText,
+									useTopLevelKeyword = props.useTopLevelKeyword,
+									topLevelKeyword = props.topLevelKeyword,
+									appendMetadata = props.appendMetadata,
+									useExistingTransaction = true,
+								})
+							end
 						end
-					end
-				end, Defaults.catalogWriteAccessOptions)
+					end, Defaults.catalogWriteAccessOptions)
+				end)
+				WorkCoordinator.release(writeLease)
+				if not writeOk then error(writeError) end
 			end
 		end
 

@@ -16,11 +16,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import config
 from flask import Blueprint, jsonify, request
 from PIL import Image
 import io
 
 from config import logger
+from services import operations
 from services import training as training_service
 
 training_bp = Blueprint("training", __name__)
@@ -38,19 +40,27 @@ def _compute_clip_embedding(image_bytes: bytes):
         import server_lifecycle
         from config import get_torch_device
 
-        clip_model = server_lifecycle.get_model()
-        clip_processor = server_lifecycle.get_processor()
-        if clip_model is None or clip_processor is None:
-            return None
+        from services import operations
 
-        image = Image.open(io.BytesIO(image_bytes))
-        image.thumbnail((512, 512))
-        image = image.convert("RGB")
-        image_tensor = clip_processor(image).unsqueeze(0).to(get_torch_device())
-        with torch.no_grad():
-            features = clip_model.encode_image(image_tensor)
-            normalized = F.normalize(features, p=2, dim=1)
-            return normalized.cpu().numpy()[0].tolist()
+        with operations.admission.acquire(
+            {"accelerator": 1, "cpu_prepare": 1}, priority=8
+        ):
+            clip_model = server_lifecycle.get_model()
+            clip_processor = server_lifecycle.get_processor()
+            if clip_model is None or clip_processor is None:
+                return None
+
+            with Image.open(io.BytesIO(image_bytes)) as source_image:
+                source_image.thumbnail((512, 512))
+                image = source_image.convert("RGB")
+            try:
+                image_tensor = clip_processor(image).unsqueeze(0).to(get_torch_device())
+                with torch.no_grad():
+                    features = clip_model.encode_image(image_tensor)
+                    normalized = F.normalize(features, p=2, dim=1)
+                    return normalized.cpu().numpy()[0].tolist()
+            finally:
+                image.close()
     except Exception as exc:
         logger.warning("Could not compute CLIP embedding for training example: %s", exc)
         return None
@@ -63,6 +73,12 @@ def _compute_clip_embedding(image_bytes: bytes):
 
 @training_bp.route("/training/add", methods=["POST"])
 def add_training_example():
+    operations.refresh_system_pressure()
+    with operations.admission.acquire({"training_upload": 1}, priority=8):
+        return _add_training_example_impl()
+
+
+def _add_training_example_impl():
     """Accept a multipart/form-data upload with:
     - photo_id          (form field, required)
     - develop_settings  (form field, JSON string, required)
@@ -194,27 +210,28 @@ def add_training_example():
             logger.warning(warning_msg)
 
     try:
-        training_service.add_training_example(
-            photo_id=photo_id,
-            develop_settings=develop_settings,
-            embedding=embedding,
-            label=label,
-            filename=filename,
-            summary=summary,
-            image_bytes=image_bytes_data,
-            focal_length=focal_length,
-            capture_time_unix=capture_time_unix,
-            camera_make=camera_make,
-            camera_model=camera_model_str,
-            camera_profile=camera_profile,
-            user_keywords=user_keywords,
-            iso=iso,
-            aperture=aperture,
-            shutter_speed=shutter_speed,
-            rating=rating,
-            pick_status=pick_status,
-            source_provenance=source_provenance,
-        )
+        with operations.admission.acquire({"catalog_write": 1}, priority=8):
+            training_service.add_training_example(
+                photo_id=photo_id,
+                develop_settings=develop_settings,
+                embedding=embedding,
+                label=label,
+                filename=filename,
+                summary=summary,
+                image_bytes=image_bytes_data,
+                focal_length=focal_length,
+                capture_time_unix=capture_time_unix,
+                camera_make=camera_make,
+                camera_model=camera_model_str,
+                camera_profile=camera_profile,
+                user_keywords=user_keywords,
+                iso=iso,
+                aperture=aperture,
+                shutter_speed=shutter_speed,
+                rating=rating,
+                pick_status=pick_status,
+                source_provenance=source_provenance,
+            )
         count = training_service.get_training_count()
         response_data = {"status": "ok", "photo_id": photo_id, "total_count": count}
         if image_file and embedding is None:
@@ -239,6 +256,67 @@ def add_training_example():
 
 @training_bp.route("/training/add-batch", methods=["POST"])
 def add_training_batch():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    job_id = str(data.get("job_id") or "").strip() or None
+    cancel_signal = None
+    if job_id:
+        if not config.DB_PATH:
+            return jsonify({"error": "StyleAI database path is not configured"}), 500
+        job = operations.get_job(config.DB_PATH, job_id, include_items=True)
+        if job is None:
+            return jsonify({"error": f"operation job not found: {job_id}"}), 404
+        if job["kind"] != "training":
+            return jsonify(
+                {"error": "job_id does not identify a training operation"}
+            ), 400
+        if job["state"] in operations.TERMINAL_STATES:
+            return jsonify({"error": "training operation is already complete"}), 409
+        if job["cancel_requested"]:
+            return jsonify({"error": "training operation has been canceled"}), 409
+        examples = data.get("examples")
+        if isinstance(examples, list) and all(
+            isinstance(item, dict) for item in examples
+        ):
+            item_ids = [str(item.get("photo_id") or "").strip() for item in examples]
+            if any(not item_id for item_id in item_ids):
+                return jsonify({"error": "every job item requires a photo_id"}), 400
+            if len(item_ids) != len(set(item_ids)):
+                return jsonify({"error": "a job batch cannot repeat a photo_id"}), 400
+            expected_ids = {item["item_id"] for item in job.get("items", [])}
+            unexpected_ids = sorted(set(item_ids) - expected_ids)
+            if unexpected_ids:
+                return (
+                    jsonify(
+                        {
+                            "error": "batch contains photos not admitted to this job",
+                            "photo_ids": unexpected_ids,
+                        }
+                    ),
+                    400,
+                )
+        cancel_signal = operations.JobCancelSignal(config.DB_PATH, job_id)
+    operations.refresh_system_pressure()
+    try:
+        with operations.admission.acquire(
+            {"training_upload": 1}, priority=8, cancel_event=cancel_signal
+        ):
+            if job_id:
+                operations.set_job_state(config.DB_PATH, job_id, "running")
+            return _add_training_batch_impl(
+                data, job_id=job_id, cancel_signal=cancel_signal
+            )
+    except InterruptedError:
+        return jsonify({"error": "training operation has been canceled"}), 409
+
+
+def _add_training_batch_impl(
+    data: dict[str, Any],
+    *,
+    job_id: str | None = None,
+    cancel_signal: operations.JobCancelSignal | None = None,
+):
     """Add multiple training examples in one request.
 
     JSON body:
@@ -257,16 +335,21 @@ def add_training_batch():
             aperture (float, optional)
             shutter_speed (str, optional)
     """
-    data = request.get_json() or {}
     examples = data.get("examples", [])
     force_retrain = data.get("force_retrain", False)
 
     if not examples:
         return jsonify({"error": "Missing 'examples' array in body"}), 400
+    if not isinstance(examples, list) or not all(
+        isinstance(item, dict) for item in examples
+    ):
+        return jsonify({"error": "examples must be an array of objects"}), 400
 
     results: list[dict[str, Any]] = []
     for item in examples:
-        photo_id = item.get("photo_id", "").strip()
+        if cancel_signal is not None and cancel_signal.is_set():
+            break
+        photo_id = str(item.get("photo_id") or "").strip()
         if not photo_id:
             results.append(
                 {
@@ -276,6 +359,39 @@ def add_training_batch():
                 }
             )
             continue
+        if job_id:
+            current_job = operations.get_job(config.DB_PATH, job_id)
+            if current_job is None:
+                raise LookupError(f"operation job not found: {job_id}")
+            current_item = next(
+                (
+                    operation_item
+                    for operation_item in current_job.get("items", [])
+                    if operation_item["item_id"] == photo_id
+                ),
+                None,
+            )
+            if current_item is None:
+                raise LookupError(f"operation item not found: {job_id}/{photo_id}")
+            if current_item["state"] == "succeeded":
+                results.append(
+                    {
+                        "status": "ok",
+                        "photo_id": photo_id,
+                        "warning": "Already completed in this operation",
+                    }
+                )
+                continue
+            if current_item["state"] in operations.TERMINAL_STATES:
+                results.append(
+                    {
+                        "status": "error",
+                        "photo_id": photo_id,
+                        "error": ("Operation item is already " + current_item["state"]),
+                    }
+                )
+                continue
+            operations.set_item_state(config.DB_PATH, job_id, photo_id, "running")
 
         develop_settings = item.get("develop_settings", {})
         if not isinstance(develop_settings, dict):
@@ -373,30 +489,31 @@ def add_training_batch():
                 except Exception:
                     pass
 
-            training_service.add_training_example(
-                photo_id=photo_id,
-                develop_settings=develop_settings,
-                embedding=embedding,
-                label=label,
-                filename=filename,
-                summary=summary,
-                image_bytes=image_bytes_data,
-                focal_length=focal_length,
-                lens=lens,
-                capture_time_unix=capture_time_unix,
-                camera_make=camera_make,
-                camera_model=camera_model,
-                camera_profile=camera_profile,
-                user_keywords=user_keywords,
-                iso=iso,
-                aperture=aperture,
-                shutter_speed=shutter_speed,
-                rating=rating,
-                pick_status=pick_status,
-                skip_discovery=True,
-                force_retrain=force_retrain,
-                source_provenance=source_provenance,
-            )
+            with operations.admission.acquire({"catalog_write": 1}, priority=8):
+                training_service.add_training_example(
+                    photo_id=photo_id,
+                    develop_settings=develop_settings,
+                    embedding=embedding,
+                    label=label,
+                    filename=filename,
+                    summary=summary,
+                    image_bytes=image_bytes_data,
+                    focal_length=focal_length,
+                    lens=lens,
+                    capture_time_unix=capture_time_unix,
+                    camera_make=camera_make,
+                    camera_model=camera_model,
+                    camera_profile=camera_profile,
+                    user_keywords=user_keywords,
+                    iso=iso,
+                    aperture=aperture,
+                    shutter_speed=shutter_speed,
+                    rating=rating,
+                    pick_status=pick_status,
+                    skip_discovery=True,
+                    force_retrain=force_retrain,
+                    source_provenance=source_provenance,
+                )
             results.append({"status": "ok", "photo_id": photo_id})
         except ValueError as exc:
             if "Skipped" in str(exc):
@@ -423,15 +540,39 @@ def add_training_batch():
             )
 
     success_count = sum(1 for r in results if r["status"] == "ok")
+    if job_id:
+        for result in results:
+            photo_id = str(result.get("photo_id") or "").strip()
+            if not photo_id:
+                continue
+            error = str(result.get("error") or "")
+            if error.startswith("EXIFTOOL_"):
+                operations.set_item_state(
+                    config.DB_PATH,
+                    job_id,
+                    photo_id,
+                    "preparing",
+                    error=error,
+                )
+                continue
+            operations.set_item_state(
+                config.DB_PATH,
+                job_id,
+                photo_id,
+                "succeeded" if result["status"] == "ok" else "failed",
+                error=None if result["status"] == "ok" else error or "Training failed",
+                result={"warning": result.get("warning")},
+            )
     total_count = training_service.get_training_count()
 
     policy_generation = None
+    policy_rebuild = None
     policy_warning = None
     if data.get("rebuild_policies", True):
         try:
             from services import policy_runtime
 
-            policy_generation = policy_runtime.rebuild_active_generation()
+            policy_rebuild = policy_runtime.request_rebuild()
         except Exception as exc:
             policy_warning = str(exc)
             logger.error(
@@ -447,6 +588,7 @@ def add_training_batch():
             "total_count": total_count,
             "results": results,
             "policy_generation": policy_generation,
+            "policy_rebuild": policy_rebuild,
             "policy_warning": policy_warning,
         }
     ), 200
@@ -508,7 +650,10 @@ def get_training_count():
 @training_bp.route("/training/<path:photo_id>", methods=["DELETE"])
 def delete_training_example(photo_id: str):
     try:
-        deleted = training_service.delete_training_example(photo_id)
+        with operations.admission.acquire(
+            {"training_upload": 1, "catalog_write": 1}, priority=9
+        ):
+            deleted = training_service.delete_training_example(photo_id)
         if deleted:
             count = training_service.get_training_count()
             return jsonify(
@@ -537,9 +682,18 @@ def clear_training_examples():
     try:
         from services import policy_runtime
 
-        styles_removed = policy_runtime.reset_policy_state()
+        with operations.admission.acquire(
+            {"training_upload": 1, "maintenance": 1, "catalog_write": 1},
+            priority=20,
+        ):
+            styles_removed = policy_runtime.reset_policy_state()
+            examples_removed = training_service.clear_all_training_examples()
         return jsonify(
-            {"status": "ok", "removed": 0, "styles_removed": styles_removed}
+            {
+                "status": "ok",
+                "removed": examples_removed,
+                "styles_removed": styles_removed,
+            }
         ), 200
     except Exception as exc:
         logger.error("Failed to clear training examples: %s", exc, exc_info=True)
@@ -551,8 +705,12 @@ def clear_all_data():
     try:
         from services import policy_runtime
 
-        styles_removed = policy_runtime.reset_policy_state()
-        examples_removed = training_service.clear_all_training_examples()
+        with operations.admission.acquire(
+            {"training_upload": 1, "maintenance": 1, "catalog_write": 1},
+            priority=20,
+        ):
+            styles_removed = policy_runtime.reset_policy_state()
+            examples_removed = training_service.clear_all_training_examples()
         return jsonify(
             {
                 "status": "ok",

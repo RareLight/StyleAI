@@ -78,6 +78,8 @@ The Lightroom SDK `LrView` engine has several undocumented layout quirks, partic
 - Do not restore hard-coded genre buckets, semantic genre caches, or keyword
   exception ladders. Subject and lighting diversity belong inside conditional
   policies, not in Cartesian style IDs.
+- Do not add fixed CLIP text-probe scene taxonomies as a shortcut for training
+  labels. Preserve user-authored open-vocabulary descriptors and provenance.
 - Discover policies from differences in absolute edited targets, then require
   those components to be recognizable from source embeddings and pixel/EXIF
   evidence alone.
@@ -90,6 +92,22 @@ The Lightroom SDK `LrView` engine has several undocumented layout quirks, partic
   candidates that already pass.
 - Exclude panoramas in both training and recommendations through
   `photo_constraints.is_stitched_panorama`.
+
+## 10.1 Operation and Resource Coordination
+
+- Long-running work uses catalog-local operation jobs with per-photo terminal
+  state and scoped cancellation. Global cancellation is only for shutdown.
+- Backend work that still requires a Lightroom metadata or Develop handoff
+  remains nonterminal. Lightroom marks the item succeeded, failed, or canceled
+  only after that handoff completes.
+- Concurrent Lightroom tasks share backend resource-vector admission and the
+  plugin's `WorkCoordinator` lanes; tasks must not multiply GPU, local-LLM,
+  export, Develop/UI, or catalog-write concurrency.
+- Hardware detection establishes startup maxima. Runtime memory pressure may
+  reduce CPU, GPU batch, and image-byte limits, but never raise them above the
+  detected tier or explicit environment overrides.
+- Backups, pruning, resets, and policy activation are mutually isolated by the
+  maintenance/write lanes. A pre-prune backup must persist before deletion.
 
 ## 11. Transactional Policy Generations and Absolute Edits
 

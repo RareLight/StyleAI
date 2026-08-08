@@ -23,13 +23,18 @@ def store_image(uuid: str, image_data: bytes) -> bool:
     if not uuid or not isinstance(image_data, bytes) or not image_data:
         return False
 
+    from services import operations
+
+    operations.refresh_system_pressure()
+    byte_limit = min(_MAX_CACHE_BYTES, operations.admission.capacities["image_bytes"])
+
     with _CACHE_LOCK:
         _cleanup_stale()
         existing = _CACHE.get(uuid)
         existing_size = len(existing[0]) if existing else 0
         projected_entries = len(_CACHE) + (0 if existing else 1)
         projected_bytes = _cache_bytes() - existing_size + len(image_data)
-        if projected_entries > _MAX_CACHE_ENTRIES or projected_bytes > _MAX_CACHE_BYTES:
+        if projected_entries > _MAX_CACHE_ENTRIES or projected_bytes > byte_limit:
             return False
         _CACHE[uuid] = (image_data, time.time())
         return True

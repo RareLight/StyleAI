@@ -52,11 +52,15 @@ def test_recover_catalog_session_recovers_incomplete_policy_builds(mocker, tmp_p
     )
     recover = mocker.patch("services.policy_store.recover_incomplete_generations")
     invalidate = mocker.patch("services.policy_runtime.invalidate_runtime_cache")
+    recover_operations = mocker.patch(
+        "services.operations.recover_interrupted_jobs", return_value=1
+    )
 
     assert server_lifecycle.recover_catalog_session() is True
 
     recover.assert_called_once_with(connection)
     invalidate.assert_called_once()
+    recover_operations.assert_called_once_with(str(db_path))
     connection.close.assert_called_once()
     assert json.loads(marker_path.read_text(encoding="utf-8"))["state"] == "running"
 
@@ -71,6 +75,7 @@ def test_recover_catalog_session_is_idempotent_for_current_process(mocker, tmp_p
                 "state": "running",
                 "active_work": False,
                 "pid": server_lifecycle.os.getpid(),
+                "process_token": server_lifecycle._PROCESS_TOKEN,
             }
         ),
         encoding="utf-8",
@@ -84,6 +89,36 @@ def test_recover_catalog_session_is_idempotent_for_current_process(mocker, tmp_p
     connect.assert_not_called()
     invalidate.assert_not_called()
     assert json.loads(marker_path.read_text(encoding="utf-8"))["state"] == "running"
+
+
+def test_marker_cleanup_does_not_remove_newer_process_ownership(mocker, tmp_path):
+    db_path = tmp_path / "styleai.db"
+    db_path.mkdir()
+    mocker.patch.object(server_lifecycle.config, "DB_PATH", str(db_path))
+    pid_path = tmp_path / "styleai-server.pid"
+    ok_path = tmp_path / "styleai-server.OK"
+    pid_path.write_text("999999\n", encoding="utf-8")
+    ok_path.write_text("OK 999999 newer-token\n", encoding="utf-8")
+
+    server_lifecycle.remove_pid_file()
+    server_lifecycle.remove_ok_file()
+
+    assert pid_path.exists()
+    assert ok_path.exists()
+
+
+def test_marker_cleanup_removes_files_owned_by_current_process(mocker, tmp_path):
+    db_path = tmp_path / "styleai.db"
+    db_path.mkdir()
+    mocker.patch.object(server_lifecycle.config, "DB_PATH", str(db_path))
+    server_lifecycle.write_pid_file()
+    server_lifecycle.write_ok_file()
+
+    server_lifecycle.remove_pid_file()
+    server_lifecycle.remove_ok_file()
+
+    assert (tmp_path / "styleai-server.pid").exists() is False
+    assert (tmp_path / "styleai-server.OK").exists() is False
 
 
 def test_tokenizer_fallback_does_not_reload_vision_model(mocker, tmp_path):

@@ -146,8 +146,8 @@ def _read_gps_from_exif(image_bytes: bytes) -> tuple[float | None, float | None]
         from PIL import Image
         from PIL.ExifTags import TAGS, GPSTAGS
 
-        img = Image.open(io.BytesIO(image_bytes))
-        exif_data = img._getexif()  # type: ignore[attr-defined]
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            exif_data = img._getexif()  # type: ignore[attr-defined]
         if not exif_data:
             return None, None
 

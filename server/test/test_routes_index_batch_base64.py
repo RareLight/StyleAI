@@ -2,9 +2,11 @@ import base64
 import queue
 import pytest
 
+from core.migrations import run_migrations
 from styleai_server import app
 from services import index as index_service
 from services import image_cache
+from services import operations
 
 
 @pytest.fixture
@@ -12,6 +14,14 @@ def client():
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c
+
+
+@pytest.fixture
+def index_operation_db(tmp_path, mocker):
+    db_path = str(tmp_path / "styleai.db")
+    run_migrations(db_path)
+    mocker.patch("routes.index.config.DB_PATH", db_path)
+    return db_path
 
 
 def test_index_base64_batch_returns_envelope(client, mocker):
@@ -174,6 +184,41 @@ def test_index_queue_backpressures_when_metadata_cache_is_full(client, monkeypat
     assert bounded_queue.empty()
 
 
+def test_index_queue_updates_only_predeclared_operation_items(
+    client, monkeypatch, index_operation_db
+):
+    bounded_queue = queue.Queue(maxsize=2)
+    monkeypatch.setattr(index_service, "index_queue", bounded_queue)
+    index_service._index_queue_accepting.set()
+    job, _ = operations.create_job(index_operation_db, kind="index", item_ids=["p1"])
+    encoded = base64.b64encode(b"image").decode("ascii")
+
+    rejected = client.post(
+        "/index_queue",
+        json={
+            "job_id": job["job_id"],
+            "images": [{"image": encoded, "photo_id": "p2", "filename": "p2.jpg"}],
+        },
+    )
+    accepted = client.post(
+        "/index_queue",
+        json={
+            "job_id": job["job_id"],
+            "images": [{"image": encoded, "photo_id": "p1", "filename": "p1.jpg"}],
+        },
+    )
+
+    assert rejected.status_code == 400
+    assert accepted.status_code == 202
+    stored = operations.get_job(index_operation_db, job["job_id"])
+    assert stored["state"] == "running"
+    assert stored["items"][0]["state"] == "queued"
+    queued = bounded_queue.get_nowait()
+    assert queued["job_id"] == job["job_id"]
+    bounded_queue.task_done()
+    index_service.active_embeddings_uuids.discard("p1")
+
+
 def test_metadata_batch_missing_image_fails_without_consuming_present_image(
     client, mocker
 ):
@@ -280,6 +325,111 @@ def test_metadata_batch_supports_mixed_inline_and_cached_images(client, mocker):
         (b"cached image", "cached", "cached.jpg", None),
     ]
     assert image_cache.get_image("cached") is None
+
+
+def test_metadata_batch_reports_terminal_status_for_each_photo(client, mocker):
+    image_cache.clear()
+
+    def process(_triplets, *, options, item_results):
+        item_results.extend(
+            [
+                {"photo_id": "good", "filename": "good.jpg", "status": "succeeded"},
+                {
+                    "photo_id": "bad",
+                    "filename": "bad.jpg",
+                    "status": "failed",
+                    "error": "provider failed",
+                },
+            ]
+        )
+        return 1, 1, ["bad.jpg: provider failed"], []
+
+    mocker.patch("routes.index.process_image_task", side_effect=process)
+
+    response = client.post(
+        "/metadata/generate_batch",
+        json={
+            "tasks": [
+                {
+                    "photo_id": "good",
+                    "filename": "good.jpg",
+                    "image": base64.b64encode(b"good image").decode("ascii"),
+                },
+                {
+                    "photo_id": "bad",
+                    "filename": "bad.jpg",
+                    "image": base64.b64encode(b"bad image").decode("ascii"),
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()["results"]
+    assert payload["success_count"] == 1
+    assert payload["failure_count"] == 1
+    assert payload["items"] == [
+        {"photo_id": "good", "filename": "good.jpg", "status": "succeeded"},
+        {
+            "photo_id": "bad",
+            "filename": "bad.jpg",
+            "status": "failed",
+            "error": "provider failed",
+        },
+    ]
+
+
+def test_metadata_job_waits_for_lightroom_handoff(client, mocker, index_operation_db):
+    def process(_triplets, *, options, item_results):
+        item_results.append({"photo_id": "p1", "status": "succeeded"})
+        return 1, 0, [], []
+
+    mocker.patch("routes.index.process_image_task", side_effect=process)
+    job, _ = operations.create_job(index_operation_db, kind="index", item_ids=["p1"])
+
+    response = client.post(
+        "/metadata/generate_batch",
+        json={
+            "job_id": job["job_id"],
+            "tasks": [
+                {
+                    "photo_id": "p1",
+                    "filename": "p1.jpg",
+                    "image": base64.b64encode(b"image").decode("ascii"),
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    stored = operations.get_job(index_operation_db, job["job_id"])
+    assert stored["state"] == "running"
+    assert stored["items"][0]["state"] == "committing"
+
+
+def test_metadata_job_rejects_unadmitted_photo_before_processing(
+    client, mocker, index_operation_db
+):
+    process = mocker.patch("routes.index.process_image_task")
+    job, _ = operations.create_job(index_operation_db, kind="index", item_ids=["p1"])
+
+    response = client.post(
+        "/metadata/generate_batch",
+        json={
+            "job_id": job["job_id"],
+            "tasks": [
+                {
+                    "photo_id": "p2",
+                    "filename": "p2.jpg",
+                    "image": base64.b64encode(b"image").decode("ascii"),
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "not admitted" in response.get_json()["error"]
+    process.assert_not_called()
 
 
 def test_stop_index_queue_releases_pending_images(monkeypatch):

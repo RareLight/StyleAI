@@ -11,6 +11,7 @@ import shutil
 
 from config import logger
 from services import db as service_db
+from services import operations
 
 
 db_bp = Blueprint("db", __name__)
@@ -44,7 +45,10 @@ def backup_database():
                 {"results": None, "error": "output_path is required", "warning": None}
             ), 400
 
-        zip_path, backup_name = service_db.build_backup_zip()
+        with operations.admission.acquire(
+            {"maintenance": 1, "catalog_write": 1}, priority=15
+        ):
+            zip_path, backup_name = service_db.build_backup_zip()
 
         # Copy the backup directly to the requested output_path
         try:
@@ -80,7 +84,15 @@ def prune_database():
         if not isinstance(valid_photo_ids, list):
             return jsonify({"error": "valid_photo_ids must be a list of strings"}), 400
 
-        result = service_db.prune_database(valid_photo_ids)
+        with operations.admission.acquire(
+            {
+                "maintenance": 1,
+                "training_upload": 1,
+                "catalog_write": 1,
+            },
+            priority=20,
+        ):
+            result = service_db.prune_database(valid_photo_ids)
         return jsonify({"results": result, "error": None, "warning": None})
     except Exception as e:
         logger.error("Database prune failed: %s", e, exc_info=True)

@@ -5,6 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from core.migrations import run_migrations
+from services import operations
 from services.style_engine import StyleEngineResult
 from styleai_server import app
 
@@ -104,6 +106,59 @@ def test_style_edit_batch_photos_success(client, mocker):
     assert len(items) == 2
     assert items[0]["photo_id"] == "photo-1"
     assert items[1]["photo_id"] == "photo-2"
+
+
+def test_style_edit_updates_durable_operation_item(client, mocker, tmp_path):
+    db_path = str(tmp_path / "styleai.db")
+    run_migrations(db_path)
+    mocker.patch("routes.style_edit.config.DB_PATH", db_path)
+    job, _ = operations.create_job(db_path, kind="edit", item_ids=["photo-1"])
+    mocker.patch(
+        "routes.style_edit._run_single_style_edit",
+        return_value={
+            "status": "success",
+            "photo_id": "photo-1",
+            "engine": "policy_v2",
+            "confidence": 0.9,
+        },
+    )
+
+    response = client.post(
+        "/style_edit",
+        data={
+            "image": (io.BytesIO(b"fakejpeg"), "test.jpg"),
+            "photo_id": "photo-1",
+            "job_id": job["job_id"],
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    stored = operations.get_job(db_path, job["job_id"])
+    assert stored["items"][0]["state"] == "committing"
+
+
+def test_style_edit_honors_scoped_operation_cancel(client, mocker, tmp_path):
+    db_path = str(tmp_path / "styleai.db")
+    run_migrations(db_path)
+    mocker.patch("routes.style_edit.config.DB_PATH", db_path)
+    job, _ = operations.create_job(db_path, kind="edit", item_ids=["photo-1"])
+    operations.request_cancel(db_path, job["job_id"])
+    run_edit = mocker.patch("routes.style_edit._run_single_style_edit")
+
+    response = client.post(
+        "/style_edit",
+        data={
+            "image": (io.BytesIO(b"fakejpeg"), "test.jpg"),
+            "photo_id": "photo-1",
+            "job_id": job["job_id"],
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"] == "canceled"
+    run_edit.assert_not_called()
 
 
 def test_no_policy_match_can_use_explicit_local_llm_fallback(mocker):

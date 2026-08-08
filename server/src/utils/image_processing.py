@@ -32,7 +32,8 @@ def extract_exiftool_preview(filepath: str) -> bytes | None:
         if result.returncode == 0 and result.stdout:
             # Verify it's a valid image
             try:
-                Image.open(io.BytesIO(result.stdout)).verify()
+                with Image.open(io.BytesIO(result.stdout)) as preview:
+                    preview.verify()
                 return result.stdout
             except Exception:
                 pass

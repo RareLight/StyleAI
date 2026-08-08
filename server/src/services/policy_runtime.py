@@ -86,6 +86,7 @@ _cached_rendering_selector: RenderingSelectorArtifact | None = None
 _rebuild_lock = threading.Lock()
 _rebuild_requested = 0
 _rebuild_worker: threading.Thread | None = None
+_rebuild_operation_job_id: str | None = None
 _rebuild_status: dict[str, Any] = {
     "status": "idle",
     "phase": "idle",
@@ -773,7 +774,7 @@ def _descriptor_observations(metadata_rows: list[dict[str, Any]]):
         row: list[DescriptorObservation] = []
         for value in _safe_descriptor_values(metadata.get("user_keywords")):
             row.append(DescriptorObservation("user_keyword", value, "user"))
-        for key in ("scene_tags", "content_tags", "tags"):
+        for key in ("content_tags", "tags"):
             for value in _safe_descriptor_values(metadata.get(key)):
                 row.append(DescriptorObservation("local_visual_tag", value, key))
         observations.append(row)
@@ -1893,9 +1894,25 @@ def predict_partition_artifact(
 
 def request_rebuild() -> dict[str, Any]:
     """Coalesce and expose one non-blocking rebuild job for the active catalog."""
-    global _rebuild_requested, _rebuild_worker, _rebuild_status
+    global \
+        _rebuild_requested, \
+        _rebuild_worker, \
+        _rebuild_status, \
+        _rebuild_operation_job_id
     with _rebuild_lock:
         _rebuild_requested += 1
+        if _rebuild_operation_job_id is None:
+            from services import operations
+
+            job, _created = operations.create_job(
+                _database_path(),
+                kind="discovery",
+                request_fingerprint="active-policy-rebuild",
+                priority=-5,
+                details={"reason": "training_mutation"},
+                coalesce=True,
+            )
+            _rebuild_operation_job_id = job["job_id"]
         _rebuild_status = {
             "status": "queued",
             "phase": "queued",
@@ -1906,6 +1923,7 @@ def request_rebuild() -> dict[str, Any]:
             "error": None,
             "eligible_partitions": 0,
             "completed_partitions": 0,
+            "operation_job_id": _rebuild_operation_job_id,
         }
         if _rebuild_worker is not None and _rebuild_worker.is_alive():
             _rebuild_status["status"] = "running"
@@ -1932,7 +1950,7 @@ def discovery_status() -> dict[str, Any]:
 
 
 def _rebuild_loop() -> None:
-    global _rebuild_worker, _rebuild_status
+    global _rebuild_worker, _rebuild_status, _rebuild_operation_job_id
     while True:
         with _rebuild_lock:
             requested = _rebuild_requested
@@ -1957,7 +1975,23 @@ def _rebuild_loop() -> None:
         result: dict[str, Any] | None = None
         error: str | None = None
         try:
-            result = rebuild_active_generation(progress=update_progress)
+            from services import operations
+
+            if _rebuild_operation_job_id:
+                operations.set_job_state(
+                    _database_path(), _rebuild_operation_job_id, "running"
+                )
+            operations.refresh_system_pressure()
+            cpu_claim = max(1, operations.admission.capacities["cpu_prepare"] - 1)
+            with operations.admission.acquire(
+                {
+                    "cpu_prepare": cpu_claim,
+                    "training_upload": 1,
+                    "maintenance": 1,
+                },
+                priority=-5,
+            ):
+                result = rebuild_active_generation(progress=update_progress)
         except ValueError as exc:
             logger.info("Policy v2 rebuild deferred: %s", exc)
             error = str(exc)
@@ -1976,5 +2010,16 @@ def _rebuild_loop() -> None:
                     "error": error,
                 }
             )
+            if _rebuild_operation_job_id:
+                from services import operations
+
+                operations.set_job_state(
+                    _database_path(),
+                    _rebuild_operation_job_id,
+                    "succeeded" if result is not None else "failed",
+                    error=error,
+                    details={"generation": result or {}},
+                )
+                _rebuild_operation_job_id = None
             _rebuild_worker = None
             return

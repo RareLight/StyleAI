@@ -523,29 +523,18 @@ class LLMProviderBase(ABC):
     @final
     def _image_to_base64(self, image_data: bytes) -> str:
         """
-        Convert image bytes to base64 string.
-        Skips re-encoding if image is already JPEG to preserve quality and save CPU.
+        Convert bounded image bytes to a JPEG base64 string.
         """
         try:
-            # Optimization: Check for JPEG magic numbers (FF D8 FF)
-            # If it's already JPEG, skip the expensive PIL load/save cycle
-            if image_data.startswith(b"\xff\xd8\xff"):
-                return base64.b64encode(image_data).decode("utf-8")
-
-            # For non-JPEGs (PNG, WEBP, etc.), convert to JPEG
-            image = Image.open(io.BytesIO(image_data))
-
-            # Optimization: Resize extremely large images before conversion to prevent OOM
-            max_dim = 2048
-            if max(image.size) > max_dim:
-                image.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
-
-            image = image.convert("RGB")
-
-            buffer = io.BytesIO()
-            # Keep high quality for conversion
-            image.save(buffer, format="JPEG", quality=95)
-            image_bytes = buffer.getvalue()
+            with Image.open(io.BytesIO(image_data)) as source_image:
+                source_image.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+                image = source_image.convert("RGB")
+            try:
+                buffer = io.BytesIO()
+                image.save(buffer, format="JPEG", quality=95)
+                image_bytes = buffer.getvalue()
+            finally:
+                image.close()
 
             return base64.b64encode(image_bytes).decode("utf-8")
         except Exception as e:

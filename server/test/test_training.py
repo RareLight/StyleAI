@@ -61,19 +61,6 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
             [0.0, 0.0, 128.0, 140.0, 255.0, 255.0],
         )
 
-    def test_compute_scene_tags_none(self):
-        from services.training import compute_scene_tags
-
-        self.assertEqual(compute_scene_tags(None), [])
-
-    def test_compute_scene_tags_no_model(self):
-        from unittest.mock import patch
-        from services.training import compute_scene_tags
-
-        with patch("server_lifecycle.get_model", return_value=None):
-            with patch("server_lifecycle.get_processor", return_value=None):
-                self.assertEqual(compute_scene_tags([0.1] * 512), [])
-
     def test_generated_index_keywords_are_not_promoted_to_user_keywords(self):
         from unittest.mock import MagicMock, patch
         from services import training
@@ -95,9 +82,6 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
             patch.object(training, "_training_collection", training_collection),
             patch("services.chroma._ensure_initialized"),
             patch("services.chroma.collection", main_collection),
-            patch.object(
-                training, "compute_scene_tags", return_value=["scene_portrait"]
-            ),
         ):
             training.add_training_example(
                 photo_id="photo-1",
@@ -128,7 +112,6 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
                     "lens": "index lens",
                     "keywords": '["macro"]',
                     "flattened_keywords": "macro",
-                    "scene_tags": '["scene_macro"]',
                     "caption": "generated caption",
                 }
             ],
@@ -136,7 +119,7 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
         metadatas = [
             {
                 "lens": "training lens",
-                "scene_tags": '["scene_portrait"]',
+                "content_tags": '["family"]',
             }
         ]
 
@@ -149,7 +132,7 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
 
         self.assertEqual(metadatas[0]["filename"], "example.nef")
         self.assertEqual(metadatas[0]["lens"], "training lens")
-        self.assertEqual(metadatas[0]["scene_tags"], '["scene_portrait"]')
+        self.assertEqual(metadatas[0]["content_tags"], '["family"]')
         self.assertNotIn("keywords", metadatas[0])
         self.assertNotIn("caption", metadatas[0])
 
@@ -291,7 +274,7 @@ class TestColorAndHistogramFeatures(unittest.TestCase):
                     "shutter_speed": 0.01,
                     "iso": 100,
                     "rating": 5,
-                    "scene_tags": ["scene_portrait"],
+                    "content_tags": ["family"],
                 }
             ],
         }

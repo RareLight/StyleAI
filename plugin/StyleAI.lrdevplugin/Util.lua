@@ -1452,9 +1452,9 @@ function Util.checkPluginHealth(options)
 	if not health.ollama and not health.lmstudio then
 		report.healthy = false
 		table.insert(report.issues, {
-			title = LOC("$$$/StyleAI/Health/ApiKeysMissing=No AI providers configured for AI generation."),
+			title = LOC("$$$/StyleAI/Health/LocalLlmMissing=No local LLM is configured for AI generation."),
 			hint = LOC(
-				"$$$/StyleAI/Health/ApiKeysMissingHint=You need to configure Ollama or LM Studio to generate keywords and descriptions."
+				"$$$/StyleAI/Health/LocalLlmMissingHint=Configure Ollama or LM Studio with an open-weights vision model to generate keywords and descriptions."
 			),
 			critical = options.requireProviders == true,
 		})

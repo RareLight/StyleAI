@@ -15,6 +15,7 @@ from config import logger, IMAGE_MODEL_ID, CLIP_MODEL_NAME, get_torch_device
 import threading
 import datetime
 import gc
+from uuid import uuid4
 from huggingface_hub import hf_hub_download
 from services import face as service_face
 from services import chroma as service_chroma
@@ -43,6 +44,7 @@ _unloader_thread = None
 GLOBAL_CANCEL_EVENT = threading.Event()
 GLOBAL_SHUTDOWN_EVENT = threading.Event()
 _SESSION_MARKER_NAME = "styleai-session.json"
+_PROCESS_TOKEN = uuid4().hex
 
 
 def _session_marker_path() -> str | None:
@@ -61,6 +63,7 @@ def _write_session_state(state: str, active_work: bool = False) -> None:
         "state": state,
         "active_work": bool(active_work),
         "pid": os.getpid(),
+        "process_token": _PROCESS_TOKEN,
         "updated_at": time.time(),
     }
     with open(tmp_path, "w", encoding="utf-8") as marker:
@@ -87,7 +90,9 @@ def recover_catalog_session() -> bool:
     # A running marker owned by this process is the current session, not evidence
     # of an interrupted previous one.
     is_current_session = (
-        previous.get("state") == "running" and previous.get("pid") == os.getpid()
+        previous.get("state") == "running"
+        and previous.get("pid") == os.getpid()
+        and previous.get("process_token") == _PROCESS_TOKEN
     )
     needs_recovery = (
         previous.get("state") not in (None, "clean") and not is_current_session
@@ -97,7 +102,7 @@ def recover_catalog_session() -> bool:
             "Recovering catalog after incomplete backend session (state=%s)",
             previous.get("state", "unknown"),
         )
-        from services import policy_runtime, policy_store
+        from services import operations, policy_runtime, policy_store
 
         conn = policy_store.connect_policy_store(config.DB_PATH)
         try:
@@ -108,6 +113,7 @@ def recover_catalog_session() -> bool:
         finally:
             conn.close()
         policy_runtime.invalidate_runtime_cache()
+        operations.recover_interrupted_jobs(config.DB_PATH)
 
     _write_session_state("running")
     return needs_recovery
@@ -137,6 +143,13 @@ def _set_last_used():
 def _needs_unload():
     if _resources_unloaded:
         return False
+    try:
+        from services import operations
+
+        if operations.has_active_work():
+            return False
+    except Exception:
+        logger.debug("Could not inspect active operation state", exc_info=True)
     delta_seconds = time.time() - _last_request_time
     return delta_seconds >= IDLE_UNLOAD_SECONDS
 
@@ -440,6 +453,11 @@ def remove_pid_file():
         return
     pid_file = os.path.join(db_dir, "styleai-server.pid")
     try:
+        with open(pid_file, encoding="utf-8") as marker:
+            owner_pid = marker.readline().strip()
+        if owner_pid != str(os.getpid()):
+            logger.info("Leaving PID file owned by a newer backend process")
+            return
         os.remove(pid_file)
     except FileNotFoundError:
         pass
@@ -452,7 +470,7 @@ def write_ok_file():
     ok_file = os.path.join(db_dir, "styleai-server.OK")
     tmp_file = ok_file + ".tmp"
     with open(tmp_file, "w") as f:
-        f.write("OK\n")
+        f.write(f"OK {os.getpid()} {_PROCESS_TOKEN}\n")
     os.replace(tmp_file, ok_file)  # atomic on POSIX and Windows
 
 
@@ -462,6 +480,11 @@ def remove_ok_file():
         return
     ok_file = os.path.join(db_dir, "styleai-server.OK")
     try:
+        with open(ok_file, encoding="utf-8") as marker:
+            owner = marker.readline().strip().split()
+        if len(owner) < 3 or owner[1] != str(os.getpid()) or owner[2] != _PROCESS_TOKEN:
+            logger.info("Leaving OK file owned by a newer backend process")
+            return
         os.remove(ok_file)
     except FileNotFoundError:
         pass
@@ -490,6 +513,17 @@ def request_shutdown():
     except Exception:
         logger.exception("Unable to discard queued indexing work during shutdown")
         active_work = True
+    if config.DB_PATH:
+        try:
+            from services import operations
+
+            active_work = (
+                bool(operations.list_active_jobs(config.DB_PATH)) or active_work
+            )
+            operations.recover_interrupted_jobs(config.DB_PATH)
+        except Exception:
+            logger.exception("Unable to persist interrupted operation state")
+            active_work = True
     try:
         _write_session_state("interrupted" if active_work else "clean", active_work)
     except Exception:

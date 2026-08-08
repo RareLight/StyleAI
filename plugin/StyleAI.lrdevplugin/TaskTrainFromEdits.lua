@@ -2,16 +2,13 @@
 -- @module TaskTrainFromEdits
 -- @description Core component of the Advanced Style Detection pipeline.
 -- Allows the user to save their current Lightroom develop settings for selected
--- photos as AI style training examples. These are stored on the backend where 
--- SigLIP2 generates a dense visual embedding and an LLM extracts a semantic 
--- caption of the lighting and composition. 
---
--- This data is later injected as few-shot context during the "AI Edit Photos" 
--- flow, allowing the Style Engine to interpolate a highly personalized edit 
--- recipe rather than a generic auto-edit.
+-- photos as editing-policy training examples. SigLIP2 source embeddings and
+-- neutral-preview metrics condition absolute Lightroom target prediction;
+-- user-authored keywords remain explanatory, open-vocabulary evidence.
 ---
 
 require("DevelopEditManager")
+local WorkCoordinator = require("WorkCoordinator")
 
 local function showTrainDialog(ctx)
 	local f = LrView.osFactory()
@@ -115,6 +112,7 @@ LrTasks.startAsyncTask(function()
 				LOC("$$$/StyleAI/Training/NoPhotosMsg=No photos found in the selected scope."),
 				"info"
 			)
+			return
 		end
 
 		-- Now that the user has committed, ensure the backend is running.
@@ -150,11 +148,74 @@ LrTasks.startAsyncTask(function()
 		})
 		progressScope:setPortionComplete(0, #photos)
 
+		local photoIdsByPhoto = {}
+		local operationItemIds = {}
+		for index, photo in ipairs(photos) do
+			progressScope:setCaption(
+				LOC("$$$/StyleAI/Training/PreparingOperation=Preparing training operation...")
+			)
+			progressScope:setPortionComplete(index - 1, #photos)
+			local photoId = SearchIndexAPI.getPhotoIdForPhoto(photo)
+			if photoId then
+				photoIdsByPhoto[photo] = photoId
+				 table.insert(operationItemIds, photoId)
+			end
+		end
+		if #operationItemIds == 0 then
+			progressScope:done()
+			ErrorHandler.handleError(
+				"Could not start training operation",
+				"No stable Lightroom photo IDs could be resolved."
+			)
+			return
+		end
+		local operationOk, operation = SearchIndexAPI.startOperation(
+			"training",
+			operationItemIds,
+			{ scope = tostring(options.scope), photo_count = #operationItemIds },
+			nil,
+			8,
+			false
+		)
+		if not operationOk then
+			progressScope:done()
+			ErrorHandler.handleError("Could not start training operation", operation)
+			return
+		end
+		local operationId = operation.job_id
+		local trainingLease, trainingLeaseError = WorkCoordinator.acquire(
+			"backend_training_workflow",
+			progressScope
+		)
+		if not trainingLease then
+			SearchIndexAPI.cancelOperation(operationId)
+			SearchIndexAPI.completeOperation(operationId)
+			progressScope:done()
+			if trainingLeaseError ~= "canceled" then
+				ErrorHandler.handleError("Could not schedule training", trainingLeaseError)
+			end
+			return
+		end
+		ctx:addCleanupHandler(function()
+			WorkCoordinator.release(trainingLease)
+		end)
+
 		-- Collect and send examples in chunks (reduces RAM usage by holding fewer base64 strings).
 		local successCount = 0
 		local errorCount = 0
 		local errorMessages = {}
 		local backendWarnings = {}
+		local function markChunkFailed(chunk, message)
+			local updates = {}
+			for _, chunkEx in ipairs(chunk) do
+				table.insert(updates, {
+					item_id = chunkEx.photo_id,
+					state = "failed",
+					error = tostring(message or "Training request failed"),
+				})
+			end
+			SearchIndexAPI.updateOperationItems(operationId, updates)
+		end
 
 		local trainingQueue = {}
 		local producerDone = false
@@ -173,7 +234,7 @@ LrTasks.startAsyncTask(function()
 						while retryChunk and not progressScope:isCanceled() do
 							retryChunk = false
 							progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
-							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain, false)
+							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain, false, operationId)
 	
 							if ok and resp and resp.results then
 								local hitTimeout = false
@@ -219,6 +280,7 @@ LrTasks.startAsyncTask(function()
 									end
 								end
 							else
+								markChunkFailed(currentChunk, resp)
 								for _, chunkEx in ipairs(currentChunk) do
 									errorCount = errorCount + 1
 									table.insert(errorMessages, chunkEx.photo_id .. ": " .. tostring(resp or "API request failed"))
@@ -235,7 +297,7 @@ LrTasks.startAsyncTask(function()
 						while retryChunk and not progressScope:isCanceled() do
 							retryChunk = false
 							progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
-							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain, false)
+							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain, false, operationId)
 							if ok and resp and resp.results then
 								local hitTimeout = false
 								for _, result in ipairs(resp.results) do
@@ -276,6 +338,7 @@ LrTasks.startAsyncTask(function()
 									end
 								end
 							else
+								markChunkFailed(currentChunk, resp)
 								for _, chunkEx in ipairs(currentChunk) do
 									errorCount = errorCount + 1
 									table.insert(errorMessages, chunkEx.photo_id .. ": " .. tostring(resp or "API request failed"))
@@ -295,8 +358,18 @@ LrTasks.startAsyncTask(function()
 			consumerDone = true
 		end
 
-		-- Start the consumer in the background
-		LrTasks.startAsyncTask(consumerWorker)
+		-- Start the consumer in the background. Always publish terminal worker
+		-- state so an unexpected Lua/API error cannot strand the parent dialog.
+		LrTasks.startAsyncTask(function()
+			local workerOk, workerError = LrTasks.pcall(consumerWorker)
+			if not workerOk then
+				log:error("Training consumer failed: " .. tostring(workerError))
+				errorCount = errorCount + 1
+				table.insert(errorMessages, "Training worker failed: " .. tostring(workerError))
+				SearchIndexAPI.cancelOperation(operationId)
+			end
+			consumerDone = true
+		end)
 
 		local batchRawMetaMap = {}
 		if catalog and catalog.batchGetRawMetadata then
@@ -351,7 +424,8 @@ LrTasks.startAsyncTask(function()
 			end
 
 			-- Get a stable photo ID.
-			local photoId, photoIdErr = SearchIndexAPI.getPhotoIdForPhoto(photo)
+			local photoId = photoIdsByPhoto[photo]
+			local photoIdErr = photoId and nil or "Stable photo ID could not be resolved"
 			if not photoId then
 				log:error("Failed to resolve photo ID for " .. fileName .. ": " .. tostring(photoIdErr))
 				errorCount = errorCount + 1
@@ -385,8 +459,11 @@ LrTasks.startAsyncTask(function()
 					rating = tonumber(getPhotoRawMeta(photo, "rating")) or 0,
 					pick_status = tonumber(getPhotoRawMeta(photo, "pickStatus")) or 0,
 				}
-				if options.userKeywords and options.userKeywords ~= "" then
-					example.user_keywords = options.userKeywords
+				local keywordText = photo:getFormattedMetadata("keywordTagsForExport")
+				if type(keywordText) == "string" and keywordText ~= "" then
+					example.user_keywords = Util.string_split(keywordText, ",")
+				elseif type(keywordText) == "table" then
+					example.user_keywords = keywordText
 				end
 
 				table.insert(trainingQueue, example)
@@ -402,6 +479,10 @@ LrTasks.startAsyncTask(function()
 			LrTasks.yield()
 			LrTasks.sleep(0.1)
 		end
+		if progressScope:isCanceled() then
+			SearchIndexAPI.cancelOperation(operationId)
+		end
+		SearchIndexAPI.completeOperation(operationId)
 		if not progressScope:isCanceled() and successCount > 0 then
 			progressScope:setCaption(
 				LOC("$$$/StyleAI/Training/BuildingPolicies=Building editing policies from all saved examples...")
@@ -417,6 +498,7 @@ LrTasks.startAsyncTask(function()
 				)
 			end
 		end
+		WorkCoordinator.release(trainingLease)
 
 		progressScope:done()
 
