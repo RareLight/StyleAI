@@ -907,12 +907,6 @@ LrTasks.startAsyncTask(function()
 		)
 		progressScope:setPortionComplete(0, #photosToProcess)
 
-		if #photosToProcess >= 50 then
-			log:info("Triggering database autosave before processing " .. tostring(#photosToProcess) .. " photos")
-			progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/CreatingSafetyBackup=Creating safety backup..."))
-			SearchIndexAPI.triggerBackup(prefs.backupRotationDays)
-		end
-
 		-- If photo context dialog is enabled, show it for each photo
 		if props.showPhotoContextDialog and props.enableMetadata then
 			-- Show photo context dialog to gather additional context

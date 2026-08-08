@@ -61,10 +61,17 @@ If you want to be able to search your photos using natural language (e.g., "red 
 
 ## 4. Create a DB Backup
 
-We highly recommend creating regular backups of your backend data, especially before performing system updates or database maintenance:
+StyleAI automatically keeps 14 daily validated backend snapshots and creates
+required recovery points before destructive maintenance. To keep an additional
+copy outside the catalog folder:
 1. Open `File -> Plug-in Manager`.
-2. Navigate to `Backend Server` and click **Download DB backup**.
-3. Save the resulting `.zip` file somewhere safe. The backup contains the full persistent backend directory including your embeddings and metadata databases.
+2. Navigate to `Background Service` and click **Download Backup**.
+3. Save the resulting `.zip` somewhere safe. It contains StyleAI indexes,
+   training data, learned styles, and history.
+
+Use **Restore Backup...** in the same section to restore a validated backup for
+the active catalog. StyleAI backups do not contain your Lightroom catalog,
+source photos, or Develop edits; continue using Lightroom's catalog backups.
 
 ## 5. Imported Help Pages
 

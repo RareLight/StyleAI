@@ -106,8 +106,11 @@ The Lightroom SDK `LrView` engine has several undocumented layout quirks, partic
 - Hardware detection establishes startup maxima. Runtime memory pressure may
   reduce CPU, GPU batch, and image-byte limits, but never raise them above the
   detected tier or explicit environment overrides.
-- Backups, pruning, resets, and policy activation are mutually isolated by the
-  maintenance/write lanes. A pre-prune backup must persist before deletion.
+- Backups, restore, pruning, resets, and policy activation are mutually isolated
+  by the maintenance/training-upload/catalog-write lanes. Required pre-prune,
+  pre-training-delete, pre-migration, and pre-restore snapshots must persist
+  before mutation. Restore validates catalog ownership, checksums, archive
+  paths, and SQLite integrity before an atomic swap with rollback.
 
 ## 11. Transactional Policy Generations and Absolute Edits
 

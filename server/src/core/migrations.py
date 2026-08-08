@@ -19,6 +19,9 @@ def _run_migrations_uncached(db_path: str):
         raise ValueError("db_path must be provided to run migrations.")
 
     sqlite_path = os.path.join(db_path, "styles.sqlite")
+    database_preexisting = (
+        os.path.isfile(sqlite_path) and os.path.getsize(sqlite_path) > 0
+    )
 
     # 1. Initialize SQLite schema_versions table
     # We must do this even if the file doesn't exist yet, as we need to track versions.
@@ -60,6 +63,19 @@ def _run_migrations_uncached(db_path: str):
         row[0]
         for row in conn.execute("SELECT version_id FROM schema_versions").fetchall()
     }
+
+    pending_migrations = [
+        filename
+        for filename in migration_files
+        if filename.replace(".py", "") not in applied_versions
+    ]
+    if pending_migrations and database_preexisting:
+        # A failed schema upgrade must have a catalog-local recovery point.
+        # Startup/initialization is already serialized for this catalog.
+        from services import db as service_db
+
+        service_db.ensure_catalog_ownership(db_path)
+        service_db.create_persistent_backup(reason="pre-migration")
 
     # 4. Apply pending migrations
     for filename in migration_files:
@@ -104,13 +120,13 @@ def _run_migrations_uncached(db_path: str):
     logger.info("All migrations applied successfully.")
 
 
-def run_migrations(db_path: str):
+def run_migrations(db_path: str, *, force: bool = False):
     """Run migrations once per bound catalog path for this process lifetime."""
     if not db_path:
         raise ValueError("db_path must be provided to run migrations.")
     normalized = os.path.realpath(os.path.abspath(db_path))
     with _migration_lock:
-        if normalized in _migrated_paths:
+        if normalized in _migrated_paths and not force:
             return
         _run_migrations_uncached(normalized)
         _migrated_paths.add(normalized)

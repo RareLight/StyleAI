@@ -68,6 +68,13 @@ def _ensure_initialized() -> None:
     logger.info("Initialized edit_training collection.")
 
 
+def unload_collections() -> None:
+    """Release the training Chroma client before a catalog database restore."""
+    global _chroma_client, _training_collection
+    _training_collection = None
+    _chroma_client = None
+
+
 def _dummy_embedding() -> list[float]:
     return np.zeros(EMBEDDING_DIM, dtype=np.float32).tolist()
 

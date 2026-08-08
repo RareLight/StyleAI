@@ -39,13 +39,13 @@ local ENDPOINTS = {
     OPERATIONS = "/operations",
     CHECK_UNPROCESSED = "/index/check-unprocessed",
     DB_BACKUP = "/db/backup",
+    DB_RESTORE = "/db/restore",
     DB_PRUNE = "/db/prune",
     SYNC_CLEANUP = "/sync/cleanup",
     TRAINING_ADD = "/training/add",
     TRAINING_ADD_BATCH = "/training/add-batch",
     TRAINING_LIST = "/training/list",
     TRAINING_COUNT = "/training/count",
-    BACKUP = "/backup",
     TRAINING_DELETE = "/training", -- DELETE /training/<photo_id>
     TRAINING_CLEAR = "/training",  -- DELETE /training (examples and derived policies)
     TRAINING_CLEAR_ALL = "/training/all",  -- Backward-compatible clear-all alias
@@ -1669,19 +1669,6 @@ function SearchIndexAPI.removePhotoMetadata(photoId)
 end
 
 
-function SearchIndexAPI.triggerBackup(rotationDays)
-    local body = {
-        rotation_days = rotationDays or 0
-    }
-    local result, err = _request('POST', getBaseUrl() .. ENDPOINTS.BACKUP, body)
-    if err then
-        log:warn("Backend autosave failed: " .. tostring(err))
-        return false, err
-    end
-    return true, nil
-end
-
----
 -- Analyzes and indexes selected photos with LLM processing (metadata, embeddings).
 -- Uses JPEG export instead of thumbnails for better reliability.
 -- @param selectedPhotos table Array of LrPhoto objects to process.
@@ -2653,6 +2640,30 @@ function SearchIndexAPI.downloadDatabaseBackup()
 
     log:info("Database backup created successfully by backend at: " .. outputPath)
     return true, outputPath
+end
+
+function SearchIndexAPI.restoreDatabaseBackup()
+    local selected = LrDialogs.runOpenPanel({
+        title = LOC("$$$/StyleAI/PluginInfo/ChooseDbBackup=Choose a StyleAI database backup"),
+        canChooseFiles = true,
+        canChooseDirectories = false,
+        allowsMultipleSelection = false,
+        fileTypes = { "zip" },
+    })
+    if not selected or not selected[1] then
+        return nil, "canceled"
+    end
+    local archivePath = selected[1]
+    local results, err = _request(
+        'POST',
+        getBaseUrl() .. ENDPOINTS.DB_RESTORE,
+        { archive_path = archivePath },
+        600
+    )
+    if not results then
+        return false, err or "Unknown restore error"
+    end
+    return true, results
 end
 
 -- -----------------------------

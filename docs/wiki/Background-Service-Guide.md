@@ -26,12 +26,32 @@ If you are experiencing unexpected backend behavior:
 
 ## Database Backup Workflow
 
-Given the importance of your generated search indexes and AI metadata, the background service exposes a dedicated backup download flow:
-- API endpoint: `GET /db/backup`
-- Output: A comprehensive ZIP archive containing the complete DB directory (Chroma data, SQLite db, and associated JSON files).
+Given the importance of generated search indexes, training data, learned styles,
+and edit history, the background service creates validated catalog-local
+snapshots. Each ZIP contains the complete StyleAI database directory plus a
+versioned manifest, catalog ownership ID, file sizes, and SHA-256 checksums.
+SQLite databases are copied through SQLite's online backup API and checked
+before the archive is published.
+
+- Manual export API: `POST /db/backup`
+- Restore API: `POST /db/restore`
+- Automatic retention: one daily snapshot, keeping the newest 14
+- Required snapshots: before pruning, deleting all training data, schema
+  migration, and restore
 
 **To create a backup via Lightroom:**
 Open `File -> Plug-in Manager -> StyleAI -> Background Service` and click **Download DB backup**.
 
+Use **Restore Backup...** to select a validated backup belonging to the active
+Lightroom catalog. StyleAI creates a pre-restore recovery snapshot, stages and
+validates the selected archive, atomically replaces the backend database, and
+rolls back automatically if post-restore validation fails.
+
+> StyleAI backups do not contain the Lightroom catalog, source photos, or
+> Develop edits. Use Lightroom's catalog backup feature separately.
+
 **When to backup:**
-We highly recommend initiating a backup prior to running large one-time DB migrations, moving the service to a new machine, or purging the search index while attempting to preserve your ML training examples.
+Create a manual external backup before moving a catalog to another machine or
+performing unusual maintenance. Routine indexing and Apply My Style operations
+do not create full checkpoints because they use durable per-photo operation
+state and a StyleAI database restore cannot undo Lightroom Develop edits.
