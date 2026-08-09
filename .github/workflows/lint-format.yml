@@ -9,12 +9,16 @@ jobs:
         uses: astral-sh/ruff-action@v4.0.0
         with:
           args: "check"
-          src: "./server"
+          src: >-
+            ./server/src
+            ./server/test
       - name: Formatting (Python)
         uses: astral-sh/ruff-action@v4.0.0
         with:
           args: "format --check --diff"
-          src: "./server"
+          src: >-
+            ./server/src
+            ./server/test
       - name: Formatting (Lua)
         uses: JohnnyMorganz/stylua-action@v4
         with:
