@@ -17,7 +17,6 @@ import datetime
 import gc
 from uuid import uuid4
 from huggingface_hub import hf_hub_download
-from services import face as service_face
 from services import chroma as service_chroma
 
 
@@ -347,7 +346,7 @@ def unload_model():
 
 def unload_all_resources():
     """Unload all heavy models and resources from memory."""
-    logger.info("Unloading all resources (CLIP, InsightFace, ChromaDB)...")
+    logger.info("Unloading all resources (SigLIP2, ChromaDB)...")
 
     # 1. CLIP (OpenCLIP)
     try:
@@ -355,13 +354,7 @@ def unload_all_resources():
     except Exception as e:
         logger.error(f"Failed to unload CLIP model: {e}")
 
-    # 2. InsightFace
-    try:
-        service_face.unload_face_app()
-    except Exception as e:
-        logger.error(f"Failed to unload InsightFace model: {e}")
-
-    # 3. ChromaDB
+    # 2. ChromaDB
     try:
         service_chroma.unload_collections()
     except Exception as e:

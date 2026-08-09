@@ -108,7 +108,7 @@ done
 
 # We will prompt before deleting user databases/support data to avoid accidental loss
 echo ""
-read -r -p "Do you want to delete user databases & settings (e.g. face database, configuration)? [y/N] " yn
+read -r -p "Do you want to delete user databases and settings? [y/N] " yn
 case "$yn" in
     [Yy]*)
         for APP in "StyleAI" "LrGeniusAI"; do

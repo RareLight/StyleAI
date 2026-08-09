@@ -2,11 +2,9 @@
 Indexing and Embedding Pipeline Service.
 
 This module orchestrates the core ingestion pipeline for photos. To maximize hardware
-utilization, it employs a `ThreadPoolExecutor` architecture. CPU-bound tasks (JPEG
-decoding, hashing, face-detection preprocessing) run concurrently on background
-threads, feeding preprocessed data into a thread-safe queue. The main thread (or
-dedicated GPU thread) exclusively handles SigLIP2 and InsightFace model inference,
-eliminating UI blocking and massive pipeline stalls during bulk catalog indexing.
+utilization, it employs a `ThreadPoolExecutor` architecture. CPU-bound JPEG decoding,
+hashing, and metadata extraction run concurrently on background threads. A dedicated
+accelerator worker handles SigLIP2 inference without blocking Lightroom.
 """
 
 import config
@@ -318,12 +316,11 @@ def process_image_task(
         regenerate_metadata = _to_bool(global_opts.get("regenerate_metadata"), True)
         compute_embeddings = _to_bool(global_opts.get("compute_embeddings"), True)
         compute_metadata = _to_bool(global_opts.get("compute_metadata"), False)
-        compute_faces = _to_bool(global_opts.get("compute_faces"), False)
 
         logger.info(f"Starting batch processing of {total_images} images...")
         logger.info(
             f"regenerate_metadata={regenerate_metadata}, compute_embeddings={compute_embeddings}, "
-            f"compute_metadata={compute_metadata}, compute_faces={compute_faces}"
+            f"compute_metadata={compute_metadata}"
         )
 
         # Always check existing records to preserve previously stored metadata.
@@ -394,7 +391,6 @@ def process_image_task(
         # If nothing needs to be generated and we're not regenerating, skip work.
         # When regenerate_metadata is True we must not early-return: new images (no entry yet)
         # still need to be added to Chroma with at least minimal metadata.
-        # Also do NOT early-return when compute_faces is True - we need to process images.
         if (
             not regenerate_metadata
             and len(images_needing_embeddings) == 0
@@ -423,9 +419,8 @@ def process_image_task(
 
         # Pre-extract EXIF location data for each image (always, when available).
         # Keyed by uuid so it can be passed to analyze_batch for per-image injection.
-        # Decode each JPEG to a single PIL.Image up front; downstream helpers
-        # (culling, phash, CLIP, face detection) all reuse it instead of decoding
-        # the same bytes 4–5 times per photo.
+        # Decode each JPEG to a single PIL.Image up front so embedding and metadata
+        # work can reuse it instead of decoding the same bytes repeatedly.
         exif_location_by_uuid: dict[str, dict | None] = {}
         for image_bytes, uuid, filename, lr_uuid in image_triplets:
             try:
@@ -524,8 +519,7 @@ def process_image_task(
                     item_warning = str(metadata_data.warning)
                     warnings.append(f"{filename}: {item_warning}")
 
-                # If nothing needed for this UUID (already complete) and no face processing, skip
-                # When compute_faces is True we must not skip - we need to reach face detection
+                # If nothing is needed for this UUID, skip the write.
                 if not need_embedding and not need_metadata and not regenerate_metadata:
                     logger.info(f"UUID {uuid}: already fully indexed; skipping update.")
                     success_count += 1
@@ -670,7 +664,7 @@ def process_image_task(
                 if embedding is not None:
                     main_metadata["has_embedding"] = True
                 elif existing and existing.get("has_embedding", False):
-                    # Preserve existing embedding - we didn't generate a new one (e.g. only faces)
+                    # Preserve the existing embedding when this request did not generate one.
                     main_metadata["has_embedding"] = True
                 else:
                     main_metadata["has_embedding"] = False

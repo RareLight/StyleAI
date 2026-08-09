@@ -41,7 +41,6 @@ def test_health_reports_clip_error_when_set(client, mocker):
     mock_analysis = MagicMock()
     mock_analysis.get_health_status.return_value = {}
     mocker.patch("routes.server.get_analysis_service", return_value=mock_analysis)
-    mocker.patch("services.face._get_face_app")
 
     response = client.get("/health")
     assert response.status_code == 200
@@ -60,7 +59,6 @@ def test_health_reports_no_error_when_healthy(client, mocker):
     mock_analysis = MagicMock()
     mock_analysis.get_health_status.return_value = {}
     mocker.patch("routes.server.get_analysis_service", return_value=mock_analysis)
-    mocker.patch("services.face._get_face_app")
 
     response = client.get("/health")
     assert response.status_code == 200

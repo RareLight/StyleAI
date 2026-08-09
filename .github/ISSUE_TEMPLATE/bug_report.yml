@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Before submitting, please attach **log files** when relevant (see below). Redact API keys or other secrets before uploading.
+        Before submitting, please attach **log files** when relevant (see below). Redact personal information before uploading.
 
         ### Lightroom plugin — `StyleAI.log`
 
@@ -41,7 +41,7 @@ body:
         - OS (macOS / Windows + version):
         - Lightroom Classic version:
         - StyleAI plugin version (if known):
-        - Backend (Docker / standalone):
+        - Backend version (from the diagnostic report):
     validations:
       required: true
 

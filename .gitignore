@@ -21,6 +21,7 @@ models/
 tests/results/*.json
 chroma.sqlite3
 styleai-server.log
+styleai-server.log.*
 styleai-server.OK
 styleai-server.pid
 

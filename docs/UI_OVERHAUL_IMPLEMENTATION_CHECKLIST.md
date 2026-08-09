@@ -1,9 +1,9 @@
 # StyleAI UI Overhaul Implementation Checklist
 
-This checklist is the implementation source of truth for the StyleAI Lightroom
-Classic UI overhaul. Complete phases in order. Preserve request payloads,
-preferences, catalog writes, Develop behavior, and operation lifecycle behavior
-unless a product decision explicitly authorizes a change.
+Status: implemented; remaining unchecked items require human Lightroom/platform
+validation. This file is a historical implementation record, not the current
+architecture source of truth. See `UI_BEHAVIOR_CONTRACTS.md`, `AGENTS.md`, and
+the code for current contracts.
 
 ## Product and safety rules
 
@@ -65,9 +65,8 @@ Lightroom test dialog.
 
 - [x] Add `debugMode`, default false.
 - [x] Add subordinate `captureLlmInputs`, default false.
-- [x] Require both settings before saving images, prompts, responses, or
-  bracket variants.
-- [x] Apply the same gate to indexing, Ollama, LM Studio, creative editing, and
+- [x] Require both settings before saving diagnostic image inputs.
+- [x] Apply the same gate to indexing, Ollama, LM Studio metadata generation, and
   future providers.
 - [x] Remove unconditional LM Studio debug-cache writes.
 - [x] Stop creating debug directories during ordinary backend startup.
@@ -97,8 +96,8 @@ diagnostic image or prompt copies.
 - [x] Use ellipses consistently for dialog-opening commands.
 - [x] Remove duplicate Export-menu commands.
 - [x] Remove developer commands from release manifests.
-- [x] Register automated tests, benchmark, rendering spike, reconciliation,
-  and style override only in developer builds.
+- [x] Register automated tests, benchmark, rendering spike, and reconciliation
+  only in developer builds.
 - [x] Do not dynamically mutate registered menus from `debugMode`.
 - [x] Mark developer builds clearly in Settings & Status.
 - [x] Keep diagnostic input capture off by default even in developer builds.

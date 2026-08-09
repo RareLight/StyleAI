@@ -277,7 +277,6 @@ def generate_metadata_single():
     # Force overrides for this specialized metadata route
     options["compute_embeddings"] = False
     options["compute_metadata"] = True
-    options["compute_faces"] = False
 
     image_base64 = data.get("image")
     image_bytes = None
@@ -392,7 +391,6 @@ def generate_metadata_batch():
         # Force overrides for metadata route
         photo_options["compute_embeddings"] = False
         photo_options["compute_metadata"] = True
-        photo_options["compute_faces"] = False
 
         inline_image = task.get("image")
         inline_image_payload = None
@@ -663,10 +661,7 @@ def remove_image():
 
     try:
         chroma_service.delete_image(photo_id)
-        chroma_service.delete_faces_by_photo_uuid(photo_id)
-        logger.info(
-            f"Image ID {photo_id} removed from ChromaDB (including face embeddings)."
-        )
+        logger.info(f"Image ID {photo_id} removed from ChromaDB.")
         return jsonify({"status": "removed", "photo_id": photo_id, "uuid": photo_id})
     except Exception as e:
         logger.error(f"Error removing image {photo_id}: {e}")

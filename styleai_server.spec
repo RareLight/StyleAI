@@ -4,8 +4,9 @@ block_cipher = None
 
 from PyInstaller.utils.hooks import copy_metadata, collect_data_files
 
-# Collect metadata for packages that check their own version at runtime
-datas = [('open_clip', 'open_clip')]
+# Collect package data and metadata needed by the frozen runtime.
+datas = collect_data_files('open_clip')
+datas += [('server/src/migrations/versions', 'migrations/versions')]
 datas += copy_metadata('tqdm')
 datas += copy_metadata('transformers')
 datas += copy_metadata('tokenizers')
@@ -26,8 +27,8 @@ datas += copy_metadata('scikit-learn')
 # datas += collect_data_files('Pillow')
 
 a = Analysis(
-    ['src/styleai_server.py'],
-    pathex=['src'],
+    ['server/src/styleai_server.py'],
+    pathex=['server/src'],
     binaries=[],
     datas=datas,
     hiddenimports=['chromadb.telemetry.product.posthog', 'chromadb', 'chromadb.api.rust', 'torch', 'torchvision', 'PIL._imaging', 'scipy', 'scipy.special', 'sklearn', 'sklearn.utils._param_validation'],

@@ -82,9 +82,6 @@ function Util.dumpTable(t)
 	-- Redact base64 data for security
 	local result = s:gsub('(data = )"([A-Za-z0-9+/=]+)"', '%1"base64 removed"')
 	result = result:gsub('(url = "data:image/jpeg;base64,)([A-Za-z0-9+/]+=?=?)"', '%1base64 removed"')
-	-- Redact common sensitive fields by name (prefs / options)
-	result = result:gsub('(api_key%s*=%s*)"([^"]*)"', '%1"<redacted>"')
-
 	return result
 end
 
@@ -1453,9 +1450,9 @@ function Util.checkPluginHealth(options)
 	if not health.clip and (options.requireClip or prefs.useClip) then
 		report.healthy = false
 		table.insert(report.issues, {
-			title = LOC("$$$/StyleAI/Health/ClipMissing=CLIP model for semantic search is missing."),
+			title = LOC("$$$/StyleAI/Health/ClipMissing=The StyleAI vision model is missing."),
 			hint = LOC(
-				"$$$/StyleAI/Health/ClipMissingHint=Semantic search and some indexing features will be disabled. You can download the model in the Setup Wizard."
+				"$$$/StyleAI/Health/ClipMissingHint=Visual indexing, learned editing, and training recommendations require this model. You can download it in the Setup Wizard."
 			),
 			critical = false,
 		})

@@ -5,7 +5,6 @@ LM Studio Provider for metadata generation using the lmstudio-python library
 import json
 import re
 from urllib.parse import urlsplit
-from typing import Any
 import lmstudio as lms
 from .base import (
     LLMProviderBase,
@@ -36,10 +35,10 @@ class LMStudioProvider(LLMProviderBase):
     Uses the lmstudio-python library.
     """
 
-    def __init__(self, config: dict[str, Any]):
-        super().__init__(config)
+    def __init__(self):
+        super().__init__()
         self.host = self._normalize_host(LMSTUDIO_HOST)
-        self.timeout = config.get("timeout", 720)
+        self.timeout = 720
         # lmstudio-python's synchronous API defaults to timing out after ~60s of
         # inactivity when waiting for a response/stream event. Wire our configured
         # timeout through so metadata generation can run longer (e.g. 720s).

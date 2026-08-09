@@ -3,7 +3,7 @@ Ollama Provider for metadata generation using the official Ollama Python SDK
 """
 
 import json
-from typing import Any, override
+from typing import override
 
 try:
     from ollama import Client  # type: ignore
@@ -25,10 +25,10 @@ class OllamaProvider(LLMProviderBase):
     """
 
     @override
-    def __init__(self, config: dict[str, Any]):
-        super().__init__(config)
+    def __init__(self):
+        super().__init__()
         self.base_url = OLLAMA_BASE_URL
-        self.timeout = config.get("timeout", 120)
+        self.timeout = 120
         # Initialize Ollama client targeting the configured host
         try:
             self.client = Client(host=self.base_url) if Client else None

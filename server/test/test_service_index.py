@@ -132,12 +132,11 @@ class TestProcessImageTask(unittest.TestCase):
 
         image_bytes = make_dummy_jpeg(200, 200)
         triplets = [(image_bytes, "uuid-1", "test.jpg", "lr-1")]
-        # Only compute metadata, not embeddings/faces, so we don't need ML models loaded
+        # Embeddings are disabled, so no vision model is needed.
         options = {
             "regenerate_metadata": True,
             "compute_embeddings": False,
             "compute_metadata": False,
-            "compute_faces": False,
         }
 
         success, failure, errors, warnings = process_image_task(triplets, options)
@@ -184,7 +183,6 @@ class TestProcessImageTask(unittest.TestCase):
             "regenerate_metadata": True,
             "compute_embeddings": True,
             "compute_metadata": False,
-            "compute_faces": False,
         }
 
         success, failure, errors, warnings = process_image_task(triplets, options)
@@ -206,7 +204,6 @@ class TestProcessImageTask(unittest.TestCase):
             "regenerate_metadata": "false",
             "compute_embeddings": "true",
             "compute_metadata": "false",
-            "compute_faces": "false",
         }
         success, failure, errors, warnings = process_image_task(triplets, options)
         self.assertEqual(success, 1)

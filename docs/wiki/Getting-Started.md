@@ -1,82 +1,78 @@
 # Getting Started
 
-Welcome to StyleAI! This guide will walk you through setting up the plugin, indexing your first batch of photos, and starting your AI-powered Lightroom workflow.
+## Install
 
-## 1. Install Plugin and Server
+1. Download the correct macOS or Windows archive from the StyleAI releases page.
+2. Extract the complete archive; keep the plug-in and packaged backend in their
+   distributed layout.
+3. Add `StyleAI.lrplugin` in **File → Plug-in Manager**.
+4. If the unsigned backend is blocked, follow the platform-specific release
+   notes to authorize that exact downloaded binary.
 
-To begin, you must install both the Lightroom Classic plugin frontend and the Python backend server. These components communicate locally to process your images without freezing the Lightroom UI. 
-Please refer to the high-level installation instructions on the [root `README.md`](Project-README) or the detailed steps in the [`plugin/README.md`](Plugin-README).
+The plug-in starts a loopback service automatically and binds it to
+`styleai.db` beside the active Lightroom catalog. Do not point two catalogs at
+the same StyleAI database. Keep each Lightroom catalog in its own folder,
+because the database path is fixed to `<catalog folder>/styleai.db`.
 
-### Pre-Downloading AI Models
-To prevent long delays or network timeouts the first time you run indexing, you should cache the AI models locally. From the `server` directory, run:
-```bash
+Source developers should instead run `bash scripts/setup-local-uv-env.sh`, add
+`plugin/StyleAI.lrdevplugin`, and follow the [Developer Guide](Developer-Guide).
+
+## Configure local models
+
+Open StyleAI in Plug-in Manager and choose **Configure Local Models...**. The
+setup view checks:
+
+- whether the background service is reachable;
+- whether the SigLIP2 vision model is cached and ready; and
+- which local Ollama or LM Studio vision-language models are available.
+
+SigLIP2 is required for visual analysis, training, recommendations, and learned
+editing. Ollama or LM Studio is required only for generated keywords, titles,
+captions, or alt text.
+
+Developers can pre-cache SigLIP2 from `server/`:
+
+```sh
 uv run python scripts/download_models.py
 ```
 
-### ⚠️ Bypassing Security Warnings (Unsigned Installers)
+## Prepare photos
 
-Because StyleAI is an open-source project and the current installers are not code-signed, your operating system will likely flag them as "untrusted" or "malicious". This is a standard security precaution for any third-party software that has not been notarized by Microsoft or Apple.
+Select photos, then open **File → Plug-in Extras → Prepare Photos...**.
 
-#### Windows (SmartScreen)
-When you run the installer or the backend `.cmd` file, you may see a "Windows protected your PC" dialog.
-1. Click **More info**.
-2. Click **Run anyway**.
+- **Analyze photos for StyleAI** creates the visual index used by matching and
+  recommendations.
+- **Generate keywords and descriptions** uses the selected local metadata model.
+- Select either task or both. In a combined run, each embedding commits before
+  that photo's metadata phase.
 
-#### macOS (Gatekeeper)
-When you try to open the `.pkg` installer or the backend binary:
-1. **Right-click** (or Control-click) the file in Finder.
-2. Select **Open** from the menu.
-3. In the dialog that appears, click **Open** again.
-4. If it still fails, go to `System Settings -> Privacy & Security`, scroll down to the "Security" section, and click **Open Anyway**.
+Training photos do not have to be prepared first; Learn From My Edits exports
+the source evidence it needs. Apply My Style can also analyze an eligible photo
+at inference time, but preparing the broader catalog is important for finding
+additional training examples.
 
----
+## Learn and apply a style
 
-## 2. Initial Setup & Onboarding
+1. Select representative, manually edited RAW/DNG photos.
+2. Run **Learn From My Edits...**. A compatible profile/HDR partition needs at
+   least 12 valid burst-curated examples before it can produce a policy.
+3. Inspect learned policies in **Styles & Training...**.
+4. Run **Apply My Style...**. Keep virtual copies and per-photo review enabled
+   while validating a new policy.
+5. Use **Rate Selected AI Edits...** to record explicit outcomes. Feedback is
+   evaluation evidence and does not silently retrain or change thresholds.
+6. Use **Find More Training Examples...** to review high-confidence candidates
+   that broaden an existing policy's coverage.
 
-Once installed, we recommend using the new automated setup flow:
-1. Select any photo in your Lightroom Library grid.
-2. Navigate to `File -> Plug-in Extras -> Prepare Photos...`.
-3. If this is your first time using StyleAI, the **Onboarding Wizard** will automatically launch. 
+Ambiguous photos are skipped rather than edited with a weak or unrelated match.
 
-The Wizard will guide you step-by-step through:
-- Connecting to your Python backend server.
-- Seamlessly migrating any existing Lightroom metadata into the vector database.
-- Selecting and configuring your preferred local AI provider.
+## Back up StyleAI data
 
-### Manual Configuration
-If you prefer to configure settings manually, open the **Lightroom Plug-in Manager** (`File -> Plug-in Manager`) and locate StyleAI. Here you will find cleanly organized tabs for:
-- **Models & Prompts:** Configure your preferred local (Ollama/LM Studio) LLM providers.
-- **Support & Diagnostics:** If you encounter issues, click **Generate Diagnostic Report** to automatically fetch server health and logs into a beautifully formatted HTML file.
+StyleAI automatically keeps up to 14 daily validated snapshots and creates
+required recovery points before destructive maintenance. In Plug-in Manager,
+use **Data & Recovery → Export Backup...** for an external ZIP and **Restore
+Backup...** for a validated same-catalog restore.
 
-*Having trouble? Refer to the [Troubleshooting](Troubleshooting) guide for connectivity and API issues.*
-
-## 3. Optional: Semantic Search & Auto-Tagging
-
-If you want to be able to search your photos using natural language (e.g., "red sports car in the rain") or automatically generate keywords and captions, you must "index" your photos. This uses a Large Language Model (LLM) to write text metadata.
-1. Select one or more photos in your Lightroom Library grid.
-2. Navigate to `File -> Plug-in Extras -> Prepare Photos...`.
-3. The plugin will pass the photos to the backend, generate descriptions, tags, and AI embeddings, and store them in the Search database.
-
-**Note:** You do **not** need to index photos if you only want to use the AI Editing or Style Training features! Those features run independently and skip the slow LLM keyword process entirely.
-
-## 4. Create a DB Backup
-
-StyleAI automatically keeps 14 daily validated backend snapshots and creates
-required recovery points before destructive maintenance. To keep an additional
-copy outside the catalog folder:
-1. Open `File -> Plug-in Manager`.
-2. Navigate to `Data & Recovery` and click **Export Backup...**.
-3. Save the resulting `.zip` somewhere safe. It contains StyleAI indexes,
-   training data, learned styles, and history.
-
-Use **Restore Backup...** in the same section to restore a validated backup for
-the active catalog. StyleAI backups do not contain your Lightroom catalog,
-source photos, or Develop edits; continue using Lightroom's catalog backups.
-
-## 5. Imported Help Pages
-
-For further reading, we've migrated several curated guides from the project website:
-- [Help: Prepare Photos](Help-Analyze-and-Index)
-- [Help: Choosing AI Model](Help-Choosing-AI-Model)
-- [Help: Ollama Setup](Help-Ollama-Setup)
-- [Help: LM Studio Setup](Help-LM-Studio-Setup)
+These archives contain the StyleAI visual index, training examples, policies,
+operation history, and evaluation evidence. They do not contain the Lightroom
+catalog, original photos, or Develop history.

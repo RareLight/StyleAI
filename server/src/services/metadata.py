@@ -54,7 +54,7 @@ class AnalysisService:
 
         # Ollama (local) - Always register, availability checked dynamically
         try:
-            ollama = OllamaProvider({})
+            ollama = OllamaProvider()
             self.providers["ollama"] = ollama
             if ollama.is_available():
                 self.provider_status["ollama"] = "available"
@@ -71,7 +71,7 @@ class AnalysisService:
 
         # LM Studio (local) - Always register, availability checked dynamically
         try:
-            lmstudio = LMStudioProvider({})
+            lmstudio = LMStudioProvider()
             self.providers["lmstudio"] = lmstudio
             if lmstudio.is_available():
                 self.provider_status["lmstudio"] = "available"

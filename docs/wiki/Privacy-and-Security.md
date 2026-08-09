@@ -1,25 +1,33 @@
-# Privacy & Security in StyleAI
+# Data, Privacy, and Security
 
-StyleAI is built from the ground up to protect your privacy and your clients' intellectual property. In an era where "AI" often means unconditionally uploading your entire photo library to remote servers, StyleAI takes a completely different approach.
+StyleAI processes catalog photos and metadata on the Lightroom computer.
 
-We exclusively use **local AI models** to ensure your data is protected.
+- The backend listens only on `127.0.0.1:19819`.
+- SigLIP2 indexing and learned editing run locally.
+- Metadata generation connects only to local Ollama or LM Studio instances.
+- No cloud AI providers, API keys, analytics, or usage telemetry are supported.
+- Each catalog owns an adjacent `styleai.db`; catalogs must use separate
+  folders, and backup database-marker mismatches fail closed.
 
-## How We Protect Your Data
+Lightroom generally exports bounded JPEG proxies with embedded EXIF omitted.
+The plug-in separately sends only workflow-relevant context to the loopback
+service. Camera/lens/rendering evidence supports editing; GPS, existing
+keywords, folder names, and manual context are included in metadata prompts
+only when enabled.
 
-### 1. 100% Local Processing
-StyleAI is designed to function entirely offline.
-* **Embeddings & Search:** The semantic search index (SigLIP2) runs entirely on your own CPU/GPU using an embedded ChromaDB database.
-* **Face Detection:** The culling engine uses an optimized local InsightFace model to detect, cluster, and rank faces.
-* **Local LLMs:** By connecting to local AI runners like **Ollama** or **LM Studio**, you can run massive reasoning models (like Llama 3 or Gemma) entirely on your own hardware. Your photos never leave your machine.
+Training/edit inference may read a RAW/DNG path to extract an embedded,
+target-independent preview. Source files are never modified. Lightroom metadata
+and Develop settings change only through visible plug-in actions.
 
-### 2. Complete EXIF Metadata Stripping
-StyleAI exports a temporary JPEG to send to the backend. During this export process, we use strict Lightroom export settings to **strip all EXIF metadata**, including:
-* GPS Coordinates and location data
-* Camera serial numbers and lens info
-* Original capture timestamps
-* Any existing keywords or copyright fields
+StyleAI can access the internet for update checks, documentation, software
+downloads, and initial model downloads, but those requests do not include
+catalog images or photo metadata. Ollama and LM Studio are separate applications
+whose own settings remain the user's responsibility.
 
-### 3. Image Downsizing
-We never send your full-resolution raw files or high-quality JPEGs to the AI. Images are automatically constrained to 1024px on the longest edge. This provides enough resolution for the AI to understand the scene composition, but obscures extremely fine background text or microscopic details.
+Diagnostic image capture is off by default and requires Debug plus an explicit
+capture toggle. Captures stay in a local user-selected folder, can contain
+pixels and metadata, and are bounded/clearable. Inspect diagnostic reports
+before sharing them.
 
-
+See the repository [privacy statement](https://github.com/RareLight/StyleAI/blob/main/PRIVACY.md)
+for storage and retention details.

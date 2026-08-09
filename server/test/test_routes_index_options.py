@@ -16,7 +16,7 @@ class ExtractOptionsTests(unittest.TestCase):
         self.assertFalse(opts["submit_folder_names"])
         self.assertEqual(opts["existing_keywords"], None)
         self.assertEqual(opts["keyword_categories"], [])
-        self.assertEqual(opts["style_strength"], 0.5)
+        self.assertEqual(opts["style_strength"], 1.0)
 
     def test_keyword_categories_as_dict_json_string(self):
         opts = _extract_options({"keyword_categories": '{"People": ["Family"]}'})
@@ -50,14 +50,14 @@ class ExtractOptionsTests(unittest.TestCase):
             _extract_options({"style_strength": "0.7"})["style_strength"], 0.7
         )
 
-    def test_style_strength_invalid_string_defaults_to_half(self):
+    def test_style_strength_invalid_string_defaults_to_full(self):
         self.assertEqual(
-            _extract_options({"style_strength": "not a number"})["style_strength"], 0.5
+            _extract_options({"style_strength": "not a number"})["style_strength"], 1.0
         )
 
-    def test_style_strength_none_defaults_to_half(self):
+    def test_style_strength_none_defaults_to_full(self):
         self.assertEqual(
-            _extract_options({"style_strength": None})["style_strength"], 0.5
+            _extract_options({"style_strength": None})["style_strength"], 1.0
         )
 
     def test_boolean_coercion_accepts_true_false_strings(self):

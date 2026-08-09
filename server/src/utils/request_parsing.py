@@ -166,39 +166,16 @@ def _extract_options(data) -> dict[str, Any]:
     )
 
     options["prompt"] = data.get("prompt")
-    options["edit_intent"] = data.get("edit_intent")
-
     # Style strength (clamped 0..1)
     try:
-        options["style_strength"] = float(data.get("style_strength", 0.5))
+        options["style_strength"] = float(data.get("style_strength", 1.0))
     except (TypeError, ValueError):
-        options["style_strength"] = 0.5
+        options["style_strength"] = 1.0
     options["style_strength"] = max(0.0, min(1.0, options["style_strength"]))
 
-    # Boolean edit-control flags
-    options["include_masks"] = _bool_from_data(data, "include_masks", True)
-    options["adjust_white_balance"] = _bool_from_data(
-        data, "adjust_white_balance", True
-    )
-    options["adjust_basic_tone"] = _bool_from_data(data, "adjust_basic_tone", True)
-    options["adjust_presence"] = _bool_from_data(data, "adjust_presence", True)
-    options["adjust_color_mix"] = _bool_from_data(data, "adjust_color_mix", True)
-    options["do_color_grading"] = _bool_from_data(data, "do_color_grading", True)
-    options["use_tone_curve"] = _bool_from_data(data, "use_tone_curve", True)
-    options["use_point_curve"] = _bool_from_data(data, "use_point_curve", True)
-    options["adjust_detail"] = _bool_from_data(data, "adjust_detail", True)
-    options["adjust_effects"] = _bool_from_data(data, "adjust_effects", True)
-    options["adjust_lens_corrections"] = _bool_from_data(
-        data, "adjust_lens_corrections", True
-    )
+    # Edit application controls
     options["allow_auto_crop"] = _bool_from_data(data, "allow_auto_crop", True)
     options["allow_auto_rotate"] = _bool_from_data(data, "allow_auto_rotate", True)
-
-    # Composition mode
-    composition_mode = str(data.get("composition_mode", "subtle")).lower().strip()
-    if composition_mode not in ("none", "subtle", "aggressive"):
-        composition_mode = "subtle"
-    options["composition_mode"] = composition_mode
 
     # Capture time
     options["date_time"] = data.get("date_time")
@@ -252,7 +229,6 @@ def _extract_options(data) -> dict[str, Any]:
 
     options["compute_embeddings"] = "embeddings" in tasks
     options["compute_metadata"] = "metadata" in tasks
-    options["compute_faces"] = "faces" in tasks
 
     # Diagnostic image capture is deliberately double-gated.  Legacy clients
     # that send only audit_llm_inputs cannot turn capture back on.

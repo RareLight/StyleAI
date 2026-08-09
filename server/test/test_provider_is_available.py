@@ -12,7 +12,7 @@ def test_ollama_is_available_returns_false_when_sdk_missing(mocker):
     mocker.patch("providers.ollama.Client", None)
     from providers.ollama import OllamaProvider
 
-    provider = OllamaProvider({})
+    provider = OllamaProvider()
     assert provider.is_available() is False
 
 
@@ -25,7 +25,7 @@ def test_ollama_is_available_returns_false_when_sdk_raises(mocker):
 
     from providers.ollama import OllamaProvider
 
-    provider = OllamaProvider({})
+    provider = OllamaProvider()
     assert provider.is_available() is False
 
 
@@ -36,7 +36,7 @@ def test_ollama_is_available_returns_true_when_sdk_responds(mocker):
 
     from providers.ollama import OllamaProvider
 
-    provider = OllamaProvider({})
+    provider = OllamaProvider()
     assert provider.is_available() is True
 
 
@@ -48,21 +48,8 @@ def test_lmstudio_is_available_returns_false_on_sdk_exception(mocker):
     fake_lms.Client.is_valid_api_host.side_effect = RuntimeError("sdk borked")
     from providers.lmstudio import LMStudioProvider
 
-    provider = LMStudioProvider({})
+    provider = LMStudioProvider()
     assert provider.is_available() is False
-
-
-def test_lmstudio_ignores_configured_remote_host(mocker):
-    fake_lms = mocker.patch("providers.lmstudio.lms")
-    fake_lms.Client.find_default_local_api_host.return_value = None
-    fake_lms.Client.is_valid_api_host.side_effect = lambda host: (
-        host == "localhost:1234"
-    )
-    from providers.lmstudio import LMStudioProvider
-
-    provider = LMStudioProvider({"base_url": "customhost:1234"})
-    assert provider.is_available() is True
-    assert provider.host == "localhost:1234"
 
 
 def test_lmstudio_is_available_uses_auto_discovery_when_default_host_invalid(mocker):
@@ -73,7 +60,7 @@ def test_lmstudio_is_available_uses_auto_discovery_when_default_host_invalid(moc
     fake_lms.Client.find_default_local_api_host.return_value = "127.0.0.1:41343"
     from providers.lmstudio import LMStudioProvider
 
-    provider = LMStudioProvider({"base_url": "localhost:1234"})
+    provider = LMStudioProvider()
     assert provider.is_available() is True
     assert provider.host == "127.0.0.1:41343"
 
@@ -84,7 +71,7 @@ def test_lmstudio_rejects_non_loopback_auto_discovery(mocker):
     fake_lms.Client.is_valid_api_host.return_value = False
     from providers.lmstudio import LMStudioProvider
 
-    provider = LMStudioProvider({})
+    provider = LMStudioProvider()
     assert provider.is_available() is False
     assert provider.host == "localhost:1234"
     assert all(

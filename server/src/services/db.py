@@ -35,7 +35,6 @@ MIN_RESTORE_EXPANSION_LIMIT = 1024 * 1024 * 1024
 _snapshot_lock = threading.RLock()
 
 
-# Ordner für serverseitig aufgehobene Backups: Docker /data/db/backups, Standalone <db-path>/backups
 def _get_backups_dir():
     if not config.DB_PATH:
         return None
@@ -233,7 +232,7 @@ def _archive_staged_snapshot(staging_parent: str, archive_path: str) -> None:
 
 
 def get_database_stats() -> dict:
-    """Return database statistics for photos, faces, and persons."""
+    """Return database statistics for indexed photos."""
     image_stats = chroma_service.get_image_metadata_stats()
     return {
         "photos": {
@@ -291,7 +290,7 @@ def _build_backup_zip_unlocked(
             pass
         raise
 
-    # Kopie serverseitig aufbewahren (Docker: /data/db/backups, Standalone: <db-path>/backups)
+    # Keep a durable copy inside the catalog-local database directory.
     backups_dir = _get_backups_dir()
     if persist and backups_dir:
         try:
@@ -654,7 +653,8 @@ def seconds_until_scheduled_backup(interval: int, *, startup_grace: int = 60) ->
 
 def prune_database(valid_photo_ids: list) -> dict:
     """
-    Removes photo metadata, embeddings, and face embeddings for any photo NOT in valid_photo_ids.
+    Removes photo metadata, embeddings, and training examples for photos absent
+    from ``valid_photo_ids``.
     """
     if not valid_photo_ids:
         raise ValueError(

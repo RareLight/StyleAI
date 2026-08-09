@@ -20,12 +20,10 @@ db_bp = Blueprint("db", __name__)
 @db_bp.route("/db/stats", methods=["GET"])
 def database_stats():
     """
-    Return database statistics: indexed photos, faces, persons, and metadata/embedding counts.
+    Return indexed-photo and metadata/embedding counts.
 
     Returns: {
-        "photos": { "total", "with_embedding", "with_title", "with_caption", "with_keywords" },
-        "faces": { "total" },
-        "persons": { "total" }
+        "photos": { "total", "with_embedding", "with_title", "with_caption", "with_keywords" }
     }
     """
     try:

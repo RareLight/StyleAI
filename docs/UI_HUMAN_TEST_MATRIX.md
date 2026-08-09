@@ -1,4 +1,4 @@
-# StyleAI UI Overhaul — Human Test Matrix
+# StyleAI UI Human Test Matrix
 
 Use a backed-up disposable Lightroom Classic catalog. Test the checked-in
 release configuration first (`developerBuild=false` in `BuildConfig.lua`). Do
@@ -42,8 +42,8 @@ catalog.
    no default debug directory is created and no diagnostic files are written.
 3. Enable Debug only. Confirm subordinate controls appear without a blank band
    when hidden again, and confirm metadata generation still writes no captures.
-4. Enable capture. Generate metadata and verify one request group contains the
-   expected original/bracket files in the displayed local destination.
+4. Enable capture. Generate metadata and verify each accepted photo creates its
+   own original diagnostic image in the displayed local destination.
 5. Confirm Reveal opens the destination. Create an unrelated file there, use
    Clear, and verify captured groups are removed while the unrelated file
    remains.
@@ -125,7 +125,7 @@ scroller access, dialog resize behavior, and status meaning without color.
 
 Create a separate development package with
 `python scripts/package_lrc_plugin.py developer`. Confirm the four Help commands
-and one-time style override appear, then run
+appear, then run
 **Developer: Run Automated Tests...**. Record Lightroom version, operating
 system, display scale, language, pass/fail totals, and the first error for any
 failure. The generated package lives under ignored `build/`; the checked-in

@@ -15,8 +15,6 @@ def client():
 def test_db_stats_returns_raw_stats(client, mocker):
     stats = {
         "photos": {"total": 3, "with_embedding": 2},
-        "faces": {"total": 5},
-        "persons": {"total": 1},
     }
     mocker.patch("routes.db.service_db.get_database_stats", return_value=stats)
 

@@ -19,13 +19,9 @@ jobs:
           - os: windows-latest
             os_name: windows
             arch: x64
-            python_arch: '3.12'
-            miniconda_arch: ''
           - os: macos-latest
             os_name: macos
             arch: arm64
-            python_arch: '3.12'
-            miniconda_arch: arm64
 
     name: Build StyleAI - ${{ matrix.os_name }}-${{ matrix.arch }}
 
@@ -49,6 +45,7 @@ jobs:
           fi
 
       - name: Update Info.lua with version and build date
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           VERSION="${{ github.ref_name }}"
@@ -64,10 +61,11 @@ jobs:
           sed 's/Info.MAJOR = .*/Info.MAJOR = '"$MAJOR"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
           sed 's/Info.MINOR = .*/Info.MINOR = '"$MINOR"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
           sed 's/Info.REVISION = .*/Info.REVISION = '"$REVISION"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
-          sed 's/Info.BUILD = [0-9]*/build = '"$BUILD_DATE"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
+          sed 's/Info.BUILD = [0-9]*/Info.BUILD = '"$BUILD_DATE"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
           echo "Updated Info.lua: MAJOR=$MAJOR MINOR=$MINOR REVISION=$REVISION build=$BUILD_DATE"
 
       - name: Update backend version info from tag
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           VERSION="${{ github.ref_name }}"
@@ -81,27 +79,18 @@ jobs:
           EOF
           echo "Updated backend version info: version=${VERSION} build=${BUILD_DATE}"
 
-      - name: Setup Miniconda
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
-          activate-environment: styleai_server
-          environment-file: environment.yml
-          python-version: ${{ matrix.python_arch }}
-          auto-activate-base: false
-          miniconda-version: latest
-          architecture: ${{ matrix.miniconda_arch }}
+          version: "latest"
 
-      - name: Fix environment
-        shell: bash -l {0}
-        run: |
-          pip uninstall -y pillow
-          pip install --force-reinstall --no-cache-dir pillow
+      - name: Sync locked build environment
+        run: uv sync --project server --locked --dev
 
       - name: Build styleai-server
-        shell: bash -l {0}
         env:
           KMP_DUPLICATE_LIB_OK: 'TRUE'
-        run: pyinstaller styleai_server.spec --noconfirm
+        run: uv run --project server pyinstaller styleai_server.spec --noconfirm
           
       - name: Prepare plugin files
         shell: bash
@@ -132,174 +121,9 @@ jobs:
           path: build/
           retention-days: 1
 
-  build-plugin-only:
-    if: github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    name: Build Plugin Only
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Ensure tag commit is on main
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: |
-          TAG_SHA="${GITHUB_SHA}"
-          git fetch origin main
-          if git branch -r --contains "$TAG_SHA" | grep -q "origin/main"; then
-            echo "Tag commit is contained in origin/main."
-          else
-            echo "Error: Tag commit is not contained in origin/main."
-            exit 1
-          fi
-
-      - name: Update Info.lua with version and build date
-        shell: bash
-        run: |
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          REVISION=$(echo "$VERSION" | cut -d. -f3)
-          MAJOR=${MAJOR:-0}
-          MINOR=${MINOR:-0}
-          REVISION=${REVISION:-0}
-          BUILD_DATE=$(date +%Y%m%d)
-          INFO_LUA="plugin/StyleAI.lrdevplugin/Info.lua"
-          sed 's/Info.MAJOR = .*/Info.MAJOR = '"$MAJOR"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
-          sed 's/Info.MINOR = .*/Info.MINOR = '"$MINOR"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
-          sed 's/Info.REVISION = .*/Info.REVISION = '"$REVISION"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
-          sed 's/Info.BUILD = [0-9]*/build = '"$BUILD_DATE"'/' "$INFO_LUA" > "$INFO_LUA.tmp" && mv "$INFO_LUA.tmp" "$INFO_LUA"
-          echo "Updated Info.lua: MAJOR=$MAJOR MINOR=$MINOR REVISION=$REVISION build=$BUILD_DATE"
-
-      - name: Prepare plugin-only files
-        shell: bash
-        run: |
-          BUILD_DIR="build-plugin-only"
-          mkdir -p "$BUILD_DIR"
-          cp -r plugin/StyleAI.lrdevplugin "$BUILD_DIR/"
-
-      - name: Upload plugin-only artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: styleai-plugin-docker-backend
-          path: build-plugin-only/
-          retention-days: 1
-
-  build-docker-images:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        include:
-          - arch: x64
-            docker_platform: linux/amd64
-          - arch: aarch64
-            docker_platform: linux/arm64
-
-    name: Build Docker Image - ${{ matrix.arch }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      # Same as build-and-release: bake release tag into version_info.py so /version and
-      # /version/check match the plugin from the same tag. Without this, the image keeps
-      # the repo's dev placeholder and users see plugin/server version mismatch.
-      - name: Update backend version info from tag
-        shell: bash
-        run: |
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"
-          BUILD_DATE=$(date +%Y%m%d)
-          VERSION_FILE="server/src/version_info.py"
-          cat > "$VERSION_FILE" <<EOF
-          BACKEND_VERSION = "${VERSION}"
-          BACKEND_RELEASE_TAG = "v${VERSION}"
-          BACKEND_BUILD = ${BUILD_DATE}
-          EOF
-          echo "Updated backend version info: version=${VERSION} build=${BUILD_DATE}"
-
-      - name: Prepare image name
-        id: image-name
-        shell: bash
-        run: |
-          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "registry_image=ghcr.io/${OWNER_LC}/styleai" >> "$GITHUB_OUTPUT"
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./server
-          file: ./server/Dockerfile
-          platforms: ${{ matrix.docker_platform }}
-          push: true
-          tags: ${{ steps.image-name.outputs.registry_image }}:${{ github.ref_name }}-${{ matrix.arch }}
-          cache-from: type=gha,scope=styleai-server-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=styleai-server-${{ matrix.arch }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ github.ref_name }}
-          provenance: false
-          sbom: false
-          # generate-summary: false
-
-  # Combine per-arch pushes into one multi-arch :latest so `docker compose pull` works
-  # with ghcr.io/.../styleai:latest (amd64 and arm64 clients resolve correctly).
-  publish-docker-manifest:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-docker-images, create-release]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    name: Publish Docker latest manifest
-
-    steps:
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Create and push multi-arch latest
-        shell: bash
-        run: |
-          set -euo pipefail
-          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          IMG="ghcr.io/${OWNER_LC}/styleai"
-          TAG="${{ github.ref_name }}"
-          docker buildx imagetools create \
-            --tag "${IMG}:latest" \
-            "${IMG}:${TAG}-x64" \
-            "${IMG}:${TAG}-aarch64"
-          
   create-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-and-release, build-plugin-only]
+    needs: [build-and-release]
     runs-on: ubuntu-latest
     name: Create Release
     permissions:
@@ -330,12 +154,6 @@ jobs:
             cd ..
           fi
 
-          if [ -d "styleai-plugin-docker-backend" ]; then
-            cd styleai-plugin-docker-backend
-            zip -r ../StyleAI-plugin-docker-backend-${VERSION}.zip .
-            cd ..
-          fi
-          
           cd ..
 
       - name: Set release metadata
@@ -375,8 +193,6 @@ jobs:
           - A Windows Smartscreen warning will appear.
           - Click More -> Run anyway
 
-          ## Docker backend
-          - Users running the backend via Docker can use the `StyleAI-plugin-docker-backend-<version>.zip` asset.
           NOTES
 
       - name: Create release
@@ -386,7 +202,8 @@ jobs:
           name: ${{ steps.release-meta.outputs.release_name }}
           body_path: release_notes.md
           files: |
-            artifacts/StyleAI-plugin-docker-backend-${{ github.ref_name }}.zip
+            artifacts/StyleAI-windows-x64-${{ github.ref_name }}.zip
+            artifacts/StyleAI-macos-arm64-${{ github.ref_name }}.zip
           draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: false
