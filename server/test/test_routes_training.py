@@ -3,7 +3,7 @@
 import json
 import pytest
 from core.migrations import run_migrations
-from services import operations
+from services import operations, source_embeddings
 from styleai_server import app
 
 
@@ -12,6 +12,29 @@ def client():
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def neutral_training_source(mocker):
+    source_stamp = {
+        "source_embedding_provenance": "raw_preview",
+        "source_embedding_fingerprint": "fingerprint",
+        "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+        "source_embedding_model": source_embeddings.SOURCE_EMBEDDING_MODEL_ID,
+        "source_embedding_preprocess": source_embeddings.SOURCE_EMBEDDING_PREPROCESS_VERSION,
+    }
+    single = mocker.patch(
+        "routes.training._resolve_training_source",
+        return_value=([0.1, 0.2, 0.3], b"neutral-preview", "raw_preview", source_stamp),
+    )
+    mocker.patch(
+        "routes.training._resolve_training_sources_batch",
+        side_effect=lambda items, **_kwargs: {
+            photo_id: ([0.1, 0.2, 0.3], b"neutral-preview", "raw_preview", source_stamp)
+            for photo_id, _rendered, _raw_path in items
+        },
+    )
+    return single
 
 
 @pytest.fixture
@@ -92,6 +115,118 @@ def test_training_stats_endpoint(client, mocker):
     assert json_data.get("error") is None
     res = json_data["results"]
     assert res["total_examples"] == 5
+
+
+def test_training_preflight_returns_only_needed_ids(client, mocker):
+    mocker.patch(
+        "routes.training.training_service.get_existing_training_ids",
+        return_value={"p2"},
+    )
+    response = client.post(
+        "/training/preflight",
+        json={"photo_ids": ["p1", "p2", "p3"], "force_retrain": False},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()["results"]
+    assert payload["existing_photo_ids"] == ["p2"]
+    assert payload["needed_photo_ids"] == ["p1", "p3"]
+
+
+def test_training_rejects_missing_neutral_source(client, neutral_training_source):
+    neutral_training_source.side_effect = ValueError("NEUTRAL_SOURCE_REQUIRED")
+    response = client.post(
+        "/training/add",
+        data={"photo_id": "p1", "develop_settings": "{}"},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"] == "NEUTRAL_SOURCE_REQUIRED"
+
+
+def test_batch_embedding_failure_is_isolated_to_one_training_source(mocker):
+    mocker.stopall()
+    from routes.training import _resolve_training_sources_batch
+    from services import source_embeddings
+
+    sources = [
+        source_embeddings.NeutralSource(b"raw-one", "raw_preview", "one"),
+        source_embeddings.NeutralSource(b"raw-two", "raw_preview", "two"),
+    ]
+    mocker.patch(
+        "routes.training.source_embeddings.resolve_neutral_source",
+        side_effect=sources,
+    )
+    mocker.patch(
+        "routes.training.source_embeddings.compatible_embedding",
+        return_value=None,
+    )
+    mocker.patch("services.chroma.get_image", return_value={})
+    images = [mocker.MagicMock(), mocker.MagicMock()]
+    mocker.patch(
+        "routes.training.source_embeddings.decode_for_embedding",
+        side_effect=images,
+    )
+    mocker.patch(
+        "routes.training.operations.recommended_gpu_batch_size", return_value=8
+    )
+    mocker.patch("server_lifecycle.get_model", return_value=mocker.MagicMock())
+    mocker.patch("server_lifecycle.get_processor", return_value=mocker.MagicMock())
+    analysis = mocker.MagicMock()
+    analysis._generate_image_embeddings.return_value = [[1.0, 0.0], None]
+    mocker.patch("services.metadata.get_analysis_service", return_value=analysis)
+    fallback = mocker.patch(
+        "routes.training._compute_clip_embedding",
+        return_value=None,
+    )
+
+    resolved = _resolve_training_sources_batch(
+        [
+            ("photo-1", b"rendered-one", "/photos/one.raw"),
+            ("photo-2", b"rendered-two", "/photos/two.raw"),
+        ]
+    )
+
+    assert resolved["photo-1"][0] == [1.0, 0.0]
+    assert isinstance(resolved["photo-2"], ValueError)
+    assert "NEUTRAL_EMBEDDING_UNAVAILABLE" in str(resolved["photo-2"])
+    analysis._generate_image_embeddings.assert_called_once()
+    fallback.assert_called_once_with(b"raw-two")
+    for image in images:
+        image.close.assert_called_once()
+
+
+def test_batch_embedding_recomputes_after_canonical_cache_error(mocker):
+    mocker.stopall()
+    from routes.training import _resolve_training_sources_batch
+    from services import source_embeddings
+
+    source = source_embeddings.NeutralSource(b"raw", "raw_preview", "fingerprint")
+    mocker.patch(
+        "routes.training.source_embeddings.resolve_neutral_source",
+        return_value=source,
+    )
+    mocker.patch("services.chroma.get_image", side_effect=RuntimeError("cache busy"))
+    image = mocker.MagicMock()
+    mocker.patch(
+        "routes.training.source_embeddings.decode_for_embedding",
+        return_value=image,
+    )
+    mocker.patch(
+        "routes.training.operations.recommended_gpu_batch_size", return_value=8
+    )
+    mocker.patch("server_lifecycle.get_model", return_value=mocker.MagicMock())
+    mocker.patch("server_lifecycle.get_processor", return_value=mocker.MagicMock())
+    analysis = mocker.MagicMock()
+    analysis._generate_image_embeddings.return_value = [[1.0, 0.0]]
+    mocker.patch("services.metadata.get_analysis_service", return_value=analysis)
+
+    resolved = _resolve_training_sources_batch(
+        [("photo-1", b"rendered", "/photos/one.raw")]
+    )
+
+    assert resolved["photo-1"][0] == [1.0, 0.0]
+    image.close.assert_called_once()
 
 
 def test_batch_can_defer_policy_rebuild_until_all_chunks_are_saved(client, mocker):

@@ -6,11 +6,8 @@ Lightroom develop settings as few-shot examples.  When the AI generates a new
 edit recipe it queries this collection by CLIP visual similarity and injects
 the closest matches as style examples into the LLM prompt.
 
-Enhanced with multi-criteria features:
-  - Exposure metrics (luminance, contrast, highlight/shadow ratios)
-  - Scene-type tags via CLIP zero-shot text probing
-  - EXIF-based categorical fields (focal-length bucket, time-of-day, camera)
-  - Statistics endpoint for the style-profile UI
+Enhanced with source exposure metrics, standardized EXIF evidence, and an
+authoritative readiness contract for the editing-policy UI.
 """
 
 from __future__ import annotations
@@ -34,9 +31,7 @@ _training_collection = None
 
 COLLECTION_NAME = "edit_training"
 TRAINING_PAGE_SIZE = 1000
-EMBEDDING_DIM = (
-    1152  # CLIP ViT-L/14 dimension used by the main image_embeddings collection
-)
+EMBEDDING_DIM = 1152
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -75,10 +70,6 @@ def unload_collections() -> None:
     _chroma_client = None
 
 
-def _dummy_embedding() -> list[float]:
-    return np.zeros(EMBEDDING_DIM, dtype=np.float32).tolist()
-
-
 def _iter_training_pages(include):
     """Yield bounded Chroma pages without a fixed collection-size ceiling."""
     if _training_collection is None:
@@ -104,7 +95,7 @@ def _safe_unit(value: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Image analysis at ~3MP (2048px long edge) for histograms & scene features
+# Image analysis at ~3MP (2048px long edge) for source exposure evidence
 # ---------------------------------------------------------------------------
 
 _THUMBNAIL_LONG_EDGE = 2048  # ~3MP sweet spot for analysis speed vs accuracy
@@ -223,235 +214,6 @@ def compute_exposure_metrics(image_bytes: bytes) -> dict[str, float]:
             "shadow_headroom": 0.0,
             "highlight_headroom": 1.0,
         }
-
-
-# ---------------------------------------------------------------------------
-# Dominant Color Palette Extraction
-# ---------------------------------------------------------------------------
-
-
-def compute_dominant_colors(image_bytes: bytes, n_colors: int = 5) -> list[str]:
-    """Extract the dominant colors from the image using K-Means clustering.
-    Returns a list of HEX color strings.
-    """
-    try:
-        from sklearn.cluster import KMeans
-        import io
-        from PIL import Image
-
-        # Load a very small thumbnail for extremely fast clustering
-        with Image.open(io.BytesIO(image_bytes)) as source_image:
-            source_image.thumbnail((100, 100), Image.Resampling.LANCZOS)
-            image = source_image.convert("RGB")
-        try:
-            pixels = np.asarray(image).copy()
-        finally:
-            image.close()
-
-        # Reshape the image to be a list of pixels
-        pixels = pixels.reshape(-1, 3)
-        unique_colors, unique_counts = np.unique(
-            pixels,
-            axis=0,
-            return_counts=True,
-        )
-        if len(unique_colors) <= n_colors:
-            order = np.argsort(unique_counts)[::-1]
-            return [
-                f"#{red:02x}{green:02x}{blue:02x}"
-                for red, green, blue in unique_colors[order]
-            ]
-
-        # Cluster the pixels
-        kmeans = KMeans(n_clusters=n_colors, n_init="auto", random_state=42)
-        kmeans.fit(pixels)
-
-        # Get the colors and convert to hex
-        colors = kmeans.cluster_centers_.astype(int)
-
-        # Sort by frequency (labels)
-        labels = kmeans.labels_
-        counts = np.bincount(labels)
-        sorted_indices = np.argsort(counts)[::-1]
-
-        hex_colors = []
-        for idx in sorted_indices:
-            r, g, b = colors[idx]
-            hex_colors.append(f"#{r:02x}{g:02x}{b:02x}")
-
-        return hex_colors
-    except Exception as exc:
-        logger.warning("compute_dominant_colors failed: %s", exc)
-        return []
-
-
-# ---------------------------------------------------------------------------
-# Perceptual histogram signature for style grouping
-# ---------------------------------------------------------------------------
-
-_L_BINS = 16
-_AB_BINS = 8
-
-
-def _rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
-    """Convert RGB [0,1] to LAB using D65 white point (simplified)."""
-    # Gamma correction (sRGB to linear)
-    mask = rgb > 0.04045
-    linear = np.where(mask, ((rgb + 0.055) / 1.055) ** 2.4, rgb / 12.92)
-
-    # XYZ conversion (D65)
-    x = (
-        0.4124564 * linear[:, :, 0]
-        + 0.3575761 * linear[:, :, 1]
-        + 0.1804375 * linear[:, :, 2]
-    )
-    y = (
-        0.2126729 * linear[:, :, 0]
-        + 0.7151522 * linear[:, :, 1]
-        + 0.0721750 * linear[:, :, 2]
-    )
-    z = (
-        0.0193339 * linear[:, :, 0]
-        + 0.1191920 * linear[:, :, 1]
-        + 0.9503041 * linear[:, :, 2]
-    )
-
-    # Normalize for D65
-    xn, yn, zn = 0.95047, 1.00000, 1.08883
-    x, y, z = x / xn, y / yn, z / zn
-
-    # F function
-    def _f(t):
-        return np.where(t > 0.008856, t ** (1.0 / 3.0), 7.787 * t + 16.0 / 116.0)
-
-    fx, fy, fz = _f(x), _f(y), _f(z)
-
-    L = 116.0 * fy - 16.0
-    a = 500.0 * (fx - fy)
-    b = 200.0 * (fy - fz)
-
-    return np.stack([L, a, b], axis=-1)
-
-
-def compute_histogram_signature(image_bytes: bytes) -> dict[str, Any]:
-    """Compute a compact perceptual histogram signature for style grouping.
-
-    Uses LAB color space with 16 L bins + 8 a bins + 8 b bins.
-    Returns a dict with normalized histograms and derived statistics.
-    """
-    try:
-        rgb, orig_size = _load_thumbnail(image_bytes)
-        lab = _rgb_to_lab(rgb)
-
-        # Compute histograms
-        L = lab[:, :, 0].ravel()
-        a = lab[:, :, 1].ravel()
-        b = lab[:, :, 2].ravel()
-
-        # L: 0-100 → 16 bins
-        L_hist, _ = np.histogram(L, bins=_L_BINS, range=(0, 100))
-        L_hist = L_hist.astype(np.float32)
-        L_hist = L_hist / (L_hist.sum() + 1e-8)
-
-        # a: -128 to 128 → 8 bins
-        a_hist, _ = np.histogram(a, bins=_AB_BINS, range=(-128, 128))
-        a_hist = a_hist.astype(np.float32)
-        a_hist = a_hist / (a_hist.sum() + 1e-8)
-
-        # b: -128 to 128 → 8 bins
-        b_hist, _ = np.histogram(b, bins=_AB_BINS, range=(-128, 128))
-        b_hist = b_hist.astype(np.float32)
-        b_hist = b_hist / (b_hist.sum() + 1e-8)
-
-        # Compact summary statistics for quick comparison
-        L_mean = float(np.mean(L))
-        L_std = float(np.std(L))
-        a_mean = float(np.mean(a))
-        b_mean = float(np.mean(b))
-        chroma_mean = float(np.mean(np.sqrt(a**2 + b**2)))
-
-        # Tonal distribution (percentile-based, profile-independent)
-        L_sorted = np.sort(L)
-        n = len(L_sorted)
-        shadow_level = float(L_sorted[int(n * 0.10)])  # 10th percentile
-        mid_level = float(L_sorted[int(n * 0.50)])  # median
-        highlight_level = float(L_sorted[int(n * 0.90)])  # 90th percentile
-
-        return {
-            "hist_L": L_hist.tolist(),
-            "hist_a": a_hist.tolist(),
-            "hist_b": b_hist.tolist(),
-            "hist_L_mean": round(L_mean / 100.0, 4),  # normalize to 0..1
-            "hist_L_std": round(L_std / 100.0, 4),
-            "hist_a_mean": round((a_mean + 128.0) / 256.0, 4),  # normalize to 0..1
-            "hist_b_mean": round((b_mean + 128.0) / 256.0, 4),
-            "hist_chroma": round(chroma_mean / 128.0, 4),
-            "hist_shadow_level": round(shadow_level / 100.0, 4),
-            "hist_mid_level": round(mid_level / 100.0, 4),
-            "hist_highlight_level": round(highlight_level / 100.0, 4),
-            "hist_orig_width": orig_size[0],
-            "hist_orig_height": orig_size[1],
-        }
-    except Exception as exc:
-        logger.warning("compute_histogram_signature failed: %s", exc)
-        return {
-            "hist_L": [1.0 / _L_BINS] * _L_BINS,
-            "hist_a": [1.0 / _AB_BINS] * _AB_BINS,
-            "hist_b": [1.0 / _AB_BINS] * _AB_BINS,
-            "hist_L_mean": 0.5,
-            "hist_L_std": 0.0,
-            "hist_a_mean": 0.5,
-            "hist_b_mean": 0.5,
-            "hist_chroma": 0.0,
-            "hist_shadow_level": 0.1,
-            "hist_mid_level": 0.5,
-            "hist_highlight_level": 0.9,
-        }
-
-
-def histogram_distance(sig1: dict[str, Any], sig2: dict[str, Any]) -> float:
-    """Compute distance between two histogram signatures.
-
-    Returns 0..1 where 0 = identical, 1 = completely different.
-    Uses chi-square on histogram bins + euclidean on summary stats.
-    """
-    try:
-        # Chi-square on histogram bins
-        chi_sq = 0.0
-        for key in ("hist_L", "hist_a", "hist_b"):
-            h1 = np.array(sig1.get(key, []), dtype=np.float32)
-            h2 = np.array(sig2.get(key, []), dtype=np.float32)
-            if len(h1) == 0 or len(h2) == 0 or len(h1) != len(h2):
-                continue
-            # Add epsilon to avoid division by zero
-            denom = h1 + h2 + 1e-8
-            diff = h1 - h2
-            chi_sq += float(np.sum(diff**2 / denom))
-
-        # Normalize chi-square (empirical: max useful value ~4.0 for these bin counts)
-        chi_component = min(1.0, chi_sq / 4.0)
-
-        # Euclidean on summary stats (all normalized 0..1)
-        stat_keys = [
-            "hist_L_mean",
-            "hist_L_std",
-            "hist_chroma",
-            "hist_shadow_level",
-            "hist_mid_level",
-            "hist_highlight_level",
-        ]
-        stat_diffs = []
-        for key in stat_keys:
-            v1 = sig1.get(key, 0.5)
-            v2 = sig2.get(key, 0.5)
-            stat_diffs.append((float(v1) - float(v2)) ** 2)
-        stat_dist = np.sqrt(sum(stat_diffs) / len(stat_diffs)) if stat_diffs else 0.0
-
-        # Weighted combination (histogram shape matters more than exact levels)
-        return 0.6 * chi_component + 0.4 * stat_dist
-    except Exception as exc:
-        logger.debug("histogram_distance failed: %s", exc)
-        return 1.0
 
 
 def _get_clip_tokenize():
@@ -600,35 +362,67 @@ def normalize_develop_settings_for_style(
 
     # Extract Color Grading
     cg = {}
-    for region, lr_prefix in [
-        ("shadows", "Shadows"),
-        ("midtones", "Midtones"),
-        ("highlights", "Highlights"),
-        ("global", "Global"),
+    for region, lr_prefixes in [
+        ("shadows", ("Shadow", "Shadows")),
+        ("midtones", ("Midtone", "Midtones")),
+        ("highlights", ("Highlight", "Highlights")),
+        ("global", ("Global",)),
     ]:
-        h = develop_settings.get(f"ColorGrade{lr_prefix}Hue") or develop_settings.get(
-            f"SplitToning{lr_prefix}Hue"
+        h = next(
+            (
+                develop_settings.get(f"ColorGrade{prefix}Hue")
+                for prefix in lr_prefixes
+                if develop_settings.get(f"ColorGrade{prefix}Hue") is not None
+            ),
+            None,
         )
-        s = develop_settings.get(f"ColorGrade{lr_prefix}Sat") or develop_settings.get(
-            f"SplitToning{lr_prefix}Saturation"
+        if h is None:
+            h = next(
+                (
+                    develop_settings.get(f"SplitToning{prefix}Hue")
+                    for prefix in lr_prefixes
+                    if develop_settings.get(f"SplitToning{prefix}Hue") is not None
+                ),
+                None,
+            )
+        s = next(
+            (
+                develop_settings.get(f"ColorGrade{prefix}Sat")
+                for prefix in lr_prefixes
+                if develop_settings.get(f"ColorGrade{prefix}Sat") is not None
+            ),
+            None,
         )
-        l = develop_settings.get(f"ColorGrade{lr_prefix}Lum")
+        if s is None:
+            s = next(
+                (
+                    develop_settings.get(f"SplitToning{prefix}Saturation")
+                    for prefix in lr_prefixes
+                    if develop_settings.get(f"SplitToning{prefix}Saturation")
+                    is not None
+                ),
+                None,
+            )
+        l = next(
+            (
+                develop_settings.get(f"ColorGrade{prefix}Lum")
+                for prefix in lr_prefixes
+                if develop_settings.get(f"ColorGrade{prefix}Lum") is not None
+            ),
+            None,
+        )
         if h is not None or s is not None or l is not None:
             cg_part = {
                 "hue": round(float(h if h is not None else 0.0), 2),
                 "saturation": round(float(s if s is not None else 0.0), 2),
+                "luminance": round(float(l if l is not None else 0.0), 2),
             }
-            if region != "global":
-                cg_part["luminance"] = round(float(l if l is not None else 0.0), 2)
             cg[region] = cg_part
 
-    blending = (
-        develop_settings.get("ColorGradeBlending")
-        or develop_settings.get("SplitToningBalance")
-    )  # Balance used as fallback blending sometimes? Actually Lightroom has SplitToningBalance and ColorGradeBlending.
-    balance = develop_settings.get("ColorGradeBalance") or develop_settings.get(
-        "SplitToningBalance"
-    )
+    blending = develop_settings.get("ColorGradeBlending")
+    balance = develop_settings.get("ColorGradeBalance")
+    if balance is None:
+        balance = develop_settings.get("SplitToningBalance")
 
     if cg:
         cg["blending"] = round(float(blending if blending is not None else 50.0), 2)
@@ -700,14 +494,14 @@ def add_training_example(
     skip_discovery: bool = False,
     force_retrain: bool = True,
     source_provenance: str = "unknown",
+    source_stamp: dict[str, Any] | None = None,
 ) -> None:
     """Store or overwrite a training example.
 
     Args:
         photo_id:         Stable photo identifier (same as main collection).
         develop_settings: Raw Lightroom develop settings dict captured from the photo.
-        embedding:        CLIP embedding for the source photo (1152-d float list).
-                          Falls back to a zero-dummy when None.
+        embedding:        Finite CLIP embedding from a neutral RAW preview.
         label:            Optional user-facing style label (e.g. "Wedding").
         filename:         Original filename for display purposes.
         summary:          Optional short description of the edit style.
@@ -731,6 +525,28 @@ def add_training_example(
         return
     if not photo_id:
         raise ValueError("photo_id is required")
+    if embedding is None:
+        raise ValueError("A neutral source embedding is required")
+    embedding_array = np.asarray(embedding, dtype=np.float32).reshape(-1)
+    if (
+        not len(embedding_array)
+        or not np.all(np.isfinite(embedding_array))
+        or float(np.linalg.norm(embedding_array)) <= 0
+    ):
+        raise ValueError("The neutral source embedding must be finite and nonzero")
+    if source_provenance != "raw_preview":
+        raise ValueError("Training requires target-independent RAW-preview evidence")
+    from services import source_embeddings
+
+    if (
+        not source_embeddings.metadata_has_current_contract(source_stamp)
+        or (source_stamp or {}).get("source_embedding_provenance")
+        != source_embeddings.RAW_PREVIEW_PROVENANCE
+        or not (source_stamp or {}).get("source_embedding_fingerprint")
+    ):
+        raise ValueError(
+            "Training source evidence has a missing or stale contract stamp"
+        )
 
     try:
         existing = _training_collection.get(ids=[photo_id], include=[])
@@ -743,6 +559,16 @@ def add_training_example(
 
     from services.photo_constraints import is_stitched_panorama
 
+    is_panorama = is_stitched_panorama(
+        {
+            "filename": filename or "",
+            "user_keywords": user_keywords or [],
+            "camera_profile": camera_profile or "",
+        }
+    )
+    if is_panorama:
+        raise ValueError("Stitched panoramas are not eligible for learned editing")
+
     metadata: dict[str, Any] = {
         "photo_id": photo_id,
         "develop_settings": json.dumps(develop_settings, ensure_ascii=False),
@@ -750,16 +576,11 @@ def add_training_example(
             normalize_develop_settings_for_style(develop_settings), ensure_ascii=False
         ),
         "captured_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "has_embedding": embedding is not None,
-        "is_panorama": is_stitched_panorama(
-            {
-                "filename": filename or "",
-                "user_keywords": user_keywords or [],
-                "camera_profile": camera_profile or "",
-            }
-        ),
+        "has_embedding": True,
+        "is_panorama": False,
         "source_provenance": str(source_provenance or "unknown")[:64],
     }
+    metadata.update(dict(source_stamp or {}))
     if not filename:
         try:
             from services import chroma as chroma_service
@@ -831,17 +652,9 @@ def add_training_example(
         exp_metrics = compute_exposure_metrics(image_bytes)
         metadata.update(exp_metrics)
 
-        # Perceptual histogram signature for style grouping (profile-independent)
-        hist_sig = compute_histogram_signature(image_bytes)
-        metadata["histogram_signature"] = json.dumps(hist_sig, ensure_ascii=False)
-
-        # Dominant Colors
-        dom_colors = compute_dominant_colors(image_bytes, n_colors=5)
-        metadata["dominant_colors"] = json.dumps(dom_colors, ensure_ascii=False)
-
     metadata["label"] = label if label and label.strip() else "Uncategorized"
 
-    emb = embedding if embedding is not None else _dummy_embedding()
+    emb = embedding_array.tolist()
 
     # Upsert: update if already present, add otherwise.
     if existing and existing.get("ids"):
@@ -1054,8 +867,6 @@ def list_training_examples() -> list[dict[str, Any]]:
                 "camera_profile": meta.get("camera_profile", ""),
                 "canonical_settings": meta.get("canonical_settings", "{}"),
                 "develop_settings": meta.get("develop_settings", "{}"),
-                "histogram_signature": meta.get("histogram_signature", "{}"),
-                "dominant_colors": meta.get("dominant_colors", "[]"),
                 "exp_luminance_mean": meta.get("exp_luminance_mean", "0.5"),
                 "exp_contrast": meta.get("exp_contrast", "0.0"),
                 "zone_deep_shadows": meta.get("zone_deep_shadows", "0.0"),
@@ -1070,13 +881,20 @@ def list_training_examples() -> list[dict[str, Any]]:
     return examples
 
 
-def list_training_examples_with_embeddings() -> list[dict[str, Any]]:
+def list_training_examples_with_embeddings(
+    *,
+    cancel_requested: Any | None = None,
+) -> list[dict[str, Any]]:
     """Return bounded-page training metadata with source embeddings for v2 fitting."""
     _ensure_initialized()
     if _training_collection is None:
         return []
     examples: list[dict[str, Any]] = []
     for page in _iter_training_pages(["metadatas", "embeddings"]):
+        if cancel_requested is not None and cancel_requested():
+            raise InterruptedError(
+                "editing-policy rebuild canceled while loading examples"
+            )
         ids = page.get("ids") or []
         metadatas = page.get("metadatas") or []
         # Chroma returns embeddings as a NumPy array in current releases.
@@ -1098,9 +916,9 @@ def list_training_examples_with_embeddings() -> list[dict[str, Any]]:
                     "photo_id": photo_id,
                     "metadata": metadata,
                     "embedding": (
-                        embedding.tolist()
-                        if hasattr(embedding, "tolist")
-                        else embedding
+                        np.asarray(embedding, dtype=np.float32).copy()
+                        if embedding is not None
+                        else None
                     ),
                 }
             )
@@ -1108,32 +926,78 @@ def list_training_examples_with_embeddings() -> list[dict[str, Any]]:
     return examples
 
 
-def get_training_stats() -> dict[str, Any]:
-    """Return aggregate statistics over all training examples for the style profile UI.
+def get_existing_training_ids(photo_ids: list[str]) -> set[str]:
+    """Return current, neutral examples that need no Lightroom re-export."""
+    from services import source_embeddings
 
-    Returns:
-        {
-            "count": int,
-            "has_enough_examples": bool,
-            "readiness": "cold_start" | "limited" | "active",
-            "descriptor_distribution": { "family": 3, ... },
-            "exposure": { "mean_luminance": 0.45, "mean_contrast": 0.6, ... },
-            "focal_buckets": { "normal": 5, "tele": 2, ... },
-            "time_of_day": { "afternoon": 7, ... },
-        }
-    """
     _ensure_initialized()
     if _training_collection is None:
+        return set()
+    normalized = list(
+        dict.fromkeys(str(photo_id or "").strip() for photo_id in photo_ids)
+    )
+    normalized = [photo_id for photo_id in normalized if photo_id]
+    existing: set[str] = set()
+    for offset in range(0, len(normalized), 500):
+        try:
+            result = _training_collection.get(
+                ids=normalized[offset : offset + 500],
+                include=["metadatas"],
+            )
+        except _ChromaInternalError:
+            continue
+        result_ids = result.get("ids") or []
+        metadatas = result.get("metadatas") or []
+        for index, photo_id in enumerate(result_ids):
+            metadata = (
+                metadatas[index]
+                if index < len(metadatas) and isinstance(metadatas[index], dict)
+                else {}
+            )
+            if (
+                metadata.get("has_embedding") is True
+                and metadata.get("source_provenance") == "raw_preview"
+                and metadata.get("source_embedding_provenance") == "raw_preview"
+                and metadata.get("source_embedding_fingerprint")
+                and source_embeddings.metadata_has_current_contract(metadata)
+            ):
+                existing.add(str(photo_id))
+    return existing
+
+
+def get_training_stats() -> dict[str, Any]:
+    """Return policy-eligible readiness plus aggregate explanatory statistics."""
+    from services.photo_constraints import is_stitched_panorama
+    from services.policy_targets import flatten_absolute_target
+    from services import policy_runtime
+    from services import source_embeddings
+
+    minimum_partition_examples = policy_runtime.MIN_PARTITION_EXAMPLES
+
+    def empty_payload() -> dict[str, Any]:
         return {
             "count": 0,
+            "eligible_count": 0,
+            "excluded_count": 0,
+            "exclusions": {},
+            "eligible_partitions": {},
+            "minimum_partition_examples": minimum_partition_examples,
             "has_enough_examples": False,
+            "has_active_generation": False,
+            "active_generation_id": None,
             "readiness": "cold_start",
+            "next_action": "learn_from_my_edits",
             "descriptor_distribution": {},
             "focal_buckets": {},
             "time_of_day": {},
             "camera_distribution": {},
             "exposure": {},
+            "top_signature_styles": [],
         }
+
+    _ensure_initialized()
+    if _training_collection is None:
+        return empty_payload()
     count = get_training_count()
 
     descriptor_dist: dict[str, int] = {}
@@ -1143,11 +1007,21 @@ def get_training_stats() -> dict[str, Any]:
     exp_means: list[float] = []
     exp_contrasts: list[float] = []
     exp_colorfulness: list[float] = []
+    exclusions: dict[str, int] = {}
+    partition_counts: dict[str, int] = {}
+
+    def exclude(reason: str) -> None:
+        exclusions[reason] = exclusions.get(reason, 0) + 1
 
     try:
-        for page in _iter_training_pages(["metadatas"]):
-            for meta in page.get("metadatas") or []:
+        for page in _iter_training_pages(["metadatas", "embeddings"]):
+            metadatas = page.get("metadatas") or []
+            embeddings = page.get("embeddings")
+            if embeddings is None:
+                embeddings = []
+            for index, meta in enumerate(metadatas):
                 if not isinstance(meta, dict):
+                    exclude("invalid_metadata")
                     continue
                 tags = _safe_json_list(
                     meta.get("content_tags") or meta.get("user_keywords") or "[]"
@@ -1170,17 +1044,43 @@ def get_training_stats() -> dict[str, Any]:
                     exp_contrasts.append(float(meta["exp_contrast"]))
                 if "exp_colorfulness" in meta:
                     exp_colorfulness.append(float(meta["exp_colorfulness"]))
+
+                embedding = embeddings[index] if index < len(embeddings) else None
+                if embedding is None or not bool(meta.get("has_embedding", False)):
+                    exclude("missing_embedding")
+                    continue
+                vector = np.asarray(embedding, dtype=np.float32).reshape(-1)
+                if (
+                    not len(vector)
+                    or not np.all(np.isfinite(vector))
+                    or float(np.linalg.norm(vector)) <= 0
+                ):
+                    exclude("invalid_embedding")
+                    continue
+                if meta.get("source_provenance") != "raw_preview":
+                    exclude("source_not_neutral")
+                    continue
+                if (
+                    meta.get("source_embedding_provenance") != "raw_preview"
+                    or not source_embeddings.metadata_has_current_contract(meta)
+                    or not meta.get("source_embedding_fingerprint")
+                ):
+                    exclude("stale_source_stamp")
+                    continue
+                if is_stitched_panorama(meta):
+                    exclude("panorama")
+                    continue
+                try:
+                    canonical = json.loads(meta.get("canonical_settings") or "{}")
+                except (TypeError, ValueError):
+                    canonical = {}
+                if not flatten_absolute_target(canonical, include_applicability=True):
+                    exclude("missing_target")
+                    continue
+                partition = policy_runtime.hard_partition_key(meta)
+                partition_counts[partition] = partition_counts.get(partition, 0) + 1
     except _ChromaInternalError:
         logger.warning("Training statistics scan stopped on a Chroma error")
-
-    if count == 0:
-        readiness = "cold_start"
-    elif count < 10:
-        readiness = "warming_up"
-    elif count < 50:
-        readiness = "limited"
-    else:
-        readiness = "active"
 
     exposure_stats: dict[str, Any] = {}
     if exp_means:
@@ -1195,10 +1095,12 @@ def get_training_stats() -> dict[str, Any]:
         )
 
     top_styles: list[dict[str, Any]] = []
+    active_generation_id = None
     try:
-        from services import policy_runtime
-
         styles = policy_runtime.list_active_policies()
+        artifacts = policy_runtime._load_active_artifacts()
+        if artifacts:
+            active_generation_id = next(iter(artifacts.values())).generation_id
         styles.sort(key=lambda s: s.get("example_count", 0), reverse=True)
         for s in styles[:5]:
             top_styles.append(
@@ -1210,10 +1112,36 @@ def get_training_stats() -> dict[str, Any]:
     except Exception:
         pass
 
+    eligible_count = sum(partition_counts.values())
+    trainable = any(
+        partition_count >= minimum_partition_examples
+        for partition_count in partition_counts.values()
+    )
+    if active_generation_id:
+        readiness = "active"
+        next_action = "apply_my_style"
+    elif trainable:
+        readiness = "ready_to_rebuild"
+        next_action = "rebuild"
+    elif eligible_count:
+        readiness = "collecting"
+        next_action = "learn_from_my_edits"
+    else:
+        readiness = "cold_start"
+        next_action = "learn_from_my_edits"
+
     return {
         "count": count,
-        "has_enough_examples": count >= 10,
+        "eligible_count": eligible_count,
+        "excluded_count": sum(exclusions.values()),
+        "exclusions": exclusions,
+        "eligible_partitions": partition_counts,
+        "minimum_partition_examples": minimum_partition_examples,
+        "has_enough_examples": trainable,
+        "has_active_generation": active_generation_id is not None,
+        "active_generation_id": active_generation_id,
         "readiness": readiness,
+        "next_action": next_action,
         "descriptor_distribution": descriptor_dist,
         "focal_buckets": focal_dist,
         "time_of_day": tod_dist,

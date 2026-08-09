@@ -59,7 +59,7 @@ from .rendering_state import (
 )
 
 
-POLICY_ALGORITHM_VERSION = "editing-policy-v2.6"
+POLICY_ALGORITHM_VERSION = "editing-policy-v2.7"
 MIN_PARTITION_EXAMPLES = 12
 MAX_POLICIES_PER_PARTITION = 4
 # Policy-count validation is a guard against unnecessary expert proliferation,
@@ -320,13 +320,22 @@ def _curate_bursts(
 
 
 def _prepare_rows(raw_examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from services import source_embeddings
+
     prepared: list[dict[str, Any]] = []
     for item in raw_examples:
         metadata = dict(item.get("metadata") or {})
         embedding = item.get("embedding")
-        if embedding is None or is_stitched_panorama(metadata):
+        if (
+            embedding is None
+            or is_stitched_panorama(metadata)
+            or metadata.get("source_provenance") != "raw_preview"
+            or metadata.get("source_embedding_provenance") != "raw_preview"
+            or not source_embeddings.metadata_has_current_contract(metadata)
+            or not metadata.get("source_embedding_fingerprint")
+        ):
             continue
-        normalized_embedding = np.asarray(embedding, dtype=np.float64).reshape(-1)
+        normalized_embedding = np.asarray(embedding, dtype=np.float32).reshape(-1)
         if (
             not len(normalized_embedding)
             or not np.all(np.isfinite(normalized_embedding))
@@ -1060,6 +1069,7 @@ def rebuild_active_generation(
     *,
     seed: int = 17,
     progress: Callable[[dict[str, Any]], None] | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """Fit, persist, validate, and atomically activate a complete v2 generation."""
 
@@ -1067,9 +1077,18 @@ def rebuild_active_generation(
         if progress is not None:
             progress(details)
 
+    def check_canceled() -> None:
+        if cancel_requested is not None and cancel_requested():
+            raise InterruptedError("editing-policy rebuild canceled")
+
     report(phase="loading_examples", eligible_partitions=0, completed_partitions=0)
-    raw_examples = training_service.list_training_examples_with_embeddings()
+    check_canceled()
+    raw_examples = training_service.list_training_examples_with_embeddings(
+        cancel_requested=cancel_requested,
+    )
     prepared = _prepare_rows(raw_examples)
+    del raw_examples
+    check_canceled()
     partitions: dict[str, list[dict[str, Any]]] = {}
     for row in prepared:
         partitions.setdefault(row["partition_key"], []).append(row)
@@ -1106,6 +1125,7 @@ def rebuild_active_generation(
         validation_rows: list[dict[str, Any]] = []
         selector_rows: list[dict[str, Any]] = []
         for partition_index, partition_key in enumerate(sorted(eligible)):
+            check_canceled()
             started = perf_counter()
             curated, weights = _curate_bursts(eligible[partition_key])
             if len(curated) < MIN_PARTITION_EXAMPLES:
@@ -1121,6 +1141,7 @@ def rebuild_active_generation(
                 generation_id=generation_id,
                 seed=seed + partition_index * 100,
             )
+            check_canceled()
             artifacts.append(artifact)
             selector_rows.extend(curated)
             logger.info(
@@ -1250,6 +1271,7 @@ def rebuild_active_generation(
                 "No partition retained enough examples after burst curation"
             )
         selector = fit_rendering_selector(selector_rows, generation_id=generation_id)
+        check_canceled()
         selector_path = os.path.join(artifact_directory, "rendering_selector.joblib")
         selector_temporary_path = f"{selector_path}.tmp"
         joblib.dump(selector, selector_temporary_path)
@@ -1274,6 +1296,7 @@ def rebuild_active_generation(
             generation_id=generation_id,
             results=validation_rows,
         )
+        check_canceled()
         policy_store.activate_generation(connection, generation_id)
         pruned_generation_ids = policy_store.prune_inactive_generations(
             connection,
@@ -1344,6 +1367,29 @@ def _load_active_rendering_selector() -> RenderingSelectorArtifact | None:
     return selector
 
 
+def _load_generation_rendering_selector(
+    generation_id: str | None,
+) -> RenderingSelectorArtifact | None:
+    if not generation_id:
+        return _load_active_rendering_selector()
+    with _runtime_lock:
+        if (
+            _cached_rendering_selector is not None
+            and _cached_rendering_selector.generation_id == generation_id
+        ):
+            return _cached_rendering_selector
+    path = os.path.join(_artifact_directory(generation_id), "rendering_selector.joblib")
+    if not os.path.exists(path):
+        return None
+    selector = joblib.load(path)
+    if (
+        not isinstance(selector, RenderingSelectorArtifact)
+        or selector.generation_id != generation_id
+    ):
+        raise ValueError("pinned rendering selector artifact is invalid or stale")
+    return selector
+
+
 def _load_active_artifacts() -> dict[str, PartitionPolicyArtifact]:
     global _cached_generation_id, _cached_artifacts
     with _runtime_lock:
@@ -1357,7 +1403,8 @@ def _load_active_artifacts() -> dict[str, PartitionPolicyArtifact]:
     if not rows:
         return {}
     if any(
-        row.get("feature_schema_version") != FEATURE_SCHEMA_VERSION
+        row.get("algorithm_version") != POLICY_ALGORITHM_VERSION
+        or row.get("feature_schema_version") != FEATURE_SCHEMA_VERSION
         or row.get("target_schema_version") != TARGET_SCHEMA_VERSION
         for row in rows
     ):
@@ -1394,6 +1441,52 @@ def _load_active_artifacts() -> dict[str, PartitionPolicyArtifact]:
         _cached_generation_id = generation_id
         _cached_artifacts = artifacts
         return dict(artifacts)
+
+
+def _load_generation_artifacts(
+    generation_id: str,
+) -> dict[str, PartitionPolicyArtifact]:
+    """Load one pinned active/retired generation without changing active caches."""
+    if not generation_id:
+        return _load_active_artifacts()
+    with _runtime_lock:
+        if generation_id == _cached_generation_id:
+            return dict(_cached_artifacts)
+    connection = policy_store.connect_policy_store(_database_path())
+    try:
+        rows = policy_store.list_generation_policy_models(connection, generation_id)
+    finally:
+        connection.close()
+    if not rows:
+        return {}
+    if any(
+        row.get("algorithm_version") != POLICY_ALGORITHM_VERSION
+        or row.get("feature_schema_version") != FEATURE_SCHEMA_VERSION
+        or row.get("target_schema_version") != TARGET_SCHEMA_VERSION
+        for row in rows
+    ):
+        return {}
+    artifacts: dict[str, PartitionPolicyArtifact] = {}
+    for artifact_name in dict.fromkeys(row["artifact_name"] for row in rows):
+        artifact_path = os.path.abspath(os.path.join(_database_path(), artifact_name))
+        expected_root = os.path.abspath(
+            os.path.join(_database_path(), MODEL_DIRECTORY_NAME)
+        )
+        if os.path.commonpath((artifact_path, expected_root)) != expected_root:
+            raise ValueError("pinned policy artifact escaped the model directory")
+        artifact = joblib.load(artifact_path)
+        if (
+            not isinstance(artifact, PartitionPolicyArtifact)
+            or artifact.generation_id != generation_id
+        ):
+            raise ValueError("pinned policy artifact is invalid or stale")
+        artifacts[artifact.partition_key] = artifact
+    return artifacts
+
+
+def active_generation_id() -> str | None:
+    artifacts = _load_active_artifacts()
+    return next(iter(artifacts.values())).generation_id if artifacts else None
 
 
 def has_active_generation() -> bool:
@@ -1752,8 +1845,13 @@ def predict_absolute_edit(
     profile_mode: str = "suggest",
     hdr_mode: str = "suggest",
     source_provenance: str = "unknown",
+    generation_id: str | None = None,
 ) -> PolicyPrediction | None:
-    artifacts = _load_active_artifacts()
+    artifacts = (
+        _load_generation_artifacts(generation_id)
+        if generation_id
+        else _load_active_artifacts()
+    )
     current_state = rendering_state_from_metadata(metadata)
     rendering_intent = {
         "schema_version": "rendering-state-v1",
@@ -1770,7 +1868,7 @@ def predict_absolute_edit(
         "hdr_entropy": 1.0,
         "abstention_reason": "selector_unavailable",
     }
-    selector = _load_active_rendering_selector()
+    selector = _load_generation_rendering_selector(generation_id)
     if selector is not None and (profile_mode != "off" or hdr_mode != "off"):
         rendering_intent = selector.select(
             embedding=embedding,
@@ -1992,6 +2090,7 @@ def _rebuild_loop() -> None:
 
         result: dict[str, Any] | None = None
         error: str | None = None
+        canceled = False
         try:
             from services import operations
 
@@ -2001,6 +2100,11 @@ def _rebuild_loop() -> None:
                 )
             operations.refresh_system_pressure()
             cpu_claim = max(1, operations.admission.capacities["cpu_prepare"] - 1)
+            cancel_signal = (
+                operations.JobCancelSignal(_database_path(), _rebuild_operation_job_id)
+                if _rebuild_operation_job_id
+                else None
+            )
             with operations.admission.acquire(
                 {
                     "cpu_prepare": cpu_claim,
@@ -2008,8 +2112,16 @@ def _rebuild_loop() -> None:
                     "maintenance": 1,
                 },
                 priority=-5,
+                cancel_event=cancel_signal,
             ):
-                result = rebuild_active_generation(progress=update_progress)
+                result = rebuild_active_generation(
+                    progress=update_progress,
+                    cancel_requested=(cancel_signal.is_set if cancel_signal else None),
+                )
+        except InterruptedError as exc:
+            logger.info("Policy v2 rebuild canceled: %s", exc)
+            error = str(exc)
+            canceled = True
         except ValueError as exc:
             logger.info("Policy v2 rebuild deferred: %s", exc)
             error = str(exc)
@@ -2021,8 +2133,20 @@ def _rebuild_loop() -> None:
                 continue
             _rebuild_status.update(
                 {
-                    "status": "succeeded" if result is not None else "failed",
-                    "phase": "complete" if result is not None else "failed",
+                    "status": (
+                        "succeeded"
+                        if result is not None
+                        else "canceled"
+                        if canceled
+                        else "failed"
+                    ),
+                    "phase": (
+                        "complete"
+                        if result is not None
+                        else "canceled"
+                        if canceled
+                        else "failed"
+                    ),
                     "completed_at": time(),
                     "generation": result,
                     "error": error,
@@ -2034,8 +2158,12 @@ def _rebuild_loop() -> None:
                 operations.set_job_state(
                     _database_path(),
                     _rebuild_operation_job_id,
-                    "succeeded" if result is not None else "failed",
-                    error=error,
+                    "succeeded"
+                    if result is not None
+                    else "canceled"
+                    if canceled
+                    else "failed",
+                    error=None if canceled else error,
                     details={"generation": result or {}},
                 )
                 _rebuild_operation_job_id = None

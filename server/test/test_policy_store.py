@@ -1,8 +1,9 @@
 import sqlite3
+from pathlib import Path
 
 import pytest
 
-from services import policy_store
+from services import operations, policy_store
 
 
 @pytest.fixture
@@ -65,6 +66,42 @@ def test_generation_activation_is_atomic_and_unique(store):
         ).fetchall()
     )
     assert statuses == {"generation-1": "retired", "generation-2": "active"}
+
+
+def test_prune_preserves_retired_generation_pinned_by_active_edit_job(store):
+    first = policy_store.create_generation(
+        store,
+        generation_id="generation-1",
+        algorithm_version="policy-v2",
+        feature_schema_version="features-v1",
+        target_schema_version="targets-v1",
+    )
+    _add_model(store, first)
+    policy_store.activate_generation(store, first)
+    second = policy_store.create_generation(
+        store,
+        generation_id="generation-2",
+        algorithm_version="policy-v2",
+        feature_schema_version="features-v1",
+        target_schema_version="targets-v1",
+    )
+    _add_model(store, second)
+    policy_store.activate_generation(store, second)
+    database_file = store.execute("PRAGMA database_list").fetchone()[2]
+    db_path = str(Path(database_file).parent)
+    job, _ = operations.create_job(
+        db_path,
+        kind="edit",
+        details={"generation_id": first},
+    )
+
+    assert policy_store.prune_inactive_generations(store) == []
+    assert policy_store.list_generation_policy_models(store, first)
+
+    operations.set_job_state(db_path, job["job_id"], "succeeded")
+
+    assert policy_store.prune_inactive_generations(store) == [first]
+    assert policy_store.list_generation_policy_models(store, first) == []
 
 
 def test_custom_policy_name_is_persisted_for_active_policy(store):

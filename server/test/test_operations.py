@@ -118,6 +118,28 @@ def test_lightroom_handoff_preserves_backend_item_result(operation_db):
     }
 
 
+def test_bounded_job_item_queries_preserve_requested_order(operation_db):
+    job, _ = operations.create_job(
+        operation_db,
+        kind="edit",
+        item_ids=["p1", "p2", "p3"],
+    )
+    operations.set_item_state(operation_db, job["job_id"], "p2", "running")
+
+    selected = operations.get_job_items(
+        operation_db,
+        job["job_id"],
+        ["p3", "missing", "p2", "p3"],
+    )
+
+    assert [item["item_id"] for item in selected] == ["p3", "p2"]
+    assert selected[1]["state"] == "running"
+    assert (
+        operations.get_job_item(operation_db, job["job_id"], "p1")["state"] == "queued"
+    )
+    assert operations.get_job_item(operation_db, job["job_id"], "missing") is None
+
+
 def test_cancel_marks_pre_application_items_and_finalizes(operation_db):
     job, _ = operations.create_job(
         operation_db, kind="metadata", item_ids=["p1", "p2", "p3"]

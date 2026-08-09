@@ -48,9 +48,14 @@ Ollama and LM Studio adapters are used only by optional metadata generation.
    0.05 are one burst; the deterministic hero receives weight `1 / burst_size`.
 3. Training is partitioned only by incompatible HDR/profile state. Subject,
    genre, lighting, camera body, and lens do not create Cartesian style groups.
-4. Lightroom uploads bounded transport chunks without fitting between chunks;
-   one explicit rebuild begins after the complete training run is saved.
-5. Burst-grouped cross-validation selects a robust constant baseline,
+4. Lightroom preflights stable photo IDs before exporting previews, skips
+   already-learned examples unless update was requested, and uploads bounded
+   transport chunks without fitting between chunks. Compatible canonical
+   source embeddings are reused and remaining RAW previews are embedded in
+   pressure-aware batches. One explicit rebuild begins after the complete run.
+5. Multi-output targets are robustly normalized during fitting so large-unit
+   controls cannot dominate small-unit controls. Burst-grouped cross-validation
+   selects a robust constant baseline,
    reduced-rank ridge, weighted PLS, or eligible multi-task Elastic Net
    independently for each compatible partition.
 6. Grouped out-of-fold residuals from the selected broad model initialize
@@ -73,7 +78,8 @@ Ollama and LM Studio adapters are used only by optional metadata generation.
 10. The backend writes a complete inactive generation and versioned `joblib`
    artifacts, then atomically activates it. Failed or interrupted builds leave
    the prior active generation intact; successful activation prunes inactive
-   derived generations and stale examples.
+   derived generations and stale examples unless a nonterminal edit operation
+   still pins that retired generation.
 11. Camera-profile and HDR selectors train only from
    Lightroom-target-independent embedded RAW previews marked `raw_preview`.
    Lightroom-rendered previews and legacy indexed
@@ -183,8 +189,11 @@ policy/partition leakage, per-tier corrections, and geometry disagreement.
 Generation comparisons are evidence-only and never activate models or modify
 thresholds.
 
-Apply My Style submits operation-scoped ordered batches of at most 16 exported
-previews. Candidate construction compares only temporal neighbors within the
+Apply My Style orders the operation by capture time and submits bounded groups
+that normally follow the hardware batch recommendation. A temporal burst may
+extend one request up to 64 photos to avoid an arbitrary boundary; accelerator
+inference remains pressure-batched internally. Candidate construction compares
+only temporal neighbors within the
 established 10-second and 0.05 cosine-distance ceilings, splits transitive
 components into bounded deterministic windows, and chooses a visual medoid.
 Admission then requires compatible camera/profile evidence, rejects likely
@@ -196,7 +205,8 @@ fallback provenance.
 `policy_coherent` members retain their own production prediction. The stricter
 `global_target_reuse` path merges only a versioned scalar allowlist and then
 applies member strength; white balance, sparse/structural targets, geometry,
-profile/HDR, and masks remain member-specific. Exact reuse is release-gated off
+profile/HDR remain member-specific. Learned mask application is not part of
+Apply My Style. Exact reuse is release-gated off
 by default. Critical runtime pressure reduces all members to independent
 inference, and the service kill switch restores the independent path.
 

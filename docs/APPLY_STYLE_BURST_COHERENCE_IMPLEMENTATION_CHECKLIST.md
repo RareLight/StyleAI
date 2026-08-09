@@ -23,8 +23,8 @@ remains defined by `UI_BEHAVIOR_CONTRACTS.md`, `AGENTS.md`, and production code.
   keywords, genre labels, or vector presence alone.
 - [x] Never copy a representative's complete recipe without independently
   validating the member photo and filtering the recipe by reuse tier.
-- [x] Keep profile, HDR, crop, rotation, and masks photo-specific in the first
-  production version.
+- [x] Keep profile, HDR, crop, and rotation photo-specific in the first
+  production version; learned masks are outside Apply My Style.
 - [x] Preserve current strength semantics: shared absolute targets still apply
   as `current + strength * (target - current)` for each member independently.
 - [x] Preserve per-photo review, virtual-copy collection placement, scoped
@@ -55,8 +55,8 @@ remains defined by `UI_BEHAVIOR_CONTRACTS.md`, `AGENTS.md`, and production code.
   gates and predictions per photo.
 - [x] Run profile and HDR selectors per photo. Permit grouping only after all
   admitted members resolve to the same effective rendering partition.
-- [x] Keep masks per photo; do not reuse mask geometry, selections, or local
-  adjustments from a representative.
+- [x] Exclude learned masks from Apply My Style; no representative mask geometry
+  or local adjustment can be reused.
 - [x] Store the tier chosen for every photo and the reason for every fallback.
 
 Exit gate: a written contract identifies every reusable and non-reusable target
@@ -205,16 +205,16 @@ even if its representative or derived generation is later pruned.
 - [x] Refactor `AiEditAction.lua` producers to submit operation-scoped batches
   without creating an unbounded queue or holding all exported proxies in memory.
 - [x] Preserve the selection snapshot captured before the options dialog.
-- [x] Preserve source-photo order for per-photo review and application even
-  when backend batches complete out of order.
+- [x] Use deterministic capture-time order for burst packing, per-photo review,
+  and application; preserve every photo's independent review and receipt.
 - [x] Continue to create virtual copies lazily only for edits the user accepts,
   and batch their placement into the operation's StyleAI collection.
 - [x] Keep review choices per photo in the first release. Do not let acceptance
   of a representative silently accept every member.
 - [x] Display optional, localized review context such as "coherent burst edit"
   and group size without exposing internal thresholds as false certainty.
-- [x] Keep crop, rotation, masks, profile, and HDR controls behaviorally
-  identical to independent inference.
+- [x] Keep crop, rotation, profile, and HDR controls behaviorally identical to
+  independent inference.
 - [x] Report progress, skips, warnings, errors, and cancellation per photo, not
   per representative.
 - [x] On cancellation, stop new backend work, finish required Lightroom
@@ -237,8 +237,8 @@ virtual-copy handling, review semantics, and Undo expectations.
   EXIF, panoramas, brackets, camera/profile/HDR changes, and ambiguous policies.
 - [x] Test that moderate-tier members receive member-specific predictions.
 - [x] Test that exact reuse copies only allowlisted targets.
-- [x] Prove crop, rotation, masks, profile, HDR, and excluded categorical or
-  sparse families remain member-specific.
+- [x] Prove crop, rotation, profile, HDR, and excluded categorical or sparse
+  families remain member-specific.
 - [ ] Test independent fallback after representative failure, member failure,
   persistence failure, cancellation, and runtime pressure reduction.
 - [x] Test batch bounds, duplicate IDs, unexpected operation items, image-byte

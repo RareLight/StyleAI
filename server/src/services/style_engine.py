@@ -70,7 +70,6 @@ def _canonical_to_edit_recipe(
     return {
         "summary": summary or "StyleAI conditional editing policy",
         "global": global_settings,
-        "masks": [],
         "warnings": [],
     }
 
@@ -109,6 +108,7 @@ def generate_style_edit(
     source_provenance: str = "unknown",
     source_metrics: dict[str, float] | None = None,
     policy_override: str | None = None,
+    generation_id: str | None = None,
 ) -> StyleEngineResult:
     """Predict one absolute edit, abstaining on unsupported or ambiguous input."""
     del min_confidence
@@ -154,6 +154,7 @@ def generate_style_edit(
             hdr_mode=hdr_mode,
             source_provenance=source_provenance,
             policy_override=policy_override,
+            generation_id=generation_id,
         )
     except Exception as exc:
         logger.error(

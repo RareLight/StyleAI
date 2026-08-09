@@ -49,6 +49,45 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
         self.assertEqual(canonical["color_grading"]["shadows"]["saturation"], 25.0)
         self.assertEqual(canonical["color_grading"]["blending"], 50.0)
 
+    def test_color_grading_zero_values_do_not_fall_back_to_legacy_values(self):
+        canonical = normalize_develop_settings_for_style(
+            {
+                "ColorGradeShadowsHue": 0,
+                "ColorGradeShadowsSat": 0,
+                "ColorGradeShadowLum": 0,
+                "ColorGradeGlobalLum": 0,
+                "ColorGradeBlending": 0,
+                "ColorGradeBalance": 0,
+                "SplitToningShadowsHue": 45,
+                "SplitToningShadowsSaturation": 70,
+                "SplitToningBalance": 80,
+            }
+        )
+
+        self.assertEqual(canonical["color_grading"]["shadows"]["hue"], 0.0)
+        self.assertEqual(canonical["color_grading"]["shadows"]["saturation"], 0.0)
+        self.assertEqual(canonical["color_grading"]["shadows"]["luminance"], 0.0)
+        self.assertEqual(canonical["color_grading"]["global"]["luminance"], 0.0)
+        self.assertEqual(canonical["color_grading"]["blending"], 0.0)
+        self.assertEqual(canonical["color_grading"]["balance"], 0.0)
+
+    def test_color_grading_uses_lightroom_singular_keys(self):
+        canonical = normalize_develop_settings_for_style(
+            {
+                "ColorGradeShadowHue": 215,
+                "ColorGradeShadowSat": 18,
+                "ColorGradeHighlightHue": 42,
+                "ColorGradeHighlightSat": 9,
+                "SplitToningBalance": -15,
+            }
+        )
+
+        grading = canonical["color_grading"]
+        self.assertEqual(grading["shadows"]["hue"], 215.0)
+        self.assertEqual(grading["highlights"]["hue"], 42.0)
+        self.assertEqual(grading["blending"], 50.0)
+        self.assertEqual(grading["balance"], -15.0)
+
     def test_partial_tone_curve_preserved(self):
         # Simulate only Master tone curve exported
         raw_settings = {"ToneCurvePV2012": [0.0, 0.0, 128.0, 140.0, 255.0, 255.0]}
@@ -63,7 +102,7 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
 
     def test_generated_index_keywords_are_not_promoted_to_user_keywords(self):
         from unittest.mock import MagicMock, patch
-        from services import training
+        from services import source_embeddings, training
 
         training_collection = MagicMock()
         training_collection.get.return_value = {"ids": []}
@@ -91,6 +130,14 @@ class TestNormalizeDevelopSettingsForStyle(unittest.TestCase):
                 user_keywords=None,
                 focal_length=105.0,
                 skip_discovery=True,
+                source_provenance="raw_preview",
+                source_stamp={
+                    "source_embedding_provenance": "raw_preview",
+                    "source_embedding_fingerprint": "fingerprint-photo-1",
+                    "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+                    "source_embedding_model": source_embeddings.SOURCE_EMBEDDING_MODEL_ID,
+                    "source_embedding_preprocess": source_embeddings.SOURCE_EMBEDDING_PREPROCESS_VERSION,
+                },
             )
 
         stored = training_collection.add.call_args.kwargs["metadatas"][0]
@@ -172,6 +219,102 @@ class TestExposureMetrics(unittest.TestCase):
         self.assertEqual(metrics["exp_contrast"], 0.0)
 
 
+class TestTrainingReadiness(unittest.TestCase):
+    @staticmethod
+    def _eligible_metadata(profile="Adobe Color"):
+        import json
+        from services import source_embeddings
+
+        return {
+            "has_embedding": True,
+            "source_provenance": "raw_preview",
+            "source_embedding_provenance": "raw_preview",
+            "source_embedding_fingerprint": "fingerprint",
+            "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+            "source_embedding_model": source_embeddings.SOURCE_EMBEDDING_MODEL_ID,
+            "source_embedding_preprocess": source_embeddings.SOURCE_EMBEDDING_PREPROCESS_VERSION,
+            "camera_profile": profile,
+            "canonical_settings": json.dumps({"exposure": 0.25}),
+        }
+
+    def _stats(self, metadatas, embeddings, *, active_generation_id=None):
+        from unittest.mock import MagicMock, patch
+        from services import training
+
+        collection = MagicMock()
+        collection.count.return_value = len(metadatas)
+        page = {
+            "ids": [f"photo-{index}" for index in range(len(metadatas))],
+            "metadatas": metadatas,
+            "embeddings": embeddings,
+        }
+        with (
+            patch.object(training, "_training_collection", collection),
+            patch.object(training, "_ensure_initialized"),
+            patch.object(training, "_iter_training_pages", return_value=iter([page])),
+            patch(
+                "services.policy_runtime.list_active_policies",
+                return_value=[],
+            ),
+            patch(
+                "services.policy_runtime._load_active_artifacts",
+                return_value=(
+                    {"partition": MagicMock(generation_id=active_generation_id)}
+                    if active_generation_id
+                    else {}
+                ),
+            ),
+        ):
+            return training.get_training_stats()
+
+    def test_excluded_only_catalog_is_not_ready(self):
+        metadata = self._eligible_metadata()
+        metadata["source_provenance"] = "lightroom_rendered_preview"
+
+        stats = self._stats([metadata], [[1.0, 0.0]])
+
+        self.assertEqual(stats["eligible_count"], 0)
+        self.assertEqual(stats["exclusions"], {"source_not_neutral": 1})
+        self.assertEqual(stats["readiness"], "cold_start")
+        self.assertFalse(stats["has_enough_examples"])
+
+    def test_partition_minimum_is_not_satisfied_by_split_total(self):
+        metadatas = [self._eligible_metadata("Adobe Color") for _ in range(6)]
+        metadatas += [self._eligible_metadata("Camera Standard") for _ in range(6)]
+
+        stats = self._stats(metadatas, [[1.0, 0.0]] * 12)
+
+        self.assertEqual(stats["eligible_count"], 12)
+        self.assertEqual(sorted(stats["eligible_partitions"].values()), [6, 6])
+        self.assertEqual(stats["readiness"], "collecting")
+        self.assertFalse(stats["has_enough_examples"])
+
+    def test_missing_source_contract_stamp_is_excluded(self):
+        metadata = self._eligible_metadata()
+        metadata.pop("source_embedding_schema")
+
+        stats = self._stats([metadata], [[1.0, 0.0]])
+
+        self.assertEqual(stats["eligible_count"], 0)
+        self.assertEqual(stats["exclusions"], {"stale_source_stamp": 1})
+
+    def test_trainable_partition_and_active_generation_have_distinct_states(self):
+        metadatas = [self._eligible_metadata() for _ in range(12)]
+        embeddings = [[1.0, 0.0]] * 12
+
+        ready = self._stats(metadatas, embeddings)
+        active = self._stats(
+            metadatas,
+            embeddings,
+            active_generation_id="generation-1",
+        )
+
+        self.assertEqual(ready["readiness"], "ready_to_rebuild")
+        self.assertEqual(ready["next_action"], "rebuild")
+        self.assertEqual(active["readiness"], "active")
+        self.assertEqual(active["active_generation_id"], "generation-1")
+
+
 class TestFocalLengthAndTODBuckets(unittest.TestCase):
     def test_focal_length_bucket_boundaries(self):
         from services.training import focal_length_bucket
@@ -232,30 +375,37 @@ class TestBurstClusteringHeroSelection(unittest.TestCase):
         self.assertEqual(weights[0], 1.0 / 3.0)
 
 
-class TestColorAndHistogramFeatures(unittest.TestCase):
-    def test_compute_dominant_colors(self):
-        from services.training import compute_dominant_colors
+class TestTrainingEvidenceFeatures(unittest.TestCase):
+    def test_preflight_reexports_stale_training_evidence(self):
+        from unittest.mock import MagicMock, patch
+        from services import source_embeddings, training
 
-        img_bytes = make_dummy_jpeg(50, 50, color=(200, 50, 50))
-        colors = compute_dominant_colors(img_bytes, n_colors=2)
-        self.assertIsInstance(colors, list)
-        if colors:
-            self.assertTrue(colors[0].startswith("#"))
+        current = {
+            "has_embedding": True,
+            "source_provenance": "raw_preview",
+            "source_embedding_provenance": "raw_preview",
+            "source_embedding_fingerprint": "current",
+            "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+            "source_embedding_model": source_embeddings.SOURCE_EMBEDDING_MODEL_ID,
+            "source_embedding_preprocess": source_embeddings.SOURCE_EMBEDDING_PREPROCESS_VERSION,
+        }
+        stale = dict(current, source_embedding_schema="neutral-source-old")
+        collection = MagicMock()
+        collection.get.return_value = {
+            "ids": ["current", "stale"],
+            "metadatas": [current, stale],
+        }
+        with (
+            patch.object(training, "_training_collection", collection),
+            patch.object(training, "_ensure_initialized"),
+        ):
+            existing = training.get_existing_training_ids(["current", "stale"])
 
-    def test_histogram_signature_and_distance(self):
-        from services.training import compute_histogram_signature, histogram_distance
-
-        img1 = make_dummy_jpeg(60, 60, color=(10, 10, 10))
-        img2 = make_dummy_jpeg(60, 60, color=(240, 240, 240))
-
-        sig1 = compute_histogram_signature(img1)
-        sig2 = compute_histogram_signature(img2)
-
-        self.assertIn("hist_L", sig1)
-        dist_same = histogram_distance(sig1, sig1)
-        dist_diff = histogram_distance(sig1, sig2)
-        self.assertAlmostEqual(dist_same, 0.0, places=4)
-        self.assertGreater(dist_diff, 0.0)
+        self.assertEqual(existing, {"current"})
+        collection.get.assert_called_once_with(
+            ids=["current", "stale"],
+            include=["metadatas"],
+        )
 
     def test_list_training_examples_preserves_metadata(self):
         from unittest.mock import MagicMock, patch
@@ -316,8 +466,10 @@ class TestColorAndHistogramFeatures(unittest.TestCase):
         self.assertEqual(
             [item["photo_id"] for item in examples], ["photo-1", "photo-2"]
         )
-        self.assertEqual(examples[0]["embedding"], embedding_rows[0].tolist())
-        self.assertEqual(examples[1]["embedding"], embedding_rows[1].tolist())
+        self.assertEqual(examples[0]["embedding"].dtype, np.float32)
+        self.assertEqual(examples[1]["embedding"].dtype, np.float32)
+        np.testing.assert_allclose(examples[0]["embedding"], embedding_rows[0])
+        np.testing.assert_allclose(examples[1]["embedding"], embedding_rows[1])
 
 
 if __name__ == "__main__":

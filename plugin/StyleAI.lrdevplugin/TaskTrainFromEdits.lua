@@ -167,6 +167,45 @@ LrTasks.startAsyncTask(function()
 			)
 			return
 		end
+		local preflightOk, preflight = SearchIndexAPI.preflightTrainingExamples(
+			operationItemIds,
+			options.forceRetrain
+		)
+		if not preflightOk then
+			progressScope:done()
+			ErrorHandler.handleError("Could not check existing training examples", preflight)
+			return
+		end
+		local neededIds = {}
+		for _, photoId in ipairs(preflight.needed_photo_ids or {}) do
+			neededIds[tostring(photoId)] = true
+		end
+		local existingSkippedCount = 0
+		local filteredPhotos = {}
+		local filteredOperationIds = {}
+		for _, photo in ipairs(photos) do
+			local photoId = photoIdsByPhoto[photo]
+			if photoId and neededIds[tostring(photoId)] then
+				table.insert(filteredPhotos, photo)
+				table.insert(filteredOperationIds, photoId)
+			elseif photoId then
+				existingSkippedCount = existingSkippedCount + 1
+			end
+		end
+		photos = filteredPhotos
+		operationItemIds = filteredOperationIds
+		if #photos == 0 then
+			progressScope:done()
+			LrDialogs.message(
+				LOC("$$$/StyleAI/Training/SuccessTitle=Training Examples Saved"),
+				LOC(
+					"$$$/StyleAI/Training/AllExisting=All ^1 eligible photo(s) are already learned. Enable Update previously learned examples to refresh them.",
+					tostring(existingSkippedCount)
+				),
+				"info"
+			)
+			return
+		end
 		local operationOk, operation = SearchIndexAPI.startOperation(
 			"training",
 			operationItemIds,
@@ -497,7 +536,7 @@ LrTasks.startAsyncTask(function()
 					elseif discovery.phase == "activating" then
 						progressScope:setCaption(LOC("$$$/StyleAI/Training/Activating=Validating and activating learned styles..."))
 					end
-				end)
+				end, nil, function() return progressScope:isCanceled() end)
 			end
 			if not rebuilt then
 				table.insert(
@@ -558,6 +597,12 @@ LrTasks.startAsyncTask(function()
 
 		-- 3. Construct the final report
 		local combinedReport = LOC("$$$/StyleAI/Training/Summary=Saved ^1 training example(s).", tostring(successCount))
+		if existingSkippedCount > 0 then
+			combinedReport = combinedReport .. "\n" .. LOC(
+				"$$$/StyleAI/Training/SkippedExisting=Skipped ^1 photo(s) that were already learned.",
+				tostring(existingSkippedCount)
+			)
+		end
 		
 		if errorCount > 0 then
 			combinedReport = combinedReport .. "\n" .. LOC("$$$/StyleAI/common/Errors=Errors: ^1", tostring(errorCount))

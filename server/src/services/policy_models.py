@@ -88,12 +88,50 @@ class _WeightedStandardizer:
             np.square(source - self.source_mean_), axis=0, weights=weights
         )
         self.source_scale_ = np.sqrt(np.maximum(source_variance, 1e-12))
+        target_variance = np.average(
+            np.square(target - self.target_mean_), axis=0, weights=weights
+        )
+        target_standard_deviation = np.sqrt(np.maximum(target_variance, 0.0))
+        target_iqr = np.asarray(
+            [
+                _weighted_quantile(target[:, index], weights, 0.75)
+                - _weighted_quantile(target[:, index], weights, 0.25)
+                for index in range(target.shape[1])
+            ],
+            dtype=np.float64,
+        )
+        robust_scale = target_iqr / 1.349
+        self.target_scale_ = np.where(
+            robust_scale > 1e-8,
+            robust_scale,
+            np.where(target_standard_deviation > 1e-8, target_standard_deviation, 1.0),
+        )
 
     def transform_source(self, source: np.ndarray) -> np.ndarray:
         return (source - self.source_mean_) / self.source_scale_
 
-    def center_target(self, target: np.ndarray) -> np.ndarray:
-        return target - self.target_mean_
+    def transform_target(self, target: np.ndarray) -> np.ndarray:
+        return (target - self.target_mean_) / self.target_scale_
+
+    def inverse_target(self, target: np.ndarray) -> np.ndarray:
+        return target * self.target_scale_ + self.target_mean_
+
+
+def _weighted_quantile(
+    values: np.ndarray,
+    weights: np.ndarray,
+    quantile: float,
+) -> float:
+    """Return a deterministic weighted quantile for finite positive weights."""
+    order = np.argsort(values, kind="stable")
+    ordered_values = values[order]
+    cumulative = np.cumsum(weights[order])
+    threshold = float(quantile) * float(cumulative[-1])
+    index = min(
+        len(ordered_values) - 1,
+        int(np.searchsorted(cumulative, threshold, side="left")),
+    )
+    return float(ordered_values[index])
 
 
 class ReducedRankRidge:
@@ -125,10 +163,10 @@ class ReducedRankRidge:
         self.standardizer_ = _WeightedStandardizer()
         self.standardizer_.fit(source, target, weights)
         standardized_source = self.standardizer_.transform_source(source)
-        centered_target = self.standardizer_.center_target(target)
+        normalized_target = self.standardizer_.transform_target(target)
         root_weights = np.sqrt(weights)[:, np.newaxis]
         weighted_source = standardized_source * root_weights
-        weighted_target = centered_target * root_weights
+        weighted_target = normalized_target * root_weights
 
         n_examples, n_features = weighted_source.shape
         if n_features <= n_examples:
@@ -166,9 +204,8 @@ class ReducedRankRidge:
 
     def predict(self, source_features: np.ndarray) -> np.ndarray:
         source = _validated_prediction_array(source_features)
-        return (
+        return self.standardizer_.inverse_target(
             self.standardizer_.transform_source(source) @ self.coefficients_
-            + self.standardizer_.target_mean_
         )
 
 
@@ -194,7 +231,7 @@ class WeightedPLS:
         self.standardizer_.fit(source, target, weights)
         root_weights = np.sqrt(weights)[:, np.newaxis]
         standardized_source = self.standardizer_.transform_source(source)
-        centered_target = self.standardizer_.center_target(target)
+        normalized_target = self.standardizer_.transform_target(target)
         maximum_components = min(
             len(source) - 1,
             source.shape[1],
@@ -208,16 +245,15 @@ class WeightedPLS:
         )
         self.model_.fit(
             standardized_source * root_weights,
-            centered_target * root_weights,
+            normalized_target * root_weights,
         )
         self.parameter_count_ = int(self.model_.coef_.size)
         return self
 
     def predict(self, source_features: np.ndarray) -> np.ndarray:
         source = _validated_prediction_array(source_features)
-        return (
+        return self.standardizer_.inverse_target(
             self.model_.predict(self.standardizer_.transform_source(source))
-            + self.standardizer_.target_mean_
         )
 
 
@@ -287,16 +323,15 @@ class WeightedMultiTaskElasticNet:
         )
         self.model_.fit(
             self.standardizer_.transform_source(source) * root_weights,
-            self.standardizer_.center_target(target) * root_weights,
+            self.standardizer_.transform_target(target) * root_weights,
         )
         self.parameter_count_ = int(np.count_nonzero(self.model_.coef_))
         return self
 
     def predict(self, source_features: np.ndarray) -> np.ndarray:
         source = _validated_prediction_array(source_features)
-        return (
+        return self.standardizer_.inverse_target(
             self.model_.predict(self.standardizer_.transform_source(source))
-            + self.standardizer_.target_mean_
         )
 
 
@@ -339,7 +374,11 @@ class RandomFeatureRidge:
             self.standardizer_.transform_source(source)
         )
         self.model_ = Ridge(alpha=self.alpha, fit_intercept=True)
-        self.model_.fit(transformed, target, sample_weight=weights)
+        self.model_.fit(
+            transformed,
+            self.standardizer_.transform_target(target),
+            sample_weight=weights,
+        )
         self.parameter_count_ = int(self.model_.coef_.size)
         return self
 
@@ -348,7 +387,7 @@ class RandomFeatureRidge:
         transformed = self.features_.transform(
             self.standardizer_.transform_source(source)
         )
-        return self.model_.predict(transformed)
+        return self.standardizer_.inverse_target(self.model_.predict(transformed))
 
 
 def _validated_prediction_array(source_features: np.ndarray) -> np.ndarray:

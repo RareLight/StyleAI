@@ -69,7 +69,6 @@ cancellation, and the single final rebuild/activation sequence are unchanged.
 | Profile / HDR Off, Suggest, Auto | Preserves separate evidence and compatibility gates |
 | Create virtual copies | Applies to copies in a uniquely named `StyleAI <YYMMDD-HHMMSS>` collection when enabled; defaults on unless an existing preference says otherwise. The completion dialog names the collection without making it Lightroom's active source. |
 | Review each proposed edit | Opens the existing per-photo review flow; defaults on |
-| Apply masks | Applies only supported masks contained in the recipe; defaults on |
 | Allow crop / straighten | Separate opt-in controls; both default off. Enabling either permits, but does not force, that action: independently learned crop/rotation applicability must reach the conservative inference gate. |
 | Burst coherence | Automatic and conservative; no permanent preference. Bounded ordered batches may show “Coherent burst edit” after temporal, visual, EXIF/source, policy, and rendering-partition checks. Every photo retains per-photo review, geometry/rendering decisions, history, receipts, and readback. Unsafe members fall back independently. |
 
@@ -88,7 +87,7 @@ enabled only for developer evaluation with
 
 - Metadata review preserves keyword selection, edited generated text,
   de-cluttered comparison, save/discard behavior, and catalog writes.
-- Edit review preserves global/mask choices and exposes recipe details as
+- Edit review preserves the global-edit choice and exposes recipe details as
   read-only bounded content.
 - Edit outcome labels never Undo Develop settings and remain evaluation-only.
 - Find More Training Examples resolves recommendations before constructing its

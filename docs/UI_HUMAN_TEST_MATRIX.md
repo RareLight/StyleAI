@@ -85,16 +85,17 @@ catalog.
 ## 5. Apply My Style and review
 
 1. Verify scope/count appears first and that virtual copies, per-photo review,
-   masks, crop, and straighten match existing effective preferences.
+   crop, and straighten match existing effective preferences. Confirm no learned
+   mask control appears.
 2. Confirm virtual copies default on for a fresh preference set, then confirm
    both enabling and disabling the option persist after a completed dialog.
    Crop and straighten should still default off.
 3. Exercise profile/HDR Off, Suggest, and Auto without a local metadata LLM;
    trained editing should remain available when the vision model is ready.
 4. For all safety combinations, compare the bound summary with the actual
-   target (original/copy), review behavior, mask behavior, crop, and rotation.
-5. Verify recipe details are read-only and scrollable; global and mask choices
-   remain adjacent; match text is understandable without color.
+   target (original/copy), review behavior, crop, and rotation.
+5. Verify recipe details are read-only and scrollable; the global choice and
+   match text are understandable without color.
 6. Test Apply, cancel/discard, Lightroom Undo, history reconciliation, and
    explicit accepted/modified/not-useful outcomes on no more than 100 selected
    tracked photos.
@@ -113,12 +114,12 @@ catalog.
     subject-entry/exit, crop-change, and mixed-camera sequences. Confirm only
     admitted members show the localized coherent-burst context.
 11. Confirm burst members retain their own review choice, crop/rotation,
-    profile/HDR, masks, virtual copy, application receipt, Develop readback,
+    profile/HDR, virtual copy, application receipt, Develop readback,
     progress/error accounting, and source order. Cancel during an in-flight
     batch and verify already applied handoffs finish while new work stops.
 12. In a developer build only, enable
     `STYLEAI_EDIT_BURST_EXACT_REUSE=1` and compare its output with independent
-    inference. Confirm white balance, geometry, profile/HDR, masks, and sparse
+    inference. Confirm white balance, geometry, profile/HDR, and sparse
     families remain photo-specific; test cached/uncached RAW previews, missing
     previews, large bursts, and constrained/critical memory pressure.
 

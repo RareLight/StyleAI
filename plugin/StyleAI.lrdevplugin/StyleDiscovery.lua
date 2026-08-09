@@ -4,11 +4,17 @@ local SearchIndexAPI = require("APISearchIndex")
 
 local StyleDiscovery = {}
 
-function StyleDiscovery.waitForCompletion(onUpdate, maxPolls)
+function StyleDiscovery.waitForCompletion(onUpdate, maxPolls, isCanceled)
 	for _ = 1, (maxPolls or 3600) do
 		local success, discovery = SearchIndexAPI.discoveryStatus()
 		if success then
 			if onUpdate then onUpdate(discovery) end
+			if isCanceled and isCanceled() then
+				if discovery.operation_job_id then
+					SearchIndexAPI.cancelOperation(discovery.operation_job_id)
+				end
+				return false, "canceled"
+			end
 			if discovery.status == "succeeded" then
 				return true, discovery.generation or {}
 			end

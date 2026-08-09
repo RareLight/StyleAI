@@ -30,7 +30,7 @@ the code for current contracts.
   migration-only.
 - [x] Record representative Prepare and Apply request payloads.
 - [x] Record catalog effects for metadata append/replace, validation, virtual
-  copies, masks, crop/rotation, training, and edit-outcome review.
+  copies, crop/rotation, training, and edit-outcome review.
 - [x] Add automated contract tests where behavior is testable outside
   Lightroom and extend Lightroom smoke-test coverage where it is not.
 
@@ -174,12 +174,12 @@ Exit gate: training records and policy activation behavior are unchanged.
 
 - [x] Show scope and the selected count first; resolve broader/eligible counts
   after commitment so the options dialog stays responsive.
-- [x] Restore visible Create Virtual Copies, Review Each Edit, and Apply Masks
+- [x] Restore visible Create Virtual Copies and Review Each Edit controls
   controls without changing existing users' effective values.
 - [x] Present strength, profile, and HDR behavior with concise explanations.
 - [x] Keep crop and straighten separate and off by default.
-- [x] Add a dynamic safety summary covering originals/copies, review,
-  masks, crop, and rotation.
+- [x] Add a dynamic safety summary covering originals/copies, review, crop,
+  and rotation.
 - [x] Use a concise primary action and put dynamic count/safety information in
   the bound summary because Lightroom's modal action verb is static.
 - [x] Remove the production debug style override.

@@ -6,6 +6,7 @@ import pytest
 
 import config
 from services import policy_runtime
+from services import source_embeddings
 from services.policy_evaluation import make_synthetic_policy_dataset
 from services.policy_local import LocalResidualCorrector
 from services.policy_targets import flatten_absolute_target
@@ -26,6 +27,12 @@ def _examples(count=12, *, camera_profile="Adobe Color", photo_prefix="photo"):
                 "photo_id": f"{photo_prefix}-{index:03d}",
                 "embedding": embedding.tolist(),
                 "metadata": {
+                    "source_provenance": "raw_preview",
+                    "source_embedding_provenance": "raw_preview",
+                    "source_embedding_fingerprint": f"fingerprint-{index}",
+                    "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+                    "source_embedding_model": source_embeddings.SOURCE_EMBEDDING_MODEL_ID,
+                    "source_embedding_preprocess": source_embeddings.SOURCE_EMBEDDING_PREPROCESS_VERSION,
                     "camera_profile": camera_profile,
                     "camera_make": "Example",
                     "camera_model": "Camera",
@@ -61,7 +68,7 @@ def test_generation_round_trip_and_absolute_inference(policy_database, monkeypat
     monkeypatch.setattr(
         policy_runtime.training_service,
         "list_training_examples_with_embeddings",
-        lambda: examples,
+        lambda **_kwargs: examples,
     )
 
     result = policy_runtime.rebuild_active_generation(seed=9)
@@ -111,7 +118,7 @@ def test_incompatible_target_schema_requires_rebuild(policy_database, monkeypatc
     monkeypatch.setattr(
         policy_runtime.training_service,
         "list_training_examples_with_embeddings",
-        lambda: _examples(),
+        lambda **_kwargs: _examples(),
     )
     result = policy_runtime.rebuild_active_generation(seed=9)
     connection = policy_runtime.policy_store.connect_policy_store(str(policy_database))
@@ -120,6 +127,29 @@ def test_incompatible_target_schema_requires_rebuild(policy_database, monkeypatc
             "UPDATE policy_v2_generations SET target_schema_version = ? "
             "WHERE generation_id = ?",
             ("policy-target-v2", result["generation_id"]),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    policy_runtime.invalidate_runtime_cache()
+
+    assert policy_runtime.has_active_generation() is False
+
+
+def test_incompatible_algorithm_version_requires_rebuild(policy_database, monkeypatch):
+    monkeypatch.setattr(
+        policy_runtime.training_service,
+        "list_training_examples_with_embeddings",
+        lambda **_kwargs: _examples(),
+    )
+    result = policy_runtime.rebuild_active_generation(seed=9)
+    connection = policy_runtime.policy_store.connect_policy_store(str(policy_database))
+    try:
+        connection.execute(
+            "UPDATE policy_v2_generations SET algorithm_version = ? "
+            "WHERE generation_id = ?",
+            ("editing-policy-v2.6", result["generation_id"]),
         )
         connection.commit()
     finally:
@@ -219,7 +249,7 @@ def test_inference_does_not_cross_camera_profile_partitions(
     monkeypatch.setattr(
         policy_runtime.training_service,
         "list_training_examples_with_embeddings",
-        lambda: examples,
+        lambda **_kwargs: examples,
     )
     policy_runtime.rebuild_active_generation(seed=9)
     artifacts = policy_runtime._load_active_artifacts()
@@ -251,7 +281,7 @@ def test_successive_rebuilds_bound_generation_and_example_history(
     monkeypatch.setattr(
         policy_runtime.training_service,
         "list_training_examples_with_embeddings",
-        lambda: examples,
+        lambda **_kwargs: examples,
     )
 
     generation_ids = [
@@ -379,7 +409,7 @@ def test_validated_local_correction_is_applied_before_target_clamping(
     monkeypatch.setattr(
         policy_runtime.training_service,
         "list_training_examples_with_embeddings",
-        lambda: examples,
+        lambda **_kwargs: examples,
     )
     policy_runtime.rebuild_active_generation(seed=9)
     artifact = next(iter(policy_runtime._load_active_artifacts().values()))
@@ -420,7 +450,7 @@ def test_upgrade_recommendations_batch_candidate_assignment(
     monkeypatch.setattr(
         policy_runtime.training_service,
         "list_training_examples_with_embeddings",
-        lambda: examples,
+        lambda **_kwargs: examples,
     )
     policy_runtime.rebuild_active_generation(seed=9)
     artifact = next(iter(policy_runtime._load_active_artifacts().values()))
@@ -479,7 +509,7 @@ def test_failed_candidate_preserves_active_generation(policy_database, monkeypat
     monkeypatch.setattr(
         policy_runtime.training_service,
         "list_training_examples_with_embeddings",
-        lambda: examples,
+        lambda **_kwargs: examples,
     )
     first = policy_runtime.rebuild_active_generation(seed=4)
     monkeypatch.setattr(
@@ -493,6 +523,28 @@ def test_failed_candidate_preserves_active_generation(policy_database, monkeypat
 
     policy_runtime.invalidate_runtime_cache()
     assert policy_runtime.list_active_policies()
+    assert (
+        policy_runtime._load_active_artifacts().popitem()[1].generation_id
+        == first["generation_id"]
+    )
+
+
+def test_canceled_candidate_preserves_active_generation(policy_database, monkeypatch):
+    examples = _examples()
+    monkeypatch.setattr(
+        policy_runtime.training_service,
+        "list_training_examples_with_embeddings",
+        lambda **_kwargs: examples,
+    )
+    first = policy_runtime.rebuild_active_generation(seed=4)
+
+    with pytest.raises(InterruptedError, match="canceled"):
+        policy_runtime.rebuild_active_generation(
+            seed=5,
+            cancel_requested=lambda: True,
+        )
+
+    policy_runtime.invalidate_runtime_cache()
     assert (
         policy_runtime._load_active_artifacts().popitem()[1].generation_id
         == first["generation_id"]

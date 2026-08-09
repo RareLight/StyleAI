@@ -67,6 +67,223 @@ def _compute_clip_embedding(image_bytes: bytes):
         return None
 
 
+def _resolve_training_source(
+    photo_id: str,
+    rendered_image_bytes: bytes,
+    raw_filepath: str | None,
+) -> tuple[list[float], bytes, str, dict[str, Any]]:
+    """Resolve neutral pixels and a compatible canonical embedding for training."""
+    source = source_embeddings.resolve_neutral_source(
+        rendered_image_bytes,
+        raw_filepath,
+    )
+    if source.provenance != source_embeddings.RAW_PREVIEW_PROVENANCE:
+        raise ValueError(
+            "NEUTRAL_SOURCE_REQUIRED: an unedited RAW preview could not be extracted"
+        )
+
+    embedding = None
+    try:
+        from services import chroma
+
+        embedding = source_embeddings.compatible_embedding(
+            chroma.get_image(photo_id),
+            raw_filepath=raw_filepath,
+            rendered_image_bytes=rendered_image_bytes,
+        )
+    except Exception as exc:
+        logger.debug(
+            "Compatible canonical embedding lookup failed for photo_id=%s: %s",
+            photo_id,
+            exc,
+        )
+    if embedding is None:
+        embedding = _compute_clip_embedding(source.image_bytes)
+    if embedding is None:
+        raise ValueError(
+            "NEUTRAL_EMBEDDING_UNAVAILABLE: the RAW preview could not be embedded"
+        )
+    return (
+        embedding,
+        source.image_bytes,
+        source.provenance,
+        source_embeddings.stamp_metadata({}, source),
+    )
+
+
+def _resolve_training_sources_batch(
+    items: list[tuple[str, bytes, str | None]],
+    *,
+    cancel_signal: operations.JobCancelSignal | None = None,
+) -> dict[str, tuple[list[float], bytes, str, dict[str, Any]] | ValueError]:
+    """Resolve neutral evidence and batch only canonical-embedding cache misses."""
+    from services import chroma
+    from services.metadata import get_analysis_service
+    import server_lifecycle
+
+    resolved: dict[
+        str,
+        tuple[list[float], bytes, str, dict[str, Any]] | ValueError,
+    ] = {}
+    misses: list[tuple[str, source_embeddings.NeutralSource]] = []
+    for photo_id, rendered_image_bytes, raw_filepath in items:
+        try:
+            source = source_embeddings.resolve_neutral_source(
+                rendered_image_bytes,
+                raw_filepath,
+            )
+            if source.provenance != source_embeddings.RAW_PREVIEW_PROVENANCE:
+                raise ValueError(
+                    "NEUTRAL_SOURCE_REQUIRED: an unedited RAW preview could not be extracted"
+                )
+        except ValueError as exc:
+            resolved[photo_id] = exc
+            continue
+        except Exception as exc:
+            logger.debug(
+                "Neutral training source resolution failed for photo_id=%s: %s",
+                photo_id,
+                exc,
+            )
+            resolved[photo_id] = ValueError(
+                "NEUTRAL_SOURCE_REQUIRED: an unedited RAW preview could not be extracted"
+            )
+            continue
+
+        embedding = None
+        try:
+            embedding = source_embeddings.compatible_embedding(
+                chroma.get_image(photo_id),
+                raw_filepath=raw_filepath,
+                rendered_image_bytes=rendered_image_bytes,
+            )
+        except Exception as exc:
+            logger.debug(
+                "Compatible training embedding lookup failed for photo_id=%s: %s",
+                photo_id,
+                exc,
+            )
+        if embedding is not None:
+            resolved[photo_id] = (
+                embedding,
+                source.image_bytes,
+                source.provenance,
+                source_embeddings.stamp_metadata({}, source),
+            )
+        else:
+            misses.append((photo_id, source))
+
+    batch_size = max(1, operations.recommended_gpu_batch_size())
+    for offset in range(0, len(misses), batch_size):
+        if cancel_signal is not None and cancel_signal.is_set():
+            raise InterruptedError("training operation has been canceled")
+        chunk = misses[offset : offset + batch_size]
+        decoded = [
+            source_embeddings.decode_for_embedding(source.image_bytes)
+            for _, source in chunk
+        ]
+        generated: list[list[float] | None] = [None] * len(chunk)
+        valid_positions = [
+            position for position, image in enumerate(decoded) if image is not None
+        ]
+        image_byte_count = sum(len(source.image_bytes) for _, source in chunk)
+        try:
+            if valid_positions:
+                maximum_bytes = operations.admission.maximum_capacities["image_bytes"]
+                admitted_bytes = max(1, min(image_byte_count, maximum_bytes))
+                with operations.admission.acquire(
+                    {
+                        "accelerator": 1,
+                        "cpu_prepare": 1,
+                        "image_bytes": admitted_bytes,
+                    },
+                    priority=8,
+                    cancel_event=cancel_signal,
+                ):
+                    model = server_lifecycle.get_model()
+                    processor = server_lifecycle.get_processor()
+                    if model is not None and processor is not None:
+                        values = get_analysis_service()._generate_image_embeddings(
+                            [decoded[position] for position in valid_positions],
+                            model,
+                            processor,
+                        )
+                        for position, value in zip(
+                            valid_positions,
+                            values or [],
+                            strict=False,
+                        ):
+                            generated[position] = value
+        finally:
+            for image in decoded:
+                if image is not None:
+                    image.close()
+
+        for position, (photo_id, source) in enumerate(chunk):
+            embedding = generated[position]
+            if embedding is None:
+                # A model may reject one member of an otherwise valid batch. Retry
+                # only that member so one corrupt source cannot discard its peers.
+                embedding = _compute_clip_embedding(source.image_bytes)
+            if embedding is None:
+                resolved[photo_id] = ValueError(
+                    "NEUTRAL_EMBEDDING_UNAVAILABLE: the RAW preview could not be embedded"
+                )
+            else:
+                resolved[photo_id] = (
+                    embedding,
+                    source.image_bytes,
+                    source.provenance,
+                    source_embeddings.stamp_metadata({}, source),
+                )
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# POST /training/preflight
+# ---------------------------------------------------------------------------
+
+
+@training_bp.route("/training/preflight", methods=["POST"])
+def preflight_training_examples():
+    try:
+        data = request.get_json(silent=True) or {}
+        photo_ids = data.get("photo_ids")
+        if not isinstance(photo_ids, list) or len(photo_ids) > 5000:
+            raise ValueError("photo_ids must be an array of at most 5000 IDs")
+        normalized = [str(photo_id or "").strip() for photo_id in photo_ids]
+        if any(not photo_id for photo_id in normalized):
+            raise ValueError("photo_ids cannot contain empty values")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("photo_ids cannot contain duplicates")
+        existing = training_service.get_existing_training_ids(normalized)
+        force_retrain = bool(data.get("force_retrain", False))
+        return jsonify(
+            {
+                "results": {
+                    "existing_photo_ids": sorted(existing),
+                    "needed_photo_ids": (
+                        normalized
+                        if force_retrain
+                        else [
+                            photo_id
+                            for photo_id in normalized
+                            if photo_id not in existing
+                        ]
+                    ),
+                    "force_retrain": force_retrain,
+                },
+                "error": None,
+                "warning": None,
+            }
+        ), 200
+    except ValueError as exc:
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 400
+    except Exception as exc:
+        logger.error("Training preflight failed: %s", exc, exc_info=True)
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 500
+
+
 # ---------------------------------------------------------------------------
 # POST /training/add
 # ---------------------------------------------------------------------------
@@ -174,41 +391,26 @@ def _add_training_example_impl():
     except (TypeError, ValueError):
         pass
 
-    # Compute CLIP embedding from uploaded image (best-effort).
-    embedding = None
-    image_bytes_data = None
+    rendered_image_bytes = b""
     filepath = request.form.get("filepath", "").strip() or None
-
-    source_provenance = "lightroom_rendered_preview"
     image_file = request.files.get("image")
     if image_file:
         filename = image_file.filename or None
         try:
-            image_bytes_data = image_file.read()
-            # If filepath provided, attempt to extract unedited camera preview
-            if filepath:
-                from utils.image_processing import extract_exiftool_preview
-
-                try:
-                    raw_preview = extract_exiftool_preview(filepath)
-                    if raw_preview:
-                        logger.info(
-                            f"Successfully extracted unedited raw preview for {filepath}"
-                        )
-                        image_bytes_data = raw_preview
-                        source_provenance = "raw_preview"
-                except TimeoutError as exc:
-                    return jsonify(
-                        {"error": "EXIFTOOL_TIMEOUT", "message": str(exc)}
-                    ), 408
-                except PermissionError as exc:
-                    return jsonify(
-                        {"error": "EXIFTOOL_PERMISSION", "message": str(exc)}
-                    ), 403
-            embedding = _compute_clip_embedding(image_bytes_data)
+            rendered_image_bytes = image_file.read()
         except Exception as exc:
-            warning_msg = f"Failed to read image for training embedding: {exc}"
-            logger.warning(warning_msg)
+            logger.warning("Failed to read rendered training preview: %s", exc)
+
+    try:
+        embedding, source_image_bytes, source_provenance, source_stamp = (
+            _resolve_training_source(
+                photo_id,
+                rendered_image_bytes,
+                filepath,
+            )
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 422
 
     try:
         with operations.admission.acquire({"catalog_write": 1}, priority=8):
@@ -219,7 +421,7 @@ def _add_training_example_impl():
                 label=label,
                 filename=filename,
                 summary=summary,
-                image_bytes=image_bytes_data,
+                image_bytes=source_image_bytes,
                 focal_length=focal_length,
                 capture_time_unix=capture_time_unix,
                 camera_make=camera_make,
@@ -232,13 +434,10 @@ def _add_training_example_impl():
                 rating=rating,
                 pick_status=pick_status,
                 source_provenance=source_provenance,
+                source_stamp=source_stamp,
             )
         count = training_service.get_training_count()
         response_data = {"status": "ok", "photo_id": photo_id, "total_count": count}
-        if image_file and embedding is None:
-            response_data["warning"] = (
-                "Could not compute CLIP embedding for training example. AI style prediction may be less accurate."
-            )
         return jsonify(response_data), 200
     except Exception as exc:
         logger.error(
@@ -265,7 +464,7 @@ def add_training_batch():
     if job_id:
         if not config.DB_PATH:
             return jsonify({"error": "StyleAI database path is not configured"}), 500
-        job = operations.get_job(config.DB_PATH, job_id, include_items=True)
+        job = operations.get_job(config.DB_PATH, job_id, include_items=False)
         if job is None:
             return jsonify({"error": f"operation job not found: {job_id}"}), 404
         if job["kind"] != "training":
@@ -285,7 +484,8 @@ def add_training_batch():
                 return jsonify({"error": "every job item requires a photo_id"}), 400
             if len(item_ids) != len(set(item_ids)):
                 return jsonify({"error": "a job batch cannot repeat a photo_id"}), 400
-            expected_ids = {item["item_id"] for item in job.get("items", [])}
+            admitted_items = operations.get_job_items(config.DB_PATH, job_id, item_ids)
+            expected_ids = {item["item_id"] for item in admitted_items}
             unexpected_ids = sorted(set(item_ids) - expected_ids)
             if unexpected_ids:
                 return (
@@ -347,6 +547,44 @@ def _add_training_batch_impl(
         return jsonify({"error": "examples must be an array of objects"}), 400
 
     results: list[dict[str, Any]] = []
+    job_items_by_id: dict[str, dict[str, Any]] = {}
+    if job_id:
+        requested_ids = [
+            str(item.get("photo_id") or "").strip()
+            for item in examples
+            if isinstance(item, dict)
+        ]
+        job_items_by_id = {
+            item["item_id"]: item
+            for item in operations.get_job_items(config.DB_PATH, job_id, requested_ids)
+        }
+
+    source_requests: list[tuple[str, bytes, str | None]] = []
+    for item in examples:
+        photo_id = str(item.get("photo_id") or "").strip()
+        if not photo_id or not isinstance(item.get("develop_settings", {}), dict):
+            continue
+        rendered_image_bytes = b""
+        image_bytes_b64 = item.get("image_bytes")
+        if image_bytes_b64:
+            import base64
+
+            try:
+                rendered_image_bytes = base64.b64decode(image_bytes_b64)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to decode base64 image bytes for %s: %s",
+                    photo_id,
+                    exc,
+                )
+        source_requests.append(
+            (photo_id, rendered_image_bytes, item.get("filepath", "").strip() or None)
+        )
+    prepared_sources = _resolve_training_sources_batch(
+        source_requests,
+        cancel_signal=cancel_signal,
+    )
+
     for item in examples:
         if cancel_signal is not None and cancel_signal.is_set():
             break
@@ -361,17 +599,7 @@ def _add_training_batch_impl(
             )
             continue
         if job_id:
-            current_job = operations.get_job(config.DB_PATH, job_id)
-            if current_job is None:
-                raise LookupError(f"operation job not found: {job_id}")
-            current_item = next(
-                (
-                    operation_item
-                    for operation_item in current_job.get("items", [])
-                    if operation_item["item_id"] == photo_id
-                ),
-                None,
-            )
+            current_item = job_items_by_id.get(photo_id)
             if current_item is None:
                 raise LookupError(f"operation item not found: {job_id}/{photo_id}")
             if current_item["state"] == "succeeded":
@@ -425,74 +653,17 @@ def _add_training_batch_impl(
         rating = int(item.get("rating") or 0)
         pick_status = int(item.get("pick_status") or 0)
 
-        image_bytes_b64 = item.get("image_bytes")
-        image_bytes_data = None
-        if image_bytes_b64:
-            import base64
-
-            try:
-                image_bytes_data = base64.b64decode(image_bytes_b64)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to decode base64 image bytes for {photo_id}: {e}"
-                )
-
-        filepath = item.get("filepath", "").strip() or None
-        source_provenance = "lightroom_rendered_preview"
-        if filepath:
-            from utils.image_processing import extract_exiftool_preview
-
-            try:
-                raw_preview = extract_exiftool_preview(filepath)
-                if raw_preview:
-                    logger.info(
-                        f"Successfully extracted unedited raw preview for {filepath}"
-                    )
-                    image_bytes_data = raw_preview
-                    source_provenance = "raw_preview"
-            except TimeoutError as exc:
-                results.append(
-                    {
-                        "status": "error",
-                        "photo_id": photo_id,
-                        "error": f"EXIFTOOL_TIMEOUT: {exc}",
-                    }
-                )
-                continue
-            except PermissionError as exc:
-                results.append(
-                    {
-                        "status": "error",
-                        "photo_id": photo_id,
-                        "error": f"EXIFTOOL_PERMISSION: {exc}",
-                    }
-                )
-                continue
-
         try:
-            embedding = None
-            if image_bytes_data:
-                embedding = _compute_clip_embedding(image_bytes_data)
-
-            if embedding is None:
-                try:
-                    from services import chroma
-
-                    chroma_data = chroma.get_image(photo_id)
-                    embedding = source_embeddings.compatible_embedding(
-                        chroma_data,
-                        raw_filepath=filepath,
-                        rendered_image_bytes=image_bytes_data,
-                    )
-                    if embedding is not None:
-                        metadatas = chroma_data.get("metadatas") or []
-                        if metadatas:
-                            source_provenance = str(
-                                metadatas[0].get("source_embedding_provenance")
-                                or source_provenance
-                            )
-                except Exception:
-                    pass
+            prepared_source = prepared_sources.get(photo_id)
+            if isinstance(prepared_source, ValueError):
+                raise prepared_source
+            if prepared_source is None:
+                raise ValueError(
+                    "NEUTRAL_SOURCE_REQUIRED: an unedited RAW preview could not be extracted"
+                )
+            embedding, source_image_bytes, source_provenance, source_stamp = (
+                prepared_source
+            )
 
             with operations.admission.acquire({"catalog_write": 1}, priority=8):
                 training_service.add_training_example(
@@ -502,7 +673,7 @@ def _add_training_batch_impl(
                     label=label,
                     filename=filename,
                     summary=summary,
-                    image_bytes=image_bytes_data,
+                    image_bytes=source_image_bytes,
                     focal_length=focal_length,
                     lens=lens,
                     capture_time_unix=capture_time_unix,
@@ -518,6 +689,7 @@ def _add_training_batch_impl(
                     skip_discovery=True,
                     force_retrain=force_retrain,
                     source_provenance=source_provenance,
+                    source_stamp=source_stamp,
                 )
             results.append({"status": "ok", "photo_id": photo_id})
         except ValueError as exc:

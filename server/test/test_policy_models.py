@@ -5,7 +5,9 @@ import pytest
 
 from services.policy_evaluation import make_synthetic_policy_dataset
 from services.policy_models import (
+    RandomFeatureRidge,
     ReducedRankRidge,
+    WeightedMultiTaskElasticNet,
     WeightedPLS,
     benchmark_candidate_estimators,
 )
@@ -62,6 +64,45 @@ def test_pls_bounds_components_to_available_dimensions():
 
     assert model.effective_components_ == 2
     assert model.predict(source[12:15, :5]).shape == (3, 2)
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: ReducedRankRidge(alpha=0.01, rank=1),
+        lambda: WeightedPLS(n_components=1),
+        lambda: WeightedMultiTaskElasticNet(alpha=0.001, l1_ratio=0.1),
+        lambda: RandomFeatureRidge(alpha=0.01, n_components=64),
+    ],
+)
+def test_multioutput_estimators_are_invariant_to_target_units(factory):
+    rng = np.random.default_rng(43)
+    source = rng.normal(size=(240, 8))
+    target = np.column_stack(
+        (
+            source[:, 0] + rng.normal(scale=0.02, size=len(source)),
+            source[:, 1] + rng.normal(scale=0.02, size=len(source)),
+        )
+    )
+    scale = np.asarray([10_000.0, 1.0])
+
+    baseline = factory().fit(source, target).predict(source)
+    rescaled = factory().fit(source, target * scale).predict(source) / scale
+
+    assert np.allclose(rescaled, baseline, rtol=2e-4, atol=2e-4)
+
+
+def test_target_standardizer_handles_constant_target():
+    rng = np.random.default_rng(47)
+    source = rng.normal(size=(40, 4))
+    target = np.column_stack((source[:, 0], np.full(len(source), 17.0)))
+
+    predicted = (
+        ReducedRankRidge(alpha=0.1, rank=2).fit(source, target).predict(source[:5])
+    )
+
+    assert np.all(np.isfinite(predicted))
+    assert np.allclose(predicted[:, 1], 17.0)
 
 
 def test_candidate_benchmark_is_complete_finite_and_serializable():

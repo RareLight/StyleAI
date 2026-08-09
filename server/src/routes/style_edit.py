@@ -238,14 +238,15 @@ def _prepare_batch_source_embeddings(
             embedding = generated[position]
             source = sources[position]
             metrics = metrics_by_item[position]
+            if embedding is None or cancel_signal.is_set():
+                prepared[item_index] = None
+                continue
             prepared[item_index] = {
                 "embedding": embedding,
                 "source_provenance": source.provenance,
                 "source_metrics": metrics,
                 "cache_hit": False,
             }
-            if embedding is None or cancel_signal.is_set():
-                continue
             try:
                 with operations.admission.acquire(
                     {"catalog_write": 1}, priority=9, cancel_event=cancel_signal
@@ -468,6 +469,7 @@ def _run_single_style_edit_core(
             source_provenance=source_provenance,
             source_metrics=source_metrics,
             policy_override=policy_override,
+            generation_id=options.get("generation_id"),
         )
     timings_ms["policy_inference"] = round((perf_counter() - stage_started) * 1000.0, 1)
 
@@ -851,6 +853,8 @@ def _run_coherent_style_edit_batch(
     )
     diagnostics["queue_depth"] = len(items)
     diagnostics["independent_policy_predictions"] = len(pending)
+    diagnostics["policy_predictions_executed"] = len(pending)
+    diagnostics["avoided_policy_predictions"] = 0
     diagnostics["avoided_policy_predictions"] = 0
     return results, diagnostics
 
@@ -898,7 +902,13 @@ def record_style_edit_application():
                         current_settings=item.get("current_settings"),
                         details={
                             "global_applied": bool(item.get("global_applied", False)),
-                            "masks_applied": bool(item.get("masks_applied", False)),
+                            "masks_applied": False,
+                            "applied_to_virtual_copy": bool(
+                                item.get("applied_to_virtual_copy", False)
+                            ),
+                            "applied_copy_name": str(
+                                item.get("applied_copy_name") or ""
+                            )[:255],
                             "warnings": list(item.get("warnings") or []),
                             "error": str(item.get("error") or ""),
                         },
@@ -1059,7 +1069,7 @@ def style_edit():
     if job_id:
         if not config.DB_PATH:
             return jsonify({"error": "StyleAI database path is not configured"}), 500
-        job = operations.get_job(config.DB_PATH, job_id, include_items=True)
+        job = operations.get_job(config.DB_PATH, job_id, include_items=False)
         if job is None:
             return jsonify({"error": f"operation job not found: {job_id}"}), 404
         if job["kind"] != "edit":
@@ -1076,7 +1086,8 @@ def style_edit():
     if len(photo_ids) != len(set(photo_ids)):
         return jsonify({"error": "Duplicate photo IDs are not allowed"}), 400
     if job is not None:
-        expected_ids = {item["item_id"] for item in job.get("items", [])}
+        admitted_items = operations.get_job_items(config.DB_PATH, job_id, photo_ids)
+        expected_ids = {item["item_id"] for item in admitted_items}
         unexpected_ids = sorted(set(photo_ids) - expected_ids)
         if unexpected_ids:
             return (
@@ -1088,7 +1099,54 @@ def style_edit():
                 ),
                 400,
             )
-        operations.set_job_state(config.DB_PATH, job_id, "running")
+        pinned_generation_id = str(
+            (job.get("details") or {}).get("generation_id") or ""
+        ).strip()
+        job_was_pinned = bool(pinned_generation_id)
+        if not pinned_generation_id:
+            pinned_generation_id = policy_runtime.active_generation_id() or ""
+        if not pinned_generation_id:
+            return jsonify({"error": "no active learned-policy generation"}), 409
+        operations.set_job_state(
+            config.DB_PATH,
+            job_id,
+            "running",
+            details={
+                "generation_id": pinned_generation_id,
+                "policy_algorithm_version": policy_runtime.POLICY_ALGORITHM_VERSION,
+                "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                "target_schema_version": TARGET_SCHEMA_VERSION,
+            },
+        )
+        if not policy_runtime._load_generation_artifacts(pinned_generation_id):
+            # Activation may have retired and pruned the generation between the
+            # active-ID read and durable pin. Pin the now-active generation before
+            # loading it; subsequent pruning will observe this job reference.
+            replacement_generation_id = policy_runtime.active_generation_id() or ""
+            if (
+                not job_was_pinned
+                and replacement_generation_id
+                and replacement_generation_id != pinned_generation_id
+            ):
+                pinned_generation_id = replacement_generation_id
+                operations.set_job_state(
+                    config.DB_PATH,
+                    job_id,
+                    "running",
+                    details={"generation_id": pinned_generation_id},
+                )
+            if (
+                not pinned_generation_id
+                or not policy_runtime._load_generation_artifacts(pinned_generation_id)
+            ):
+                return jsonify(
+                    {
+                        "error": (
+                            "the operation's learned-policy generation is unavailable"
+                        )
+                    }
+                ), 409
+        options["generation_id"] = pinned_generation_id
 
     items_json = request.form.get("items_json")
     if items_json is not None:
@@ -1149,6 +1207,7 @@ def style_edit():
                             + ", ".join(sorted(valid_rendering_modes))
                         )
                 item_options = _extract_options(raw_item)
+                item_options["generation_id"] = options.get("generation_id")
                 image_bytes = file.read()
                 total_image_bytes += len(image_bytes)
                 if total_image_bytes > int(config.STYLEAI_METADATA_CACHE_BYTES):
