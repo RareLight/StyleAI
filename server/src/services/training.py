@@ -59,7 +59,9 @@ def _ensure_initialized() -> None:
         path=config.DB_PATH,
         settings=Settings(anonymized_telemetry=False),
     )
-    _training_collection = _chroma_client.get_or_create_collection(name=COLLECTION_NAME)
+    _training_collection = _chroma_client.get_or_create_collection(
+        name=COLLECTION_NAME, embedding_function=None
+    )
     logger.info("Initialized edit_training collection.")
 
 

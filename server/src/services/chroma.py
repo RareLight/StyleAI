@@ -108,7 +108,9 @@ def _ensure_initialized():
 
     # No embedding_function is passed: all callers supply pre-computed vectors
     # explicitly via embeddings=[...], so ChromaDB's built-in embedding is unused.
-    collection = chroma_client.get_or_create_collection(name="image_embeddings")
+    collection = chroma_client.get_or_create_collection(
+        name="image_embeddings", embedding_function=None
+    )
     logger.info("Initialized ChromaDB image_embeddings collection.")
 
 
