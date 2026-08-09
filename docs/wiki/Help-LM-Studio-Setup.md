@@ -1,34 +1,18 @@
-# Setting Up LM Studio with StyleAI
+# LM Studio Setup
 
-LM Studio is a desktop application that lets you discover, download, and run local LLMs. It features a built-in local inference server that is compatible with standard LLM API formats, making it very easy to integrate with StyleAI for private, offline image analysis.
+LM Studio runs open-weights models locally and is used by StyleAI only for
+optional metadata generation.
 
-## Installation
+1. Install LM Studio from [lmstudio.ai](https://lmstudio.ai/) and download a
+   vision-capable instruction model that fits your hardware.
+2. Load the model and start LM Studio's local server. Port 1234 is the initial
+   default; StyleAI also uses LM Studio's SDK to discover a dynamic loopback
+   API port.
+3. Open Lightroom Plug-in Manager → StyleAI → **Configure Local Models...** and
+   confirm the metadata provider is ready.
+4. Choose the model under **Prepare Photos → Metadata Settings**.
 
-Download the LM Studio installer for your operating system from lmstudio.ai. Run the installer and launch the application.
-
-If you are on an Apple Silicon Mac, LM Studio often provides MLX-optimized builds of models. These run significantly faster for vision workloads than standard GGUF builds, so you should prioritize them when searching for models.
-
-## Downloading a Vision Model
-
-StyleAI requires models that understand images (vision-capable models). Use the search bar in LM Studio to find and download a suitable model. 
-
-For a fast baseline that works well on most hardware, search for `qwen3-vl-4b`. For better description quality at a moderate performance cost, `qwen3-vl-8b` or `gemma3-4b` are solid general-purpose defaults.
-
-When downloading, pay attention to the memory requirements listed in LM Studio. Prefer the largest model that fits comfortably within your system's VRAM or unified memory. Choosing a model that exceeds your memory capacity will cause the system to swap to disk, resulting in extremely slow processing times during indexing batches.
-
-## Starting the Local Server
-
-Once your model is downloaded, navigate to the Local Server tab in LM Studio (usually represented by a double-arrow icon on the left sidebar).
-
-Select the vision model you just downloaded from the dropdown menu at the top. Allow the model a moment to load into memory.
-
-Check the server settings on the right panel. Ensure the server is configured to run on the default port (1234). Click the Start Server button. You should see log output indicating that the server is listening for requests.
-
-If you plan to switch between models frequently, you can enable the just-in-time model loading option in LM Studio's settings, which allows StyleAI to request a specific model to load automatically.
-
-## Using LM Studio with StyleAI
-
-Leave LM Studio running on the same computer as Lightroom Classic. StyleAI
-automatically discovers LM Studio's loopback API port and lists compatible
-models in its model selector. Remote and LAN-hosted LM Studio instances are not
-supported.
+Remote and LAN-hosted LM Studio instances are rejected. On Apple Silicon,
+benchmark an MLX build against other available formats, and leave enough
+unified-memory headroom for Lightroom, SigLIP2, and the catalog database. Learn
+From My Edits and Apply My Style do not require LM Studio.

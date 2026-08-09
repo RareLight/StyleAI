@@ -1,65 +1,65 @@
-# 🔒 Privacy Policy
+# StyleAI Privacy and Data Handling
 
-**Last Updated:** April 11, 2026
+**Last updated:** August 8, 2026
 
-> [!IMPORTANT]
-> **StyleAI is local-first by design.**
-> Your photos, metadata, and AI-generated data stay on your computer by default. We believe in "Privacy as a Feature," not an afterthought.
+StyleAI is local-first. Photos, previews, catalog metadata, embeddings, learned
+editing policies, recommendations, and edit history are processed and stored on
+the same computer as Lightroom Classic.
 
----
+## Local processing boundary
 
-## 📖 Our Philosophy
+- The StyleAI service listens only on `127.0.0.1:19819`.
+- Visual analysis and learned editing use local SigLIP2/PyTorch inference.
+- Optional metadata generation connects only to Ollama or LM Studio running on
+  loopback. StyleAI has no cloud AI provider or API-key support.
+- StyleAI contains no analytics, usage telemetry, or advertising trackers.
 
-StyleAI was built with a simple goal: to provide powerful AI tools for photographers without compromising their privacy. We understand that your photo library is personal, and your creative "DNA" (editing style) is your intellectual property. Images, metadata, embeddings, and local-model requests remain on the same machine as Lightroom; StyleAI does not support cloud model providers or remote backends.
+StyleAI can access the internet for software update checks, user-initiated
+downloads, external documentation, and initial model downloads. Those requests
+do not include catalog photos or photo metadata. Ollama and LM Studio are
+separate applications with their own configuration and policies.
 
----
+## Stored data
 
-## 💻 Local Processing
+Each Lightroom catalog owns one `styleai.db` beside its `.lrcat` file. Because
+the database name is directory-local, keep each Lightroom catalog in a separate
+folder.
 
-You have full control over where your data is processed. All analysis, tagging, and semantic indexing happen entirely on your machine using local models like **Ollama** or **LM Studio**. No image data or metadata is ever transmitted to external servers.
+| Data | Location | Retention |
+| --- | --- | --- |
+| Visual and training embeddings | Catalog-local ChromaDB | Until removed or the database is deleted |
+| Training examples, policies, recommendations, jobs, and edit history | Catalog-local SQLite/artifact files | Until removed or the database is deleted |
+| Temporary previews | Local temporary/cache storage | Bounded to the operation/cache lifecycle |
+| Plug-in and service logs | Local log/catalog folders | Bounded rotation where supported |
+| Diagnostic image captures | User-selected local folder | Only when Debug and capture are both enabled; bounded retention |
 
----
+Validated StyleAI backups contain the catalog-local StyleAI database and its
+manifest. They do not contain the Lightroom catalog, original photos, or
+Lightroom Develop history. Backup archives are never uploaded automatically.
 
-## 📊 Data Collection & Storage
+## Image and metadata handling
 
-| Data Type | Storage Location | Retention | Why we need it |
-| :--- | :--- | :--- | :--- |
-| **Photos & Previews** | 🏠 Local Drive | Persistent | To generate AI tags and edits. |
-| **Photo Metadata** (EXIF/IPTC) | 🏠 Local SQLite | Persistent | To identify photos and camera profiles. |
-| **Search Embeddings** | 🏠 Local ChromaDB | Persistent | To enable semantic "natural language" search. |
-| **Face Templates** | 🏠 Local Database | Persistent | To group photos by recognized people. |
-| **Style Profile** (DNA) | 🏠 Local Database | Persistent | To learn your editing preferences. |
-| **Diagnostic Logs** | 🏠 Local / ☁️ Remote* | Per Issue | To troubleshoot plugin errors. |
+Lightroom usually exports bounded JPEG proxies for analysis. Exported proxies
+omit embedded EXIF where possible. The plug-in may separately send selected
+EXIF/IPTC context—such as camera/lens data needed for editing, or GPS, existing
+keywords, and folder context explicitly enabled for metadata generation—to the
+loopback service. This data remains local.
 
-*\*Remote logs are only uploaded when you manually initiate a "Diagnostic Report" or "Copy to Desktop" action for support.*
+Training and edit inference may inspect an original RAW/DNG path to extract a
+target-independent embedded preview. StyleAI does not modify the source file.
+Lightroom catalog metadata and Develop settings are changed only through
+visible plug-in workflows.
 
----
+## Debugging and user control
 
-## 🛡️ Sensitive Data & Security
+Diagnostic reports remain local for inspection before the user shares them.
+Debug image capture is off by default and requires two explicit controls. Such
+captures can contain photo pixels and metadata; enable them only while
+troubleshooting and clear them afterward.
 
-> [!NOTE]
-> **No Hidden Analytics**: StyleAI does not include background tracking, telemetry, or "usage metrics" that monitor your clicks or workflow without your knowledge.
+Users can reveal, back up, restore, clean, or delete StyleAI data through the
+Plug-in Manager and Styles & Training workflows. The live process cannot switch
+database paths, and backup database-marker checks prevent an archive from being
+silently restored into another StyleAI database.
 
-### 📸 Images and Face Recognition
-We use **InsightFace** for local face clustering. These biometric templates are stored in your local backend database and are **never** shared with us or any third party.
-
----
-
-## 📋 Local Inference Engines
-
-StyleAI relies on these local tools:
-
-*   [Ollama](https://ollama.com/) - *Fully Private*
-*   [LM Studio](https://lmstudio.ai/) - *Fully Private*
-
----
-
-## 📬 Contact & Control
-
-As the developer, I (Bastian Machek) have no access to your data. If you have questions about how the plugin handles specific workflows, please reach out:
-
-- **Website:** [github.com/RareLight/StyleAI/wiki](https://github.com/RareLight/StyleAI/wiki)
-- **GitHub:** [Report an Issue](https://github.com/RareLight/StyleAI/issues)
-
-> [!TIP]
-> **100% Data Sovereignty:** Because StyleAI exclusively uses local inference engines and local vector databases, zero bytes of your library ever leave your local network.
+Questions and issues: [github.com/RareLight/StyleAI/issues](https://github.com/RareLight/StyleAI/issues).

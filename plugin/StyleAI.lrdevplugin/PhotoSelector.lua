@@ -40,7 +40,7 @@ end
 ---
 -- @param scope string 'selected'|'view'|'all'|'missing'
 -- @param taskOptions table|boolean|nil For scope 'missing': task options table
---   { enableEmbeddings, enableMetadata, enableFaces, regenerateMetadata }
+--   { enableEmbeddings, enableMetadata, regenerateMetadata }
 --   to check backend for unprocessed photos. Or boolean for legacy (requireEmbeddings).
 --   Nil/omitted = legacy true (photos not in index with embeddings).
 -- @param lookupProgressScope LrProgressScope|nil For scope 'missing': optional progress for lookup (may be the task's main scope).

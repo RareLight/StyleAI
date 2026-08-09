@@ -1,42 +1,61 @@
-# Plugin Guide
+# Lightroom Plug-in Guide
 
-The StyleAI Lightroom Plug-in is the primary frontend for communicating with the AI backend. Through native Lua integrations and Lightroom dialogs, it provides a seamless user experience for extending your photography workflow with AI.
+StyleAI's production entry point is **File → Plug-in Extras** in any Lightroom
+module. The checked-in release exposes six commands.
 
-## Main Documentation
+## Prepare Photos
 
-For detailed technical usage of the plugin component, please view the [`plugin/README.md`](Plugin-README).
+Creates local SigLIP2 visual embeddings, local-model metadata, or both. Scope
+can be selected photos, current view, the catalog, new/unprocessed photos, or
+previously indexed photos. Metadata settings control generated fields,
+append/replace behavior, optional review, keyword organization, prompt,
+language, and local-only context.
 
-## Core Workflows
+## Learn From My Edits
 
-The plugin handles the following core capabilities via the cross-module `File -> Plug-in Extras` menu:
+Reads—but does not change—the Develop settings of eligible RAW/DNG photos.
+Training stores target-independent source evidence and absolute targets, then
+builds one validated policy generation after the full upload. Panoramas and
+unsupported formats are excluded. Preparing these photos first is unnecessary.
 
-### 1. Prepare Photos
-Passes the image files, metadata, and optional context directly to the backend to generate tags, structural descriptions, and embeddings for Semantic Search. This operation relies on LLMs to generate keywords and descriptions.
+## Apply My Style
 
-### 2. Learn From My Edits
-Learns your personal editing style. Select your manually edited photos and run this task. The system will extract your Lightroom develop settings and calculate a pure-math visual embedding (SigLIP2) without needing an LLM or slowing down for keyword generation. You do **not** need to run **Prepare Photos** on these photos first.
+Uses the local vision model and learned policies; it does not use an LLM.
+Controls include scope, 50/75/100% strength, profile and HDR Off/Suggest/Auto,
+optional crop/straighten, virtual copies, per-photo review, and supported masks.
+At 100%, modeled sliders reach absolute learned targets regardless of existing
+edits. Low-confidence or incompatible photos are skipped.
 
-### 3. AI Edit Photos
-Predicts and applies absolute edits from your trained editing policies. This is
-a fast, LLM-free local process: an embedding-only source gate selects a
-high-confidence policy, and a burst-validated conditional regressor predicts
-the Lightroom targets. Ambiguous photos are left unchanged for safety.
+## Rate Selected AI Edits
 
-### 4. Advanced Search
-Invokes semantic search. Unlike keyword search, semantic search translates natural language queries (e.g. "red sports car in a dark alley") into vectors that are compared against the visual embeddings of your images. Matches are grouped into a new Lightroom Collection, sorted by relevance.
+Records Keep, Modified and Kept, or Reject for up to 100 tracked selected
+photos. This action reads current modeled sliders and appends evaluation
+history; it neither changes Develop settings nor automatically retrains.
 
-### 5. Image Culling
-Instead of manually comparing bursts of similar photos, the culling workflow analyzes time-grouped shots for sharpness, eye contact, and expression, grading them from best to worst. The plugin will create a structured Collection Set to categorize Picks, Alternates, and Rejects automatically.
+## Styles & Training
 
-### 6. Metadata Import and Retrieval
-- **Import:** Syncs your existing Lightroom catalog metadata into the backend, improving subsequent AI tagging logic by giving the LLM existing context.
-- **Retrieval:** If you generate AI tags on the backend but opt not to write them into Lightroom immediately, you can fetch them back later using the Retrieval utility.
+Shows active policies, rendering partitions, example counts, evidence cues,
+and descriptions. It can show policy/all training photos, rename a policy,
+start Find More Training Examples, rebuild the active generation, or delete all
+training data after confirmation.
 
-### 7. Error Management
-Errors no longer fail silently into log files. If a batch indexing task encounters issues (like a network timeout or an API authentication failure), the plugin provides a **Task Completion Dialog**. This aggregates the successes and details exactly what went wrong for any omitted files, making troubleshooting immediate and straightforward. For more info, see the [Troubleshooting](Troubleshooting) guide.
+## Find More Training Examples
 
-## Catalog-local identity
+Retrieves high-confidence catalog candidates, filters incompatible/ambiguous
+photos and burst duplicates, and creates collections under **StyleAI → Training
+Recommendations**. Helpful, redundant, and wrong-policy labels are
+evaluation-only.
 
-Stable `globalPhotoId` values are scoped to the active Lightroom catalog.
-StyleAI does not migrate, claim, or route records between catalogs; each
-catalog owns its adjacent `styleai.db`.
+## Plug-in Manager
+
+- **Status & Setup:** service, SigLIP2, and optional metadata-model readiness.
+- **Styles:** factual training/policy summary and access to Styles & Training.
+- **Data & Recovery:** reveal the catalog-local database, export/restore a
+  validated backup, and clean records for removed photos.
+- **Support & Debug:** local support report, logs, hardware-load override, and
+  explicitly gated diagnostic image capture.
+- **Updates / About:** version, update, documentation, credit, and license links.
+
+Each catalog must live in its own folder and owns the adjacent `styleai.db`.
+Stable `globalPhotoId` values link Lightroom photos to local indexes, training,
+recommendations, and history.

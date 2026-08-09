@@ -3,8 +3,24 @@
 StyleAI is a local-first Adobe Lightroom Classic plugin. The Lua frontend owns
 Lightroom UI and SDK operations; a loopback-only Python service owns image
 analysis, local-model inference, vector retrieval, and catalog-local storage.
-Each Lightroom catalog has exactly one adjacent `styleai.db` and one backend
-process bound to that database.
+The active Lightroom catalog has exactly one adjacent `styleai.db`. The one
+loopback service process is bound to that catalog/database pair and rejects
+attempts to switch database paths. Because the database path is
+`<catalog directory>/styleai.db`, catalogs must be kept in separate folders.
+Backups carry a generated database marker and may restore only when that marker
+matches; photo records use stable Lightroom/global photo IDs.
+
+## Frontend and service boundary
+
+Lightroom exposes six production workflows through **File > Plug-in Extras**:
+Prepare Photos, Learn From My Edits, Apply My Style, Rate Selected AI Edits,
+Styles & Training, and Find More Training Examples. Lua owns every Lightroom
+SDK action. The backend never writes directly to the `.lrcat` file; it returns
+work for Lightroom to commit through SDK catalog/Develop transactions.
+
+Backend routes are thin HTTP boundaries. Services own durable operation jobs,
+resource admission, Chroma/SQLite writes, ML fitting, inference, and evaluation.
+Ollama and LM Studio adapters are used only by optional metadata generation.
 
 ## Core pipelines
 
@@ -18,6 +34,9 @@ process bound to that database.
 4. Metadata generation uses only locally running open-weights models through
    Ollama or LM Studio. Requests are batched and serialized so they do not
    contend with active embedding work for unified memory.
+5. Each photo retains its own proxy bytes through its own vision inference.
+   Similarity or burst grouping may schedule work, but metadata is never copied
+   from a representative photo.
 
 ### Editing-policy training
 
@@ -163,16 +182,34 @@ Local LLM concurrency remains one by default. Increasing concurrent model
 requests usually reduces throughput through GPU context switching and unified
 memory pressure.
 
+## Durable work and lifecycle
+
+Indexing, metadata, training/discovery, recommendations, and editing use
+catalog-local operation jobs with per-photo state. Backend processing that
+still needs a Lightroom metadata or Develop handoff remains nonterminal until
+Lightroom reports the outcome. Cancellation is scoped to one job; maintenance
+drains live inference-to-commit work through a writer-preferring barrier.
+
+`WorkCoordinator.lua` bounds Lightroom export, backend request, catalog-write,
+and Develop/UI lanes. The backend acquires complete resource vectors atomically,
+so multiple simultaneous Lightroom tasks share rather than multiply accelerator
+and local-LLM capacity.
+
+Lightroom shutdown performs no service I/O and returns immediately. The backend
+unloads idle SigLIP2 weights after 10 minutes and exits after 10 idle minutes
+only when no operation, admission lease, or index queue work is live. Interrupted
+jobs and derived discovery state are recovered conservatively on next startup.
+
 ## Storage
 
-- `styleai.db/chroma.sqlite3`: Chroma collections, including
-  `image_embeddings`, `edit_training`, and face vectors.
+- `styleai.db/chroma.sqlite3`: isolated `image_embeddings` and `edit_training`
+  Chroma collections.
 - `styleai.db/styles.sqlite`: policy generations, versioned examples, model
   registrations, soft memberships, descriptors, coverage, validation results,
   custom policy names, immutable edit inferences, and append-only edit events.
 - `styleai.db/policy_v2_models/<generation>/`: immutable model artifacts for a
   generation.
 
-External tools should treat these files as read-only. Search and training
-collections are intentionally isolated; clearing one must not silently erase
-the other.
+External tools should treat these files as read-only. Visual-index and training
+collections are intentionally isolated; clearing one must not silently erase the
+other.

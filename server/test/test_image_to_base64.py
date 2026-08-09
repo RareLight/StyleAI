@@ -35,7 +35,7 @@ def _make_png_bytes(color=(0, 255, 0)):
 
 class ImageToBase64Tests(unittest.TestCase):
     def setUp(self):
-        self.provider = _StubProvider({})
+        self.provider = _StubProvider()
 
     def test_jpeg_input_is_validated_and_reencoded(self):
         jpeg_bytes = _make_jpeg_bytes()

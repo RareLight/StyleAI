@@ -5,8 +5,7 @@ SearchIndexAPI = {}
 local WorkCoordinator = require("WorkCoordinator")
 
 local function getBaseUrl()
-    -- StyleAI is a catalog-local service.  Do not permit a remote backend:
-    -- image pixels, catalog metadata, and training data must stay on this machine.
+    -- The catalog-local bridge has one fixed loopback address.
     return "http://127.0.0.1:19819"
 end
 
@@ -135,7 +134,6 @@ end
 -- Catalog DB migrations: one-time backend operations scoped to this catalog.
 -- Each entry: { id = "unique_id", run = function(progressScope) return ok, err [, userMessage] end }. progressScope is optional (nil for migrations that don't need it). Optional userMessage is shown via LrDialogs when present.
 local CATALOG_DB_MIGRATIONS = {
-    -- Add future migrations here, e.g. { id = "some_breaking_change_v1", run = function(progressScope) ... return ok, err [, userMessage] end },
     -- Add future migrations here, e.g. { id = "some_breaking_change_v1", run = function(progressScope) ... return ok, err [, userMessage] end },
 }
 
@@ -1571,8 +1569,6 @@ function SearchIndexAPI.formatStats(stats)
     end
 
     local photos = stats.photos or {}
-    local faces = stats.faces or {}
-
     return table.concat({
         "Photos total: " .. tostring(photos.total or 0),
         "Photos with embeddings: " .. tostring(photos.with_embedding or 0),
@@ -3306,14 +3302,13 @@ end
 -- Gets photos that need processing for "New or unprocessed photos" scope.
 -- When taskOptions is provided, uses backend to check which photos lack the selected tasks' data.
 -- When taskOptions is nil, falls back to legacy behavior: photos not in index (with embeddings).
--- @param taskOptions table|nil { enableEmbeddings, enableMetadata, enableFaces, regenerateMetadata }
+-- @param taskOptions table|nil { enableEmbeddings, enableMetadata, regenerateMetadata }
 -- @param lookupProgressScope LrProgressScope|nil Optional progress for "looking up which photos need processing".
 -- @return boolean success, table photosToProcess
 --
 ---
 -- Sends a comprehensive list of valid photo IDs to the backend to safely purge orphaned database entries.
 -- This guarantees the ChromaDB embeddings match the active Lightroom catalog exactly.
--- @param catalogId string The unique identifier for the current catalog.
 -- @param validPhotoIds table An array of globalPhotoIds that currently exist in Lightroom.
 -- @return table|nil Result summary on success (deleted, disassociated, checked counts), nil on error.
 -- @return string|nil Error message on failure, nil on success.
@@ -3393,7 +3388,6 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
         local tasks = {}
         if taskOptions.enableEmbeddings then table.insert(tasks, "embeddings") end
         if taskOptions.enableMetadata then table.insert(tasks, "metadata") end
-        if taskOptions.enableFaces then table.insert(tasks, "faces") end
 
         local body = {
             photo_ids = photoIds,
@@ -3453,19 +3447,6 @@ function SearchIndexAPI.getMissingPhotosFromIndex(taskOptions, lookupProgressSco
         end
     end
     return true, photosToProcess
-end
-
-function SearchIndexAPI.saveThumbnail(uuid, faceIndex, base64Data)
-    local tempDir = LrPathUtils.getStandardFilePath('temp')
-    local tempFile = LrPathUtils.child(tempDir, uuid .. "_" .. faceIndex .. ".jpg")
-    local f = io.open(tempFile, "wb")
-    if f then
-        f:write(LrStringUtils.decodeBase64(base64Data))
-        f:close()
-        log:trace("Saved face thumbnail to: " .. tempFile)
-        return tempFile
-    end
-    return nil
 end
 
 ---
@@ -3627,7 +3608,7 @@ function SearchIndexAPI.startClipDownload()
         end
 
         local progressScope = LrProgressScope({
-            title = LOC "$$$/StyleAI/ClipDownload/ProgressTitle=Downloading CLIP AI model for advanced search",
+            title = LOC "$$$/StyleAI/ClipDownload/ProgressTitle=Downloading StyleAI vision model",
             functionContext = nil,
         })
 
@@ -3725,17 +3706,12 @@ function SearchIndexAPI.checkServerHealth()
         -- 1. Check CLIP model
         if res.clip_model == "failed" then
             ErrorHandler.handleError(
-                LOC "$$$/StyleAI/Health/ClipFailed=AI search model failed to load.",
+                LOC "$$$/StyleAI/Health/ClipFailed=StyleAI vision model failed to load.",
                 res.clip_error or "Unknown error loading CLIP model."
             )
         end
 
-        -- 2. Check Face model
-        if res.face_model == "failed" then
-            log:warn("Face detection model failed to load on server: " .. tostring(res.face_error))
-        end
-
-        -- 3. Check LLM providers
+        -- 2. Check LLM providers
         local providers = res.llm_providers or {}
         local hasAvailable = false
         local failedProviders = {}
@@ -4093,13 +4069,12 @@ function SearchIndexAPI.getTrainingStats()
 end
 
 ---
--- Generate a style-matched edit recipe using the LLM-free style engine.
--- Falls back to LLM if use_llm_fallback=true and confidence is low.
+-- Generate a source-conditioned edit recipe using the learned policy runtime.
 -- @param photoId   string  Stable photo ID.
 -- @param filepath  string  Path to an exported JPEG preview.
 -- @param options   table   Same options as generateEditRecipe; extra keys:
---                           use_llm_fallback (bool), focal_length (number),
---                           capture_time (number unix), camera_make, camera_model,
+--                           focal_length (number), capture_time (number unix),
+--                           camera_make, camera_model,
 --                           iso, aperture, shutter_speed.
 -- @return boolean success, table|string response or error message
 ---
@@ -4120,7 +4095,6 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
             table.insert(mimeChunks, { name = key, value = tostring(options[key]) })
         end
     end
-    addStr("use_llm_fallback")
     addStr("focal_length")
     addStr("capture_time")
     addStr("camera_make")
@@ -4140,25 +4114,12 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
         table.insert(mimeChunks, { name = "filepath", value = options.raw_filepath })
     end
 
-    -- Standard edit options forwarded for LLM fallback compatibility
+    -- Learned-policy options.
     local function addEditOpt(key, value)
         if value ~= nil then
             table.insert(mimeChunks, { name = key, value = tostring(value) })
         end
     end
-    addEditOpt("provider", options.provider)
-    addEditOpt("model", options.model)
-    addEditOpt("language", options.language)
-    addEditOpt("temperature", options.temperature)
-    addEditOpt("include_masks", options.include_masks)
-    addEditOpt("adjust_white_balance", options.adjust_white_balance)
-    addEditOpt("adjust_basic_tone", options.adjust_basic_tone)
-    addEditOpt("adjust_presence", options.adjust_presence)
-    addEditOpt("adjust_color_mix", options.adjust_color_mix)
-    addEditOpt("do_color_grading", options.do_color_grading)
-    addEditOpt("use_tone_curve", options.use_tone_curve)
-    addEditOpt("adjust_detail", options.adjust_detail)
-    addEditOpt("adjust_effects", options.adjust_effects)
     addEditOpt("allow_auto_crop", options.allow_auto_crop)
     addEditOpt("allow_auto_rotate", options.allow_auto_rotate)
     addEditOpt("style_strength", options.style_strength)
@@ -4172,23 +4133,6 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
             contentType = "image/jpeg",
         })
     end
-    if options.darkPath and LrFileUtils.exists(options.darkPath) then
-        table.insert(mimeChunks, {
-            name = "image_dark",
-            fileName = LrPathUtils.leafName(options.darkPath),
-            filePath = options.darkPath,
-            contentType = "image/jpeg"
-        })
-    end
-    if options.brightPath and LrFileUtils.exists(options.brightPath) then
-        table.insert(mimeChunks, {
-            name = "image_bright",
-            fileName = LrPathUtils.leafName(options.brightPath),
-            filePath = options.brightPath,
-            contentType = "image/jpeg"
-        })
-    end
-
     log:trace("styleEdit: uploading photo_id=" .. tostring(photoId))
     local response, err = _requestMultipart(url, mimeChunks, 180)
     if not response then

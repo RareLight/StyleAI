@@ -44,11 +44,8 @@ class DatabaseNotReadyError(Exception):
 
 
 class CatalogOwnershipError(RuntimeError):
-    """Raised when a running backend is asked to switch Lightroom catalogs."""
+    """Raised when a running backend is asked to rebind its database path."""
 
-
-# InsightFace embeddings are 512-dimensional
-FACE_EMBEDDING_DIM = 512
 
 STATS_GET_LIMIT = 2_000_000
 COLLECTION_PAGE_SIZE = 1000
@@ -187,7 +184,7 @@ def add_image(photo_id, embedding, metadata, *, legacy_uuid=None):
     ChromaDB's requirements while still allowing metadata-only storage.
 
     Note: Metadata-only entries are marked with has_embedding=False in their
-    metadata and are filtered out of semantic search results in services/search.py.
+    metadata and are excluded from normal visual-index reads.
     They can still be found via metadata keyword searches.
     """
     _ensure_initialized()
@@ -481,6 +478,3 @@ def _cosine_distance(embedding_a, embedding_b):
     similarity = float(np.dot(embedding_a, embedding_b) / (norm_a * norm_b))
     similarity = max(-1.0, min(1.0, similarity))
     return 1.0 - similarity
-
-
-# --- Face embeddings collection API --0

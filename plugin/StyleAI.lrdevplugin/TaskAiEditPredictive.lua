@@ -1,1 +1,1 @@
-require("AiEditAction").run("trained")
+require("AiEditAction").run()

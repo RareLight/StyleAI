@@ -250,16 +250,6 @@ def health():
     # LLM Provider health
     health_data.update(get_analysis_service().get_health_status())
 
-    # Add face model status (simplified for now)
-    from services import face as service_face
-
-    if service_face._face_app is not None:
-        health_data["face_model"] = "loaded"
-        health_data["face_error"] = None
-    else:
-        health_data["face_model"] = "not_loaded"
-        health_data["face_error"] = None
-
     return jsonify(health_data)
 
 

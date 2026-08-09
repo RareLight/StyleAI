@@ -442,7 +442,7 @@ local function showAnalyzeAndIndexDialog(ctx)
 
 		UIFactory.Notice(f, {
 			kind = "info",
-			title = LOC "$$$/StyleAI/Prepare/Intro=Prepare photos for StyleAI search, editing, and optional local metadata generation.",
+			title = LOC "$$$/StyleAI/Prepare/Intro=Prepare photos for learned editing, training recommendations, and optional local metadata generation.",
 			width = 600,
 		}),
 
@@ -466,8 +466,8 @@ local function showAnalyzeAndIndexDialog(ctx)
                     },
                 },
             },
-            UIFactory.HelpText(f, {
-                title = LOC "$$$/StyleAI/Prepare/AnalyzeHelp=Creates local visual analysis used by semantic search and learned editing workflows.",
+			UIFactory.HelpText(f, {
+				title = LOC "$$$/StyleAI/Prepare/AnalyzeHelp=Creates local visual analysis used by learned editing and training recommendations.",
             }),
             f:row {
                 fill_horizontal = 1,

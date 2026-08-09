@@ -1,8 +1,6 @@
 """Tests for routes/style_edit.py — covers POST /style_edit."""
 
 import io
-from types import SimpleNamespace
-
 import pytest
 
 from core.migrations import run_migrations
@@ -161,40 +159,18 @@ def test_style_edit_honors_scoped_operation_cancel(client, mocker, tmp_path):
     run_edit.assert_not_called()
 
 
-def test_no_policy_match_can_use_explicit_local_llm_fallback(mocker):
+def test_low_confidence_policy_abstains_without_generative_fallback(mocker):
     mocker.patch("routes.style_edit._get_clip_embedding", return_value=[1.0, 0.0])
-    generate_style_edit = mocker.patch(
+    mocker.patch(
         "routes.style_edit.style_engine.generate_style_edit",
         return_value=StyleEngineResult(
-            recipe={},
-            confidence=0.0,
-            matched_count=0,
-            engine="none",
-            warning="No compatible policy",
+            recipe={"global": {"exposure": 0.25}},
+            confidence=0.1,
+            matched_count=3,
+            engine="policy_v2",
         ),
     )
-    query = mocker.patch(
-        "services.training.query_similar_training_examples",
-        return_value=[],
-    )
-    analysis = mocker.Mock()
-    analysis.generate_edit_recipe_single.return_value = SimpleNamespace(
-        success=True,
-        recipe={"global": {"exposure": 0.25}},
-        warning=None,
-        input_tokens=10,
-        output_tokens=5,
-    )
-    mocker.patch("services.metadata.get_analysis_service", return_value=analysis)
-    mocker.patch("routes.style_edit._persist_edit_recipe")
-    inference = mocker.patch(
-        "routes.style_edit.edit_history.create_recipe_inference",
-        return_value="inference-1",
-    )
-    mocker.patch(
-        "routes.style_edit._success_payload",
-        return_value={"status": "ok", "recipe": {"global": {"exposure": 0.25}}},
-    )
+    metadata_service = mocker.patch("services.metadata.get_analysis_service")
 
     from routes.style_edit import _run_single_style_edit
 
@@ -202,20 +178,13 @@ def test_no_policy_match_can_use_explicit_local_llm_fallback(mocker):
         "photo-1",
         b"jpeg",
         "photo.jpg",
-        {"do_not_clip": False},
+        {},
         camera_profile="Adobe Color",
-        use_llm_fallback=True,
     )
 
-    assert result["engine"] == "llm"
-    assert result["edit_inference_id"] == "inference-1"
-    assert inference.call_args.kwargs["engine"] == "llm"
-    assert "do_not_clip" not in generate_style_edit.call_args.kwargs
-    query.assert_called_once_with(
-        [1.0, 0.0],
-        n_results=3,
-        camera_profile="Adobe Color",
-    )
+    assert result["engine"] == "none"
+    assert result["error"] == "low_confidence"
+    metadata_service.assert_not_called()
 
 
 @pytest.mark.parametrize(

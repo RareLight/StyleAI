@@ -1,9 +1,8 @@
 # Plugin Manager Simplification Checklist
 
-This checklist governs the final StyleAI Plugin Manager cleanup. Preserve all
-backend APIs and recovery behavior unless a step explicitly changes only their
-presentation. Do not change catalog grouping, EXIF extraction, database schema,
-or editing-policy models.
+Status: implemented; remaining unchecked items require human Lightroom/platform
+validation. This is a historical implementation record. Current behavior is
+defined by `UI_BEHAVIOR_CONTRACTS.md` and the production code.
 
 ## Product rules
 

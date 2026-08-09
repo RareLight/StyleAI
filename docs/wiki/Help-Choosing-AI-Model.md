@@ -1,73 +1,29 @@
-# Help: Choosing an AI Model
+# Choosing a Local Metadata Model
 
-> The exact model lists exposed by the plugin come from the backend at runtime.
-> The names below reflect the curated lists shipped with the current backend
-> (`server/src/providers/`). Pricing and availability change over time — verify
-> with each provider before relying on production cost estimates.
+The model selector in **Prepare Photos → Metadata Settings** lists models from
+Ollama and LM Studio running on the same computer. These models generate text
+metadata only; they do not train or apply learned edits.
 
-## Decision factors
+Choose a vision-capable, instruction-following model that fits comfortably in
+available VRAM or unified memory. A model that triggers swap usually has worse
+end-to-end throughput than a smaller model. Compare candidates on a fixed,
+representative photo set using:
 
-Choose based on:
+- primary-subject and species/object accuracy;
+- unsupported-detail and background-noise rate;
+- keyword specificity and duplication;
+- title, caption, and alt-text usefulness;
+- structured-response reliability;
+- cold-start latency, per-photo latency, and peak memory.
 
-- privacy requirements
-- quality expectations (description detail, keyword accuracy, edit recipe sanity)
-- runtime per image and batch throughput
-- available local hardware (VRAM/RAM, Apple Silicon vs. discrete GPU)
+Start with a current 4B-class quantized vision model on modest hardware and an
+8B–12B-class model only when measured memory headroom is comfortable. Model
+names and quantizations change frequently, so use the provider's current vision
+model catalog rather than treating a hard-coded name as a compatibility list.
 
-## Local models
+On Apple Silicon, compare LM Studio MLX and Ollama/GGUF variants on the actual
+machine. The fastest runtime is not always the best metadata producer, and
+local LLM requests are intentionally serialized to avoid GPU context switching
+and unified-memory thrashing.
 
-Local providers run on your own machine, so privacy is the strongest argument
-for using them. Quality of small open-weights vision models has improved
-significantly; choose a capable local vision model that fits your available unified memory or VRAM.
-
-### Ollama
-
-Install and start Ollama from [ollama.com](https://ollama.com/), then pull at
-least one vision-capable model. Recommended starting points:
-
-```bash
-ollama pull qwen3-vl:4b-instruct-q4_K_M     # fast, ~6 GB VRAM
-ollama pull qwen3-vl:8b-instruct-q4_K_M     # better quality, ~10 GB VRAM
-ollama pull gemma3:4b-it-q4_K_M             # good general default
-ollama pull gemma3:12b-it-q4_K_M            # higher quality if you have VRAM
-ollama pull llava                            # legacy fallback
-```
-
-Browse all vision models: [ollama.com/search?c=vision](https://ollama.com/search?c=vision).
-See [Ollama Setup](Help-Ollama-Setup).
-
-### LM Studio
-
-Download from [lmstudio.ai](https://lmstudio.ai/download), enable server mode,
-and download one or more vision models from inside the app. Recommended:
-
-- `qwen/qwen3-vl-4b` — fast baseline.
-- `qwen/qwen3-vl-8b` — better description quality.
-- `google/gemma3-4b` / `google/gemma3-12b` — strong general-purpose options.
-
-On Apple Silicon prefer the **MLX** variants of the same model — they run
-significantly faster than the GGUF builds. See [LM Studio Setup](Help-LM-Studio-Setup).
-
-## Quick recommendations
-
-| Workflow                              | Suggested first try                              |
-| ------------------------------------- | ------------------------------------------------ |
-| Privacy-first / no API billing        | Ollama `qwen3-vl:8b` or LM Studio `qwen3-vl-8b`  |
-| Apple Silicon, local                  | LM Studio MLX build of `qwen3-vl` or `gemma3`    |
-
-## Practical recommendation
-
-The dropdown in *Prepare Photos* always reflects what the
-backend currently advertises — newer models that ship with future backend
-updates will appear automatically. If a model you expect is missing, check
-that the corresponding local server is configured and reachable
-from the backend (the *Plugin Manager → Status* section reports availability
-per provider).
-
-When evaluating, run the same batch of 10–20 representative photos through
-two candidates and compare:
-
-- keyword coverage and accuracy
-- description quality and language correctness
-- runtime per image and end-to-end batch time
-- system load
+See [Ollama Setup](Help-Ollama-Setup) and [LM Studio Setup](Help-LM-Studio-Setup).

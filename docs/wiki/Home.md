@@ -1,42 +1,29 @@
 # StyleAI Wiki
 
-Welcome to the project wiki.
+StyleAI is a local-first Lightroom Classic assistant that learns editing
+decisions, applies high-confidence absolute Develop targets, builds a local
+visual index, and optionally generates metadata with a local vision-language
+model.
 
-## Quick links
+## User guides
 
 - [Getting Started](Getting-Started)
 - [Plugin Guide](Plugin-Guide)
-- [Background Service Guide](Background-Service-Guide)
-- [Help: Prepare Photos](Help-Analyze-and-Index)
-- [Help: Choosing AI Model](Help-Choosing-AI-Model)
-- [Help: Ollama Setup](Help-Ollama-Setup)
-- [Help: LM Studio Setup](Help-LM-Studio-Setup)
-- [Project README](Project-README)
-- [Plugin README](Plugin-README)
-- [Background Service README](Background-Service-README)
+- [Prepare Photos](Help-Analyze-and-Index)
+- [Choosing a Local Metadata Model](Help-Choosing-AI-Model)
+- [Ollama Setup](Help-Ollama-Setup)
+- [LM Studio Setup](Help-LM-Studio-Setup)
+- [Data, Privacy, and Security](Privacy-and-Security)
 - [Troubleshooting](Troubleshooting)
-- [Credits & Dependencies](Credits)
 
-## Dev
+## Developer references
 
-- [Architecture](Architecture)
+- [Architecture and Data Pipelines](Architecture)
 - [Developer Guide](Developer-Guide)
-- [Testing the Update Mechanism](Dev-Testing-Update-Mechanism)
-
-## Important note
-
-The new DB backup workflow is documented in:
-
-- [Getting Started](Getting-Started)
 - [Background Service Guide](Background-Service-Guide)
-- [Background Service README](Background-Service-README)
+- [Background Service Reference](Background-Service-README)
+- [Credits and Dependencies](Credits)
 
-## What is StyleAI?
-
-StyleAI is an AI extension for Lightroom Classic featuring:
-
-- Personalized edit style learning (Style Catalog)
-- Automated develop edits slider prediction (AI Develop Edits)
-- AI metadata generation (titles, captions, keywords)
-
-For project overview and release info, see the main repository README.
+The active Lightroom catalog owns one adjacent `styleai.db`. StyleAI backups
+protect that AI data only; use Lightroom's own backup workflow for the catalog,
+source photos, and Develop history.

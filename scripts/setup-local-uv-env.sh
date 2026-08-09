@@ -21,7 +21,7 @@ usage() {
 Usage: scripts/setup-local-uv-env.sh [options]
 
 Options:
-  --no-dev             Omit the dev dependency group (matches the production Dockerfile)
+  --no-dev             Omit the development dependency group
   --python <version>   Pin the venv to a specific Python version (default: from .python-version)
   -h, --help           Show this help message
 

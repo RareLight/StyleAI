@@ -1,64 +1,93 @@
 # Troubleshooting
 
-> Tips and solutions for common issues when running StyleAI.
+Start in **File → Plug-in Manager → StyleAI**. Status & Setup reports the local
+service, SigLIP2 model, and optional metadata-provider readiness. Support &
+Debug can generate a local diagnostic report.
 
-## GUI Error Reporting
+## Service is unreachable
 
-Recent versions of StyleAI have transitioned from silent, log-file-based error tracking to transparent, actionable GUI error dialogs directly within Lightroom. This means that if something fails behind the scenes—whether during batch indexing or AI editing—you will be notified immediately.
+- Confirm no unrelated application owns loopback port 19819.
+- Use **Repair Background Service** when it appears.
+- For source development, quit Lightroom and run
+  `bash scripts/styleai-installer.sh redeploy`; this stops a recognized StyleAI
+  backend, verifies port release, and atomically replaces the plug-in tree.
+- If an unsigned packaged binary was quarantined, follow the exact release-note
+  instructions for that downloaded package.
 
-### Task Completion Summaries
+Do not manually kill an unknown process on port 19819. The management script
+refuses to do so.
 
-When running bulk operations like **Prepare Photos** or **Apply My Style**, you may process hundreds of images at once. If any single image fails (e.g., due to an API timeout), the overall task will continue. At the end of the batch process, a **Task Completion Dialog** will systematically aggregate and display a summary of:
-- Successfully processed photos
-- Photos that encountered errors
+## Vision model is missing or failed
 
-A detailed report of the errors will be attached to the dialog, enabling you to identify exactly which images need to be re-run and why they failed without scouring backend logs.
+SigLIP2 is required for visual analysis, training, recommendations, and learned
+editing. Use **Configure Local Models...** or, in a source checkout, run:
 
-## Common Issues
+```sh
+cd server
+uv run python scripts/download_models.py
+```
 
-### 0. Installer & Security Warnings (SmartScreen / Gatekeeper)
+Check local cache permissions and free disk space. `/clip/status` and `/health`
+contain the service-side readiness state.
 
-Since StyleAI installers are not currently code-signed, your OS may block them.
+## Metadata model is unavailable or slow
 
-- **Symptom**: "Windows protected your PC" or "StyleAI.pkg cannot be opened because it is from an unidentified developer".
-- **Resolution**: Refer to the [Getting Started](Getting-Started#%E2%9A%A0%EF%B8%8F-bypassing-security-warnings-unsigned-installers) guide for OS-specific bypass steps. This is a one-time requirement during installation.
+- Metadata generation requires a vision-capable Ollama or LM Studio model on
+  the same computer. Learned editing does not.
+- Ensure the provider is running and the model is loaded/listed.
+- If macOS swaps or Lightroom becomes unresponsive, choose a smaller model and
+  leave processing load on Automatic. Local LLM requests are already serialized;
+  launching overlapping metadata batches queues rather than multiplying model
+  contexts.
+- Re-run only failed photos. Per-photo durable state allows the rest of a batch
+  to complete.
 
-### 1. Missing OpenCLIP Model
+## Selected-photo scope processes the wrong photos
 
-When you first launch the backend, it may need to download the selected OpenCLIP model to generate vector embeddings for semantic search. If the model hasn't finished downloading or could not be downloaded (e.g., due to network issues):
+Select photos in Library grid/filmstrip before opening the workflow. StyleAI
+captures that target-photo selection before its modal dialog. Reload the
+current plug-in if behavior differs, and include the plug-in log in a support
+report.
 
-- **Symptom**: The backend starts, but semantic search or indexing immediately fails.
-- **Resolution**: Lightroom will now display a specific warning dialog indicating that the OpenCLIP model is missing. Check your internet connection and ensure the backend server has write permissions to download the models into its cache directory. The `/status` endpoint monitors whether the specific model is successfully cached locally.
+## Metadata repeats another photo
 
-### 2. Backend Server Connection Failed
+Current metadata jobs retain each photo's own pixels and perform independent
+vision inference. Do not continue a batch if output clearly describes a
+different image. Generate a support report; if Debug capture is explicitly
+enabled, inspect the affected local capture and clear it after troubleshooting.
+Reprocess affected photos with **Replace selected StyleAI-generated data**.
 
-Lightroom communicates with the `styleai-server` over a local network port (default: 8000).
+## No learned styles or frequent abstention
 
-- **Symptom**: "Cannot connect to server" or "Connection Refused" errors.
-- **Resolution**: 
-  1. Open `File -> Plug-in Manager -> StyleAI -> Backend Server`.
-  2. Verify the local background service is running on `http://127.0.0.1:19819`.
-  3. Ensure the server terminal/console hasn't crashed.
+- Run **Learn From My Edits...** or **Styles & Training → Rebuild Learned
+  Styles** after changing training data.
+- Each compatible HDR/profile partition needs at least 12 valid burst-curated
+  examples. More examples may be required for stable multi-policy recognition,
+  profile/HDR Auto eligibility, or underrepresented visual components.
+- Panoramas and non-RAW/DNG files are excluded from training.
+- Suggest can be available when Auto is not; Auto uses stricter selective
+  precision, uncertainty, compatibility, and exact-readback gates.
+- Do not weaken ambiguity gates to force coverage. Add representative edited
+  examples and evaluate the policy instead.
 
-### 3. Local Model Timeout
+## Apply My Style skips a photo
 
-Local AI models (via LM Studio or Ollama) can take longer to process on machines without sufficient GPU or unified-memory capacity.
+Expected safe skips include no active compatible partition, low/ambiguous
+membership, missing target-independent evidence, unavailable profile/HDR state,
+or Lightroom readback mismatch. The completion summary and logs distinguish
+skips from errors. Apply My Style never falls back to an LLM edit.
 
-- **Symptom**: Lightroom displays a timeout error during image analysis.
-- **Resolution**: Ensure your local LLM server is actually running and the model is loaded into memory before starting the batch job in Lightroom. You may also need to process smaller batches of photos at a time.
+## Undo and evaluation state
 
-### 5. Missing or Outdated Editing Policies
+Lightroom Undo can revert applied settings, but the immutable inference remains
+in StyleAI history. Reconciliation records `reverted` or `diverged`; neither is
+treated as acceptance or rejection. Use **Rate Selected AI Edits...** only for
+an explicit quality judgment. A StyleAI database restore cannot undo Lightroom
+Develop changes.
 
-- **Symptom**: The Styles Index is empty, an edit reports no active policy, or
-  recommendations still reflect an older training run.
-- **Resolution**: Open **StyleAI → Styles Index** and choose **Reset & Discover**,
-  or rerun **Learn From My Edits**. Policy training builds a complete inactive
-  generation and activates it atomically, so the prior generation remains
-  usable if a rebuild fails.
-- **Minimum support**: Each compatible HDR/profile partition needs at least 12
-  valid, non-panorama burst-curated examples.
-- **Rendering suggestions versus Auto**: A categorical selector can provide
-  suggestions with limited but separable evidence while Auto remains unavailable.
-  Auto additionally requires cross-fitted per-class precision and uncertainty
-  gates; six examples per selector class is only a fitting floor, not a promise
-  that Auto will be enabled.
+## Discovery or recommendation rebuild fails
+
+Styles & Training starts a background rebuild and polls durable status. A failed
+candidate generation must leave the prior active generation usable. Generate a
+support report before retrying; repeated attempts are coalesced rather than
+fitting once per upload chunk.

@@ -1,7 +1,7 @@
 [project]
 name = "styleai-server"
 version = "0.8.2"
-description = "Flask server to handle plugin requests to LLMs and Metadata"
+description = "Local backend for StyleAI image analysis, metadata generation, and learned Lightroom editing policies"
 readme = "README.md"
 requires-python = ">=3.12.0"
 dependencies = [
@@ -9,11 +9,9 @@ dependencies = [
     "flask>=3.1.3",
     "ftfy>=6.3.1",
     "huggingface-hub>=1.12.0",
-    "insightface>=0.7.3",
     "lmstudio>=1.5.0",
     "numpy>=2.4.4",
     "ollama>=0.6.1",
-    "onnxruntime>=1.25.0",
     "open-clip-torch>=3.3.0",
     "pillow>=12.2.0",
     "psutil>=7.2.2",
@@ -31,6 +29,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pyinstaller>=6.22.0",
     "pytest>=8.0.0",
     "pytest-cov>=7.1.0",
     "pytest-mock>=3.12.0",

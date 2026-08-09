@@ -1,5 +1,8 @@
 # UI Overhaul Release Notes
 
+These notes describe the completed 0.8-era UI transition. For the maintained
+UI contract, use `UI_BEHAVIOR_CONTRACTS.md`.
+
 ## Navigation and workflow names
 
 - Lightroom's cross-module **File > Plug-in Extras** menu is now the canonical

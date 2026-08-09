@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def main():
     logger.info("Bootstrapping models for StyleAI...")
 
-    # 1. Download OpenCLIP model (SigLIP2)
+    # Download OpenCLIP model (SigLIP2)
     try:
         from huggingface_hub import hf_hub_download
 
@@ -43,18 +43,6 @@ def main():
         logger.info("OpenCLIP model cached successfully!")
     except Exception as e:
         logger.error(f"Failed to cache OpenCLIP model: {e}")
-
-    # 2. Download InsightFace model (buffalo_l)
-    try:
-        from insightface.app import FaceAnalysis
-
-        logger.info("Downloading InsightFace buffalo_l models...")
-        # FaceAnalysis implicitly downloads buffalo_l to ~/.insightface/models/ if not present
-        app = FaceAnalysis(name="buffalo_l")
-        app.prepare(ctx_id=0, det_size=(640, 640))
-        logger.info("InsightFace models cached successfully!")
-    except Exception as e:
-        logger.error(f"Failed to cache InsightFace models: {e}")
 
     logger.info("Done.")
 

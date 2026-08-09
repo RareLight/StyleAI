@@ -86,11 +86,8 @@ class LLMProviderBase(ABC):
     Abstract base class for local LLM providers (Ollama, LM Studio).
     """
 
-    def __init__(self, config: dict[str, Any]):
-        """
-        Initialize provider with configuration.
-        """
-        self.config: dict[str, Any] = config
+    def __init__(self):
+        """Initialize a local provider adapter."""
         self.provider_name: str = self.__class__.__name__
 
     @abstractmethod

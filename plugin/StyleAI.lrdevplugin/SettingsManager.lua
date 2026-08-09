@@ -10,19 +10,14 @@ function SettingsManager.initializeDefaults()
     local defaultMap = {
         ai = "",
         generateLanguage = Defaults.defaultGenerateLanguage,
-        exportSize = Defaults.defaultExportSize,
-        exportQuality = Defaults.defaultExportQuality,
         useClip = true,
-        usePreviewThumbnails = true,
         showPhotoContextDialog = true,
         submitKeywords = true,
         temperature = Defaults.defaultTemperature,
-        maxTokens = Defaults.defaultMaxTokens,
         generateKeywords = true,
         generateCaption = true,
         generateAltText = true,
         enableValidation = true,
-        showCosts = true,
         bilingualKeywords = Defaults.defaultBilingualKeywords,
         keywordSecondaryLanguage = Defaults.defaultKeywordSecondaryLanguage,
         keywordAliases = Defaults.defaultKeywordAliases,
@@ -31,22 +26,13 @@ function SettingsManager.initializeDefaults()
         useTopLevelKeyword = true,
         prompts = { Default = Defaults.defaultSystemInstruction },
         prompt = Defaults.defaultPromptName,
-        editPrompts = { Default = Defaults.defaultEditSystemInstruction },
-        editPrompt = Defaults.defaultEditPromptName,
         periodicalUpdateCheck = false,
         debugMode = false,
         captureLlmInputs = false,
         submitFolderName = false,
         useGlobalPhotoId = true,
-        useLightroomKeywords = false,
         topLevelKeyword = Defaults.defaultTopLevelKeyword,
         knownTopLevelKeywords = Defaults.defaultTopLevelKeywords,
-        searchInSemanticSiglip = true,
-        searchInMetadata = true,
-        searchInMetadataKeywords = true,
-        searchInMetadataCaption = true,
-        searchInMetadataTitle = true,
-        searchInMetadataAltText = true,
     }
 
     for key, defaultValue in pairs(defaultMap) do
@@ -81,18 +67,6 @@ function SettingsManager.initializeDefaults()
         end
     end
 
-    if type(prefs.editPrompts) == "table" and prefs.editPrompts["Default"] then
-        local current = prefs.editPrompts["Default"]
-        if current ~= Defaults.defaultEditSystemInstruction then
-            for _, legacy in ipairs(Defaults.legacyEditSystemInstructions or {}) do
-                if current == legacy then
-                    prefs.editPrompts["Default"] = Defaults.defaultEditSystemInstruction
-                    break
-                end
-            end
-        end
-    end
-    
 end
 
 --- Get a preference

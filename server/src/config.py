@@ -110,9 +110,6 @@ parser.add_argument(
     action="store_true",
     help="Enable debug mode with auto-reloading and debug log level",
 )
-parser.add_argument(
-    "--host", type=str, default="127.0.0.1", help="Bind address for the server"
-)
 parser.add_argument("--port", type=int, default=19819, help="Port to run the server on")
 parser.add_argument(
     "--force-cpu-clip", action="store_true", help="Force CPU for CLIP inference"
@@ -146,12 +143,6 @@ parser.add_argument(
     default=3,
     help="Maximum number of log backups to keep",
 )
-parser.add_argument(
-    "--insightface-root",
-    type=str,
-    default=os.path.expanduser("~/.insightface"),
-    help="Directory for InsightFace models",
-)
 args = parser.parse_args()
 
 # --- Constants ---
@@ -182,7 +173,6 @@ def get_torch_device():
     elif sys.platform == "win32":  # Windows
         _torch_device = "cpu"
     else:
-        # Linux (e.g. Docker): CPU; set CUDA in container if needed
         _torch_device = "cuda" if torch.cuda.is_available() else "cpu"
 
     return _torch_device
@@ -218,8 +208,7 @@ METADATA_GENERATION_USER_PROMPT_TEMPLATE = """Analyze the uploaded photo and gen
 
 All results should be generated in {language}."""
 
-# --- LLM Provider Configuration ---
-# Environment variables or default values for external LLM providers
+# --- Local LLM Provider Configuration ---
 
 # Default provider selection (can be overridden per request)
 DEFAULT_METADATA_PROVIDER = "ollama"
@@ -310,12 +299,6 @@ except Exception:
 log_level = logging.DEBUG if args.debug else logging.INFO
 
 
-# When running locally (not in Docker), on every start create a new log file and keep N backups.
-# In Docker we keep a single file so container logs stay simple.
-def _is_running_in_docker() -> bool:
-    return os.path.exists("/.dockerenv") or os.environ.get("container") == "docker"
-
-
 def _rotate_log_on_startup(log_path: str, backup_count: int) -> None:
     """Shift existing log files: .log -> .log.1, .log.1 -> .log.2, ...; remove .log.backup_count."""
     if backup_count <= 0 or not os.path.isfile(log_path):
@@ -351,9 +334,7 @@ def _file_log_handler():
     except Exception:
         pass
 
-    if _is_running_in_docker():
-        return logging.FileHandler(LOG_PATH, encoding="utf-8")
-    # Local: on every start create a new log file; keep N backups (STYLEAI_LOG_ROTATE_BACKUPS).
+    # On every start create a new log file and keep a bounded history.
     try:
         backup_count = args.log_rotate_backups
     except ValueError:
@@ -374,8 +355,7 @@ logging.basicConfig(
     handlers=handlers,
 )
 logger = logging.getLogger("styleai-server")
-if not _is_running_in_docker():
-    logger.info(
-        "Log file rotation on startup enabled for %s (STYLEAI_LOG_ROTATE_BACKUPS)",
-        LOG_PATH,
-    )
+logger.info(
+    "Log file rotation on startup enabled for %s (STYLEAI_LOG_ROTATE_BACKUPS)",
+    LOG_PATH,
+)

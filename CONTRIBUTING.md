@@ -1,106 +1,92 @@
 # Contributing to StyleAI
 
-Welcome! We're excited that you're interested in contributing to **StyleAI**. This project aims to bring powerful AI capabilities to Adobe Lightroom Classic, and your help is vital to making it better for everyone.
+StyleAI is an AGPL-3.0 local-first Lightroom Classic plug-in. Read
+[`AGENTS.md`](AGENTS.md) and the [architecture guide](docs/wiki/Architecture.md)
+before changing behavior.
 
-By contributing, you agree to abide by the terms of our [LICENSE](LICENSE) (AGPL-3.0).
+## Development setup
 
----
+Requirements: Git, `uv`, Python 3.12+, and Lightroom Classic for integration
+testing.
 
-## 🚀 Getting Started
+```sh
+git clone https://github.com/YOUR_USERNAME/StyleAI.git
+cd StyleAI
+bash scripts/setup-local-uv-env.sh
+```
 
-### 1. Fork and Clone
-- Fork the repository on GitHub.
-- Clone your fork locally:
-  ```bash
-  git clone https://github.com/YOUR_USERNAME/StyleAI.git
-  cd StyleAI
-  ```
+The backend environment is locked by `server/pyproject.toml` and
+`server/uv.lock`. Use `uv add`/`uv add --dev`; never add `requirements.txt`.
 
-### 2. Set Up the Development Environment
+Add `plugin/StyleAI.lrdevplugin` through Plug-in Manager for source testing, or
+build an isolated developer package:
 
-#### Backend (Python)
-We use `uv` for dependency management.
-- Install [uv](https://github.com/astral-sh/uv).
-- Run the setup script:
-  ```bash
-  bash scripts/setup-local-uv-env.sh
-  ```
-- This will create a `.venv`, install dependencies, and set up the environment.
+```sh
+python scripts/package_lrc_plugin.py developer
+```
 
-#### Plugin (Lua)
-- The plugin code is located in the `plugin/StyleAI.lrdevplugin` directory.
-- To test changes, you can link this directory into your Lightroom `Modules` folder or add it via the Lightroom **Plug-in Manager**.
+The generated `build/StyleAI-dev.lrdevplugin` contains developer-only Help menu
+commands. The checked-in plug-in remains a release build.
 
-#### Pre-commit Hooks
-To ensure code consistency, we use `pre-commit` for automatic formatting and linting.
-- Install `pre-commit`: `uv tool install pre-commit` (or `brew install pre-commit`).
-- Install the git hooks:
-  ```bash
-  pre-commit install
-  ```
-- Now, `ruff` (Python) and `stylua` (Lua) will run automatically on every commit.
+## Implementation rules
 
----
+- Keep the service loopback-only and catalog-local. Do not add cloud providers,
+  remote hosts, API keys, telemetry, or cross-catalog routing.
+- Put HTTP parsing in `server/src/routes`, business logic in `services`, and
+  Ollama/LM Studio integration in `providers`.
+- Surface user errors in Lightroom through `ErrorHandler`; log Python
+  exceptions through the configured logger with `exc_info=True`.
+- Run long Lua work asynchronously with `LrTasks.pcall`; batch catalog writes
+  and never yield inside a write transaction. Shutdown uses the documented
+  native-`pcall` no-I/O exception.
+- Preserve durable operation jobs, resource admission, catalog ownership,
+  atomic policy activation, immutable edit history, and the distinction between
+  visual-index and training collections.
+- Learned editing predicts absolute targets and abstains on ambiguity. Do not
+  introduce genre taxonomies or keyword-based membership gates.
+- Update tests when behavior changes and update user/architecture documentation
+  in the same pull request.
 
-## 🛠️ Development Guidelines
+## Validation
 
-### General Rules
-- **Error Handling**: All user-facing errors must be surfaced in the Lightroom GUI using `ErrorHandler.handleError`. Avoid silent failures.
-- **Logging**:
-    - **Plugin**: Use `log:error`, `log:warn`, `log:info`, and `log:trace`.
-    - **Backend**: Use the configured `logger` and include `exc_info=True` for exceptions.
-- **Infrastructure**: Update `Dockerfile` and `docker-compose-*.yml` when changing dependencies or environment requirements.
+Run the relevant focused tests while iterating, then the complete checks:
 
-### Plugin Development (Lua)
-- **Asynchronicity**: Long-running operations **must** run in `LrTasks.startAsyncTask`.
-- **Yielding**: Use `LrTasks.pcall` instead of native `pcall` to allow for yielding during asynchronous operations.
-- **Naming Conventions**: Top-level plugin actions should follow the `Task*.lua` naming convention.
-- **Localization**: All GUI strings **must** be localized using the `LOC` function. Keep `TranslatedStrings_de.txt` (German) and `TranslatedStrings_fr.txt` (French) synchronized with English.
-- **Utilities**: Use `Util.lua` for common logic.
-- **Photo Identity**: Use `Util.getGlobalPhotoIdForPhoto` for stable identity
-  within the active catalog. Never add cross-catalog routing or shared database
-  ownership.
+```sh
+bash server/scripts/lint_format.sh
+cd server && uv run pytest test/
+cd ..
+python scripts/validate_lrc_plugin.py
+```
 
-### Backend Development (Python/Flask)
-- **Structure**:
-    - Endpoints: Use Flask Blueprints (`routes/*.py`).
-    - Business Logic: Keep in the service layer (`services/*.py`).
-- **API Response**: Return structured JSON with `results`, `error`, and `warning` fields.
-- **Lifecycle**: Respect `server_lifecycle.py` for PID management.
-- **Formatting**: Format code with `uv run ruff format` and ensure `server/scripts/lint_format.sh` passes.
+Run `python scripts/package_lrc_plugin.py developer`, reload that package in a
+disposable catalog, and use **Developer: Run Automated Tests...** for changes
+that cross the Lua/backend boundary. Follow `docs/UI_HUMAN_TEST_MATRIX.md` for
+UI or catalog-changing work.
 
----
+Policy/recommendation changes must also run:
 
-## 📖 Documentation
-- Wiki pages are located in `docs/wiki/`.
-- Changes pushed to `main` automatically update the GitHub Wiki via `.github/workflows/publish-wiki.yml`.
-- You can build wiki pages locally using `bash scripts/build-wiki-pages.sh`.
+```sh
+cd server
+uv run python scripts/evaluate_editing_policies.py
+uv run python scripts/benchmark_policy_scaling.py
+```
 
----
+Use the catalog evaluators only against a local test catalog; they are
+evaluation-only and do not activate models.
 
-## ✅ Testing
-- **Smoke Tests**: Run `TaskAutomatedTests.lua` within Lightroom to verify plugin-backend connectivity.
-- **Backend Tests**: Run tests in `server/test/` using `pytest`.
+## Documentation and localization
 
----
+- Source wiki pages live in `docs/wiki/`; `Project-README.md` is generated from
+  the root README by `bash scripts/build-wiki-pages.sh`.
+- Wrap all user-visible Lua strings in `LOC()`.
+- Keep `TranslatedStrings_en.txt`, `TranslatedStrings_ca.txt`,
+  `TranslatedStrings_de.txt`, `TranslatedStrings_es.txt`, and
+  `TranslatedStrings_fr.txt` synchronized. Run `python sync_translations.py`
+  and the plug-in validator, then inspect any locale the sync helper does not
+  update mechanically.
 
-## 📬 Pull Request Process
-1. Create a new branch for your feature or bugfix: `git checkout -b feature/my-cool-feature`.
-2. Commit your changes. Ensure pre-commit hooks pass.
-3. Update `CHANGELOG.md` with a summary of your changes under the `[Unreleased]` section.
-4. Push to your fork and open a Pull Request against the `main` branch.
-5. Provide a clear description of the changes and how you verified them.
+## Pull requests
 
----
-
-## 🌍 Translations
-When adding or modifying user-facing strings, you **must** update all three translation files in the plugin directory:
-- `TranslatedStrings_en.txt` (English)
-- `TranslatedStrings_de.txt` (German)
-- `TranslatedStrings_fr.txt` (French)
-
-You can use the `sync_translations.py` script to help maintain consistency.
-
----
-
-Thank you for contributing to StyleAI! 📸✨
+Keep changes scoped, explain data or compatibility effects, list exact checks
+run, and identify Lightroom-only validation that remains. Never include
+catalog databases, photos, model caches, logs, diagnostic captures, or secrets.

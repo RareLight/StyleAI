@@ -1,13 +1,9 @@
 """
 Flask blueprint: POST /style_edit
 
-LLM-free style-matched edit endpoint.  Given a photo and its JPEG preview,
-the style engine matches the photo against the user's saved training examples
-and returns an interpolated Lightroom edit recipe — no LLM call required.
-
-When the training set is too small or confidence is too low and
-``use_llm_fallback=true``, the request is transparently forwarded to
-the regular LLM-backed edit pipeline (re-using existing few-shot injection).
+Given a photo and its JPEG preview, the policy runtime predicts absolute
+Lightroom targets from the user's saved training examples. Ambiguous or
+low-confidence matches abstain rather than invoking a generative fallback.
 """
 
 from __future__ import annotations
@@ -60,19 +56,14 @@ def _persist_inference(
 ) -> str:
     if not config.DB_PATH:
         raise RuntimeError("StyleAI database path is not configured")
-    is_policy = engine == "policy_v2"
     return edit_history.create_recipe_inference(
         db_path=config.DB_PATH,
         photo_id=photo_id,
         recipe=recipe,
         current_settings=options.get("current_settings") or {},
         engine=engine,
-        algorithm_version=(
-            policy_runtime.POLICY_ALGORITHM_VERSION
-            if is_policy
-            else "local-llm-edit-v1"
-        ),
-        feature_schema_version=(FEATURE_SCHEMA_VERSION if is_policy else "local-llm"),
+        algorithm_version=policy_runtime.POLICY_ALGORITHM_VERSION,
+        feature_schema_version=FEATURE_SCHEMA_VERSION,
         target_schema_version=TARGET_SCHEMA_VERSION,
         generation_id=getattr(result, "generation_id", None),
         policy_id=getattr(result, "policy_id", None),
@@ -112,15 +103,12 @@ def _run_single_style_edit(
     filename: str,
     options: dict[str, Any],
     *,
-    image_bytes_dark: bytes | None = None,
-    image_bytes_bright: bytes | None = None,
     focal_length: float | None = None,
     capture_time_unix: float | None = None,
     camera_make: str | None = None,
     camera_model: str | None = None,
     camera_profile: str | None = None,
     user_keywords: list[str] | None = None,
-    use_llm_fallback: bool = False,
     job_id: str | None = None,
 ) -> dict[str, Any]:
     """Run the style engine for a single photo. Returns a result dict."""
@@ -217,81 +205,10 @@ def _run_single_style_edit(
             min_confidence=CONFIDENCE_LOW,
             current_settings=options.get("current_settings"),
             style_strength=options.get("style_strength"),
-            style_override=options.get("style_override"),
             profile_mode=options.get("profile_mode", "suggest"),
             hdr_mode=options.get("hdr_mode", "suggest"),
             source_provenance=source_provenance,
         )
-
-    # An explicitly enabled local-LLM fallback also covers safe ML abstentions.
-    if (
-        result.engine != "error"
-        and result.confidence < CONFIDENCE_LOW
-        and use_llm_fallback
-    ):
-        logger.info(
-            "Style engine confidence %.3f below threshold for photo_id=%s, falling back to LLM",
-            result.confidence,
-            photo_id,
-        )
-        from services.metadata import get_analysis_service
-        from services import training as training_service
-
-        if clip_embedding is not None:
-            training_examples = training_service.query_similar_training_examples(
-                clip_embedding,
-                n_results=3,
-                camera_profile=camera_profile,
-            )
-        else:
-            training_examples = []
-        options["use_training_style"] = False
-        options["_injected_training_examples"] = training_examples
-
-        analysis_service = get_analysis_service()
-        if image_bytes_dark and image_bytes_bright:
-            image_data = [image_bytes_dark, image_bytes, image_bytes_bright]
-        else:
-            image_data = image_bytes
-
-        with operations.admission.acquire(
-            {"accelerator": 1, "llm": 1, "cpu_prepare": 1},
-            priority=8,
-            cancel_event=cancel_signal,
-        ):
-            llm_response = analysis_service.generate_edit_recipe_single(
-                photo_id, image_data, options
-            )
-
-        if not llm_response.success or not llm_response.recipe:
-            return {
-                "status": "error",
-                "engine": "llm",
-                "photo_id": photo_id,
-                "error": llm_response.error or "LLM edit generation failed",
-            }
-
-        _filter_recipe_crop_rotate(llm_response.recipe, options)
-        with operations.admission.acquire({"catalog_write": 1}, priority=9):
-            _persist_edit_recipe(photo_id, filename, llm_response.recipe, options)
-            inference_id = _persist_inference(
-                photo_id=photo_id,
-                recipe=llm_response.recipe,
-                options=options,
-                result=result,
-                engine="llm",
-            )
-        payload = _success_payload(
-            photo_id, llm_response.recipe, options, warning=llm_response.warning
-        )
-        payload["engine"] = "llm"
-        payload["confidence"] = round(result.confidence, 3)
-        payload["matched_examples"] = result.matched_count
-        payload["style_engine_note"] = result.warning
-        payload["input_tokens"] = llm_response.input_tokens
-        payload["output_tokens"] = llm_response.output_tokens
-        payload["edit_inference_id"] = inference_id
-        return payload
 
     # Style engine had an explicit error (e.g. predictive ML model failure)
     if result.engine == "error":
@@ -306,7 +223,7 @@ def _run_single_style_edit(
             "message": result.error or "Predictive ML engine failed to run.",
         }
 
-    # Style engine had no result and fallback disabled (or engine was none) — return error
+    # The policy runtime could not produce a compatible result.
     if result.engine == "none":
         return {
             "status": "error",
@@ -318,8 +235,8 @@ def _run_single_style_edit(
             "message": result.warning or "Style engine could not produce a result.",
         }
 
-    # Style engine has low confidence and LLM fallback is disabled
-    if result.confidence < CONFIDENCE_LOW and not use_llm_fallback:
+    # Ambiguous matches abstain rather than blending or generating a fallback.
+    if result.confidence < CONFIDENCE_LOW:
         return {
             "status": "error",
             "engine": "none",
@@ -523,7 +440,6 @@ def style_edit():
     Multipart/form-data fields (per photo, use array notation [] for batch):
         image[]           (file, JPEG/PNG preview — required)
         photo_id[]        (str — required)
-        use_llm_fallback  (bool string "true"/"false" — default: "false")
         focal_length      (number, mm — optional, shared across batch)
         capture_time      (float, unix timestamp — optional)
         camera_make       (string, optional)
@@ -531,15 +447,13 @@ def style_edit():
         camera_profile    (string, optional)
         user_keywords     (string, comma-separated — optional)
 
-    Standard options passed through ``_extract_options`` include the selected
-    local provider/model, language, and temperature.
+    Standard options passed through ``_extract_options`` control target families,
+    rendering-state selection, and application safety.
     """
     logger.info("Style edit request received")
     operations.refresh_system_pressure()
 
     images = request.files.getlist("image")
-    images_dark = request.files.getlist("image_dark")
-    images_bright = request.files.getlist("image_bright")
     photo_ids = _extract_photo_ids(request.form)
     valid_rendering_modes = {"off", "suggest", "auto"}
     for field in ("profile_mode", "hdr_mode"):
@@ -597,12 +511,6 @@ def style_edit():
                 400,
             )
         operations.set_job_state(config.DB_PATH, job_id, "running")
-
-    use_llm_fallback = request.form.get("use_llm_fallback", "false").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
 
     focal_length: float | None = None
     try:
@@ -669,24 +577,18 @@ def style_edit():
             operations.set_item_state(config.DB_PATH, job_id, photo_id, "running")
 
         image_bytes = file.read()
-        image_bytes_dark = images_dark[i].read() if i < len(images_dark) else None
-        image_bytes_bright = images_bright[i].read() if i < len(images_bright) else None
-
         try:
             result = _run_single_style_edit(
                 photo_id=photo_id,
                 image_bytes=image_bytes,
                 filename=file.filename or "",
                 options=options,
-                image_bytes_dark=image_bytes_dark,
-                image_bytes_bright=image_bytes_bright,
                 focal_length=focal_length,
                 capture_time_unix=capture_time_unix,
                 camera_make=camera_make,
                 camera_model=camera_model,
                 camera_profile=camera_profile,
                 user_keywords=user_keywords,
-                use_llm_fallback=use_llm_fallback,
                 job_id=job_id,
             )
         except InterruptedError:

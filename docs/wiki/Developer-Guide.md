@@ -1,343 +1,256 @@
 # Developer Guide
 
-Welcome to the StyleAI Developer Guide! This document provides upstream maintainers and curious contributors with an overview of the recent massive architectural refactoring, and details on how to build and extend the plugin.
+This guide describes the current StyleAI frontend/backend contract. Repository
+rules in [`AGENTS.md`](../../AGENTS.md) are authoritative.
 
-## 0. Lightroom packages
+## Setup and packages
 
-The checked-in `plugin/StyleAI.lrdevplugin` tree is the release source and does
-not register developer Help commands. Build a disposable package with literal
-developer menu registrations by running:
+StyleAI requires Python 3.12+ and uses `uv` exclusively:
 
-```bash
+```sh
+bash scripts/setup-local-uv-env.sh
+cd server
+uv run python scripts/download_models.py
+```
+
+The checked-in `plugin/StyleAI.lrdevplugin` is the release source and registers
+only the six production workflows. Generate disposable packages without
+changing that manifest:
+
+```sh
 python scripts/package_lrc_plugin.py developer
+python scripts/package_lrc_plugin.py release
 ```
 
-The output is `build/StyleAI-dev.lrdevplugin`. Use
-`python scripts/package_lrc_plugin.py release` to stage a production
-`build/StyleAI.lrplugin`. Generated packages are ignored; never toggle the
-checked-in release manifest for local testing.
+The developer package adds automated tests, benchmarks, edit reconciliation,
+and rendering-state capability checks to Lightroom's Help menu.
 
-## 1. Global API Envelope
+On macOS, `scripts/styleai-installer.sh redeploy` is a source-development tool.
+Lightroom must be stopped. The command stops the recognized StyleAI process on
+port 19819, stages and verifies a complete `StyleAI.lrdevplugin` copy, then
+atomically replaces the Modules copy. On next launch, that development plug-in
+resolves the current checkout's `server/src/styleai_server.py` and starts it
+through `uv`. A packaged release instead launches its bundled backend binary.
 
-Every single communication between the Lua plugin and the Python backend is strictly wrapped in a JSON envelope. This ensures the frontend never crashes due to unhandled API changes and allows graceful surfacing of warnings.
+## Component boundaries
 
-**Standard Response Format:**
+- Lua owns Lightroom selection, proxy export, progress, dialogs, catalog
+  metadata, collections, virtual copies, and Develop application.
+- `server/src/routes` owns request validation and response serialization.
+- `server/src/services` owns durable jobs, admission, image processing,
+  persistence, training, policy inference, recommendations, and evaluation.
+- `server/src/providers` contains only local Ollama and LM Studio metadata
+  adapters. Learned editing is LLM-free.
+
+REST is fixed to `127.0.0.1:19819`. Responses use:
+
 ```json
-{
-  "results": { ... },
-  "error": null,
-  "warning": "Optional warning string that Lightroom should display."
-}
+{"results": {}, "error": null, "warning": null}
 ```
-*When adding new endpoints to `server/src/routes/`, ALWAYS use the `@api_envelope` decorator (or manually wrap your response).*
 
-## 2. Asynchronous Lua Pipeline (`Pipeline.lua`)
+New endpoints must preserve this envelope and catalog ownership checks. The
+main API groups are `/initialize`, `/operations`, `/index*`,
+`/metadata/generate_batch`, `/training*`, `/styles*`, `/style_edit*`, `/db*`,
+and service health/lifecycle routes.
 
-For simple sequential Lightroom loops, shared error/progress handling is
-available in `plugin/StyleAI.lrdevplugin/Pipeline.lua`.
+## Catalog identity and storage
 
-**Key Features:**
-- `Pipeline.runSequentialBatch(photos, progressScope, options, processFn)`
-- Automatically wraps your `processFn` in an `LrTasks.pcall` to catch native crashes.
-- Collects and tabulates successes and errors, returning them in a unified summary structure.
-- Use it when its sequential contract fits. GPU/LLM/indexing workflows instead
-  use durable backend operation jobs and bounded producer/consumer orchestration.
+The active catalog's parent directory contains `styleai.db`; keep each catalog
+in its own directory. One backend process may bind to only one database path.
+The database contains a generated `catalog_database_id` used to reject backup
+marker mismatches; it is not Lightroom's catalog UUID. Stable global photo IDs
+link Lightroom photos to backend records.
 
-## 3. SQLite Schema Migrations (`migrations/`)
+```text
+styleai.db/
+  chroma.sqlite3                  Chroma metadata/index database
+  <Chroma segment files>          image_embeddings and edit_training vectors
+  styles.sqlite                   jobs, policies, reviews, history, ownership
+  policy_v2_models/<generation>/  immutable joblib artifacts
+  evaluation_reports/             local evaluation output when requested
+```
 
-StyleAI now uses a custom, lightweight Python migration engine to manage SQLite schema evolution without relying on heavy frameworks like Alembic.
+Never join the two Chroma collections implicitly or treat their counts as
+interchangeable. Traverse large collections with `count()` and bounded pages.
 
-**How to add a database column:**
-1. Create a new Python file in `server/src/migrations/versions/` named `00X_description.py`.
-2. Define a single `def upgrade(conn: sqlite3.Connection):` function.
-3. Use the `conn` object to execute your `ALTER TABLE` statements.
-4. The background service will automatically apply it the next time Lightroom binds.
+SQLite schema changes use `server/src/migrations/versions/00X_*.py`. Define
+`upgrade(conn)` and keep migrations forward-only and idempotent where practical.
+Packaged builds must include this directory; missing migration modules make a
+clean frozen database unusable.
 
-## 4. ML vs LLM Abstraction (`providers/`)
+## Lightroom concurrency and teardown
 
-With the shift away from generative models to mathematically robust machine learning for local edits, the architecture is now strictly bifurcated:
+- Capture target photos before opening a modal dialog.
+- Run long work in `LrTasks.startAsyncTask` and use `LrTasks.pcall` for normal
+  asynchronous error boundaries.
+- Never yield inside `withWriteAccessDo` or `withPrivateWriteAccessDo`. Perform
+  one catalog write transaction per batch.
+- During long loops outside transactions, macOS needs
+  `LrTasks.yield(); LrTasks.sleep(0.01)`.
+- `WorkCoordinator.lua` bounds Lightroom export, backend request, catalog-write,
+  and Develop/UI lanes across simultaneous user workflows.
+- Do not query a newly created collection set in its creation transaction;
+  track it in memory until commit.
 
-- **Predictive ML (Core):** Powered by editing-policy v2: target-behavior mixture discovery, embedding-only source-space gates, burst-grouped estimator selection (reduced-rank ridge, weighted PLS, or multi-task Elastic Net), and shrunken hierarchical camera/profile calibration. It predicts absolute Lightroom targets and abstains on ambiguous membership.
-- **Generative LLMs (Fallback/Metadata):** LLMs are used for zero-shot "Creative" fallback edits and generating semantic metadata (auto-tagging). Providers are restricted to locally running open-weights models through Ollama and LM Studio; do not add cloud providers, API-key storage, or remote backend support.
+`ShutdownApp.lua` deliberately calls synchronous `doneFunc` with native
+`pcall` and does nothing else. Lightroom teardown must never wait for HTTP,
+logging, filesystem, tasks, or process launch. The backend unloads idle
+SigLIP2 weights after 10 minutes and exits after 10 request-idle minutes when no
+live operation/admission/index work exists. Explicit developer redeploy uses
+`scripts/server.sh stop`, which cancels, requests shutdown, verifies the port,
+and escalates only against a recognized StyleAI PID.
 
-## 5. Security & Credentials
+## Durable operations and resource admission
 
-- **Backend Binding:** In production, the Flask background service unconditionally binds to `127.0.0.1` to prevent network exposure.
-- **Local-only providers:** Do not add API-key storage, cloud providers, remote backends, or cloud-oriented privacy workarounds.
+Indexing, metadata, training/discovery, recommendations, and editing create
+catalog-local operation jobs. Each photo has its own state. A backend result
+that still needs a Lightroom metadata or Develop handoff remains nonterminal;
+Lightroom records the final success, failure, or cancellation.
 
-## 6. Observability
+Acquire all required resources atomically through
+`services.operations.admission`. Accelerator and local-LLM capacity are
+process-wide, so starting several Lightroom tasks does not multiply model
+concurrency. Indexing and tagging requests queue; local LLM concurrency is one
+by default. Catalog writes are short critical sections. Maintenance uses a
+writer-preferring barrier that drains inference-to-commit work before backup,
+restore, prune, reset, migration, or policy activation.
 
-- **Diagnostic Reports:** Instead of asking users to zip up `.log` files, they can click "Generate Diagnostic Report" in the Lightroom Plugin Manager. This uses `TaskDiagnostics.lua` to pull backend `/health` and `/logs`, rendering a beautiful HTML file for instant browser viewing.
+Hardware detection sets startup maxima. Apple Silicon limits account for
+unified memory; the runtime pressure governor can lower CPU, GPU batch,
+in-flight image bytes, and queue use under pressure. Explicit `STYLEAI_*`
+environment values are advanced overrides, not normal product settings.
 
-## 7. Pitfalls & C-Stack Overflows
+For Pillow inputs, call `thumbnail()` before `convert("RGB")` to avoid decoding
+a full-resolution RGB allocation. Keep tokenizer fallback separate from vision
+weight loading so model initialization cannot happen twice.
 
-Lightroom SDK plugins are prone to C-stack overflows if coroutine yields and database transactions are mismanaged.
-- **NEVER yield inside a database transaction:** Do not call `LrTasks.yield()` inside `withWriteAccessDo` or `withPrivateWriteAccessDo` closures. Doing so suspends the Lua coroutine while holding a C-level SQLite transaction lock. The orphaned C-stack frames will rapidly accumulate and crash Lightroom.
-- **The macOS Spin-Lock:** Using the pattern `if MAC_ENV then LrTasks.yield() else LrTasks.sleep(0.1) end` is a dangerous anti-pattern. On macOS, `LrTasks.yield()` without a subsequent sleep does NOT reliably return control to the Lightroom UI loop. During heavy batch processing, this causes C-stack buildup. ALWAYS use `LrTasks.yield(); LrTasks.sleep(0.01)` regardless of OS to guarantee the transaction stack flushes.
-- **Transaction Bloat:** When applying multiple edits or metadata properties to a photo, combine them into a single `withWriteAccessDo` block. Firing multiple sequential database transactions per-photo exponentially increases SQLite overhead and stack pressure during batch operations.
-- **Native `pcall` in Shutdown/Teardown:** Shutdown hooks are the exception: use native `pcall(doneFunc)` because Lightroom's async scheduler is unreliable during teardown. Keep the hook free of HTTP, filesystem, logging, and process-launch work; the backend performs its own bounded idle shutdown. Use `LrTasks.pcall` for normal asynchronous plugin work.
+## Prepare Photos and local metadata
 
-## 8. Python Backend Memory Efficiency
+Visual analysis creates SigLIP2 embeddings in `image_embeddings`. If analysis
+and metadata are requested together, the photo's embedding must commit before
+its metadata phase begins.
 
-When processing images in Python, particularly 1024px JPEGs received from Lightroom:
-- **Lazy Downsampling:** ALWAYS call `image.thumbnail()` BEFORE calling `.convert("RGB")`. Calling `.convert("RGB")` on a full-resolution JPEG forces Pillow to decode and allocate the entire uncompressed 3-channel array in memory (which can consume hundreds of megabytes) before downsizing. `thumbnail()` allows Pillow to decode natively at a lower resolution, drastically reducing RAM footprints.
-- **16-bit TIFF Bracketing:** The AI Edit bracket generation works with 16-bit ProPhoto RGB TIFFs. To prevent Out-Of-Memory (OOM) crashes during concurrent processing, TIFF concurrency is strictly capped to the number of CPU threads via `BRACKET_SEMAPHORE` in `image_processing.py`.
+Lua sends metadata through `/metadata/generate_batch`. Every accepted item
+retains its own image bytes until its own vision inference finishes. Burst or
+similarity information may improve scheduling, but complete keywords, title,
+caption, and alt text must never be cloned between photos. Missing pixels must
+fail closed or use an explicitly text-only operation.
 
-## 9. Lightroom SDK Layout Quirks
+Ollama uses loopback port 11434. LM Studio starts from loopback port 1234 and
+may be resolved through the SDK's local dynamic-port discovery. Remote/LAN
+hosts are rejected. Debug image capture requires both Debug and Capture inputs,
+is created lazily, and is bounded by group count and bytes.
 
-The Lightroom SDK `LrView` engine has several undocumented layout quirks, particularly when attempting to align different components like `popup_menu` and `simple_list`:
-- **`share()` Truncation:** Using `width = share("groupName")` on mixed components can cause the layout engine to collapse to the narrowest intrinsic width among the shared elements. For example, a `popup_menu` will shrink to the width of its currently selected item, aggressively truncating the contents of a `simple_list` sharing the same width group.
-- **`width_in_chars` on `simple_list`:** The `simple_list` component often completely ignores the `width_in_chars` parameter, collapsing to the natural width of its text content even if `width_in_chars` is generously set.
-- **The Solution:** To guarantee perfectly aligned widths between different UI elements (e.g., centering a dropdown directly above a list), bypass dynamic text-width logic and hardcode an explicit pixel width (`width = 600`). This ensures all components stretch symmetrically regardless of their intrinsic text contents.
+## Editing-policy training
 
-## 10. Editing-Policy Discovery and Recommendations
+`Learn From My Edits` accepts RAW/DNG photos, extracts target-independent source
+evidence plus absolute Develop targets, and excludes panoramas. It uploads
+bounded chunks and performs one rebuild only after the complete upload.
 
-- Do not restore hard-coded genre buckets, semantic genre caches, or keyword
-  exception ladders. Subject and lighting diversity belong inside conditional
-  policies, not in Cartesian style IDs.
-- Do not add fixed CLIP text-probe scene taxonomies as a shortcut for training
-  labels. Preserve user-authored open-vocabulary descriptors and provenance.
-- Discover policies from differences in absolute edited targets, then require
-  those components to be recognizable from source embeddings and pixel/EXIF
-  evidence alone.
-- Keep only HDR/profile as hard compatibility partitions. Camera body, lens,
-  and other categories use shrunken calibration offsets.
-- Add experts only after grouped held-out validation demonstrates material
-  improvement, adequate effective support, and stable low-ambiguity assignment.
-- Retrieve upgrade candidates from bounded multi-anchor Chroma neighborhoods.
-  Membership precision is an admission gate; coverage and quality only rank
-  candidates that already pass.
-- Exclude panoramas in both training and recommendations through
-  `photo_constraints.is_stitched_panorama`.
+Within compatible HDR/profile partitions, burst groups preserve validation
+boundaries. Production chooses among the stable baseline, reduced-rank ridge,
+weighted PLS, and eligible multi-task Elastic Net. Policy identity begins with
+grouped out-of-fold target residual behavior; normalized source embeddings then
+establish whether a component is recognizable. Genre, lighting, keywords,
+camera, and lens do not define styles.
 
-## 10.1 Operation and Resource Coordination
+Experts and policy-local residual correction are retained only after material
+held-out improvement with adequate support and stable selective coverage. Large
+validation searches use bounded deterministic burst-safe samples; the selected
+global model still fits all curated examples.
 
-- Long-running work uses catalog-local operation jobs with per-photo terminal
-  state and scoped cancellation. Global cancellation is only for shutdown.
-- Backend work that still requires a Lightroom metadata or Develop handoff
-  remains nonterminal. Lightroom marks the item succeeded, failed, or canceled
-  only after that handoff completes.
-- Concurrent Lightroom tasks share backend resource-vector admission and the
-  plugin's `WorkCoordinator` lanes; tasks must not multiply GPU, local-LLM,
-  export, Develop/UI, or catalog-write concurrency.
-- Hardware detection establishes startup maxima. Runtime memory pressure may
-  reduce CPU, GPU batch, and image-byte limits, but never raise them above the
-  detected tier or explicit environment overrides.
-- Backups, restore, pruning, resets, and policy rebuild/activation are isolated
-  by a writer-preferring maintenance barrier in addition to the resource lanes.
-  The barrier drains live inference-to-commit workflows and prevents new work
-  from slipping in before database replacement. Required pre-prune,
-  pre-training-delete, pre-migration, and pre-restore snapshots must persist
-  before mutation. Restore validates catalog ownership, checksums, archive
-  paths, and SQLite integrity before an atomic swap with rollback.
+Build a full inactive generation, validate relational rows and artifacts, and
+activate it atomically. A failed build leaves the previous generation active.
+Custom names, recommendation feedback, and edit history are generation-
+independent.
 
-## 11. Transactional Policy Generations and Absolute Edits
+## Rendering state and edit application
 
-- Build model artifacts under a new inactive generation. Activate only after
-  every model, membership, descriptor, coverage row, and artifact succeeds.
-- Upload Lightroom training data in bounded chunks, then rebuild once after the
-  full transfer. Never refit the complete generation after every chunk.
-- Interrupted startup recovery marks only incomplete builds failed; it never
-  invalidates the prior active generation.
-- Current Lightroom settings are application inputs, never model features.
-  Apply strength as `current + strength * (target - current)`. Full strength
-  must equal the target exactly and be idempotent.
-- Canonically order mixture components before creating deterministic policy
-  IDs. Store user custom names independently of model generations.
+HDR and camera profile are separate categorical decisions. Their selectors use
+target-independent embedded RAW previews and catalog-observed, camera-compatible
+profiles. **Suggest** and **Auto** use different gates; Auto requires stricter
+burst-preserving precision/uncertainty evidence, an exact continuous artifact
+for the effective rendering state, and exact Lightroom readback. Profile
+selection conditions on effective HDR.
 
-## 12. LLM Metadata Generation Anti-Patterns
+Auto application writes HDR/profile first, reads it back, and aborts slider
+application on substitution or mismatch. The Lightroom 15.5 Nikon Z7 capability
+study verified custom profile/HDR application and restoration; Undo worked,
+while Redo did not survive the SDK transaction sequence. Do not promise or
+simulate Redo. Use the developer capability spike on disposable virtual copies
+when validating a new Lightroom version, camera/profile family, or unavailable-
+profile behavior.
 
-- **Sequential Processing:** Never iterate over items and call `/metadata/generate` sequentially in plugins or scripts. Always batch requests through `/metadata/generate_batch` so the backend can enforce bounded admission and serialize local-model work. Every photo must retain its own image bytes and receive its own vision result; do not clone captions, alt text, titles, or keywords from an embedding-cluster representative.
-- **Missing Image Bytes:** Text-only metadata enrichment may use already stored
-  per-photo evidence without a new JPEG. A vision prompt, however, must retain
-  and use that photo's own bytes; never run vision inference without pixels or
-  copy a burst representative's complete keywords, title, caption, or alt text.
-  Missing pixels must fail closed or explicitly abstain to the text-only path.
+The policy predicts absolute targets. Application uses
+`current + strength * (target - current)`, so full strength equals the learned
+target and repeated full-strength application is idempotent. Clamp to supported
+Lightroom and learned bounds. Ambiguous membership, missing partitions, or
+insufficient target-independent evidence abstains instead of falling back to an
+LLM or unrelated policy.
 
-## 12.1 Edit Inference History and Undo Reconciliation
+## Recommendations and feedback
 
-- Every generated recipe has an immutable catalog-local inference row with its
-  policy/model provenance, modeled slider keys, pre-edit state, and target.
-- Lightroom sends one idempotent application event after attempting the edit.
-  Successful global application includes a Develop-settings readback so later
-  comparisons use what Lightroom actually stored rather than an assumed target.
-- The Help-menu developer action **Reconcile Selected AI Edit State** checks at
-  most 100 selected photos and writes their current observed state in one
-  Lightroom metadata transaction. Use it after Apply, Undo, Redo, or manual
-  slider changes during QA.
-- `reverted` and `diverged` are state observations, not user preference labels.
-  Do not treat them as rejection/acceptance training evidence.
-- Policy resets must not delete edit inference/event history. Removing the
-  catalog-local database intentionally removes it.
+Recommendation generation runs as a cancellable background operation. One
+batched Chroma query retrieves bounded neighborhoods around policy medoids.
+Hard incompatibilities, existing examples, panoramas, rejected photos,
+near-duplicates, and ambiguous matches are removed before burst deduplication.
+Coverage, diversity, rating, and pick status rank only admitted members.
 
-## 13. Test Discipline and Lightroom Smoke Checks
+The Lightroom assistant stores a bounded review snapshot. **Helpful Example**,
+**Fits, But Redundant**, and **Not This Policy** labels are durable evaluation
+evidence; they never change the active model or thresholds automatically.
 
-- **Isolated backend tests:** `server/test/conftest.py` assigns every pytest-xdist worker its own temporary catalog database. Tests must never use an actual catalog path or contact Ollama, LM Studio, or any HTTP service; mock provider and network boundaries explicitly.
-- **Required local checks:** Run `uv run pytest test/`, `uv run ruff check src test`, and `python scripts/validate_lrc_plugin.py` before handing off a change.
-- **Policy and recommendation changes:** Preserve labelled policy-recovery and candidate-admission fixtures, including expected members, ambiguity abstentions, and rejections. Measure target error, membership precision, and cross-policy leakage.
-- **Required Lightroom smoke check:** After changes to Upgrade Assistant, open a real catalog and verify one-style candidate selection, **Show All Candidate Photos**, cancellation, absent/deleted photos, and repeated collection creation. Confirm the Lightroom UI stays responsive and no write transaction yields.
+## Edit history, Undo, and explicit outcomes
 
-### Rendering-state SDK capability gate
+Before returning a recipe, the backend stores an immutable inference containing
+generation/policy/schema provenance, modeled keys, pre-edit fingerprint, and
+absolute target. Lightroom appends idempotent application and readback events.
 
-Automatic profile and HDR selection must remain disabled until the current
-Lightroom Classic version passes this catalog-local capability spike. The spike
-does not train a model, alter StyleAI databases, or change the production edit
-path. It accepts virtual copies only and restores their captured rendering state
-after each test.
+Reconciliation compares only modeled sliders and records observable
+`reverted`/`diverged` states. It does not infer why a state changed or convert
+Undo into a quality label. **Rate Selected AI Edits** explicitly appends
+`accepted`, `rejected`, or `modified_and_kept` with a fresh readback. Rejections
+are preference evidence, never numeric regression targets.
 
-1. In a disposable catalog, make two to eight virtual copies from RAW photos.
-   Include compatible copies from the same camera with: Adobe built-in,
-   camera-matching, and at least one installed custom camera profile. Include
-   both SDR and HDR states. Keep copies from other camera models selected if you
-   want to confirm that the harness refuses cross-camera application.
-2. Select only those disposable virtual copies in Library.
-3. Run **Help → Plug-in Extras → Developer: Test Profile and HDR SDK Support**.
-4. Inspect the JSON report written to the Desktop. For every profile class,
-   record the exact `CameraProfile`, `CameraProfileRaw`, and `Look` values that
-   Lightroom returned. Confirm profile-only, HDR-only, and combined tests show
-   `matched=true`, and every test shows `restore_verified=true`.
-5. Manually apply one verified profile/HDR combination to a disposable virtual
-   copy, then use Lightroom Undo and Redo. After each action, reopen Develop and
-   confirm both the UI and `getDevelopSettings()` readback (by rerunning the
-   spike with that state represented on a selected copy) agree.
-6. Temporarily remove or rename the custom profile and confirm Lightroom rejects
-   or substitutes it without leaving a mixed profile/HDR state. Restore the
-   profile before continuing normal work.
-
-Lightroom's documented plug-in API does not provide profile enumeration, so a
-future selector must use only a catalog-local registry of representations
-observed in training photos. Do not infer a profile ID from its display name.
-The report deliberately leaves `gate_passed=false`: a developer must classify
-the observed built-in/camera-matching/custom specimens and record the manual
-Undo/Redo and unavailable-profile outcomes. If custom profile application is
-not exact and repeatable, profile selection is recommendation-only. If HDR
-application/readback is not exact and repeatable, HDR selection is suggestion-
-only.
-
-The Lightroom Classic 15.5 Nikon Z7 custom-profile spike covered four custom
-profiles in SDR and HDR: 104/104 profile-only, HDR-only, and combined
-applications matched exact readback, with zero restore failures or
-cross-category changes. Undo worked; Redo did not survive the two SDK catalog
-transactions used for apply and verified restore. Production code therefore
-does not promise Redo and never simulates it by rerunning the spike or edit.
-
-Profile and HDR controls default independently to **Suggest**. **Off** preserves
-the current state without a proposal. **Auto** is conservative: it is eligible
-only for a validated selector trained from a Lightroom-target-independent
-embedded RAW preview, a compatible
-catalog-observed profile, and an available continuous policy for the exact
-target rendering state. Auto eligibility uses stricter cross-fitted, per-class
-precision and uncertainty gates than Suggest. Lightroom must confirm exact
-profile/HDR readback before StyleAI applies sliders. An unavailable or
-substituted profile aborts
-the slider edit and triggers one bounded restoration attempt.
-The unavailable-profile branch is code- and fixture-verified but remains
-unverified against a removed real custom profile, because removing the active
-profile would disturb unrelated catalog photos.
-
-## 14. Local Catalog Policy Evaluation
-
-Synthetic policy fixtures prove mathematical invariants, but they do not
-measure fidelity on a photographer's actual edits. Run burst-safe held-out
-evaluation against a catalog-local training collection with:
+## Quality and performance evaluation
 
 ```sh
 cd server
-uv run python scripts/evaluate_catalog_policies.py \
-  --db-path "/path/to/catalog/styleai.db"
-```
-
-The evaluator builds fold-specific production artifacts entirely in memory. It
-does not replace the active generation or alter training examples. Reports are
-written beneath `styleai.db/evaluation_reports/` by default and include:
-
-- a deterministic dataset fingerprint and all policy schema versions;
-- selective prediction coverage, confidence, entropy, and abstentions;
-- normalized and raw RMSE by target and target family;
-- white-balance classification accuracy and catastrophic-outlier counts;
-- estimator, policy-count, local-corrector, partition, and timing diagnostics.
-
-Reports contain aggregate metrics by default. Use `--include-photo-ids` only
-when local debugging requires the IDs of the worst predicted examples. Reports
-must not be uploaded automatically or treated as cross-catalog training data.
-
-## 15. Recommendation Calibration
-
-Recommendation thresholds and membership/coverage/quality ranking weights must
-be supported by labelled local evidence rather than tuned against one anecdotal
-candidate list. A review document uses schema
-`policy-recommendation-review-v1` and groups candidates by the recommendation
-run in which they were reviewed. Each candidate may be labelled:
-
-- `policy_match`: whether the photo truly belongs to the proposed editing policy;
-- `useful`: whether it would be a valuable additional training example;
-- `null`: not reviewed, and therefore excluded from that metric.
-
-The complete interchange contract is
-`docs/schemas/policy-recommendation-review-v1.schema.json`.
-Review files contain local embeddings and selected metadata needed to replay
-the production ranker. Keep them catalog-local; neither the plugin nor the
-calibration command uploads them.
-
-The Upgrade Assistant creates a compact review snapshot automatically. After
-opening a candidate collection, select reviewed photos in Library, reopen the
-same policy in the assistant, and choose one label:
-
-- **Helpful Example** means `policy_match=true, useful=true`.
-- **Fits, But Redundant** means `policy_match=true, useful=false`.
-- **Not This Policy** means `policy_match=false, useful=false`.
-
-Labels are durable evaluation evidence; they do not retrain a policy or change
-production thresholds. Export labelled sessions, joining their photo IDs to
-the canonical Chroma embeddings, with:
-
-```sh
-cd server
+uv run python scripts/evaluate_editing_policies.py
+uv run python scripts/benchmark_policy_scaling.py
+uv run python scripts/evaluate_catalog_policies.py --db-path /path/to/styleai.db
+uv run python scripts/evaluate_applied_edits.py --db-path /path/to/styleai.db
 uv run python scripts/export_policy_recommendation_reviews.py \
-  --db-path "/path/to/catalog/styleai.db" \
-  --output "/path/to/local-recommendation-reviews.json"
+  --db-path /path/to/styleai.db --output /path/to/reviews.json
+uv run python scripts/calibrate_policy_recommendations.py /path/to/reviews.json
 ```
 
-Run calibration with:
+Synthetic fixtures validate mathematical recovery and invariants. Catalog
+evaluation performs burst-safe held-out fitting in memory and does not replace
+the active generation. Recommendation and outcome calibration reports are
+versioned, local, and evaluation-only.
+
+Before handoff, run:
 
 ```sh
-cd server
-uv run python scripts/calibrate_policy_recommendations.py \
-  "/path/to/local-recommendation-reviews.json"
+bash server/scripts/lint_format.sh
+cd server && uv run pytest test/
+cd .. && python scripts/validate_lrc_plugin.py
 ```
 
-The report measures policy precision/leakage/recall, useful-example precision
-and recall, NDCG, and selection rate. Parameter selection is cross-validated by
-whole review group, and the precision gate uses the lower bound of a 95% Wilson
-interval rather than an optimistic point estimate. Recommended values remain
-`evaluation_only`; this command never updates production defaults. Upstream
-`source_ambiguous` decisions remain hard gates and cannot be loosened by
-downstream ranking calibration.
+Tests must use isolated temporary databases and mocked network/provider
+boundaries. For UI/catalog changes, build the developer plug-in, run its
+Lightroom tests, and follow `docs/UI_HUMAN_TEST_MATRIX.md` in a disposable
+catalog.
 
-## 16. Applied Edit Outcome Evaluation
+## Release and documentation discipline
 
-Use **File → Plug-in Extras → Rate Selected AI Edits** on selected AI-edited photos to record
-one explicit result: Keep, Modified and Kept, or Reject. The action records
-feedback only; it never changes Develop settings. Keep is accepted only when
-the modeled Lightroom state still matches the confirmed application. Reopen
-the action with a different choice to append a corrected judgment—the history
-is never overwritten.
+The release workflow syncs the locked `uv` environment, freezes the backend
+with PyInstaller, includes OpenCLIP package data and migration modules, and
+packages it beside the Lightroom plug-in. A clean-database frozen-backend smoke
+test is required when dependency, migration, spec, or launch behavior changes.
 
-Generate a catalog-local report with:
-
-```sh
-cd server
-uv run python scripts/evaluate_applied_edits.py \
-  --db-path "/path/to/catalog/styleai.db"
-```
-
-Reports are written under `styleai.db/evaluation_reports/` and follow
-`docs/schemas/applied-edit-quality-v1.schema.json`. They include application
-confirmation/failure counts, review coverage, explicit outcome rates,
-corrections to delivered targets, confidence calibration, and generation-level
-Wilson intervals. Rendering decisions are reported separately from slider
-errors, stratified by Suggest and Auto; unchanged suggestions are not counted
-as accepted or rejected. HDR activations have a dedicated return-rate report.
-Rejected edits are preference evidence but never numeric
-regression targets. Results and generation comparisons remain
-`evaluation_only`; they do not retrain, activate, or adjust a model.
+Wiki sources live in `docs/wiki`. `Project-README.md` is generated from the root
+README; run `bash scripts/build-wiki-pages.sh` after changing it. Keep all five
+translation files synchronized and report any required Lightroom action after
+changing data, features, or learned-model contracts.

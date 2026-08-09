@@ -1,43 +1,41 @@
-# Guide to AI Indexing and Auto-Tagging
+# Prepare Photos: Visual Analysis and Metadata
 
-Prepare Photos powers the semantic-search and optional local-metadata capabilities of StyleAI. It can create local visual analysis, generate descriptions with a selected local model, or do both. Preparing photos separately is **not** required before learning from edited training photos.
+Open **File → Plug-in Extras → Prepare Photos...** after selecting the photos
+you want to process.
 
-## Accessing the Tool
+## Choose work
 
-Open Lightroom Classic. Select the photos you wish to process, then navigate to the top menu bar. Go to **File > Plug-in Extras > Prepare Photos...**
+- **Analyze photos for StyleAI** creates a SigLIP2 embedding used by learned
+  policy matching and training recommendations.
+- **Generate keywords and descriptions** runs the selected local Ollama or LM
+  Studio vision-language model.
+- Enabling both commits each photo's visual analysis before its metadata phase.
 
-## Workflow Modes
+Choose selected photos, current view, all catalog photos, new/unprocessed
+photos, or previously indexed photos. **Keep existing data** is the safe
+default. **Replace selected StyleAI-generated data** reruns the enabled work;
+it does not erase unrelated Lightroom metadata.
 
-When the dialog opens, the first option you will see is the Workflow Mode. This determines what kind of data the plugin will generate and limits the configuration options to only what you need.
+## Metadata Settings
 
-*   **AI Search Embedding Only**: This mode runs the fast SigLIP2 vision model to create a mathematical representation of your image. This enables powerful semantic search capabilities (finding photos by describing them naturally) without the slower, text-generation step of a Large Language Model.
-*   **AI Auto-Tagging/Metadata Only**: This mode skips the semantic search embedding and exclusively uses your configured AI language model to write keywords, titles, captions, and alternative text directly into your photo metadata.
-*   **Complete Package (Both)**: This runs both models sequentially. It provides the full capabilities of StyleAI, enabling both semantic search and rich text metadata generation.
+This button appears when metadata generation is enabled.
 
-You can also specify the scope of the operation, such as processing only your selected photos or scanning the entire catalog for new, unprocessed images.
+**Metadata Output** controls keywords, title, caption, alt text, Lightroom
+catalog writing, per-photo review, append/replace behavior, keyword hierarchy,
+catalog keyword reuse, and bilingual synonyms.
 
-## General Settings
+**Model & Instructions** selects an available loopback model, output language,
+low-bounded creativity, and a saved prompt template. Lower creativity usually
+produces more repeatable factual output.
 
-In the General tab, you verify your models and control the AI text generation. 
+**Context** can provide GPS, existing Lightroom keywords, parent folder names,
+or per-photo instructions. These values are sent only to the selected local
+model. Per-photo instructions intentionally pause batch processing.
 
-For the search embeddings, the plugin will indicate whether the SigLIP2 model is cached and ready.
+Every photo receives its own vision inference. StyleAI may queue similar or
+burst photos efficiently, but it does not copy one photo's complete keywords,
+title, caption, or alt text to another.
 
-For the auto-tagging, you will select your preferred AI language model from the dropdown. This list is populated by the providers you configured in the Plugin Manager. You can also adjust the temperature setting. A lower temperature produces more factual, rigid descriptions, while a higher temperature allows the AI to be more creative and subjective.
-
-## Keywords & Metadata
-
-The Keywords tab allows you to toggle exactly which Lightroom metadata fields the AI should overwrite or append. 
-
-If you enable keyword generation, you can also control the structural hierarchy. Enabling keyword hierarchy organizes the tags logically (for example, grouping "oak" and "pine" under a "trees" parent category). You can even instruct the AI to respect your existing Lightroom keyword structure to avoid duplicating tags with slight variations.
-
-## Prompt & Context
-
-The Prompt tab is where you instruct the AI on exactly how to describe your images. You can select a pre-saved prompt template from the dropdown or write custom instructions directly in the text field.
-
-The context options determine what existing data is fed to the AI alongside the image. Sending GPS coordinates, folder names, or existing keywords can significantly improve the accuracy of the generated descriptions by giving the model a real-world anchor for its analysis. 
-
-If you enable the photo context dialog, StyleAI will pause before processing each image to ask you for specific, manual context.
-
-## Advanced Maintenance
-
-The Advanced tab controls how the generated data interacts with your Lightroom catalog. You can choose whether to overwrite existing metadata, append to it, or skip photos that already have AI data. You can also enforce a manual review step, where the plugin presents the AI's suggestions and asks for your approval before writing anything to the Lightroom database.
+Preparing training photos separately is not required. Learn From My Edits
+collects its own source evidence; Prepare Photos is most important for the
+catalog-wide visual index and optional metadata.

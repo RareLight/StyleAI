@@ -1,57 +1,60 @@
 # Background Service Guide
 
-The Python backend acts as the brains of StyleAI. It runs locally via Flask and handles predictive Machine Learning (ML) inference, image embedding generation using SigLIP2, face recognition using InsightFace, and vector database management.
+The Python 3.12+ Flask/Waitress service performs image analysis, durable job
+admission, local metadata inference, learned-policy training/editing,
+recommendations, evaluation, and catalog-local persistence. It binds only to
+`127.0.0.1:19819`.
 
-## Main Documentation
+## Startup and shutdown
 
-For configuration settings, dependency management, and architecture details, refer to the [Background Service README](Background-Service-README).
+The Lightroom plug-in starts one packaged backend or the current source backend
+and initializes it with `<catalog folder>/styleai.db`. The process cannot switch
+database paths, and backup marker checks prevent an archive from being restored
+into another StyleAI database. Keep each Lightroom catalog in its own folder.
 
-## Key Responsibilities
+Lightroom exit does not send a shutdown request or wait on the service. The
+service unloads idle SigLIP2 weights after 10 minutes and exits after 10 idle
+minutes only when no job, resource lease, or index queue work is live. An
+explicit source redeploy uses `scripts/server.sh stop` to cancel work and verify
+port release before replacing the plug-in.
 
-The background service is responsible for:
-- **Image Indexing:** Offloading heavy ML workloads (like SigLIP2 and InsightFace processing) away from the Lightroom UI using asynchronous background threads.
-- **Predictive AI Editing:** Using validated mixtures of conditional regressors selected per partition by burst-grouped validation to infer absolute Lightroom targets from source evidence, with burst curation, hierarchical camera calibration, and ambiguity-aware abstention.
-- **Semantic Search:** Executing fast, vector-based similarity searches using ChromaDB.
-- **Metadata Persistence:** Keeping a high-performance secondary SQLite database for tags, face matching, style training, and other AI-generated text.
-- **Face & Person APIs:** Processing and matching facial data to build identity maps over time.
-- **Local Generative Features:** Providing batched metadata and optional creative operations through local open-weights models in Ollama or LM Studio only.
+## Work and resource coordination
 
-## Error Handling & Logic
+Indexing, metadata, training/discovery, recommendations, and editing use durable
+operation jobs with per-photo state and scoped cancellation. Accelerator and
+local-LLM lanes are process-wide. Multiple Lightroom tasks therefore share the
+detected hardware budget instead of creating independent GPU or LLM pools.
 
-The API is structured to return robust Error responses formatted in a standardized JSON envelope (`results`, `error`, `warning`). In the event of batch processing failures, endpoints will format exact stack traces detailing which images failed and why. This structured data is intercepted by the Lightroom plugin to generate user-friendly GUI error reports. 
+Apple Silicon startup maxima scale with unified memory, and a runtime pressure
+governor may reduce in-flight CPU/GPU/image-byte work. Local metadata inference
+remains serialized by default because parallel model contexts normally reduce
+throughput and increase swap risk.
 
-If you are experiencing unexpected backend behavior:
-1. Try parsing the terminal output or log files written to the service's working directory. 
-2. Refer to the [Troubleshooting](Troubleshooting) wiki page to debug the service connection.
+## Database protection
 
-## Database Backup Workflow
+The service automatically creates one validated snapshot per day and keeps the
+newest 14 by default. It also requires a durable snapshot before pruning,
+deleting all training data, schema migration, or restore.
 
-Given the importance of generated search indexes, training data, learned styles,
-and edit history, the background service creates validated catalog-local
-snapshots. Each ZIP contains the complete StyleAI database directory plus a
-versioned manifest, catalog ownership ID, file sizes, and SHA-256 checksums.
-SQLite databases are copied through SQLite's online backup API and checked
-before the archive is published.
+In Plug-in Manager → **Data & Recovery**:
 
-- Manual export API: `POST /db/backup`
-- Restore API: `POST /db/restore`
-- Automatic retention: one daily snapshot, keeping the newest 14
-- Required snapshots: before pruning, deleting all training data, schema
-  migration, and restore
+- **Export Backup...** writes a validated ZIP containing the complete StyleAI
+  database, versioned manifest, database marker, sizes, and SHA-256 checksums.
+- **Restore Backup...** validates a same-catalog archive, creates a pre-restore
+  snapshot, drains live work, performs an atomic replacement, checks SQLite,
+  and rolls back on failure.
+- **Clean Up Removed Photos...** removes orphaned StyleAI records only after a
+  pre-cleanup backup.
 
-**To create a backup via Lightroom:**
-Open `File -> Plug-in Manager -> StyleAI -> Background Service` and click **Download DB backup**.
+StyleAI backups do not contain the Lightroom catalog, source photos, or Develop
+history. Use Lightroom's catalog backup separately.
 
-Use **Restore Backup...** to select a validated backup belonging to the active
-Lightroom catalog. StyleAI creates a pre-restore recovery snapshot, stages and
-validates the selected archive, atomically replaces the backend database, and
-rolls back automatically if post-restore validation fails.
+## Diagnostics
 
-> StyleAI backups do not contain the Lightroom catalog, source photos, or
-> Develop edits. Use Lightroom's catalog backup feature separately.
+Plug-in Manager → **Support & Debug** can generate a local support report from
+service health and available logs. Debug image capture is off by default,
+requires both Debug and capture to be enabled, may contain photo pixels and
+metadata, and has bounded local retention.
 
-**When to backup:**
-Create a manual external backup before moving a catalog to another machine or
-performing unusual maintenance. Routine indexing and Apply My Style operations
-do not create full checkpoints because they use durable per-photo operation
-state and a StyleAI database restore cannot undo Lightroom Develop edits.
+See [Architecture](Architecture) and the [Developer Guide](Developer-Guide) for
+the API, storage, and ML contracts.

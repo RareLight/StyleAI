@@ -228,7 +228,7 @@ class TestChromaServiceCRUD(unittest.TestCase):
         self.mock_collection.query.assert_called_once()
 
 
-def test_ensure_db_path_rejects_cross_catalog_switch(monkeypatch, tmp_path):
+def test_ensure_db_path_rejects_database_rebind(monkeypatch, tmp_path):
     import config
 
     original_path = str(tmp_path / "catalog-a" / "styleai.db")

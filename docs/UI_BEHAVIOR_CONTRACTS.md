@@ -1,8 +1,8 @@
-# StyleAI UI Behavior Contracts and Cleanup Audit
+# StyleAI UI Behavior Contracts
 
-This document records the behavior that the UI overhaul must preserve. It is
-based on the current Lua task orchestration and backend request parsing; it is
-not a proposal to change the editing, training, or metadata models.
+This is the current UI-to-behavior contract, based on Lua orchestration and
+backend request parsing. The completed implementation checklists are historical
+records; this document and the code define current behavior.
 
 ## Production navigation
 
@@ -21,8 +21,8 @@ Release builds register one cross-module File-menu command set and no developer
 Help commands. `python scripts/package_lrc_plugin.py developer` generates a
 separate package with literal Help-menu registrations and flips
 `BuildConfig.developerBuild`, adding the
-automated tests, benchmark, rendering capability spike, reconciliation command,
-and one-time style override only to developer builds. Runtime Debug never
+automated tests, benchmark, rendering capability spike, and reconciliation
+command only to developer builds. Runtime Debug never
 changes registered menus.
 
 ## Control-to-behavior mapping
@@ -139,7 +139,6 @@ has been removed.
 | legacy adjustment-group and composition-mode UI preferences | Ineffective for the retained predictive form | Removed from dialog state; supported request fields remain visible |
 | `replaceSS` | Hidden-active / unresolved | Behavior preserved; no new control added |
 | `useTopLevelKeyword`, `topLevelKeyword` | Active compatibility behavior / unresolved | Behavior preserved pending product direction |
-| creative-edit dialog branch | Compatibility-reserved, not registered in release menus | Retained internally; excluded from the production workflow |
 
 ## Layout exceptions
 

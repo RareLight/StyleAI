@@ -51,7 +51,7 @@ def ollama_provider(mocker):
 
     fake_client = MagicMock(name="FakeOllamaClient")
     mocker.patch("providers.ollama.Client", return_value=fake_client)
-    provider = OllamaProvider({})
+    provider = OllamaProvider()
     return provider, fake_client
 
 
@@ -136,7 +136,7 @@ def lmstudio_provider(mocker):
 
     from providers.lmstudio import LMStudioProvider
 
-    provider = LMStudioProvider({})
+    provider = LMStudioProvider()
     return provider, fake_response
 
 
