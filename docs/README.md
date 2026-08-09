@@ -5,6 +5,12 @@ documentation. Documentation must describe reachable production behavior; old
 implementation plans must be marked as completed records rather than current
 architecture.
 
+## Implementation and release-gate checklists
+
+- [`APPLY_STYLE_BURST_COHERENCE_IMPLEMENTATION_CHECKLIST.md`](APPLY_STYLE_BURST_COHERENCE_IMPLEMENTATION_CHECKLIST.md)
+  tracks the implemented conservative batching/coherence foundation and the
+  remaining held-out and human release gates for exact target reuse.
+
 ## Source of truth
 
 - Repository/agent contracts live in `README.md`, `CONTRIBUTING.md`,

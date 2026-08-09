@@ -107,6 +107,37 @@ def test_empty_applied_edit_report_is_well_defined():
     assert report["dataset"]["review_coverage"] is None
     assert report["user_outcomes"]["acceptance_rate"] is None
     assert report["delivered_target_corrections"]["evaluated_reviews"] == 0
+    assert report["schema_version"] == "applied-edit-quality-v2"
+    assert report["burst_coherence"]["admitted_photos"] == 0
+
+
+def test_burst_report_tracks_coverage_leakage_and_geometry_disagreement(tmp_path):
+    db_path = str(tmp_path / "styleai.db")
+    _applied_history(db_path, "representative", 0.5, "accepted", 0.5)
+    _applied_history(db_path, "member", 0.5, "modified_and_kept", 0.6)
+    histories = _histories(db_path)
+    representative, member = histories
+    for history in histories:
+        history["burst_group_id"] = "edit-burst:one"
+        history["representative_photo_id"] = representative["photo_id"]
+        history["absolute_target"] = {"exposure": 0.5}
+        history["policy_agreement"] = {
+            "same_policy": True,
+            "same_partition": True,
+        }
+    representative["reuse_tier"] = "independent"
+    representative["absolute_target"]["crop"] = {"angle": 0.0}
+    member["reuse_tier"] = "policy_coherent"
+    member["absolute_target"]["crop"] = {"angle": 1.0}
+
+    report = evaluate_applied_edit_histories(histories)
+    burst = report["burst_coherence"]
+
+    assert burst["eligible_photos"] == 2
+    assert burst["admitted_photos"] == 1
+    assert burst["selective_coverage"] == 0.5
+    assert burst["policy_agreement"]["cross_policy_or_partition_leakage"] == 0
+    assert burst["geometry_disagreement"]["disagreements"] == 1
 
 
 def test_confidence_calibration_and_generation_evidence_gates(tmp_path):

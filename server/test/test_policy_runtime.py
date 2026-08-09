@@ -107,6 +107,29 @@ def test_generation_round_trip_and_absolute_inference(policy_database, monkeypat
     assert reloaded == policies
 
 
+def test_incompatible_target_schema_requires_rebuild(policy_database, monkeypatch):
+    monkeypatch.setattr(
+        policy_runtime.training_service,
+        "list_training_examples_with_embeddings",
+        lambda: _examples(),
+    )
+    result = policy_runtime.rebuild_active_generation(seed=9)
+    connection = policy_runtime.policy_store.connect_policy_store(str(policy_database))
+    try:
+        connection.execute(
+            "UPDATE policy_v2_generations SET target_schema_version = ? "
+            "WHERE generation_id = ?",
+            ("policy-target-v2", result["generation_id"]),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    policy_runtime.invalidate_runtime_cache()
+
+    assert policy_runtime.has_active_generation() is False
+
+
 def test_rendering_auto_uses_effective_metadata_for_features_and_calibration(
     monkeypatch,
 ):
@@ -381,7 +404,10 @@ def test_validated_local_correction_is_applied_before_target_clamping(
     )
 
     assert prediction is not None
-    flattened = flatten_absolute_target(prediction.target)
+    flattened = flatten_absolute_target(
+        prediction.target,
+        include_applicability=True,
+    )
     for key in artifact.target_keys:
         assert flattened[key] == pytest.approx(artifact.slider_bounds[0][key][1])
 

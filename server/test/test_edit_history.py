@@ -1,5 +1,6 @@
 import pytest
 
+from core.migrations import run_migrations
 from services import edit_history, policy_store
 
 
@@ -34,6 +35,51 @@ def test_inference_and_generated_event_are_atomic(tmp_path):
     assert stored["photo_id"] == "photo-1"
     assert stored["modeled_keys"] == ["contrast", "exposure"]
     assert stored["events"][0]["event_kind"] == "generated"
+
+
+def test_burst_provenance_and_absolute_target_are_immutable_and_idempotent(tmp_path):
+    db_path = str(tmp_path / "styleai.db")
+    run_migrations(db_path)
+    kwargs = {
+        "db_path": db_path,
+        "photo_id": "photo-1",
+        "recipe": {"global": {"exposure": 0.5, "crop": {"angle": 1.0}}},
+        "current_settings": {"Exposure2012": 0.0, "CropAngle": 0.0},
+        "engine": "policy_v2",
+        "algorithm_version": "algorithm-v1",
+        "feature_schema_version": "features-v1",
+        "target_schema_version": "targets-v1",
+        "inference_id": "edit:operation-1:photo-1",
+        "operation_job_id": "operation-1",
+        "absolute_target": {"exposure": 0.75, "crop": {"angle": 1.0}},
+        "burst_provenance": {
+            "grouping_schema_version": "edit-burst-group-v1",
+            "reuse_policy_version": "edit-burst-reuse-v1",
+            "threshold_version": "edit-burst-thresholds-v1",
+            "group_id": "edit-burst:abc",
+            "representative_photo_id": "photo-0",
+            "selected_tier": "policy_coherent",
+            "capture_delta_seconds": 0.2,
+            "cosine_distance": 0.01,
+            "source_metric_deltas": {"exp_luminance_mean": 0.02},
+            "policy_agreement": {"same_policy": True},
+            "fallback_reason": "exact_reuse_release_gate_disabled",
+        },
+    }
+
+    first = edit_history.create_recipe_inference(**kwargs)
+    second = edit_history.create_recipe_inference(**kwargs)
+    stored = edit_history.get_inference(db_path=db_path, inference_id=first)
+
+    assert second == first
+    assert stored["operation_job_id"] == "operation-1"
+    assert stored["reuse_tier"] == "policy_coherent"
+    assert stored["burst_group_id"] == "edit-burst:abc"
+    assert stored["absolute_target"] == {
+        "exposure": 0.75,
+        "crop": {"angle": 1.0},
+    }
+    assert stored["source_metric_deltas"] == {"exp_luminance_mean": 0.02}
 
 
 def test_rendering_intent_and_confirmed_readback_are_immutable(tmp_path):

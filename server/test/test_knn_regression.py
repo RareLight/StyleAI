@@ -112,7 +112,7 @@ def test_knn_regression_uses_canonical_defaults_and_clamps_predictions(
     result = _predict(mocker, neighbors)
 
     assert result is not None
-    assert result.recipe["global"]["crop"]["right"] == 1.0
+    assert "crop" not in result.recipe["global"]
     assert result.recipe["global"]["exposure"] <= 1.0
     assert result.confidence < 1.0
 

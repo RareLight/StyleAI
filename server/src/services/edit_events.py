@@ -11,7 +11,7 @@ from .policy_targets import default_flat_target_value, flatten_absolute_target
 from .training import normalize_develop_settings_for_style
 
 
-EDIT_INFERENCE_SCHEMA_VERSION = "edit-inference-v1"
+EDIT_INFERENCE_SCHEMA_VERSION = "edit-inference-v2"
 EDIT_EVENT_SCHEMA_VERSION = "edit-event-v1"
 EDIT_STATE_SCHEMA_VERSION = "edit-state-v1"
 

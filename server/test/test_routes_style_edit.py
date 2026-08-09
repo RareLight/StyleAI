@@ -1,6 +1,7 @@
 """Tests for routes/style_edit.py — covers POST /style_edit."""
 
 import io
+import json
 import pytest
 
 from core.migrations import run_migrations
@@ -105,6 +106,179 @@ def test_style_edit_batch_photos_success(client, mocker):
     assert len(items) == 2
     assert items[0]["photo_id"] == "photo-1"
     assert items[1]["photo_id"] == "photo-2"
+
+
+def test_versioned_batch_preserves_per_photo_contracts(client, mocker, tmp_path):
+    db_path = str(tmp_path / "styleai.db")
+    run_migrations(db_path)
+    mocker.patch("routes.style_edit.config.DB_PATH", db_path)
+    job, _ = operations.create_job(
+        db_path, kind="edit", item_ids=["photo-1", "photo-2"]
+    )
+    run_batch = mocker.patch(
+        "routes.style_edit._run_coherent_style_edit_batch",
+        return_value=(
+            [
+                {
+                    "status": "success",
+                    "photo_id": "photo-1",
+                    "engine": "policy_v2",
+                    "confidence": 0.9,
+                },
+                {
+                    "status": "error",
+                    "photo_id": "photo-2",
+                    "engine": "none",
+                    "error": "low_confidence",
+                },
+            ],
+            {"tier_counts": {"independent": 2}},
+        ),
+    )
+    item_contracts = [
+        {
+            "photo_id": "photo-1",
+            "capture_time": 100.0,
+            "camera_make": "Canon",
+            "camera_model": "R5",
+            "camera_profile": "Adobe Color",
+            "lens": "70-200",
+            "iso": 400,
+            "aperture": 2.8,
+            "shutter_speed": "1/1000",
+            "current_settings": {"Exposure2012": -0.25},
+            "raw_filepath": "/photos/one.cr3",
+        },
+        {
+            "photo_id": "photo-2",
+            "capture_time": 100.1,
+            "camera_make": "Canon",
+            "camera_model": "R5",
+            "camera_profile": "Adobe Color",
+            "current_settings": {"Exposure2012": 0.1},
+            "raw_filepath": "/photos/two.cr3",
+        },
+    ]
+
+    response = client.post(
+        "/style_edit",
+        data={
+            "image": [
+                (io.BytesIO(b"first"), "one.jpg"),
+                (io.BytesIO(b"second"), "two.jpg"),
+            ],
+            "photo_id": ["photo-1", "photo-2"],
+            "job_id": job["job_id"],
+            "items_json": json.dumps(item_contracts),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["error"] is None
+    assert payload["results"]["contract_version"] == "style-edit-batch-v1"
+    structured = run_batch.call_args.args[0]
+    assert structured[0]["options"]["current_settings"] == {"Exposure2012": -0.25}
+    assert structured[1]["options"]["raw_filepath"] == "/photos/two.cr3"
+    stored = operations.get_job(db_path, job["job_id"])
+    assert [item["state"] for item in stored["items"]] == ["committing", "failed"]
+
+
+def test_versioned_batch_rejects_mismatched_item_order(client, tmp_path, mocker):
+    db_path = str(tmp_path / "styleai.db")
+    run_migrations(db_path)
+    mocker.patch("routes.style_edit.config.DB_PATH", db_path)
+    job, _ = operations.create_job(db_path, kind="edit", item_ids=["photo-1"])
+
+    response = client.post(
+        "/style_edit",
+        data={
+            "image": (io.BytesIO(b"first"), "one.jpg"),
+            "photo_id": "photo-1",
+            "job_id": job["job_id"],
+            "items_json": json.dumps([{"photo_id": "photo-other"}]),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "multipart order" in response.get_json()["error"]
+
+
+@pytest.mark.parametrize(
+    ("items_json", "expected"),
+    (
+        ("not-json", "valid JSON"),
+        (
+            json.dumps([{"photo_id": "photo-1", "profile_mode": "sometimes"}]),
+            "profile_mode",
+        ),
+    ),
+)
+def test_versioned_batch_rejects_malformed_contracts(
+    client, tmp_path, mocker, items_json, expected
+):
+    db_path = str(tmp_path / "styleai.db")
+    run_migrations(db_path)
+    mocker.patch("routes.style_edit.config.DB_PATH", db_path)
+    job, _ = operations.create_job(db_path, kind="edit", item_ids=["photo-1"])
+
+    response = client.post(
+        "/style_edit",
+        data={
+            "image": (io.BytesIO(b"first"), "one.jpg"),
+            "photo_id": "photo-1",
+            "job_id": job["job_id"],
+            "items_json": items_json,
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert expected in response.get_json()["error"]
+
+
+def test_versioned_batch_enforces_item_and_image_byte_bounds(client, tmp_path, mocker):
+    db_path = str(tmp_path / "styleai.db")
+    run_migrations(db_path)
+    mocker.patch("routes.style_edit.config.DB_PATH", db_path)
+    job, _ = operations.create_job(
+        db_path, kind="edit", item_ids=["photo-1", "photo-2"]
+    )
+    mocker.patch("routes.style_edit.config.STYLEAI_INDEX_QUEUE_CAPACITY", 1)
+    response = client.post(
+        "/style_edit",
+        data={
+            "image": [
+                (io.BytesIO(b"one"), "one.jpg"),
+                (io.BytesIO(b"two"), "two.jpg"),
+            ],
+            "photo_id": ["photo-1", "photo-2"],
+            "job_id": job["job_id"],
+            "items_json": json.dumps(
+                [{"photo_id": "photo-1"}, {"photo_id": "photo-2"}]
+            ),
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 400
+    assert "at most 1" in response.get_json()["error"]
+
+    mocker.patch("routes.style_edit.config.STYLEAI_INDEX_QUEUE_CAPACITY", 32)
+    mocker.patch("routes.style_edit.config.STYLEAI_METADATA_CACHE_BYTES", 4)
+    response = client.post(
+        "/style_edit",
+        data={
+            "image": (io.BytesIO(b"large"), "one.jpg"),
+            "photo_id": "photo-1",
+            "job_id": job["job_id"],
+            "items_json": json.dumps([{"photo_id": "photo-1"}]),
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 400
+    assert "image-byte limit" in response.get_json()["error"]
 
 
 def test_style_edit_updates_durable_operation_item(client, mocker, tmp_path):
@@ -257,6 +431,210 @@ def test_cache_miss_computes_once_and_cache_failure_does_not_fail_edit(mocker):
     assert "embedding_cache_write" in result["timings_ms"]
     cache.assert_called_once()
     image.close.assert_called_once()
+
+
+def test_batch_source_cache_misses_use_one_embedding_call(mocker):
+    from routes.style_edit import _prepare_batch_source_embeddings
+    from services import source_embeddings
+
+    mocker.patch(
+        "routes.style_edit._get_canonical_source_embedding",
+        return_value=(None, {}, None),
+    )
+    sources = [
+        source_embeddings.NeutralSource(b"raw-one", "raw_preview", "one"),
+        source_embeddings.NeutralSource(b"raw-two", "raw_preview", "two"),
+    ]
+    mocker.patch(
+        "routes.style_edit.source_embeddings.resolve_neutral_source",
+        side_effect=sources,
+    )
+    metrics = {key: 0.0 for key in SOURCE_METRIC_KEYS}
+    mocker.patch(
+        "routes.style_edit.training_service.compute_exposure_metrics",
+        return_value=metrics,
+    )
+    images = [mocker.MagicMock(), mocker.MagicMock()]
+    mocker.patch(
+        "routes.style_edit.source_embeddings.decode_for_embedding",
+        side_effect=images,
+    )
+    mocker.patch("server_lifecycle.get_model", return_value=mocker.MagicMock())
+    mocker.patch("server_lifecycle.get_processor", return_value=mocker.MagicMock())
+    analysis = mocker.MagicMock()
+    analysis._generate_image_embeddings.return_value = [[1.0, 0.0], [0.9, 0.1]]
+    mocker.patch("services.metadata.get_analysis_service", return_value=analysis)
+    mocker.patch(
+        "routes.style_edit.operations.JobCancelSignal.is_set", return_value=False
+    )
+    cache = mocker.patch("routes.style_edit._cache_canonical_source_embedding")
+    items = [
+        {
+            "photo_id": "photo-1",
+            "image_bytes": b"rendered-one",
+            "filename": "one.jpg",
+            "options": {"raw_filepath": "/photos/one.cr3"},
+        },
+        {
+            "photo_id": "photo-2",
+            "image_bytes": b"rendered-two",
+            "filename": "two.jpg",
+            "options": {"raw_filepath": "/photos/two.cr3"},
+        },
+    ]
+
+    prepared = _prepare_batch_source_embeddings(items, "operation-1")
+
+    analysis._generate_image_embeddings.assert_called_once()
+    assert [item["embedding"] for item in prepared] == [
+        [1.0, 0.0],
+        [0.9, 0.1],
+    ]
+    assert cache.call_count == 2
+    for image in images:
+        image.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("member_tier", "expected_exposure"),
+    (("policy_coherent", -0.25), ("global_target_reuse", 0.5)),
+)
+def test_batch_coherence_keeps_member_prediction_or_reuses_only_safe_target(
+    mocker, member_tier, expected_exposure
+):
+    from routes.style_edit import _run_coherent_style_edit_batch
+    from services import edit_burst_coherence
+
+    metrics = {key: 0.25 for key in SOURCE_METRIC_KEYS}
+    evidence = [
+        edit_burst_coherence.BurstEvidence(
+            photo_id=photo_id,
+            capture_time=100.0 + index * 0.1,
+            embedding=(1.0, index * 0.01),
+            source_provenance="raw_preview",
+            source_metrics=metrics,
+            camera_make="Canon",
+            camera_model="R5",
+            camera_profile="Adobe Color",
+            hard_partition_key="sdr|adobe color",
+            policy_id="policy-1",
+            confidence=0.9,
+            entropy=0.1,
+        )
+        for index, photo_id in enumerate(("representative", "member"))
+    ]
+    representative_result = StyleEngineResult(
+        recipe={"global": {"exposure": 1.0, "temperature": 7000.0}},
+        confidence=0.9,
+        matched_count=10,
+        policy_id="policy-1",
+        hard_partition_key="sdr|adobe color",
+        absolute_target={"exposure": 1.0, "temperature": 7000.0},
+    )
+    member_result = StyleEngineResult(
+        recipe={
+            "global": {
+                "exposure": -0.25,
+                "temperature": 5100.0,
+                "crop": {"angle": 0.5},
+            }
+        },
+        confidence=0.9,
+        matched_count=10,
+        policy_id="policy-1",
+        hard_partition_key="sdr|adobe color",
+        absolute_target={
+            "exposure": -0.5,
+            "temperature": 5200.0,
+            "crop": {"angle": 1.0},
+        },
+    )
+    payloads = [
+        {
+            "status": "success",
+            "photo_id": "representative",
+            "recipe": representative_result.recipe,
+            "_style_result": representative_result,
+            "_source_evidence": evidence[0],
+            "timings_ms": {},
+        },
+        {
+            "status": "success",
+            "photo_id": "member",
+            "recipe": member_result.recipe,
+            "_style_result": member_result,
+            "_source_evidence": evidence[1],
+            "timings_ms": {},
+        },
+    ]
+    mocker.patch(
+        "routes.style_edit._prepare_batch_source_embeddings",
+        return_value=[
+            {"embedding": [1.0, 0.0], "source_metrics": metrics},
+            {"embedding": [1.0, 0.01], "source_metrics": metrics},
+        ],
+    )
+    mocker.patch(
+        "routes.style_edit.edit_burst_coherence.representative_first_order",
+        return_value=[0, 1],
+    )
+    mocker.patch("routes.style_edit._run_single_style_edit_core", side_effect=payloads)
+    decisions = {
+        "representative": edit_burst_coherence.BurstDecision(
+            photo_id="representative",
+            group_id="edit-burst:one",
+            representative_photo_id="representative",
+            group_size=2,
+        ),
+        "member": edit_burst_coherence.BurstDecision(
+            photo_id="member",
+            tier=member_tier,
+            fallback_reason=None,
+            group_id="edit-burst:one",
+            representative_photo_id="representative",
+            group_size=2,
+        ),
+    }
+    mocker.patch(
+        "routes.style_edit.edit_burst_coherence.decide_reuse_tiers",
+        return_value=(decisions, {"tier_counts": {member_tier: 1}}),
+    )
+    mocker.patch(
+        "routes.style_edit.operations.pressure_snapshot",
+        return_value={"level": "normal"},
+    )
+    persist = mocker.patch("routes.style_edit._persist_deferred_style_edit")
+    items = [
+        {
+            "photo_id": "representative",
+            "image_bytes": b"one",
+            "filename": "one.jpg",
+            "options": {"current_settings": {}, "style_strength": 0.5},
+        },
+        {
+            "photo_id": "member",
+            "image_bytes": b"two",
+            "filename": "two.jpg",
+            "options": {
+                "current_settings": {
+                    "Exposure2012": 0.0,
+                    "Temperature": 5000.0,
+                    "CropAngle": 0.0,
+                },
+                "style_strength": 0.5,
+            },
+        },
+    ]
+
+    _run_coherent_style_edit_batch(items, job_id="operation-1")
+
+    assert member_result.recipe["global"]["exposure"] == expected_exposure
+    assert member_result.recipe["global"]["temperature"] == 5100.0
+    assert member_result.recipe["global"]["crop"]["angle"] == 0.5
+    assert (
+        persist.call_args_list[1].kwargs["burst_provenance"]["selected_tier"]
+        == member_tier
+    )
 
 
 @pytest.mark.parametrize(

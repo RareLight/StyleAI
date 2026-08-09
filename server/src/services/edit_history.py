@@ -76,6 +76,13 @@ def _inference_row(row: sqlite3.Row) -> dict[str, Any]:
     ):
         raw = result.pop(stored_key, None)
         result[output_key] = json.loads(raw) if raw else None
+    for stored_key, output_key in (
+        ("absolute_target_json", "absolute_target"),
+        ("source_metric_deltas_json", "source_metric_deltas"),
+        ("policy_agreement_json", "policy_agreement"),
+    ):
+        raw = result.pop(stored_key, None)
+        result[output_key] = json.loads(raw) if raw else None
     return result
 
 
@@ -101,6 +108,9 @@ def create_inference(
     summary: str = "",
     inference_id: str | None = None,
     rendering_intent: dict[str, Any] | None = None,
+    operation_job_id: str | None = None,
+    absolute_target: dict[str, Any] | None = None,
+    burst_provenance: dict[str, Any] | None = None,
 ) -> str:
     """Atomically store an immutable inference and its generated event."""
     required = (
@@ -116,9 +126,31 @@ def create_inference(
         raise ValueError("complete edit inference provenance is required")
     new_id = inference_id or uuid4().hex
     created_at = _utc_now()
+    burst = dict(burst_provenance or {})
+    selected_tier = str(burst.get("selected_tier") or "independent")
+    if selected_tier not in {
+        "independent",
+        "policy_coherent",
+        "global_target_reuse",
+    }:
+        raise ValueError("unsupported burst-reuse tier")
     connection = connect_policy_store(db_path)
     try:
         with _transaction(connection):
+            existing = connection.execute(
+                "SELECT * FROM policy_v2_edit_inferences WHERE inference_id = ?",
+                (new_id,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["photo_id"] != photo_id
+                    or existing["pre_edit_fingerprint"] != pre_edit_fingerprint
+                    or existing["target_fingerprint"] != target_fingerprint
+                ):
+                    raise ValueError(
+                        "inference idempotency key conflicts with stored recipe"
+                    )
+                return new_id
             connection.execute(
                 """
                 INSERT INTO policy_v2_edit_inferences (
@@ -130,8 +162,15 @@ def create_inference(
                     pre_edit_fingerprint, target_state_json,
                     target_fingerprint, created_at,
                     current_rendering_state_json, target_rendering_state_json,
-                    rendering_intent_json, rendering_selector_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    rendering_intent_json, rendering_selector_version,
+                    operation_job_id, absolute_target_json,
+                    grouping_schema_version, reuse_policy_version,
+                    threshold_version, burst_group_id,
+                    representative_photo_id, reuse_tier,
+                    capture_delta_seconds, cosine_distance,
+                    source_metric_deltas_json, policy_agreement_json,
+                    burst_fallback_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     new_id,
@@ -170,6 +209,36 @@ def create_inference(
                     rendering_intent.get("selector_algorithm_version")
                     if rendering_intent
                     else None,
+                    str(operation_job_id or "").strip() or None,
+                    (
+                        json.dumps(
+                            absolute_target, sort_keys=True, separators=(",", ":")
+                        )
+                        if isinstance(absolute_target, dict)
+                        else None
+                    ),
+                    burst.get("grouping_schema_version"),
+                    burst.get("reuse_policy_version"),
+                    burst.get("threshold_version"),
+                    burst.get("group_id"),
+                    burst.get("representative_photo_id"),
+                    selected_tier,
+                    _optional_finite(
+                        burst.get("capture_delta_seconds"),
+                        "capture_delta_seconds",
+                    ),
+                    _optional_finite(burst.get("cosine_distance"), "cosine_distance"),
+                    json.dumps(
+                        dict(burst.get("source_metric_deltas") or {}),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    json.dumps(
+                        dict(burst.get("policy_agreement") or {}),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    burst.get("fallback_reason"),
                 ),
             )
             connection.execute(
@@ -209,6 +278,10 @@ def create_recipe_inference(
     confidence: float | None = None,
     entropy: float | None = None,
     strength: float = 1.0,
+    inference_id: str | None = None,
+    operation_job_id: str | None = None,
+    absolute_target: dict[str, Any] | None = None,
+    burst_provenance: dict[str, Any] | None = None,
 ) -> str:
     """Build canonical state evidence and persist one generated recipe."""
     target_state = recipe_target_state(recipe)
@@ -238,7 +311,11 @@ def create_recipe_inference(
         entropy=entropy,
         strength=strength,
         summary=str(recipe.get("summary") or ""),
+        inference_id=inference_id,
         rendering_intent=rendering_intent,
+        operation_job_id=operation_job_id,
+        absolute_target=absolute_target,
+        burst_provenance=burst_provenance,
     )
 
 

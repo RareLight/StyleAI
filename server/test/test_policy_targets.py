@@ -137,6 +137,52 @@ def test_flat_target_round_trip_preserves_nested_targets():
     assert len(rebuilt["tone_curve"]["point_curve"]["master"]) == 32
 
 
+def test_neutral_geometry_is_learned_as_no_crop_and_no_rotation():
+    flat = flatten_absolute_target(
+        {
+            "crop": {
+                "left": 0.0,
+                "right": 1.0,
+                "top": 0.0,
+                "bottom": 1.0,
+                "angle": 0.0,
+            }
+        },
+        include_applicability=True,
+    )
+
+    assert flat["crop_is_applied"] == 0.0
+    assert flat["rotation_is_applied"] == 0.0
+    assert "crop" not in unflatten_absolute_target(flat)
+
+
+@pytest.mark.parametrize(
+    ("crop_score", "rotation_score", "expected"),
+    (
+        (0.69, 0.69, None),
+        (0.70, 0.69, {"left": 0.1, "right": 0.9}),
+        (0.69, 0.70, {"angle": 1.5}),
+        (0.70, 0.70, {"left": 0.1, "right": 0.9, "angle": 1.5}),
+    ),
+)
+def test_crop_and_rotation_require_independent_conservative_gates(
+    crop_score,
+    rotation_score,
+    expected,
+):
+    rebuilt = unflatten_absolute_target(
+        {
+            "crop_left": 0.1,
+            "crop_right": 0.9,
+            "crop_angle": 1.5,
+            "crop_is_applied": crop_score,
+            "rotation_is_applied": rotation_score,
+        }
+    )
+
+    assert rebuilt.get("crop") == expected
+
+
 def test_as_shot_white_balance_does_not_apply_numeric_overrides():
     rebuilt = unflatten_absolute_target(
         {
