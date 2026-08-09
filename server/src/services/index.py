@@ -12,6 +12,7 @@ from config import logger
 from . import chroma as chroma_service
 from .chroma import DatabaseNotReadyError
 from .metadata import get_analysis_service
+from . import source_embeddings
 import server_lifecycle as server_lifecycle
 from . import exif as exif_service
 import gc
@@ -35,14 +36,20 @@ _last_forced_gc_at = 0.0
 _FORCED_GC_INTERVAL_SECONDS = 30.0
 
 
-def _decode_worker_count(batch_size: int) -> int:
+def _decode_worker_count(batch_size: int, cpu_capacity: int | None = None) -> int:
     """Keep JPEG decoding inside the same hardware budget as ingestion."""
+    if cpu_capacity is None:
+        from services import operations
+
+        cpu_capacity = operations.admission.capacities["cpu_prepare"]
+
     return max(
         1,
         min(
             batch_size,
             config.STYLEAI_GPU_BATCH_SIZE,
             config.STYLEAI_HTTP_THREADS,
+            cpu_capacity,
         ),
     )
 
@@ -225,6 +232,7 @@ def get_uuids_needing_processing(
             regenerate_metadata
             or not is_existing
             or existing.get("has_embedding", True) is False
+            or not source_embeddings.metadata_has_current_contract(existing)
         )
         has_any_metadata = (
             existing.get("title")
@@ -358,6 +366,7 @@ def process_image_task(
                 regenerate_metadata
                 or not is_existing
                 or existing.get("has_embedding", True) is False
+                or not source_embeddings.metadata_has_current_contract(existing)
             )
             if needs_embedding:
                 images_needing_embeddings.add(uuid)
@@ -431,15 +440,34 @@ def process_image_task(
                 logger.debug("Could not extract EXIF location for %s: %s", uuid, exc)
                 exif_location_by_uuid[uuid] = None
 
-        # Decode each image to PIL concurrently
+        # Resolve target-independent pixels for SigLIP without changing the
+        # rendered Lightroom bytes used by EXIF extraction and local-LLM metadata.
+        def _prepare_embedding_source(index: int):
+            _image_bytes, uuid, _filename, _lr_uuid = image_triplets[index]
+            if uuid not in images_needing_embeddings:
+                return None, None, None
+            opt = options[index] if isinstance(options, list) else options
+            source = source_embeddings.resolve_neutral_source(
+                _image_bytes,
+                opt.get("raw_filepath"),
+            )
+            from services import training as training_service
+
+            return (
+                source,
+                source_embeddings.decode_for_embedding(source.image_bytes),
+                training_service.compute_exposure_metrics(source.image_bytes),
+            )
+
         with ThreadPoolExecutor(
             max_workers=_decode_worker_count(len(image_triplets))
         ) as executor:
-            pil_images = list(
-                executor.map(
-                    _decode_image, [img_bytes for img_bytes, _, _, _ in image_triplets]
-                )
+            prepared_sources = list(
+                executor.map(_prepare_embedding_source, range(len(image_triplets)))
             )
+        embedding_sources = [prepared[0] for prepared in prepared_sources]
+        pil_images = [prepared[1] for prepared in prepared_sources]
+        embedding_source_metrics = [prepared[2] for prepared in prepared_sources]
 
         blurred_image_triplets = image_triplets
 
@@ -663,6 +691,16 @@ def process_image_task(
                 # Update embedding status
                 if embedding is not None:
                     main_metadata["has_embedding"] = True
+                    embedding_source = embedding_sources[i]
+                    if embedding_source is None:
+                        raise RuntimeError(
+                            "Embedding succeeded without a canonical source identity"
+                        )
+                    main_metadata = source_embeddings.stamp_metadata(
+                        main_metadata,
+                        embedding_source,
+                        source_metrics=embedding_source_metrics[i],
+                    )
                 elif existing and existing.get("has_embedding", False):
                     # Preserve the existing embedding when this request did not generate one.
                     main_metadata["has_embedding"] = True

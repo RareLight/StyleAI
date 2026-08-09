@@ -261,16 +261,16 @@ local function showAnalyzeAndIndexDialog(ctx)
 		local promptTitleMenu = f:popup_menu {
 			items = bind 'promptTitles',
 			value = bind 'prompt',
-			fill_horizontal = 1,
+			width = 320,
 		}
 		props.promptTitleMenu = promptTitleMenu
 
-		local metadataContents = f:column {
+		local metadataContents = UIFactory.DialogColumn(f, {
 			bind_to_object = props,
 			spacing = f:control_spacing(),
-			fill_horizontal = 1,
+			width = 700,
 			UIFactory.HelpText(f, {
-				title = LOC "$$$/StyleAI/Prepare/MetadataSettingsHelp=Choose what StyleAI writes, which local model and prompt it uses, and what optional context is provided.",
+				title = LOC "$$$/StyleAI/Prepare/MetadataSettingsHelp=Choose the generated fields, local model, instructions, and optional context.",
 			}),
 			f:tab_view {
 				fill_horizontal = 1,
@@ -361,7 +361,7 @@ local function showAnalyzeAndIndexDialog(ctx)
 							UIFactory.FormRow(f, {
 								label = LOC "$$$/StyleAI/PluginInfoDialogSections/aiModel=Model:",
 								labelWidth = share 'prepareMetadataLabel',
-								f:popup_menu { value = bind 'modelKey', items = modelItems, fill_horizontal = 1 },
+								f:popup_menu { value = bind 'modelKey', items = modelItems, width = 360 },
 							}),
 							UIFactory.FormRow(f, {
 								label = LOC "$$$/StyleAI/PluginInfoDialogSections/generateLanguage=Language:",
@@ -416,7 +416,7 @@ local function showAnalyzeAndIndexDialog(ctx)
 					}),
 				},
 			},
-		}
+		})
 
 		local result = LrDialogs.presentModalDialog {
 			title = LOC "$$$/StyleAI/Prepare/MetadataSettingsTitle=Local Metadata Settings",
@@ -435,15 +435,14 @@ local function showAnalyzeAndIndexDialog(ctx)
 		end
 	end
 
-	local contents = f:column {
+	local contents = UIFactory.DialogColumn(f, {
         bind_to_object = props,
         spacing = f:control_spacing(),
-        fill_horizontal = 1,
+		width = 620,
 
 		UIFactory.Notice(f, {
 			kind = "info",
-			title = LOC "$$$/StyleAI/Prepare/Intro=Prepare photos for learned editing, training recommendations, and optional local metadata generation.",
-			width = 600,
+			title = LOC "$$$/StyleAI/Prepare/Intro=Prepare photos for learned editing and optional local metadata.",
 		}),
 
         UIFactory.SettingsGroup(f, {
@@ -464,10 +463,12 @@ local function showAnalyzeAndIndexDialog(ctx)
                                 or LOC "$$$/StyleAI/Prepare/VisionMissing=Vision model needs setup"
                         end,
                     },
+					width = 210,
+					wrap = true,
                 },
             },
 			UIFactory.HelpText(f, {
-				title = LOC "$$$/StyleAI/Prepare/AnalyzeHelp=Creates local visual analysis used by learned editing and training recommendations.",
+				title = LOC "$$$/StyleAI/Prepare/AnalyzeHelp=Creates visual analysis for learned editing and training recommendations.",
             }),
             f:row {
                 fill_horizontal = 1,
@@ -478,6 +479,8 @@ local function showAnalyzeAndIndexDialog(ctx)
                 f:static_text {
                     title = bind 'llmStatusText',
                     text_color = bind 'llmStatusColor',
+					width = 210,
+					wrap = true,
                 },
             },
 			UIFactory.HelpText(f, {
@@ -499,7 +502,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                 labelWidth = share 'prepareLabelWidth',
                 f:popup_menu {
                     value = bind 'scope',
-                    fill_horizontal = 1,
+					width = 360,
                     items = {
                         { title = LOC "$$$/StyleAI/common/ScopeSelected=Selected photos only", value = 'selected' },
                         { title = LOC "$$$/StyleAI/common/ScopeView=Current view", value = 'view' },
@@ -534,7 +537,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                 },
             }),
 			UIFactory.HelpText(f, {
-				title = LOC "$$$/StyleAI/Prepare/ExistingDataHelp=Keep is the safest default. Replace affects only the StyleAI-generated data selected for this run.",
+				title = LOC "$$$/StyleAI/Prepare/ExistingDataHelp=Keep is recommended. Replace affects only StyleAI data selected for this run.",
 			}),
 		}),
 
@@ -557,7 +560,7 @@ local function showAnalyzeAndIndexDialog(ctx)
                 end,
             },
         }),
-    }
+    })
 
     local result = LrDialogs.presentModalDialog {
         title = LOC "$$$/StyleAI/Prepare/WindowTitle=Prepare Photos",
@@ -655,10 +658,10 @@ local function showPhotoContextDialog(photo)
     props.photoContextData = PhotoContextData
     props.skipFromHere = false
 
-    local dialogView = f:column {
+    local dialogView = UIFactory.DialogColumn(f, {
         bind_to_object = props,
 		spacing = f:control_spacing(),
-		fill_horizontal = 1,
+		width = 620,
         f:row {
             f:static_text {
                 title = photo:getFormattedMetadata('fileName'),
@@ -690,7 +693,7 @@ local function showPhotoContextDialog(photo)
             value = bind 'skipFromHere',
 			title = LOC "$$$/StyleAI/AnalyzeImageTask/SkipPreflightFromHere=Use this context for all remaining photos.",
         },
-    }
+    })
 
     local result = LrDialogs.presentModalDialog({
         title = LOC "$$$/StyleAI/AnalyzeImageTask/PhotoContextDialogData=Photo Context",

@@ -10,6 +10,7 @@ local LrView = import("LrView")
 
 local SearchIndexAPI = require("APISearchIndex")
 local Util = require("Util")
+local UIFactory = require("UIFactory")
 
 LrTasks.startAsyncTask(function()
 	LrFunctionContext.callWithContext("reviewAIEditOutcome", function(ctx)
@@ -48,38 +49,39 @@ LrTasks.startAsyncTask(function()
 			local props = LrBinding.makePropertyTable(ctx)
 			props.outcome = "accepted"
 			local f = LrView.osFactory()
-			local contents = f:column({
+			local contents = UIFactory.DialogColumn(f, {
 				bind_to_object = props,
+				width = 620,
 				spacing = f:control_spacing(),
-				f:static_text({
+				UIFactory.Notice(f, {
+					kind = "info",
 					title = LOC(
-						"$$$/StyleAI/EditOutcome/Prompt=Choose one outcome for ^1 tracked selected photo(s). The same outcome will be recorded for all of them. This records feedback only and never changes or undoes Develop settings.",
+						"$$$/StyleAI/EditOutcome/Prompt=Record one outcome for all ^1 tracked photo(s). This saves feedback only and does not change Develop settings.",
 						tostring(#tracked)
 					),
-					fill_horizontal = 1,
-					wrap = true,
 				}),
-				f:radio_button({
-					value = LrView.bind("outcome"),
-					checked_value = "accepted",
-					title = LOC("$$$/StyleAI/EditOutcome/Accepted=Keep AI Edit — I kept the modeled edit unchanged"),
+				UIFactory.SettingsGroup(f, {
+					title = LOC("$$$/StyleAI/EditOutcome/Outcome=Outcome"),
+					f:radio_button({
+						value = LrView.bind("outcome"),
+						checked_value = "accepted",
+						title = LOC("$$$/StyleAI/EditOutcome/Accepted=Keep AI Edit — unchanged"),
+					}),
+					f:radio_button({
+						value = LrView.bind("outcome"),
+						checked_value = "modified_and_kept",
+						title = LOC("$$$/StyleAI/EditOutcome/Modified=Modified and Kept — adjusted, then kept"),
+					}),
+					f:radio_button({
+						value = LrView.bind("outcome"),
+						checked_value = "rejected",
+						title = LOC("$$$/StyleAI/EditOutcome/Rejected=Not Useful — did not work for these photos"),
+					}),
 				}),
-				f:radio_button({
-					value = LrView.bind("outcome"),
-					checked_value = "modified_and_kept",
-					title = LOC("$$$/StyleAI/EditOutcome/Modified=Modified and Kept — I adjusted the edit and kept the result"),
-				}),
-				f:radio_button({
-					value = LrView.bind("outcome"),
-					checked_value = "rejected",
-					title = LOC("$$$/StyleAI/EditOutcome/Rejected=Not Useful — the result did not work for these photos"),
-				}),
-				f:static_text({
+				UIFactory.HelpText(f, {
 					title = LOC(
-						"$$$/StyleAI/EditOutcome/Guidance=Not Useful is a feedback label. It does not undo an edit; use Lightroom Undo or History separately when needed."
+						"$$$/StyleAI/EditOutcome/Guidance=Not Useful does not undo an edit. Use Lightroom Undo or History when needed."
 					),
-					fill_horizontal = 1,
-					wrap = true,
 				}),
 			})
 			local result = LrDialogs.presentModalDialog({

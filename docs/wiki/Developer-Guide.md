@@ -126,9 +126,13 @@ weight loading so model initialization cannot happen twice.
 
 ## Prepare Photos and local metadata
 
-Visual analysis creates SigLIP2 embeddings in `image_embeddings`. If analysis
-and metadata are requested together, the photo's embedding must commit before
-its metadata phase begins.
+Visual analysis creates canonical, target-independent SigLIP2 embeddings in
+`image_embeddings`. Embedded RAW previews are preferred for embeddings while
+the Lightroom-rendered proxy remains the input to local-LLM captions and
+keywords. Each vector carries a source fingerprint plus provenance, model,
+preprocessing, schema, and source-metric fields. Editing treats any incomplete
+or mismatched stamp as a cache miss. If analysis and metadata are requested
+together, the photo's embedding must commit before its metadata phase begins.
 
 Lua sends metadata through `/metadata/generate_batch`. Every accepted item
 retains its own image bytes until its own vision inference finishes. Burst or

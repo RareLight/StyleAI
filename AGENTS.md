@@ -128,6 +128,13 @@ French resources synchronized.
   large groups.
 - Keep `image_embeddings` and `edit_training` strictly isolated. Metadata may
   start only after its photo's embedding commit when both were requested.
+- `image_embeddings` stores the canonical target-independent SigLIP vector:
+  prefer the embedded RAW preview, retain the rendered Lightroom proxy only for
+  local-LLM metadata, and stamp every vector with source fingerprint,
+  provenance, model, preprocessing, and schema versions. Editing may reuse a
+  vector and its source metrics only when the entire stamp matches; otherwise
+  recompute and atomically replace the derived record. Never infer compatibility
+  from photo ID or vector presence alone.
 - Every vision-metadata item retains and infers from its own pixels. Never copy
   a burst representative's caption, title, alt text, or complete keyword set.
   Send batches to `/metadata/generate_batch`; missing pixels must fail closed or

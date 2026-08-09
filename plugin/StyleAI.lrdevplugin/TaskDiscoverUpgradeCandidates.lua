@@ -485,22 +485,21 @@ LrTasks.startAsyncTask(function()
 		-- Build Dialog
 		local function buildDialog()
 			if not hasStyles then
-				return f:column({
+				return UIFactory.DialogColumn(f, {
 					bind_to_object = props,
 					spacing = f:control_spacing(),
-					fill_horizontal = 1,
+					width = 620,
 					UIFactory.Notice(f, {
 						kind = "info",
 						title = bind("statusMessage"),
-						width = 600,
 					}),
 				})
 			end
 
-			return f:column({
+			return UIFactory.DialogColumn(f, {
 				bind_to_object = props,
 				spacing = f:control_spacing(),
-				fill_horizontal = 1,
+				width = 700,
 
 				-- Status bar
 				UIFactory.HelpText(f, {
@@ -515,6 +514,8 @@ LrTasks.startAsyncTask(function()
 					listItems = bind("listItems"),
 					selectedValue = bind("selectedStyleIndex"),
 					heightInLines = 7,
+					listWidth = 660,
+					filterWidth = 360,
 					fillVertical = false,
 				}),
 

@@ -22,12 +22,13 @@ local function showTrainDialog(ctx, selectedPhotosSnapshot)
 	props.forceRetrain = false
 	props.selectedCount = #(selectedPhotosSnapshot or {})
 
-	local contents = f:column({
+	local contents = UIFactory.DialogColumn(f, {
 		bind_to_object = props,
+		width = 620,
 		spacing = f:control_spacing(),
 		UIFactory.Notice(f, {
 			kind = "info",
-			title = LOC("$$$/StyleAI/Training/DialogHint=StyleAI learns from the Develop settings of your edited RAW and DNG photos. It reads those settings but does not change them."),
+			title = LOC("$$$/StyleAI/Training/DialogHint=StyleAI learns from edited RAW and DNG photos without changing them."),
 		}),
 		UIFactory.SettingsGroup(f, {
 			title = LOC("$$$/StyleAI/Training/Photos=Training Photos"),
@@ -35,7 +36,7 @@ local function showTrainDialog(ctx, selectedPhotosSnapshot)
 				label = LOC("$$$/StyleAI/AnalyzeAndIndex/Scope=Scope:"),
 				f:popup_menu({
 					value = bind("scope"),
-					fill_horizontal = 1,
+					width = 360,
 					items = {
 						{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
 						{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
@@ -62,7 +63,7 @@ local function showTrainDialog(ctx, selectedPhotosSnapshot)
 				value = bind("forceRetrain"),
 			}),
 			UIFactory.HelpText(f, {
-				title = LOC("$$$/StyleAI/Training/UpdateHelp=When enabled, the saved training record for an eligible photo is replaced with its current Develop settings and source analysis."),
+				title = LOC("$$$/StyleAI/Training/UpdateHelp=Re-read current Develop settings and source analysis for photos already learned."),
 			}),
 		}),
 	})

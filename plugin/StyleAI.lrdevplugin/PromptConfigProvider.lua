@@ -114,15 +114,16 @@ function PromptConfigProvider.addPrompt(props)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 	local share = LrView.share
+	local UIFactory = require("UIFactory")
 
 	local propertyTable = {}
 	propertyTable.name = ""
 	propertyTable.prompt = ""
 
-	local dialogView = f:column({
+	local dialogView = UIFactory.DialogColumn(f, {
 		bind_to_object = propertyTable,
 		spacing = f:control_spacing(),
-		fill_horizontal = 1,
+		width = 620,
 		f:row({
 			fill_horizontal = 1,
 			f:static_text({
@@ -188,6 +189,7 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 	local share = LrView.share
+	local UIFactory = require("UIFactory")
 
 	propertyTable.promptTitles = {}
 	for title in pairs(prefs.prompts) do
@@ -211,13 +213,14 @@ function PromptConfigProvider.showPromptConfigDialog(propertyTable)
 	local dropDown = f:popup_menu({
 		items = bind("promptTitles"),
 		value = bind("prompt"),
+		width = 280,
 	})
 	propertyTable.promptTitleMenu = dropDown
 
-	local dialogView = f:column({
+	local dialogView = UIFactory.DialogColumn(f, {
 		bind_to_object = propertyTable,
 		spacing = f:control_spacing(),
-		fill_horizontal = 1,
+		width = 700,
 		f:row({
 			fill_horizontal = 1,
 			f:static_text({

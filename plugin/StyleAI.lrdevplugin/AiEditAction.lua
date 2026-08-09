@@ -11,6 +11,10 @@ local AiEditAction = {}
 
 local PENDING_APPLICATION_EVENT_KEY = "pendingAiEditApplicationEvent"
 
+local function elapsedMilliseconds(startedAt)
+	return math.floor(math.max(0, LrDate.currentTime() - startedAt) * 1000)
+end
+
 local function readPendingApplicationEvent(photo)
 	local raw = photo:getPropertyForPlugin(_PLUGIN, PENDING_APPLICATION_EVENT_KEY)
 	if type(raw) ~= "string" or raw == "" then return nil end
@@ -86,8 +90,9 @@ local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 	props.allowAutoRotate = prefs.aiEditAllowAutoRotate == true
 
 	local function createPredictiveContent()
-		return f:column({
+		return UIFactory.DialogColumn(f, {
 			bind_to_object = props,
+			width = 660,
 			spacing = f:control_spacing(),
 			UIFactory.SettingsGroup(f, {
 				title = LOC("$$$/StyleAI/common/Scope=Photos"),
@@ -96,7 +101,7 @@ local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 					labelWidth = share("applyLabelWidth"),
 					f:popup_menu({
 						value = bind("scope"),
-						fill_horizontal = 1,
+						width = 360,
 						items = {
 							{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
 							{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
@@ -216,11 +221,7 @@ local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 		})
 	end
 
-	local contents = f:column({
-		bind_to_object = props,
-		spacing = f:control_spacing(),
-		createPredictiveContent(),
-	})
+	local contents = createPredictiveContent()
 
 	local result = LrDialogs.presentModalDialog({
 		title = LOC("$$$/StyleAI/TaskAiEditPhotos/DialogTitleML=Apply My Style"),
@@ -357,6 +358,7 @@ function AiEditAction.run()
 		local results = {}
 		local producerDone = false
 		local stopRequested = false
+		local producerFailed = false
 		local photoIdsByIndex = {}
 		local photoIdErrorsByIndex = {}
 		local operationItemIds = {}
@@ -502,7 +504,12 @@ function AiEditAction.run()
 
 					local photo = photos[index]
 					local fileName = photo:getFormattedMetadata("fileName") or "Photo"
-					local resultObj = { fileName = fileName, continueProcessing = true }
+					local resultObj = {
+						fileName = fileName,
+						continueProcessing = true,
+						startedAt = LrDate.currentTime(),
+						clientTimingsMs = {},
+					}
 
 					local photoId = photoIdsByIndex[index]
 					local photoIdErr = photoIdErrorsByIndex[index]
@@ -537,7 +544,9 @@ function AiEditAction.run()
 						if okSettings and currentSettings then
 							photoOptions.current_settings = currentSettings
 						end
+						local exportStartedAt = LrDate.currentTime()
 						local base_path = SearchIndexAPI.exportPhotoForIndexing(photo)
+						resultObj.clientTimingsMs.lightroom_export = elapsedMilliseconds(exportStartedAt)
 						if not base_path then
 							log:error("Failed to export photo for AI edit generation: " .. fileName)
 							resultObj.errorMsg = fileName .. ": export failed"
@@ -548,6 +557,7 @@ function AiEditAction.run()
 						else
 							local requestLease, requestLeaseError = WorkCoordinator.acquire(backendRequestLane, progressScope)
 							local ok, apiOk, apiResponse
+							local requestStartedAt = LrDate.currentTime()
 							if requestLease then
 								ok, apiOk, apiResponse = LrTasks.pcall(function()
 									return SearchIndexAPI.styleEdit(photoId, base_path, photoOptions)
@@ -556,6 +566,7 @@ function AiEditAction.run()
 								ok, apiOk, apiResponse = false, requestLeaseError, nil
 							end
 							WorkCoordinator.release(requestLease)
+							resultObj.clientTimingsMs.backend_request = elapsedMilliseconds(requestStartedAt)
 
 							SearchIndexAPI.cleanupExportedPhoto(base_path)
 
@@ -597,6 +608,7 @@ function AiEditAction.run()
 						end
 					end
 
+					resultObj.readyAt = LrDate.currentTime()
 					results[index] = resultObj
 				end
 			end
@@ -613,6 +625,7 @@ function AiEditAction.run()
 				activeProducers = activeProducers - 1
 				if not workerOk then
 					stopRequested = true
+					producerFailed = true
 					local message = "Edit producer failed: " .. tostring(workerError)
 					log:error(message)
 					table.insert(errorMessages, message)
@@ -639,6 +652,7 @@ function AiEditAction.run()
 
 			local res = results[index]
 			if not res then break end
+			res.clientTimingsMs.consumer_wait = res.readyAt and elapsedMilliseconds(res.readyAt) or 0
 
 			if res.warning then
 				table.insert(backendWarnings, res.warning)
@@ -657,6 +671,7 @@ function AiEditAction.run()
 				local response = res.response
 				local persistLease, persistLeaseError = WorkCoordinator.acquire("catalog_write", progressScope)
 				local okPersist, persistErr
+				local persistStartedAt = LrDate.currentTime()
 				if persistLease then
 					okPersist, persistErr = LrTasks.pcall(function()
 						DevelopEditManager.persistEditRecipe(photo, response, nil, "generated")
@@ -665,6 +680,7 @@ function AiEditAction.run()
 					okPersist, persistErr = false, persistLeaseError
 				end
 				WorkCoordinator.release(persistLease)
+				res.clientTimingsMs.recipe_persist = elapsedMilliseconds(persistStartedAt)
 				if not okPersist then
 					log:error("Persist generated recipe threw for " .. fileName .. ": " .. tostring(persistErr))
 					table.insert(errorMessages, fileName .. ": could not persist recipe: " .. tostring(persistErr))
@@ -722,6 +738,7 @@ function AiEditAction.run()
 
 					if res.continueProcessing then
 						local applyLease, applyLeaseError = WorkCoordinator.acquire("catalog_write", progressScope)
+						local applyStartedAt = LrDate.currentTime()
 						local applyOk, applied, warnings = LrTasks.pcall(function()
 							if not applyLease then
 								error("Catalog write canceled: " .. tostring(applyLeaseError))
@@ -729,6 +746,7 @@ function AiEditAction.run()
 							return DevelopEditManager.applyRecipe(photo, response, applyOptions)
 						end)
 						WorkCoordinator.release(applyLease)
+						res.clientTimingsMs.develop_apply = elapsedMilliseconds(applyStartedAt)
 						if not applyOk then
 							local applyError = applied
 							applied = false
@@ -740,6 +758,7 @@ function AiEditAction.run()
 								return photo:getDevelopSettings()
 							end)
 							local receiptOk, receiptError
+							local receiptStartedAt = LrDate.currentTime()
 							if readOk and type(readback) == "table" then
 								receiptOk, receiptError = recordApplicationEvent(
 									photo,
@@ -765,6 +784,7 @@ function AiEditAction.run()
 									tostring(readback)
 								)
 							end
+							res.clientTimingsMs.application_receipt = elapsedMilliseconds(receiptStartedAt)
 							if not receiptOk then
 								local message = "Edit was applied, but its durable receipt is pending: " .. tostring(receiptError)
 								log:error(message)
@@ -807,6 +827,15 @@ function AiEditAction.run()
 					end
 				end
 			end
+			res.clientTimingsMs.total = res.startedAt and elapsedMilliseconds(res.startedAt) or 0
+			log:info(
+				"AI edit client timing photo="
+					.. tostring(fileName)
+					.. " client_ms="
+					.. JSON:encode(res.clientTimingsMs)
+					.. " backend_ms="
+					.. JSON:encode((res.response and res.response.timings_ms) or {})
+			)
 		end
 
 		if progressScope:isCanceled() then
@@ -816,6 +845,13 @@ function AiEditAction.run()
 		while activeProducers > 0 do
 			LrTasks.yield()
 			LrTasks.sleep(0.05)
+		end
+		if producerFailed then
+			-- A producer exception can stop the consumer before any photo result is
+			-- available. Account for every photo that never reached a terminal UI
+			-- outcome so a pipeline crash cannot be reported as a successful 0-edit run.
+			local unaccounted = #photos - successCount - skippedCount - errorCount
+			if unaccounted > 0 then errorCount = errorCount + unaccounted end
 		end
 		if stopRequested then
 			-- Catch items that completed backend inference after the first cancel

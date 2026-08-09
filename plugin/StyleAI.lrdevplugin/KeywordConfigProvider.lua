@@ -50,6 +50,7 @@ function KeywordConfigProvider.showKeywordCategoryDialog()
 	LrFunctionContext.callWithContext("KeywordConfigProvider.showKeywordCategoryDialog", function(context)
 		local f = LrView.osFactory()
 		local bind = LrView.bind
+		local UIFactory = require("UIFactory")
 
 		local keywords = loadKeywords()
 		local props = LrBinding.makePropertyTable(context)
@@ -72,10 +73,10 @@ function KeywordConfigProvider.showKeywordCategoryDialog()
 			end
 		end
 
-		local dialogView = f:column({
+		local dialogView = UIFactory.DialogColumn(f, {
 			bind_to_object = props,
 			spacing = f:control_spacing(),
-			fill_horizontal = 1,
+			width = 620,
 			fill_vertical = 1,
 
 			f:static_text({

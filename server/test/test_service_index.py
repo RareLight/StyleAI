@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image
 
 from services import index as index_service
+from services import source_embeddings
 from services.index import (
     _decode_worker_count,
     _flatten_keywords,
@@ -58,9 +59,10 @@ class TestImageDecodingAndGrayscale(unittest.TestCase):
     @patch("services.index.config.STYLEAI_HTTP_THREADS", 12)
     @patch("services.index.config.STYLEAI_GPU_BATCH_SIZE", 12)
     def test_decode_workers_follow_ingestion_budget(self):
-        self.assertEqual(_decode_worker_count(1), 1)
-        self.assertEqual(_decode_worker_count(8), 8)
-        self.assertEqual(_decode_worker_count(48), 12)
+        self.assertEqual(_decode_worker_count(1, cpu_capacity=12), 1)
+        self.assertEqual(_decode_worker_count(8, cpu_capacity=12), 8)
+        self.assertEqual(_decode_worker_count(48, cpu_capacity=12), 12)
+        self.assertEqual(_decode_worker_count(48, cpu_capacity=3), 3)
 
     @patch("services.index.gc.collect")
     @patch("services.index.monotonic_time.monotonic")
@@ -190,13 +192,33 @@ class TestProcessImageTask(unittest.TestCase):
         self.assertEqual(failure, 0)
         self.assertEqual(errors, [])
         mock_chroma.add_image.assert_called_once()
+        stored_metadata = mock_chroma.add_image.call_args.args[2]
+        self.assertEqual(
+            stored_metadata["source_embedding_provenance"],
+            source_embeddings.RENDERED_PREVIEW_PROVENANCE,
+        )
+        self.assertEqual(
+            stored_metadata["source_embedding_schema"],
+            source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+        )
+        self.assertTrue(
+            all(key in stored_metadata for key in source_embeddings.SOURCE_METRIC_KEYS)
+        )
 
     @patch("services.index.chroma_service")
     def test_process_image_task_string_booleans(self, mock_chroma):
         # When regenerate_metadata is passed as string 'false', it should not regenerate existing images
+        metadata = source_embeddings.stamp_metadata(
+            {"has_embedding": True, "title": "Existing Title"},
+            source_embeddings.NeutralSource(
+                image_bytes=b"unused",
+                provenance=source_embeddings.RENDERED_PREVIEW_PROVENANCE,
+                fingerprint="existing-fingerprint",
+            ),
+        )
         mock_chroma.collection.get.return_value = {
             "ids": ["uuid-1"],
-            "metadatas": [{"has_embedding": True, "title": "Existing Title"}],
+            "metadatas": [metadata],
         }
         image_bytes = make_dummy_jpeg(300, 300)
         triplets = [(image_bytes, "uuid-1", "test.jpg", "lr-1")]

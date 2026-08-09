@@ -143,12 +143,22 @@ has been removed.
 ## Layout exceptions
 
 Most containers, long text, and editors use horizontal/vertical fill and all
-content-heavy dialogs are resizable. Explicit dimensions remain only for:
+content-heavy dialogs are resizable. Workflow dialogs begin at a bounded
+reading width (normally 620 points, with wider list/editor workspaces at
+660–740 points) and may expand when resized. This explicit initial width is
+required because Lightroom calculates modal geometry from each child's
+unwrapped intrinsic width; `wrap` plus `fill_horizontal` alone does not bound a
+long localized sentence or popup menu.
 
+Supporting descriptions use Lightroom's regular system text by default rather
+than forcing the small caption style. Native controls still inherit the host OS
+and Lightroom text metrics. Explicit dimensions remain only for:
+
+- bounded initial dialog reading widths and popup menus;
 - bounded photo previews;
 - bounded prompt, log, recipe, keyword, and metadata scrollers;
 - compact sliders and numeric values;
-- learned-style `simple_list` and its filter popup, because Lightroom's mixed
+- learned-style `simple_list`, because Lightroom's mixed
   control width sharing is unreliable across platforms.
 
 These exceptions require visual verification in Lightroom on macOS Tahoe or

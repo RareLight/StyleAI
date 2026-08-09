@@ -414,27 +414,14 @@ LrTasks.startAsyncTask(function()
 
 		-- Build the dialog contents
 		local function buildDialog()
-			return f:column({
+			return UIFactory.DialogColumn(f, {
 				bind_to_object = props,
 				spacing = f:control_spacing(),
-
-				-- Title
-				f:row({
-					f:static_text({
-						title = LOC("$$$/StyleAI/StyleCatalog/Title=Styles & Training"),
-						font = "bold",
-						size = "large",
-					}),
-				}),
+				width = 740,
 
 				-- Status bar
-				f:row({
-					fill_horizontal = 1,
-					f:static_text({
-						title = bind("statusMessage"),
-						fill_horizontal = 1,
-						wrap = true,
-					}),
+				UIFactory.HelpText(f, {
+					title = bind("statusMessage"),
 				}),
 
 				-- Toolbar
@@ -485,6 +472,8 @@ LrTasks.startAsyncTask(function()
 					filterValue = bind("selectedProfileFilter"),
 					listItems = bind("listItems"),
 					selectedValue = bind("selectedStyleIndex"),
+					listWidth = 700,
+					filterWidth = 360,
 				}),
 
 				-- Style detail panel

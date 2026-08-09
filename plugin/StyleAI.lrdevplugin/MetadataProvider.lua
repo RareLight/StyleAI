@@ -73,6 +73,16 @@ return {
 			browsable = false,
 		},
 		{
+			-- Durable Lightroom-side outbox used between Develop application and
+			-- the backend receipt. It must be declared even though it is never shown.
+			id = "pendingAiEditApplicationEvent",
+			title = LOC("$$$/StyleAI/AIMetadataProvider/PendingAiEditApplicationEvent=Pending AI edit application event"),
+			dataType = "string",
+			readOnly = true,
+			searchable = false,
+			browsable = false,
+		},
+		{
 			id = "photoContext",
 			title = LOC("$$$/StyleAI/AIMetadataProvider/photoContext=Photo context"),
 			dataType = "string",
@@ -126,7 +136,7 @@ return {
 		},
 	},
 
-	schemaVersion = 32,
+	schemaVersion = 33,
 	updateFromEarlierSchemaVersion = function(catalog, previousSchemaVersion, progressScope)
 		catalog:assertHasPrivateWriteAccess("AIMetadataProvider.updateFromEarlierSchemaVersion")
 	end,

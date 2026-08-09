@@ -66,6 +66,9 @@ catalog.
    values and canceling Prepare Photos does not save prompt edits.
 7. Test long prompt text, long model names, long paths, hierarchy options,
    bilingual keywords, and per-photo context reuse.
+8. Confirm the initial window uses a compact reading width, the Scope menu does
+   not span the window, status text wraps, and resizing wider does not disturb
+   alignment.
 
 ## 4. Learn From My Edits
 
@@ -73,7 +76,9 @@ catalog.
    video, panorama, and already-learned photos.
 2. Confirm the selection snapshot survives focus changes caused by the modal.
 3. Test **Update previously learned examples** off and on.
-4. Observe preparation, upload, policy fitting, validation/activation, success,
+4. Confirm the introduction and supporting text use readable regular system
+   text, wrap within the initial window, and do not force a screen-wide modal.
+5. Observe preparation, upload, policy fitting, validation/activation, success,
    failure, and cancellation states. Confirm exactly one rebuild follows a
    completed upload and the previous generation remains active on failure.
 
@@ -91,6 +96,8 @@ catalog.
 6. Test Apply, cancel/discard, Lightroom Undo, history reconciliation, and
    explicit accepted/modified/not-useful outcomes on no more than 100 selected
    tracked photos.
+7. Confirm Rate Selected AI Edits opens at a compact reading width with a clear
+   Outcome section and no single line determines screen-wide geometry.
 
 ## 6. Styles & Training
 
@@ -118,8 +125,9 @@ paths, model names, prompt names, filenames, status errors, and descriptions.
 | Windows 11 | 100%, 125%, 150%, and 200% scaling; light and dark |
 
 For each configuration, check keyboard traversal, focus after hiding Debug,
-button reachability, wrapped text, clipped controls, overlapping controls,
-scroller access, dialog resize behavior, and status meaning without color.
+button reachability, regular-size supporting text, wrapped text, bounded popup
+menus, clipped controls, overlapping controls, scroller access, dialog resize
+behavior, and status meaning without color.
 
 ## 8. Developer-build smoke suite
 

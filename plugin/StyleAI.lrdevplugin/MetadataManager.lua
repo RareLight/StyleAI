@@ -754,6 +754,7 @@ end
 function MetadataManager.showValidationDialog(ctx, photo, response, options, dedupedKeywords, mergedPairs)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
+	local UIFactory = require("UIFactory")
 
 	local title = response.metadata.title
 	local caption = response.metadata.caption
@@ -935,12 +936,17 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 			f:spacer({ height = 10 }),
 			f:checkbox({
 				value = bind("skipFromHere"),
-				title = LOC("$$$/StyleAI/MetadataManager/SkipRemaining=After saving this photo, save all remaining results without review."),
+				title = LOC("$$$/StyleAI/MetadataManager/SkipRemaining=Skip remaining reviews"),
+			}),
+			UIFactory.HelpText(f, {
+				title = LOC("$$$/StyleAI/MetadataManager/SkipRemainingHelp=After saving this photo, save the remaining results automatically."),
+				width = 220,
 			}),
 		}),
 
 		-- Right panel: keywords + metadata
 		f:column({
+			width = 560,
 			fill_horizontal = 1,
 			fill_vertical = 1,
 			f:group_box({
