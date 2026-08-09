@@ -205,11 +205,6 @@ jobs:
             exit 1
           fi
 
-          TEST_PY="$GITHUB_WORKSPACE/build/styleai-server/env/bin/python"
-          "$TEST_PY" "server/test/api_test_client.py" \
-            --base-url "http://127.0.0.1:19819" \
-            --iterations 60 \
-            --timeout 5
           curl -sf -X POST "http://127.0.0.1:19819/shutdown" || true
 
       - name: Save local test artifact

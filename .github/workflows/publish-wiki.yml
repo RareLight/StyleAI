@@ -7,8 +7,6 @@ on:
     paths:
       - "docs/**"
       - "README.md"
-      - "plugin/README.md"
-      - "server/README.md"
       - "scripts/build-wiki-pages.sh"
       - "scripts/publish-wiki.sh"
       - ".github/workflows/publish-wiki.yml"
