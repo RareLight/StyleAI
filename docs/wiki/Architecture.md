@@ -26,11 +26,13 @@ Ollama and LM Studio adapters are used only by optional metadata generation.
 
 ### Photo analysis and indexing
 
-1. Lightroom exports bounded JPEG proxies and sends EXIF, keywords, and stable
-   `globalPhotoId` values to the backend.
-2. The backend uses bounded CPU preprocessing and hardware-tiered SigLIP2
-   batches to create 1152-dimensional image embeddings.
-3. Search embeddings are stored in the `image_embeddings` Chroma collection.
+1. Lightroom sends bounded rendered JPEG proxies, original-file paths, EXIF,
+   keywords, and stable `globalPhotoId` values to the backend.
+2. The backend keeps the rendered proxy for local-LLM metadata but uses the
+   target-independent embedded RAW preview for SigLIP2 when available.
+3. The hardware-tiered SigLIP2 worker stores a 1152-dimensional canonical
+   source embedding plus source fingerprint, provenance, model, preprocessing,
+   schema, and source metrics in the `image_embeddings` Chroma collection.
 4. Metadata generation uses only locally running open-weights models through
    Ollama or LM Studio. Requests are batched and serialized so they do not
    contend with active embedding work for unified memory.
@@ -82,10 +84,11 @@ Ollama and LM Studio adapters are used only by optional metadata generation.
 
 ### ML editing
 
-1. The backend extracts the RAW embedded preview and computes
-   target-independent source embedding/pixel metrics. Missing target-independent
-   evidence forces categorical
-   abstention.
+1. The backend reuses the canonical source embedding and pixel metrics only
+   when their complete source/model/schema stamp matches. A miss safely falls
+   back to RAW-preview extraction and single-photo inference, then atomically
+   refreshes the derived vector. Missing target-independent evidence forces
+   categorical abstention.
 2. A versioned selector proposes HDR first and then one catalog-observed,
    camera-compatible profile conditional on that HDR state. Off and Suggest
    preserve the applicable current state; Auto remains readback-gated. The

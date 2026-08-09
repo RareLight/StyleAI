@@ -1368,9 +1368,9 @@ function Util.showDiagnosticFailureDialog(diag)
 		)
 	end
 
-	local contents = f:column({
+	local contents = UIFactory.DialogColumn(f, {
 		spacing = f:control_spacing(),
-		fill_horizontal = 1,
+		width = 620,
 		f:static_text({
 			title = message,
 			font = "<system/bold>",
@@ -1479,9 +1479,9 @@ function Util.showHealthIssuesDialog(report)
 	local f = LrView.osFactory()
 	local UIFactory = require("UIFactory")
 
-	local contents = f:column({
+	local contents = UIFactory.DialogColumn(f, {
 		spacing = f:control_spacing(),
-		fill_horizontal = 1,
+		width = 620,
 		f:static_text({
 			title = LOC(
 				"$$$/StyleAI/Health/IssuesFound=We found some issues that might prevent the plugin from working correctly:"

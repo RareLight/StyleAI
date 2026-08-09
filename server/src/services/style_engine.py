@@ -100,6 +100,7 @@ def generate_style_edit(
     profile_mode: str = "suggest",
     hdr_mode: str = "suggest",
     source_provenance: str = "unknown",
+    source_metrics: dict[str, float] | None = None,
 ) -> StyleEngineResult:
     """Predict one absolute edit, abstaining on unsupported or ambiguous input."""
     del min_confidence
@@ -115,7 +116,11 @@ def generate_style_edit(
         )
 
     try:
-        query_exposure = training_service.compute_exposure_metrics(image_bytes)
+        query_exposure = (
+            dict(source_metrics)
+            if source_metrics is not None
+            else training_service.compute_exposure_metrics(image_bytes)
+        )
         query_metadata: dict[str, Any] = {
             **query_exposure,
             "camera_make": camera_make,

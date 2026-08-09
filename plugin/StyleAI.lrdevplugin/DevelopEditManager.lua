@@ -1474,6 +1474,7 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 	local share = LrView.share
+	local UIFactory = require("UIFactory")
 	local props = LrBinding.makePropertyTable(context)
 	props.applyGlobal = next(recipe.global or {}) ~= nil
 	props.applyMasks = (options and options.applyMasks ~= false) and ((recipe.masks and #recipe.masks > 0) or false)
@@ -1501,9 +1502,10 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 	props.qualityText = qualityText
 	props.confColor = confColor
 
-	local dialogView = f:column({
+	local dialogView = UIFactory.DialogColumn(f, {
 		bind_to_object = props,
 		spacing = f:control_spacing(),
+		width = 700,
 		f:row({
 			f:static_text({
 				title = photo:getFormattedMetadata("fileName") or "Photo",

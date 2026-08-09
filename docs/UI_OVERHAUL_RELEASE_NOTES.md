@@ -50,6 +50,11 @@ UI contract, use `UI_BEHAVIOR_CONTRACTS.md`.
   constructing the window. Empty results no longer allocate list and detail
   panels; populated results use a shorter list and place review actions after
   the selected policy details.
+- Workflow dialogs now open at a bounded reading width, wrap descriptions
+  within that geometry, and use compact popup menus instead of stretching them
+  across the window. Resizable workspaces can still grow on larger displays.
+- Supporting descriptions now use Lightroom's regular system text by default
+  for improved readability.
 
 ## Debug and preference migration
 

@@ -6,7 +6,9 @@ you want to process.
 ## Choose work
 
 - **Analyze photos for StyleAI** creates a SigLIP2 embedding used by learned
-  policy matching and training recommendations.
+  policy matching and training recommendations. StyleAI prefers the camera's
+  embedded RAW preview so the visual evidence does not contain the Lightroom
+  treatment it is trying to learn.
 - **Generate keywords and descriptions** runs the selected local Ollama or LM
   Studio vision-language model.
 - Enabling both commits each photo's visual analysis before its metadata phase.
@@ -39,3 +41,8 @@ title, caption, or alt text to another.
 Preparing training photos separately is not required. Learn From My Edits
 collects its own source evidence; Prepare Photos is most important for the
 catalog-wide visual index and optional metadata.
+
+After StyleAI changes its embedding model or source-evidence schema, previously
+indexed photos are automatically considered eligible for analysis again. Run
+**Prepare Photos** with visual analysis enabled to refresh them in bounded GPU
+batches; existing Lightroom metadata is not erased by the safe default.

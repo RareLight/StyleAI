@@ -11,7 +11,7 @@ import numpy as np
 
 FEATURE_SCHEMA_VERSION = "policy-source-v2"
 
-_NUMERIC_METADATA_FEATURES = (
+SOURCE_METRIC_KEYS = (
     "exp_luminance_mean",
     "exp_luminance_std",
     "exp_highlight_ratio",
@@ -92,7 +92,7 @@ def build_source_feature_vector(
         values.append(float(value))
         availability.append(True)
 
-    for feature_name in _NUMERIC_METADATA_FEATURES:
+    for feature_name in SOURCE_METRIC_KEYS:
         parsed = _finite_float(metadata.get(feature_name))
         names.append(feature_name)
         values.append(parsed if parsed is not None else 0.0)

@@ -5,6 +5,7 @@ import pytest
 
 from core.migrations import run_migrations
 from services import operations
+from services.source_embeddings import SOURCE_METRIC_KEYS
 from services.style_engine import StyleEngineResult
 from styleai_server import app
 
@@ -160,7 +161,15 @@ def test_style_edit_honors_scoped_operation_cancel(client, mocker, tmp_path):
 
 
 def test_low_confidence_policy_abstains_without_generative_fallback(mocker):
-    mocker.patch("routes.style_edit._get_clip_embedding", return_value=[1.0, 0.0])
+    source_metrics = {key: 0.0 for key in SOURCE_METRIC_KEYS}
+    mocker.patch(
+        "routes.style_edit._get_canonical_source_embedding",
+        return_value=(
+            [1.0, 0.0],
+            {"source_embedding_provenance": "raw_preview"},
+            source_metrics,
+        ),
+    )
     mocker.patch(
         "routes.style_edit.style_engine.generate_style_edit",
         return_value=StyleEngineResult(
@@ -184,7 +193,70 @@ def test_low_confidence_policy_abstains_without_generative_fallback(mocker):
 
     assert result["engine"] == "none"
     assert result["error"] == "low_confidence"
+    assert result["source_embedding_cache_hit"] is True
     metadata_service.assert_not_called()
+
+
+def test_cache_miss_computes_once_and_cache_failure_does_not_fail_edit(mocker):
+    from services import source_embeddings
+    from routes.style_edit import _run_single_style_edit
+
+    metrics = {key: 0.0 for key in SOURCE_METRIC_KEYS}
+    source = source_embeddings.NeutralSource(
+        image_bytes=b"neutral-preview",
+        provenance=source_embeddings.RAW_PREVIEW_PROVENANCE,
+        fingerprint="source-fingerprint",
+    )
+    mocker.patch(
+        "routes.style_edit._get_canonical_source_embedding",
+        return_value=(None, {}, None),
+    )
+    mocker.patch(
+        "routes.style_edit.source_embeddings.resolve_neutral_source",
+        return_value=source,
+    )
+    mocker.patch(
+        "services.training.compute_exposure_metrics",
+        return_value=metrics,
+    )
+    image = mocker.MagicMock()
+    mocker.patch(
+        "routes.style_edit.source_embeddings.decode_for_embedding",
+        return_value=image,
+    )
+    mocker.patch("server_lifecycle.get_model", return_value=mocker.MagicMock())
+    mocker.patch("server_lifecycle.get_processor", return_value=mocker.MagicMock())
+    analysis = mocker.MagicMock()
+    analysis._generate_image_embeddings.return_value = [[1.0, 0.0]]
+    mocker.patch("services.metadata.get_analysis_service", return_value=analysis)
+    cache = mocker.patch(
+        "routes.style_edit._cache_canonical_source_embedding",
+        side_effect=RuntimeError("cache unavailable"),
+    )
+    mocker.patch(
+        "routes.style_edit.style_engine.generate_style_edit",
+        return_value=StyleEngineResult(
+            recipe={"global": {"exposure": 0.25}},
+            confidence=0.1,
+            matched_count=3,
+            engine="policy_v2",
+        ),
+    )
+
+    result = _run_single_style_edit(
+        "photo-1",
+        b"rendered-preview",
+        "photo.jpg",
+        {"raw_filepath": "/photos/photo.raw"},
+        camera_profile="Adobe Color",
+    )
+
+    assert result["error"] == "low_confidence"
+    assert result["source_embedding_cache_hit"] is False
+    assert "embedding_inference" in result["timings_ms"]
+    assert "embedding_cache_write" in result["timings_ms"]
+    cache.assert_called_once()
+    image.close.assert_called_once()
 
 
 @pytest.mark.parametrize(

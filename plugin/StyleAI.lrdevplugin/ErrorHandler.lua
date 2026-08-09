@@ -20,9 +20,9 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
 	local share = LrView.share
 	local UIFactory = require("UIFactory")
 
-	local dialogView = f:column({
+	local dialogView = UIFactory.DialogColumn(f, {
 		spacing = f:control_spacing(),
-		fill_horizontal = 1,
+		width = 620,
 		f:row({
 			fill_horizontal = 1,
 			f:static_text({

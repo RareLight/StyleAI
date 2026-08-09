@@ -120,6 +120,49 @@ def check_lua_syntax(plugin_dir):
     return errors
 
 
+def check_photo_metadata_properties(plugin_dir):
+    """Ensure photo plug-in properties are declared by the metadata provider."""
+    provider_path = os.path.join(plugin_dir, "MetadataProvider.lua")
+    if not os.path.isfile(provider_path):
+        return [f"[Metadata Error] Required file is missing: {provider_path}"]
+
+    with open(provider_path, encoding="utf-8") as provider_file:
+        provider_source = provider_file.read()
+    declared_ids = set(re.findall(r'\bid\s*=\s*["\']([^"\']+)["\']', provider_source))
+    errors = []
+
+    for root, _, files in os.walk(plugin_dir):
+        for filename in files:
+            if not filename.endswith(".lua"):
+                continue
+            path = os.path.join(root, filename)
+            with open(path, encoding="utf-8") as source_file:
+                source = source_file.read()
+
+            constants = dict(
+                re.findall(
+                    r'\blocal\s+([A-Z][A-Z0-9_]*)\s*=\s*["\']([^"\']+)["\']',
+                    source,
+                )
+            )
+            property_pattern = re.compile(
+                r"(?:\bphoto|\w+\.photo):(?:get|set)PropertyForPlugin"
+                r'\s*\(\s*_PLUGIN\s*,\s*([A-Z][A-Z0-9_]*|["\'][^"\']+["\'])'
+            )
+            for match in property_pattern.finditer(source):
+                token = match.group(1)
+                property_id = (
+                    token[1:-1] if token[0] in {'"', "'"} else constants.get(token)
+                )
+                if property_id and property_id not in declared_ids:
+                    line_number = source.count("\n", 0, match.start()) + 1
+                    errors.append(
+                        f"[Metadata Error] {filename}:{line_number} -> Photo property "
+                        f"'{property_id}' is not declared in MetadataProvider.lua."
+                    )
+    return errors
+
+
 def scan_files(plugin_dir):
     """Scan all Lua files for best practice violations."""
     errors = []
@@ -201,6 +244,9 @@ def main():
 
     manifest_errors = check_info_manifest(plugin_dir)
     all_errors.extend(manifest_errors)
+
+    metadata_errors = check_photo_metadata_properties(plugin_dir)
+    all_errors.extend(metadata_errors)
 
     scan_errors = scan_files(plugin_dir)
     all_errors.extend(scan_errors)

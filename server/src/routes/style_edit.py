@@ -9,6 +9,7 @@ low-confidence matches abstain rather than invoking a generative fallback.
 from __future__ import annotations
 
 from functools import wraps
+from time import perf_counter
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -19,6 +20,7 @@ from services import chroma as chroma_service
 from services import edit_history
 from services import operations
 from services import policy_runtime
+from services import source_embeddings
 from services import style_engine as style_engine
 from services.policy_features import FEATURE_SCHEMA_VERSION
 from services.policy_targets import TARGET_SCHEMA_VERSION
@@ -74,26 +76,59 @@ def _persist_inference(
     )
 
 
-def _get_clip_embedding(photo_id: str):
-    """Re-use the CLIP embedding already stored in ChromaDB for this photo."""
+def _get_canonical_source_embedding(
+    photo_id: str,
+    *,
+    raw_filepath: str | None,
+    rendered_image_bytes: bytes,
+) -> tuple[list[float] | None, dict[str, Any], dict[str, float] | None]:
+    """Load an embedding only when its complete neutral-source stamp matches."""
     try:
         existing = chroma_service.get_image(photo_id)
-        if (
-            existing
-            and existing.get("ids")
-            and existing.get("embeddings") is not None
-            and len(existing.get("embeddings")) > 0
-        ):
-            import numpy as np
-
-            raw_emb = existing["embeddings"][0]
-            if raw_emb is not None:
-                emb_arr = np.asarray(raw_emb, dtype=np.float32)
-                if emb_arr.size > 0 and not np.allclose(emb_arr, 0.0):
-                    return emb_arr.tolist()
+        metadatas = existing.get("metadatas") or []
+        metadata = dict(metadatas[0]) if metadatas else {}
+        embedding = source_embeddings.compatible_embedding(
+            existing,
+            raw_filepath=raw_filepath,
+            rendered_image_bytes=rendered_image_bytes,
+        )
+        metrics = source_embeddings.cached_source_metrics(metadata)
+        if embedding is not None and metrics is not None:
+            return embedding, metadata, metrics
     except Exception as exc:
-        logger.debug("Could not retrieve CLIP embedding for %s: %s", photo_id, exc)
-    return None
+        logger.debug(
+            "Could not retrieve canonical CLIP embedding for %s: %s", photo_id, exc
+        )
+    return None, {}, None
+
+
+def _cache_canonical_source_embedding(
+    photo_id: str,
+    filename: str,
+    embedding: list[float],
+    source: source_embeddings.NeutralSource,
+    source_metrics: dict[str, float],
+) -> None:
+    """Atomically replace one derived vector without disturbing catalog metadata."""
+    existing = chroma_service.get_image(photo_id)
+    metadatas = existing.get("metadatas") or []
+    metadata = dict(metadatas[0]) if metadatas else {}
+    metadata.update(
+        {
+            "filename": filename,
+            "photo_id": photo_id,
+            "has_embedding": True,
+        }
+    )
+    metadata = source_embeddings.stamp_metadata(
+        metadata,
+        source,
+        source_metrics=source_metrics,
+    )
+    if existing.get("ids"):
+        chroma_service.update_image(photo_id, metadata, embedding=embedding)
+    else:
+        chroma_service.add_image(photo_id, embedding, metadata)
 
 
 @_maintenance_safe_workflow
@@ -112,37 +147,66 @@ def _run_single_style_edit(
     job_id: str | None = None,
 ) -> dict[str, Any]:
     """Run the style engine for a single photo. Returns a result dict."""
+    started_at = perf_counter()
+    timings_ms: dict[str, float] = {}
+
+    def finish(payload: dict[str, Any]) -> dict[str, Any]:
+        timings_ms["total"] = round((perf_counter() - started_at) * 1000.0, 1)
+        payload["timings_ms"] = dict(timings_ms)
+        logger.info(
+            "Style edit timing photo_id=%s cache_hit=%s timings_ms=%s",
+            photo_id,
+            bool(payload.get("source_embedding_cache_hit")),
+            timings_ms,
+        )
+        return payload
+
     neutral_image_bytes = image_bytes
     source_provenance = "unknown"
-    clip_embedding = None
+    source_metrics = None
     cancel_signal = (
         operations.JobCancelSignal(config.DB_PATH, job_id)
         if config.DB_PATH and job_id
         else None
     )
     raw_filepath = options.get("raw_filepath")
-    if raw_filepath:
-        from utils.image_processing import extract_exiftool_preview
+    stage_started = perf_counter()
+    clip_embedding, cached_metadata, source_metrics = _get_canonical_source_embedding(
+        photo_id,
+        raw_filepath=raw_filepath,
+        rendered_image_bytes=image_bytes,
+    )
+    timings_ms["embedding_lookup"] = round((perf_counter() - stage_started) * 1000.0, 1)
+    cache_hit = clip_embedding is not None
+    canonical_source = None
+    if cache_hit:
+        source_provenance = str(
+            cached_metadata.get("source_embedding_provenance") or "unknown"
+        )
 
-        try:
-            raw_preview = extract_exiftool_preview(str(raw_filepath))
-        except (PermissionError, TimeoutError) as exc:
-            logger.warning("Neutral preview unavailable for %s: %s", photo_id, exc)
-            raw_preview = None
-        if raw_preview:
-            neutral_image_bytes = raw_preview
-            source_provenance = "raw_preview"
-    if source_provenance != "raw_preview":
-        clip_embedding = _get_clip_embedding(photo_id)
     if clip_embedding is None:
         logger.info(
-            f"CLIP embedding not found in database for photo_id={photo_id}. Generating dynamically via GPU..."
+            "Compatible source embedding not found for photo_id=%s. Generating dynamically via GPU...",
+            photo_id,
         )
         from services.metadata import get_analysis_service
+        from services import training as training_service
         import server_lifecycle
-        import io
-        from PIL import Image
 
+        stage_started = perf_counter()
+        canonical_source = source_embeddings.resolve_neutral_source(
+            image_bytes,
+            raw_filepath,
+        )
+        neutral_image_bytes = canonical_source.image_bytes
+        source_provenance = canonical_source.provenance
+        source_metrics = training_service.compute_exposure_metrics(neutral_image_bytes)
+        image = source_embeddings.decode_for_embedding(neutral_image_bytes)
+        timings_ms["source_prepare"] = round(
+            (perf_counter() - stage_started) * 1000.0, 1
+        )
+
+        stage_started = perf_counter()
         with operations.admission.acquire(
             {"accelerator": 1, "cpu_prepare": 1},
             priority=9,
@@ -150,18 +214,15 @@ def _run_single_style_edit(
         ):
             clip_model = server_lifecycle.get_model()
             clip_processor = server_lifecycle.get_processor()
-            if clip_model and clip_processor:
+            if clip_model and clip_processor and image is not None:
                 try:
-                    with Image.open(io.BytesIO(neutral_image_bytes)) as source_image:
-                        source_image.thumbnail((512, 512))
-                        img = source_image.convert("RGB")
                     try:
                         analysis_service = get_analysis_service()
                         batch_embeddings = analysis_service._generate_image_embeddings(
-                            [img], clip_model, clip_processor
+                            [image], clip_model, clip_processor
                         )
                     finally:
-                        img.close()
+                        image.close()
                     if batch_embeddings and batch_embeddings[0] is not None:
                         clip_embedding = batch_embeddings[0]
                         logger.info(
@@ -184,11 +245,46 @@ def _run_single_style_edit(
                 logger.warning(
                     "CLIP model or processor not available. Cannot generate dynamic embedding."
                 )
-    else:
-        logger.info(
-            f"Successfully loaded existing CLIP embedding from database for photo_id={photo_id}."
+                if image is not None:
+                    image.close()
+        timings_ms["embedding_inference"] = round(
+            (perf_counter() - stage_started) * 1000.0, 1
         )
 
+        if clip_embedding is not None and canonical_source is not None:
+            stage_started = perf_counter()
+            try:
+                if cancel_signal is None or not cancel_signal.is_set():
+                    with operations.admission.acquire(
+                        {"catalog_write": 1},
+                        priority=9,
+                        cancel_event=cancel_signal,
+                    ):
+                        _cache_canonical_source_embedding(
+                            photo_id,
+                            filename,
+                            clip_embedding,
+                            canonical_source,
+                            source_metrics or {},
+                        )
+            except InterruptedError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "Could not cache canonical source embedding for %s: %s",
+                    photo_id,
+                    exc,
+                    exc_info=True,
+                )
+            timings_ms["embedding_cache_write"] = round(
+                (perf_counter() - stage_started) * 1000.0, 1
+            )
+    else:
+        logger.info(
+            "Loaded compatible canonical source embedding for photo_id=%s.", photo_id
+        )
+
+    stage_started = perf_counter()
     with operations.admission.acquire(
         {"cpu_prepare": 1}, priority=9, cancel_event=cancel_signal
     ):
@@ -208,57 +304,72 @@ def _run_single_style_edit(
             profile_mode=options.get("profile_mode", "suggest"),
             hdr_mode=options.get("hdr_mode", "suggest"),
             source_provenance=source_provenance,
+            source_metrics=source_metrics,
         )
+    timings_ms["policy_inference"] = round((perf_counter() - stage_started) * 1000.0, 1)
 
     # Style engine had an explicit error (e.g. predictive ML model failure)
     if result.engine == "error":
-        return {
-            "status": "error",
-            "engine": "error",
-            "photo_id": photo_id,
-            "confidence": round(result.confidence, 3),
-            "matched_examples": result.matched_count,
-            "matched_filenames": result.matched_filenames,
-            "error": result.error or "Predictive model failure",
-            "message": result.error or "Predictive ML engine failed to run.",
-        }
+        return finish(
+            {
+                "status": "error",
+                "engine": "error",
+                "photo_id": photo_id,
+                "confidence": round(result.confidence, 3),
+                "matched_examples": result.matched_count,
+                "matched_filenames": result.matched_filenames,
+                "error": result.error or "Predictive model failure",
+                "message": result.error or "Predictive ML engine failed to run.",
+                "source_embedding_cache_hit": cache_hit,
+            }
+        )
 
     # The policy runtime could not produce a compatible result.
     if result.engine == "none":
-        return {
-            "status": "error",
-            "engine": "none",
-            "photo_id": photo_id,
-            "confidence": 0.0,
-            "matched_examples": 0,
-            "error": "profile_mismatch",
-            "message": result.warning or "Style engine could not produce a result.",
-        }
+        return finish(
+            {
+                "status": "error",
+                "engine": "none",
+                "photo_id": photo_id,
+                "confidence": 0.0,
+                "matched_examples": 0,
+                "error": "profile_mismatch",
+                "message": result.warning or "Style engine could not produce a result.",
+                "source_embedding_cache_hit": cache_hit,
+            }
+        )
 
     # Ambiguous matches abstain rather than blending or generating a fallback.
     if result.confidence < CONFIDENCE_LOW:
-        return {
-            "status": "error",
-            "engine": "none",
-            "photo_id": photo_id,
-            "confidence": round(result.confidence, 3),
-            "matched_examples": result.matched_count,
-            "error": "low_confidence",
-            "message": "Confidence is too low to apply edit safely.",
-        }
+        return finish(
+            {
+                "status": "error",
+                "engine": "none",
+                "photo_id": photo_id,
+                "confidence": round(result.confidence, 3),
+                "matched_examples": result.matched_count,
+                "error": "low_confidence",
+                "message": "Confidence is too low to apply edit safely.",
+                "source_embedding_cache_hit": cache_hit,
+            }
+        )
 
     # Successful style engine result
     if not result.recipe:
-        return {
-            "status": "error",
-            "engine": "style",
-            "photo_id": photo_id,
-            "confidence": round(result.confidence, 3),
-            "matched_examples": result.matched_count,
-            "error": "Style engine returned an empty recipe.",
-        }
+        return finish(
+            {
+                "status": "error",
+                "engine": "style",
+                "photo_id": photo_id,
+                "confidence": round(result.confidence, 3),
+                "matched_examples": result.matched_count,
+                "error": "Style engine returned an empty recipe.",
+                "source_embedding_cache_hit": cache_hit,
+            }
+        )
 
     _filter_recipe_crop_rotate(result.recipe, options)
+    stage_started = perf_counter()
     with operations.admission.acquire({"catalog_write": 1}, priority=9):
         _persist_edit_recipe(photo_id, filename, result.recipe, options)
         inference_id = _persist_inference(
@@ -268,13 +379,15 @@ def _run_single_style_edit(
             result=result,
             engine=result.engine,
         )
+    timings_ms["recipe_persist"] = round((perf_counter() - stage_started) * 1000.0, 1)
     payload = _success_payload(photo_id, result.recipe, options, warning=result.warning)
     payload["engine"] = result.engine
     payload["confidence"] = round(result.confidence, 3)
     payload["matched_examples"] = result.matched_count
     payload["matched_filenames"] = result.matched_filenames
     payload["edit_inference_id"] = inference_id
-    return payload
+    payload["source_embedding_cache_hit"] = cache_hit
+    return finish(payload)
 
 
 def _filter_recipe_crop_rotate(recipe: dict, options: dict) -> None:

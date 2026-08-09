@@ -23,6 +23,7 @@ import io
 
 from config import logger
 from services import operations
+from services import source_embeddings
 from services import training as training_service
 
 training_bp = Blueprint("training", __name__)
@@ -478,14 +479,18 @@ def _add_training_batch_impl(
                     from services import chroma
 
                     chroma_data = chroma.get_image(photo_id)
-                    if (
-                        chroma_data
-                        and chroma_data.get("embeddings") is not None
-                        and len(chroma_data["embeddings"]) > 0
-                    ):
-                        embedding = chroma_data["embeddings"][0]
-                        if hasattr(embedding, "tolist"):
-                            embedding = embedding.tolist()
+                    embedding = source_embeddings.compatible_embedding(
+                        chroma_data,
+                        raw_filepath=filepath,
+                        rendered_image_bytes=image_bytes_data,
+                    )
+                    if embedding is not None:
+                        metadatas = chroma_data.get("metadatas") or []
+                        if metadatas:
+                            source_provenance = str(
+                                metadatas[0].get("source_embedding_provenance")
+                                or source_provenance
+                            )
                 except Exception:
                     pass
 

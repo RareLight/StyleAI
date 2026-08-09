@@ -5,6 +5,33 @@ local share = LrView.share
 
 UIFactory = {}
 
+-- Lightroom sizes a modal from the intrinsic width of its children. A wrapped
+-- static_text with only fill_horizontal can therefore make the initial window
+-- as wide as the unwrapped sentence. Workflow dialogs use this bounded root
+-- column as their initial reading width; resizable dialogs may still grow on
+-- larger displays and their children continue to fill the available space.
+function UIFactory.DialogColumn(f, props)
+    local children = {}
+    for i, child in ipairs(props) do
+        children[i] = child
+    end
+    local column = {
+        bind_to_object = props.bind_to_object,
+        spacing = props.spacing or f:control_spacing(),
+        fill_horizontal = props.fill_horizontal == nil and 1 or props.fill_horizontal,
+        width = props.width or 620,
+    }
+    for key, value in pairs(props) do
+        if type(key) ~= "number" and column[key] == nil then
+            column[key] = value
+        end
+    end
+    for _, child in ipairs(children) do
+        table.insert(column, child)
+    end
+    return f:column(column)
+end
+
 --- Creates a standardized Collapsible Group Box / Section
 -- @param f LrViewFactory
 -- @param props table Property table containing title and elements
@@ -77,14 +104,19 @@ end
 
 --- Creates wrapped supporting copy that grows vertically with localization.
 function UIFactory.HelpText(f, props)
-    return f:static_text {
+    local textProps = {
         title = props.title or "",
         fill_horizontal = 1,
         wrap = true,
-        size = props.size or "small",
         text_color = props.text_color,
         visible = props.visible,
     }
+    -- Default to Lightroom's regular system text. Callers may still request a
+    -- compact caption explicitly, but workflow guidance should not be forced
+    -- into the harder-to-read small style.
+    if props.size then textProps.size = props.size end
+    if props.width then textProps.width = props.width end
+    return f:static_text(textProps)
 end
 
 --- Creates a status row whose text remains meaningful without its color.

@@ -51,10 +51,10 @@ function OnboardingWizard.show(manualTrigger)
 				end)
 			end
 
-			local dialogContents = f:column({
+			local dialogContents = UIFactory.DialogColumn(f, {
 				bind_to_object = propertyTable,
 				spacing = f:control_spacing(),
-				fill_horizontal = 1,
+				width = 660,
 
 				f:group_box({
 					title = LOC("$$$/StyleAI/Onboarding/Step1Title=Start the StyleAI Service (Required)"),
