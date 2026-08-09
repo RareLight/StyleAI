@@ -34,6 +34,7 @@ class StyleEngineResult:
         hard_partition_key: str = "default",
         entropy: float | None = None,
         rendering_intent: dict[str, Any] | None = None,
+        absolute_target: dict[str, Any] | None = None,
     ) -> None:
         self.recipe = recipe
         self.confidence = confidence
@@ -47,6 +48,7 @@ class StyleEngineResult:
         self.hard_partition_key = hard_partition_key
         self.entropy = entropy
         self.rendering_intent = rendering_intent
+        self.absolute_target = dict(absolute_target or {})
 
 
 def _canonical_to_edit_recipe(
@@ -93,6 +95,11 @@ def generate_style_edit(
     camera_make: str | None = None,
     camera_model: str | None = None,
     camera_profile: str | None = None,
+    lens: str | None = None,
+    iso: float | None = None,
+    aperture: float | None = None,
+    shutter_speed: str | float | None = None,
+    is_hdr: bool | None = None,
     user_keywords: list[str] | None = None,
     min_confidence: float = CONFIDENCE_LOW,
     current_settings: dict[str, Any] | None = None,
@@ -101,13 +108,14 @@ def generate_style_edit(
     hdr_mode: str = "suggest",
     source_provenance: str = "unknown",
     source_metrics: dict[str, float] | None = None,
+    policy_override: str | None = None,
 ) -> StyleEngineResult:
     """Predict one absolute edit, abstaining on unsupported or ambiguous input."""
     del min_confidence
     if not policy_runtime.has_active_generation():
         return _no_result(
             "No trained editing-policy generation is active. "
-            "Run Train AI Style or Reset & Discover after saving at least "
+            "Run Learn From My Edits or Styles & Training → Rebuild after saving at least "
             f"{policy_runtime.MIN_PARTITION_EXAMPLES} compatible examples."
         )
     if clip_embedding is None:
@@ -126,6 +134,11 @@ def generate_style_edit(
             "camera_make": camera_make,
             "camera_model": camera_model,
             "camera_profile": camera_profile,
+            "lens": lens,
+            "iso": iso,
+            "aperture": aperture,
+            "shutter_speed": shutter_speed,
+            "is_hdr": bool(is_hdr),
             "focal_length": focal_length,
             "capture_time": capture_time_unix,
             "user_keywords": user_keywords or [],
@@ -140,6 +153,7 @@ def generate_style_edit(
             profile_mode=profile_mode,
             hdr_mode=hdr_mode,
             source_provenance=source_provenance,
+            policy_override=policy_override,
         )
     except Exception as exc:
         logger.error(
@@ -180,4 +194,5 @@ def generate_style_edit(
         hard_partition_key=getattr(prediction, "hard_partition_key", "default"),
         entropy=getattr(prediction, "entropy", None),
         rendering_intent=rendering_intent,
+        absolute_target=getattr(prediction, "target", prediction.applied),
     )

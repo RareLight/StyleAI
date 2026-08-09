@@ -538,139 +538,137 @@ function AiEditAction.run()
 		local consumerIndex = 1
 		local nextIndexToProcess = 1
 		local activeProducers = 0
-		local profile = tonumber(prefs.indexingPerformanceProfile) or 2
-		local maxWorkers = profile * 2
+		local batchSize = 8
 		local compatibilityOk, _, hardwareInfo = SearchIndexAPI.ensureVersionCompatibility()
 		if compatibilityOk and hardwareInfo then
-			maxWorkers = math.min(
-				maxWorkers,
-				math.max(1, tonumber(hardwareInfo.recommended_parallel_tasks) or maxWorkers)
+			batchSize = math.min(
+				16,
+				math.max(2, (tonumber(hardwareInfo.recommended_parallel_tasks) or 4) * 2)
 			)
 		end
-		
+		local maxWorkers = 1 -- One ordered producer keeps temporal neighbors together.
 		local backendRequestLane = "backend_edit_request"
-		WorkCoordinator.configureLane(backendRequestLane, maxWorkers)
+		WorkCoordinator.configureLane(backendRequestLane, 1)
+
+		local function attachApiResult(resultObj, apiOk, apiResponse)
+			resultObj.response = apiResponse
+			if apiResponse and apiResponse.warning then
+				resultObj.warning = resultObj.fileName .. ": " .. tostring(apiResponse.warning)
+			end
+			if not apiOk or not apiResponse or type(apiResponse) ~= "table" or apiResponse.status ~= "success" then
+				local errMsg = "Unknown error"
+				if not apiOk then errMsg = tostring(apiResponse)
+				elseif type(apiResponse) == "string" then errMsg = apiResponse
+				elseif apiResponse and apiResponse.error then errMsg = apiResponse.error end
+				resultObj.errorMsg = resultObj.fileName .. ": " .. errMsg
+				resultObj.continueProcessing = false
+			end
+			resultObj.readyAt = LrDate.currentTime()
+		end
 
 		local function producerWorker()
 			while not progressScope:isCanceled() and not stopRequested do
-				local index = nextIndexToProcess
-				if index > #photos then break end
+				local firstIndex = nextIndexToProcess
+				if firstIndex > #photos then break end
 
-				-- Throttle to avoid unbounded memory/disk usage (max workers ahead of consumer)
-				if index > consumerIndex + (maxWorkers * 2) then
+				-- Bound exported previews and decoded responses ahead of the reviewer.
+				if firstIndex > consumerIndex + (batchSize * 2) then
 					LrTasks.yield()
 					LrTasks.sleep(0.1)
 				else
-					nextIndexToProcess = nextIndexToProcess + 1
-
-					local photo = photos[index]
-					local fileName = photo:getFormattedMetadata("fileName") or "Photo"
-					local resultObj = {
-						fileName = fileName,
-						continueProcessing = true,
-						startedAt = LrDate.currentTime(),
-						clientTimingsMs = {},
-					}
-
-					local photoId = photoIdsByIndex[index]
-					local photoIdErr = photoIdErrorsByIndex[index]
-					local pendingReceipt, pendingReceiptError = readPendingApplicationEvent(photo)
-					local pendingReady = true
-					if pendingReceipt == false then
-						pendingReady = false
-						pendingReceiptError = pendingReceiptError or "Stored application receipt is invalid"
-					elseif pendingReceipt then
-						pendingReady, pendingReceiptError = flushApplicationReceipt(photo, pendingReceipt)
-					end
-					if not pendingReady then
-						local message = "A previous AI edit receipt must be synchronized before another edit: "
-							.. tostring(pendingReceiptError)
-						log:error(message)
-						resultObj.errorMsg = fileName .. ": " .. message
-						resultObj.continueProcessing = false
-					elseif not photoId then
-						log:error("Failed to resolve photo ID for " .. fileName .. ": " .. tostring(photoIdErr))
-						resultObj.errorMsg = fileName .. ": " .. tostring(photoIdErr)
-						resultObj.continueProcessing = false
-					else
-						local photoOptions = nil
-						local okSettings, currentSettings = LrTasks.pcall(function()
-							photoOptions = enrichPhotoOptions(photo, options)
-							return photo:getDevelopSettings()
-						end)
-						if not photoOptions then
-							photoOptions = enrichPhotoOptions(photo, options)
+					local lastIndex = math.min(#photos, firstIndex + batchSize - 1)
+					nextIndexToProcess = lastIndex + 1
+					local requestItems = {}
+					for index = firstIndex, lastIndex do
+						local photo = photos[index]
+						local fileName = photo:getFormattedMetadata("fileName") or "Photo"
+						local resultObj = {
+							index = index,
+							fileName = fileName,
+							continueProcessing = true,
+							startedAt = LrDate.currentTime(),
+							clientTimingsMs = {},
+						}
+						local photoId = photoIdsByIndex[index]
+						local pendingReceipt, pendingReceiptError = readPendingApplicationEvent(photo)
+						local pendingReady = true
+						if pendingReceipt == false then
+							pendingReady = false
+							pendingReceiptError = pendingReceiptError or "Stored application receipt is invalid"
+						elseif pendingReceipt then
+							pendingReady, pendingReceiptError = flushApplicationReceipt(photo, pendingReceipt)
 						end
-						photoOptions.job_id = operationId
-						if okSettings and currentSettings then
-							photoOptions.current_settings = currentSettings
-						end
-						local exportStartedAt = LrDate.currentTime()
-						local base_path = SearchIndexAPI.exportPhotoForIndexing(photo)
-						resultObj.clientTimingsMs.lightroom_export = elapsedMilliseconds(exportStartedAt)
-						if not base_path then
-							log:error("Failed to export photo for AI edit generation: " .. fileName)
-							resultObj.errorMsg = fileName .. ": export failed"
+						if not pendingReady then
+							resultObj.errorMsg = fileName .. ": A previous AI edit receipt must be synchronized: " .. tostring(pendingReceiptError)
 							resultObj.continueProcessing = false
-							SearchIndexAPI.updateOperationItems(operationId, {
-								{ item_id = photoId, state = "failed", error = "Lightroom preview export failed" },
-							})
+						elseif not photoId then
+							resultObj.errorMsg = fileName .. ": " .. tostring(photoIdErrorsByIndex[index])
+							resultObj.continueProcessing = false
 						else
-							local requestLease, requestLeaseError = WorkCoordinator.acquire(backendRequestLane, progressScope)
-							local ok, apiOk, apiResponse
-							local requestStartedAt = LrDate.currentTime()
-							if requestLease then
-								ok, apiOk, apiResponse = LrTasks.pcall(function()
-									return SearchIndexAPI.styleEdit(photoId, base_path, photoOptions)
-								end)
-							else
-								ok, apiOk, apiResponse = false, requestLeaseError, nil
-							end
-							WorkCoordinator.release(requestLease)
-							resultObj.clientTimingsMs.backend_request = elapsedMilliseconds(requestStartedAt)
-
-							SearchIndexAPI.cleanupExportedPhoto(base_path)
-
-							if not ok then
-								log:error("AI edit generation threw for " .. fileName .. ": " .. tostring(apiOk))
-								resultObj.errorMsg = fileName .. ": exception thrown: " .. tostring(apiOk)
-								resultObj.continueProcessing = false
-								SearchIndexAPI.updateOperationItems(operationId, {
-									{ item_id = photoId, state = "failed", error = tostring(apiOk) },
+							local photoOptions = enrichPhotoOptions(photo, options)
+							photoOptions.job_id = operationId
+							local okSettings, currentSettings = LrTasks.pcall(function()
+								return photo:getDevelopSettings()
+							end)
+							if okSettings and currentSettings then photoOptions.current_settings = currentSettings end
+							local exportStartedAt = LrDate.currentTime()
+							local basePath = SearchIndexAPI.exportPhotoForIndexing(photo)
+							resultObj.clientTimingsMs.lightroom_export = elapsedMilliseconds(exportStartedAt)
+							if basePath then
+								table.insert(requestItems, {
+									photo_id = photoId,
+									filepath = basePath,
+									options = photoOptions,
+									result = resultObj,
 								})
 							else
-								if apiOk and type(apiResponse) == "table" and apiResponse.status == "error" and (apiResponse.error == "profile_mismatch" or apiResponse.error == "low_confidence") then
-									local title = apiResponse.error == "profile_mismatch" 
-										and LOC("$$$/StyleAI/TaskAiEditPhotos/ProfileMismatchTitle=Camera Profile Mismatch")
-										or LOC("$$$/StyleAI/TaskAiEditPhotos/LowConfidenceTitle=Low Match Confidence")
-									
-									local message = apiResponse.error == "profile_mismatch"
-										and LOC("$$$/StyleAI/TaskAiEditPhotos/ProfileMismatchMessage=No training examples exist for the camera profile used by ^1. Please train a style model for this profile first.", fileName)
-										or LOC("$$$/StyleAI/TaskAiEditPhotos/LowConfidenceMessage=StyleAI could not find a confident match for ^1 based on your training examples.", fileName)
-
-									LrDialogs.message(title, message, "info")
-									apiResponse = { status = "error", error = apiResponse.error }
-								end
-
-								resultObj.response = apiResponse
-								if apiResponse and apiResponse.warning then
-									resultObj.warning = fileName .. ": " .. tostring(apiResponse.warning)
-								end
-
-								if not apiOk or not apiResponse or type(apiResponse) ~= "table" or apiResponse.status ~= "success" then
-									local errMsg = "Unknown error"
-									if not apiOk then errMsg = tostring(apiResponse)
-									elseif type(apiResponse) == "string" then errMsg = apiResponse
-									elseif apiResponse and apiResponse.error then errMsg = apiResponse.error end
-									resultObj.errorMsg = fileName .. ": " .. errMsg
-									resultObj.continueProcessing = false
-								end
+								resultObj.errorMsg = fileName .. ": export failed"
+								resultObj.continueProcessing = false
 							end
+						end
+						if not resultObj.continueProcessing then
+							resultObj.readyAt = LrDate.currentTime()
+							results[index] = resultObj
 						end
 					end
 
-					resultObj.readyAt = LrDate.currentTime()
-					results[index] = resultObj
+					if #requestItems > 0 then
+						local requestLease, requestLeaseError = WorkCoordinator.acquire(backendRequestLane, progressScope)
+						local ok, apiOk, batchResponse
+						local requestStartedAt = LrDate.currentTime()
+						if requestLease then
+							ok, apiOk, batchResponse = LrTasks.pcall(function()
+								return SearchIndexAPI.styleEditBatch(requestItems, operationId)
+							end)
+						else
+							ok, apiOk, batchResponse = false, requestLeaseError, nil
+						end
+						WorkCoordinator.release(requestLease)
+						local responseByPhotoId = {}
+						if ok and apiOk and type(batchResponse) == "table" and type(batchResponse.results) == "table" then
+							for _, response in ipairs(batchResponse.results) do
+								responseByPhotoId[tostring(response.photo_id)] = response
+							end
+						end
+						for _, requestItem in ipairs(requestItems) do
+							local resultObj = requestItem.result
+							resultObj.clientTimingsMs.backend_request = elapsedMilliseconds(requestStartedAt)
+							local itemResponse = responseByPhotoId[tostring(requestItem.photo_id)]
+							if itemResponse then
+								attachApiResult(resultObj, true, itemResponse)
+							else
+								-- Compatibility fallback for an unavailable versioned batch endpoint.
+								local singleOk, singleResponse = SearchIndexAPI.styleEdit(
+									requestItem.photo_id,
+									requestItem.filepath,
+									requestItem.options
+								)
+								attachApiResult(resultObj, singleOk, singleResponse or batchResponse or apiOk)
+							end
+							SearchIndexAPI.cleanupExportedPhoto(requestItem.filepath)
+							results[resultObj.index] = resultObj
+						end
+					end
 				end
 			end
 		end

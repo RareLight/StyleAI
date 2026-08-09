@@ -149,7 +149,8 @@ def predict_knn_local_regression(
             return None
         X_train_list.append(n["embedding"])
         flat_target = policy_targets.flatten_absolute_target(
-            n.get("canonical_settings", {})
+            n.get("canonical_settings", {}),
+            include_applicability=True,
         )
         Y_train_list.append(flat_target)
         target_keys.update(flat_target.keys())

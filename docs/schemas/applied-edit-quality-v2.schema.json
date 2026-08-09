@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://styleai.local/schemas/applied-edit-quality-v2.schema.json",
+  "title": "StyleAI Applied Edit Quality Report v2",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "dataset_fingerprint",
+    "dataset",
+    "application_reliability",
+    "user_outcomes",
+    "rendering_outcomes",
+    "burst_coherence",
+    "delivered_target_corrections",
+    "confidence_calibration",
+    "generation_comparison",
+    "breakdowns"
+  ],
+  "properties": {
+    "schema_version": { "const": "applied-edit-quality-v2" },
+    "dataset_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "dataset": { "type": "object" },
+    "application_reliability": { "type": "object" },
+    "user_outcomes": { "type": "object" },
+    "rendering_outcomes": { "type": "object" },
+    "burst_coherence": {
+      "type": "object",
+      "required": [
+        "contract_version",
+        "eligible_photos",
+        "admitted_photos",
+        "selective_coverage",
+        "tier_counts",
+        "fallback_reasons",
+        "policy_agreement",
+        "geometry_disagreement",
+        "per_tier_delivered_target_corrections",
+        "avoided_policy_predictions",
+        "timing",
+        "deployment_status"
+      ],
+      "properties": {
+        "contract_version": { "const": "edit-burst-evaluation-v1" },
+        "deployment_status": { "const": "evaluation_only" }
+      }
+    },
+    "delivered_target_corrections": { "type": "object" },
+    "confidence_calibration": { "type": "object" },
+    "generation_comparison": { "type": "object" },
+    "breakdowns": { "type": "object" }
+  }
+}

@@ -4100,6 +4100,8 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
     addStr("camera_make")
     addStr("camera_model")
     addStr("camera_profile")
+    addStr("lens")
+    addStr("is_hdr")
     addStr("profile_mode")
     addStr("hdr_mode")
     addStr("job_id")
@@ -4147,6 +4149,68 @@ function SearchIndexAPI.styleEdit(photoId, filepath, options)
     end
     log:error("styleEdit unexpected status: " .. tostring(response.status))
     return false, response.error or "Unexpected response"
+end
+
+---
+-- Generate a bounded, operation-scoped batch of source-conditioned edits.
+-- Each item retains its own EXIF, current Develop settings, RAW path, and
+-- exported preview. The single-photo method remains the compatibility fallback.
+-- @param items table Array of { photo_id, filepath, options }.
+-- @param jobId string Admitted edit operation ID.
+-- @return boolean success, table|string response or error message
+---
+function SearchIndexAPI.styleEditBatch(items, jobId)
+    if type(items) ~= "table" or #items == 0 then
+        return false, "No edit batch items provided"
+    end
+    if not jobId or jobId == "" then
+        return false, "No edit operation ID provided"
+    end
+    local mimeChunks = {}
+    local itemContracts = {}
+    local contractKeys = {
+        "focal_length", "capture_time", "camera_make", "camera_model",
+        "camera_profile", "lens", "iso", "aperture", "shutter_speed",
+        "is_hdr", "profile_mode", "hdr_mode", "allow_auto_crop",
+        "allow_auto_rotate", "style_strength", "current_settings",
+    }
+    for _, item in ipairs(items) do
+        if type(item) ~= "table" or not item.photo_id or item.photo_id == "" then
+            return false, "Edit batch item omitted its photo ID"
+        end
+        if not item.filepath or not LrFileUtils.exists(item.filepath) then
+            return false, "Edit batch item omitted its exported preview"
+        end
+        local options = item.options or {}
+        local contract = { photo_id = item.photo_id }
+        for _, key in ipairs(contractKeys) do
+            if options[key] ~= nil then contract[key] = options[key] end
+        end
+        if options.raw_filepath then contract.raw_filepath = options.raw_filepath end
+        table.insert(itemContracts, contract)
+        table.insert(mimeChunks, { name = "photo_id", value = item.photo_id })
+        table.insert(mimeChunks, {
+            name = "image",
+            fileName = LrPathUtils.leafName(item.filepath),
+            filePath = item.filepath,
+            contentType = "image/jpeg",
+        })
+    end
+    table.insert(mimeChunks, { name = "job_id", value = jobId })
+    table.insert(mimeChunks, { name = "items_json", value = JSON:encode(itemContracts) })
+    local response, err = _requestMultipart(
+        getBaseUrl() .. ENDPOINTS.STYLE_EDIT,
+        mimeChunks,
+        360
+    )
+    if not response then
+        log:error("styleEditBatch failed: " .. tostring(err))
+        return false, err or "Unknown error"
+    end
+    if response.status == "ok" and type(response.results) == "table" then
+        return true, response
+    end
+    return false, response.error or "Unexpected edit batch response"
 end
 
 function SearchIndexAPI.submitStyleEditApplicationEvents(events)

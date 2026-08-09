@@ -12,13 +12,13 @@ import numpy as np
 from .edit_events import TERMINAL_USER_OUTCOMES
 
 
-APPLIED_EDIT_QUALITY_SCHEMA_VERSION = "applied-edit-quality-v1"
+APPLIED_EDIT_QUALITY_SCHEMA_VERSION = "applied-edit-quality-v2"
 
 
 def _target_family(key: str) -> str:
     if key == "white_balance_is_custom":
         return "white_balance"
-    if key.startswith("crop_"):
+    if key.startswith("crop_") or key == "rotation_is_applied":
         return "crop"
     if key.startswith("curve_") or key.startswith("tone_curve_"):
         return "tone_curve"
@@ -278,6 +278,90 @@ def _generation_comparison(
     }
 
 
+def _burst_coherence_report(
+    histories: list[dict[str, Any]],
+    reviewed: list[dict[str, Any]],
+    scales: dict[str, float],
+) -> dict[str, Any]:
+    tiers = Counter(
+        str(history.get("reuse_tier") or "independent") for history in histories
+    )
+    eligible = [history for history in histories if history.get("burst_group_id")]
+    admitted = [
+        history
+        for history in histories
+        if history.get("reuse_tier") in {"policy_coherent", "global_target_reuse"}
+    ]
+    fallback_reasons = Counter(
+        str(history["burst_fallback_reason"])
+        for history in histories
+        if history.get("burst_fallback_reason")
+    )
+    leakage = 0
+    policy_agreement_samples = 0
+    for history in admitted:
+        agreement = history.get("policy_agreement") or {}
+        if "same_policy" in agreement or "same_partition" in agreement:
+            policy_agreement_samples += 1
+            if not agreement.get("same_policy") or not agreement.get("same_partition"):
+                leakage += 1
+
+    geometry_disagreements = 0
+    geometry_comparisons = 0
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for history in histories:
+        if history.get("burst_group_id"):
+            groups[str(history["burst_group_id"])].append(history)
+    for members in groups.values():
+        by_photo = {str(member["photo_id"]): member for member in members}
+        for member in members:
+            representative = by_photo.get(
+                str(member.get("representative_photo_id") or "")
+            )
+            if representative is None or representative is member:
+                continue
+            member_target = member.get("absolute_target") or {}
+            representative_target = representative.get("absolute_target") or {}
+            geometry_comparisons += 1
+            if member_target.get("crop") != representative_target.get("crop"):
+                geometry_disagreements += 1
+
+    per_tier_corrections = {}
+    for tier in ("independent", "policy_coherent", "global_target_reuse"):
+        tier_reviewed = [
+            row
+            for row in reviewed
+            if str(row["history"].get("reuse_tier") or "independent") == tier
+        ]
+        per_tier_corrections[tier] = _correction_metrics(tier_reviewed, scales)
+    return {
+        "contract_version": "edit-burst-evaluation-v1",
+        "eligible_photos": len(eligible),
+        "admitted_photos": len(admitted),
+        "selective_coverage": _safe_ratio(len(admitted), len(eligible)),
+        "tier_counts": dict(sorted(tiers.items())),
+        "fallback_reasons": dict(sorted(fallback_reasons.items())),
+        "policy_agreement": {
+            "evaluated_members": policy_agreement_samples,
+            "cross_policy_or_partition_leakage": leakage,
+            "leakage_rate": _safe_ratio(leakage, policy_agreement_samples),
+        },
+        "geometry_disagreement": {
+            "comparisons": geometry_comparisons,
+            "disagreements": geometry_disagreements,
+            "rate": _safe_ratio(geometry_disagreements, geometry_comparisons),
+            "geometry_is_never_reused": True,
+        },
+        "per_tier_delivered_target_corrections": per_tier_corrections,
+        "avoided_policy_predictions": 0,
+        "timing": {
+            "available_in_immutable_history": False,
+            "source": "bounded service and Lightroom logs",
+        },
+        "deployment_status": "evaluation_only",
+    }
+
+
 def _rendering_value(state: dict[str, Any], dimension: str) -> Any:
     if dimension == "hdr":
         return bool(state.get("is_hdr"))
@@ -465,6 +549,7 @@ def evaluate_applied_edit_histories(
             "slider_metrics_are_separate": True,
             "deployment_status": "evaluation_only",
         },
+        "burst_coherence": _burst_coherence_report(rows, reviewed, scales),
         "delivered_target_corrections": _correction_metrics(reviewed, scales),
         "confidence_calibration": _confidence_calibration(
             reviewed,

@@ -1486,6 +1486,16 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 	local confVal = (response and response.confidence) or 0
 	props.confidencePct = math.floor(confVal * 100)
 	props.confidenceLabel = string.format("%d%%", props.confidencePct)
+	local burstContext = response and response.burst_coherence or nil
+	props.hasBurstContext = type(burstContext) == "table"
+		and burstContext.tier ~= nil
+		and burstContext.tier ~= "independent"
+	props.burstContext = props.hasBurstContext
+		and LOC(
+			"$$$/StyleAI/DevelopEdit/BurstContext=Coherent burst edit · ^1 photos",
+			tostring(tonumber(burstContext.group_size) or 1)
+		)
+		or ""
 
 	local confColor = { 0.7, 0.7, 0.7 } -- gray
 	local qualityText = LOC("$$$/StyleAI/DevelopEdit/MatchLow=Low style match")
@@ -1528,6 +1538,11 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 					size = "small",
 				}),
 			}),
+		}),
+		f:static_text({
+			visible = bind("hasBurstContext"),
+			title = bind("burstContext"),
+			size = "small",
 		}),
 		f:row({
 			f:checkbox({ value = bind("applyGlobal") }),

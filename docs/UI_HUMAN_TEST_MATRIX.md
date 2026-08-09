@@ -104,6 +104,23 @@ catalog.
    created copy appears in one new uniquely named `StyleAI <YYMMDD-HHMMSS>`
    collection, the completion dialog names it, and Lightroom does not switch
    the active source to that collection.
+9. Train with a representative mix of uncropped, cropped-only, rotated-only,
+   and cropped-and-rotated photos. With both permissions enabled, confirm crop
+   and rotation are independently omitted unless their learned applicability
+   gate passes; enabling either option must not force that action on every photo.
+10. Compare independent (`STYLEAI_EDIT_BURST_COHERENCE=0`) and optimized runs
+    on sports, wildlife, event, panning, bracketed, lighting-transition,
+    subject-entry/exit, crop-change, and mixed-camera sequences. Confirm only
+    admitted members show the localized coherent-burst context.
+11. Confirm burst members retain their own review choice, crop/rotation,
+    profile/HDR, masks, virtual copy, application receipt, Develop readback,
+    progress/error accounting, and source order. Cancel during an in-flight
+    batch and verify already applied handoffs finish while new work stops.
+12. In a developer build only, enable
+    `STYLEAI_EDIT_BURST_EXACT_REUSE=1` and compare its output with independent
+    inference. Confirm white balance, geometry, profile/HDR, masks, and sparse
+    families remain photo-specific; test cached/uncached RAW previews, missing
+    previews, large bursts, and constrained/critical memory pressure.
 
 ## 6. Styles & Training
 

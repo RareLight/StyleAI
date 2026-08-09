@@ -178,8 +178,27 @@ they do not infer quality tiers from arbitrary training-count thresholds.
 Applied-edit evaluation reads inference/event history in bounded, keyset-
 paginated batches. It reports application reliability, explicit outcomes,
 delivered-target corrections, confidence reliability, and per-generation
-Wilson intervals. Generation comparisons are evidence-only and never activate
-models or modify thresholds.
+Wilson intervals. Its v2 contract also reports burst tier coverage, fallbacks,
+policy/partition leakage, per-tier corrections, and geometry disagreement.
+Generation comparisons are evidence-only and never activate models or modify
+thresholds.
+
+Apply My Style submits operation-scoped ordered batches of at most 16 exported
+previews. Candidate construction compares only temporal neighbors within the
+established 10-second and 0.05 cosine-distance ceilings, splits transitive
+components into bounded deterministic windows, and chooses a visual medoid.
+Admission then requires compatible camera/profile evidence, rejects likely
+brackets and panoramas, and verifies each member's independently selected
+policy and effective rendering partition. Each recipe persists its own
+operation, grouping/tier, source-delta, policy-agreement, absolute-target, and
+fallback provenance.
+
+`policy_coherent` members retain their own production prediction. The stricter
+`global_target_reuse` path merges only a versioned scalar allowlist and then
+applies member strength; white balance, sparse/structural targets, geometry,
+profile/HDR, and masks remain member-specific. Exact reuse is release-gated off
+by default. Critical runtime pressure reduces all members to independent
+inference, and the service kill switch restores the independent path.
 
 Local LLM concurrency remains one by default. Increasing concurrent model
 requests usually reduces throughput through GPU context switching and unified
@@ -209,7 +228,8 @@ jobs and derived discovery state are recovered conservatively on next startup.
   Chroma collections.
 - `styleai.db/styles.sqlite`: policy generations, versioned examples, model
   registrations, soft memberships, descriptors, coverage, validation results,
-  custom policy names, immutable edit inferences, and append-only edit events.
+  custom policy names, immutable edit inferences (including operation-scoped
+  burst provenance), and append-only edit events.
 - `styleai.db/policy_v2_models/<generation>/`: immutable model artifacts for a
   generation.
 

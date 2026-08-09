@@ -192,6 +192,24 @@ Lightroom and learned bounds. Ambiguous membership, missing partitions, or
 insufficient target-independent evidence abstains instead of falling back to an
 LLM or unrelated policy.
 
+Apply My Style uses the versioned multipart `style-edit-batch-v1` contract.
+Lua exports and submits ordered groups of at most 16 photos through one bounded
+producer, then restores source order for review/application. The backend
+business rules live in `services.edit_burst_coherence`; the route validates
+catalog-local operation membership and per-item contracts. Candidate grouping
+uses the 10-second/0.05 ceilings, bounded transitive components, and a
+deterministic visual medoid. It never uses filenames, ratings, picks, keywords,
+or current edits as membership evidence.
+
+Every member first receives the ordinary production prediction. Moderate
+members must independently agree on policy and effective rendering partition;
+strict members additionally require RAW-preview provenance and tighter visual,
+temporal, exposure, and color agreement. Exact reuse copies only
+`GLOBAL_TARGET_REUSE_ALLOWLIST`, then re-interpolates from that member's current
+settings. `STYLEAI_EDIT_BURST_COHERENCE=0` is the immediate kill switch.
+`STYLEAI_EDIT_BURST_EXACT_REUSE=1` is an internal evaluation gate and must not
+be enabled for release until the held-out and Lightroom checklist passes.
+
 ## Recommendations and feedback
 
 Recommendation generation runs as a cancellable background operation. One
@@ -232,7 +250,9 @@ uv run python scripts/calibrate_policy_recommendations.py /path/to/reviews.json
 Synthetic fixtures validate mathematical recovery and invariants. Catalog
 evaluation performs burst-safe held-out fitting in memory and does not replace
 the active generation. Recommendation and outcome calibration reports are
-versioned, local, and evaluation-only.
+versioned, local, and evaluation-only. Applied-edit quality schema v2 includes
+burst tier coverage, fallback reasons, policy/partition leakage, geometry
+disagreement, and per-tier delivered-target corrections.
 
 Before handoff, run:
 

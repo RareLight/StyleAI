@@ -10,10 +10,20 @@ from typing import Any
 import numpy as np
 
 
-TARGET_SCHEMA_VERSION = "policy-target-v2"
+TARGET_SCHEMA_VERSION = "policy-target-v3"
+
+CROP_APPLICABILITY_KEY = "crop_is_applied"
+ROTATION_APPLICABILITY_KEY = "rotation_is_applied"
+GEOMETRY_APPLICABILITY_THRESHOLD = 0.70
+_CROP_NEUTRAL_TOLERANCE = 1e-4
+_ROTATION_NEUTRAL_TOLERANCE = 1e-3
 
 
-def flatten_absolute_target(canonical: dict[str, Any]) -> dict[str, float]:
+def flatten_absolute_target(
+    canonical: dict[str, Any],
+    *,
+    include_applicability: bool = False,
+) -> dict[str, float]:
     """Flatten supported absolute Lightroom targets into stable scalar keys."""
     flat: dict[str, float] = {}
     for key, value in canonical.items():
@@ -50,11 +60,36 @@ def flatten_absolute_target(canonical: dict[str, Any]) -> dict[str, float]:
                 flat[f"curve_{channel}_y_{index}"] = float(value)
 
     crop = canonical.get("crop", {})
+    crop_is_applied = False
+    rotation_is_applied = False
     if isinstance(crop, dict):
         for property_name in ("left", "right", "top", "bottom", "angle"):
             value = crop.get(property_name)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 flat[f"crop_{property_name}"] = float(value)
+        crop_is_applied = any(
+            (
+                property_name in crop
+                and isinstance(crop[property_name], (int, float))
+                and not isinstance(crop[property_name], bool)
+                and abs(float(crop[property_name]) - neutral) > _CROP_NEUTRAL_TOLERANCE
+            )
+            for property_name, neutral in (
+                ("left", 0.0),
+                ("right", 1.0),
+                ("top", 0.0),
+                ("bottom", 1.0),
+            )
+        )
+        angle = crop.get("angle")
+        rotation_is_applied = (
+            isinstance(angle, (int, float))
+            and not isinstance(angle, bool)
+            and abs(float(angle)) > _ROTATION_NEUTRAL_TOLERANCE
+        )
+    if include_applicability:
+        flat[CROP_APPLICABILITY_KEY] = float(crop_is_applied)
+        flat[ROTATION_APPLICABILITY_KEY] = float(rotation_is_applied)
 
     white_balance = canonical.get("white_balance", "As Shot")
     flat["white_balance_is_custom"] = (
@@ -64,6 +99,8 @@ def flatten_absolute_target(canonical: dict[str, Any]) -> dict[str, float]:
 
 
 def default_flat_target_value(key: str) -> float:
+    if key in (CROP_APPLICABILITY_KEY, ROTATION_APPLICABILITY_KEY):
+        return 0.0
     if key.startswith("crop_") and key != "crop_angle":
         return 1.0
     if key == "cg_blending":
@@ -88,8 +125,12 @@ def unflatten_absolute_target(flat: dict[str, float]) -> dict[str, Any]:
     }
     curve_values: dict[str, dict[int, float]] = {}
     circular_hues: dict[str, dict[str, float]] = {}
+    crop_applicability = flat.get(CROP_APPLICABILITY_KEY)
+    rotation_applicability = flat.get(ROTATION_APPLICABILITY_KEY)
     for key, raw_value in flat.items():
         value = float(raw_value)
+        if key in (CROP_APPLICABILITY_KEY, ROTATION_APPLICABILITY_KEY):
+            continue
         if key.startswith("hsl_"):
             _, color, property_name = key.split("_", 2)
             canonical["hsl"].setdefault(color, {})[property_name] = value
@@ -129,6 +170,22 @@ def unflatten_absolute_target(flat: dict[str, float]) -> dict[str, Any]:
         for index, x_value in enumerate(evaluation_points):
             curve.extend((float(x_value), float(values[index])))
         canonical["tone_curve"]["point_curve"][channel] = curve
+
+    crop = canonical.get("crop")
+    if isinstance(crop, dict):
+        if (
+            crop_applicability is not None
+            and float(crop_applicability) < GEOMETRY_APPLICABILITY_THRESHOLD
+        ):
+            for key in ("left", "right", "top", "bottom"):
+                crop.pop(key, None)
+        if (
+            rotation_applicability is not None
+            and float(rotation_applicability) < GEOMETRY_APPLICABILITY_THRESHOLD
+        ):
+            crop.pop("angle", None)
+        if not crop:
+            canonical.pop("crop")
 
     if not canonical["hsl"]:
         canonical.pop("hsl")

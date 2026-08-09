@@ -24,7 +24,26 @@ Uses the local vision model and learned policies; it does not use an LLM.
 Controls include scope, 50/75/100% strength, profile and HDR Off/Suggest/Auto,
 optional crop/straighten, virtual copies, per-photo review, and supported masks.
 At 100%, modeled sliders reach absolute learned targets regardless of existing
-edits. Low-confidence or incompatible photos are skipped.
+edits. Crop and straighten remain independent permissions: when enabled,
+StyleAI applies each only when the learned policy is sufficiently confident
+that the corresponding action is appropriate for that photo. Low-confidence
+or incompatible photos are skipped.
+
+Apply My Style sends bounded, ordered batches to the local service. Within each
+batch, StyleAI conservatively identifies likely burst members using capture
+time, target-independent visual evidence, EXIF/source-exposure compatibility,
+and the independently selected editing policy and rendering partition. A safe
+member may be labelled **Coherent burst edit** in review, but it still keeps its
+own source evidence, recipe history, crop/rotation decision, profile/HDR
+decision, review choice, application receipt, and Develop readback. Unsafe or
+ambiguous members use ordinary independent inference. There is no user setting
+for this automatic optimization.
+
+The stricter global-target reuse tier is implemented behind an internal service
+release gate and is off by default until held-out and Lightroom validation
+passes. When enabled for evaluation, it may share only an explicit continuous
+tone/color/detail allowlist; it never shares white balance, crop, rotation,
+profile, HDR, masks, or sparse/structural families.
 
 ## Rate Selected AI Edits
 

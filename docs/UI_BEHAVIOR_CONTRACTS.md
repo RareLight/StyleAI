@@ -70,12 +70,19 @@ cancellation, and the single final rebuild/activation sequence are unchanged.
 | Create virtual copies | Applies to copies in a uniquely named `StyleAI <YYMMDD-HHMMSS>` collection when enabled; defaults on unless an existing preference says otherwise. The completion dialog names the collection without making it Lightroom's active source. |
 | Review each proposed edit | Opens the existing per-photo review flow; defaults on |
 | Apply masks | Applies only supported masks contained in the recipe; defaults on |
-| Allow crop / straighten | Separate opt-in controls; both default off |
+| Allow crop / straighten | Separate opt-in controls; both default off. Enabling either permits, but does not force, that action: independently learned crop/rotation applicability must reach the conservative inference gate. |
+| Burst coherence | Automatic and conservative; no permanent preference. Bounded ordered batches may show “Coherent burst edit” after temporal, visual, EXIF/source, policy, and rendering-partition checks. Every photo retains per-photo review, geometry/rendering decisions, history, receipts, and readback. Unsafe members fall back independently. |
 
 The trained workflow requires the local service and vision model, but not an
 Ollama or LM Studio metadata provider. Inference history, application events,
 idempotent full-strength behavior, clamps, and catalog write transactions are
 unchanged.
+
+The production service kill switch `STYLEAI_EDIT_BURST_COHERENCE=0` restores
+the independent path without changing stored preferences or schemas. The
+stricter `global_target_reuse` implementation is disabled by default and can be
+enabled only for developer evaluation with
+`STYLEAI_EDIT_BURST_EXACT_REUSE=1`.
 
 ### Review and maintenance
 

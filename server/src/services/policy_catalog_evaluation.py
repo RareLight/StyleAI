@@ -34,7 +34,7 @@ class _PredictionRow:
 def _target_family(key: str) -> str:
     if key == "white_balance_is_custom":
         return "white_balance"
-    if key.startswith("crop_"):
+    if key.startswith("crop_") or key == "rotation_is_applied":
         return "crop"
     if key.startswith("curve_") or key.startswith("tone_curve_"):
         return "tone_curve"

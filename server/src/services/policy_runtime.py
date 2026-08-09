@@ -59,7 +59,7 @@ from .rendering_state import (
 )
 
 
-POLICY_ALGORITHM_VERSION = "editing-policy-v2.5"
+POLICY_ALGORITHM_VERSION = "editing-policy-v2.6"
 MIN_PARTITION_EXAMPLES = 12
 MAX_POLICIES_PER_PARTITION = 4
 # Policy-count validation is a guard against unnecessary expert proliferation,
@@ -335,7 +335,7 @@ def _prepare_rows(raw_examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         normalized_embedding /= np.linalg.norm(normalized_embedding)
         canonical = _safe_json_dict(metadata.get("canonical_settings"))
-        flat_target = flatten_absolute_target(canonical)
+        flat_target = flatten_absolute_target(canonical, include_applicability=True)
         if not flat_target:
             continue
         source, feature_names = _source_row(metadata, normalized_embedding)
@@ -1355,6 +1355,15 @@ def _load_active_artifacts() -> dict[str, PartitionPolicyArtifact]:
     finally:
         connection.close()
     if not rows:
+        return {}
+    if any(
+        row.get("feature_schema_version") != FEATURE_SCHEMA_VERSION
+        or row.get("target_schema_version") != TARGET_SCHEMA_VERSION
+        for row in rows
+    ):
+        logger.warning(
+            "Active editing-policy generation uses an incompatible feature or target schema; rebuild is required"
+        )
         return {}
     generation_id = rows[0]["generation_id"]
     with _runtime_lock:
