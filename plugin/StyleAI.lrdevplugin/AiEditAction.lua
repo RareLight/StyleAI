@@ -62,6 +62,64 @@ local function copyOptions(source)
 	return copied
 end
 
+local function createEditCollection(catalog)
+	local baseName = LOC(
+		"$$$/StyleAI/TaskAiEditPhotos/EditCollectionName=StyleAI ^1",
+		os.date("%y%m%d-%H%M%S")
+	)
+	local existingNames = {}
+	local okCollections, collections = LrTasks.pcall(function()
+		return catalog:getChildCollections()
+	end)
+	if okCollections then
+		for _, collection in ipairs(collections or {}) do
+			existingNames[collection:getName()] = true
+		end
+	end
+	local okSets, collectionSets = LrTasks.pcall(function()
+		return catalog:getChildCollectionSets()
+	end)
+	if okSets then
+		for _, collectionSet in ipairs(collectionSets or {}) do
+			existingNames[collectionSet:getName()] = true
+		end
+	end
+
+	local collectionName = baseName
+	local suffix = 2
+	while existingNames[collectionName] do
+		collectionName = baseName .. " " .. tostring(suffix)
+		suffix = suffix + 1
+	end
+
+	local collection
+	catalog:withWriteAccessDo(
+		LOC("$$$/StyleAI/TaskAiEditPhotos/CreateEditCollection=Create StyleAI edit collection"),
+		function()
+			collection = catalog:createCollection(collectionName, nil, false)
+			if not collection then
+				error("A collection named '" .. collectionName .. "' already exists")
+			end
+		end,
+		Defaults.catalogWriteAccessOptions
+	)
+	return collection, collectionName
+end
+
+local function createVirtualCopy(catalog, photo)
+	-- Lightroom creates virtual copies from the current selection and selects the
+	-- resulting copies. This does not change the active source to the collection.
+	catalog:setSelectedPhotos(photo, {})
+	local copies = catalog:createVirtualCopies(
+		LOC("$$$/StyleAI/TaskAiEditPhotos/VirtualCopyName=StyleAI Edit")
+	)
+	local editPhoto = type(copies) == "table" and copies[1] or nil
+	if not editPhoto then
+		error("Lightroom did not return the requested virtual copy")
+	end
+	return editPhoto
+end
+
 local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 	log:trace("getAiEditOptions: start")
 	local f = LrView.osFactory()
@@ -183,7 +241,7 @@ local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 				title = LOC("$$$/StyleAI/TaskAiEditPhotos/Safety=Application Safety"),
 				f:checkbox({
 					value = bind("createVirtualCopies"),
-					title = LOC("$$$/StyleAI/TaskAiEditPhotos/CreateVirtualCopies=Create virtual copies before applying edits"),
+					title = LOC("$$$/StyleAI/TaskAiEditPhotos/CreateVirtualCopies=Create virtual copies and add them to a new collection"),
 				}),
 				f:checkbox({
 					value = bind("reviewBeforeApply"),
@@ -199,7 +257,7 @@ local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 						keys = { "createVirtualCopies", "reviewBeforeApply", "applyMasks", "allowAutoCrop", "allowAutoRotate" },
 						transform = function()
 							local target = props.createVirtualCopies
-								and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryCopies=apply to new virtual copies")
+								and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryCopies=apply to new virtual copies in a new collection")
 								or LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryOriginals=apply to the selected photos")
 						local review = props.reviewBeforeApply
 							and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryReview=review each edit")
@@ -353,6 +411,9 @@ function AiEditAction.run()
 		local errorMessages = {}
 		local backendWarnings = {}
 		local runLog = {}
+		local editCollection = nil
+		local editCollectionName = nil
+		local editCopies = {}
 
 		-- Queue state
 		local results = {}
@@ -739,11 +800,20 @@ function AiEditAction.run()
 					if res.continueProcessing then
 						local applyLease, applyLeaseError = WorkCoordinator.acquire("catalog_write", progressScope)
 						local applyStartedAt = LrDate.currentTime()
+						local editPhoto = photo
 						local applyOk, applied, warnings = LrTasks.pcall(function()
 							if not applyLease then
 								error("Catalog write canceled: " .. tostring(applyLeaseError))
 							end
-							return DevelopEditManager.applyRecipe(photo, response, applyOptions)
+							if options.createVirtualCopies then
+								local catalog = LrApplication.activeCatalog()
+								if not editCollection then
+									editCollection, editCollectionName = createEditCollection(catalog)
+								end
+								editPhoto = createVirtualCopy(catalog, photo)
+								table.insert(editCopies, editPhoto)
+							end
+							return DevelopEditManager.applyRecipe(editPhoto, response, applyOptions)
 						end)
 						WorkCoordinator.release(applyLease)
 						res.clientTimingsMs.develop_apply = elapsedMilliseconds(applyStartedAt)
@@ -755,7 +825,7 @@ function AiEditAction.run()
 						end
 						if applied then
 							local readOk, readback = LrTasks.pcall(function()
-								return photo:getDevelopSettings()
+								return editPhoto:getDevelopSettings()
 							end)
 							local receiptOk, receiptError
 							local receiptStartedAt = LrDate.currentTime()
@@ -853,6 +923,32 @@ function AiEditAction.run()
 			local unaccounted = #photos - successCount - skippedCount - errorCount
 			if unaccounted > 0 then errorCount = errorCount + unaccounted end
 		end
+		if editCollection and #editCopies > 0 then
+			-- Finish grouping any copies already created even when the user canceled
+			-- the remaining run, so the catalog is not left with uncollected edits.
+			local collectionLease, collectionLeaseError = WorkCoordinator.acquire("catalog_write", nil)
+			local collectionOk, collectionError = LrTasks.pcall(function()
+				if not collectionLease then
+					error("Catalog write canceled: " .. tostring(collectionLeaseError))
+				end
+				LrApplication.activeCatalog():withWriteAccessDo(
+					LOC("$$$/StyleAI/TaskAiEditPhotos/AddEditsToCollection=Add StyleAI edits to collection"),
+					function()
+						editCollection:addPhotos(editCopies)
+					end,
+					Defaults.catalogWriteAccessOptions
+				)
+			end)
+			WorkCoordinator.release(collectionLease)
+			if not collectionOk then
+				local message = "Virtual copies were created, but could not be added to collection '"
+					.. tostring(editCollectionName)
+					.. "': "
+					.. tostring(collectionError)
+				log:error(message)
+				table.insert(backendWarnings, message)
+			end
+		end
 		if stopRequested then
 			-- Catch items that completed backend inference after the first cancel
 			-- request but before their Lightroom handoff could run.
@@ -877,6 +973,14 @@ function AiEditAction.run()
 
 			local combinedReport =
 				LOC("$$$/StyleAI/TaskAiEditPhotos/Summary=Applied edits to ^1 photo(s).", tostring(successCount))
+			if editCollectionName then
+				combinedReport = combinedReport
+					.. "\n"
+					.. LOC(
+						"$$$/StyleAI/TaskAiEditPhotos/CollectionSummary=Edit collection: ^1",
+						editCollectionName
+					)
+			end
 			if skippedCount > 0 then
 				combinedReport = combinedReport
 					.. "\n"
@@ -931,16 +1035,25 @@ function AiEditAction.run()
 				)
 			end
 		else
+			local successSummary = LOC(
+				"$$$/StyleAI/TaskAiEditPhotos/SuccessSummary=Applied edits to ^1 photo(s).\nSkipped: ^2",
+				tostring(successCount),
+				tostring(skippedCount)
+			)
+			if editCollectionName then
+				successSummary = successSummary
+					.. "\n"
+					.. LOC(
+						"$$$/StyleAI/TaskAiEditPhotos/CollectionSummary=Edit collection: ^1",
+						editCollectionName
+					)
+			end
 			if #runLog > 0 then
 				local f = LrView.osFactory()
 				local dialogContent = f:column({
 					spacing = f:control_spacing(),
 					f:static_text({
-						title = LOC(
-							"$$$/StyleAI/TaskAiEditPhotos/SuccessSummary=Applied edits to ^1 photo(s).\nSkipped: ^2",
-							tostring(successCount),
-							tostring(skippedCount)
-						),
+						title = successSummary,
 						font = "<system/bold>",
 					}),
 					f:static_text({
@@ -984,11 +1097,7 @@ function AiEditAction.run()
 			else
 				LrDialogs.message(
 					successTitle,
-					LOC(
-						"$$$/StyleAI/TaskAiEditPhotos/SuccessSummary=Applied edits to ^1 photo(s).\nSkipped: ^2",
-						tostring(successCount),
-						tostring(skippedCount)
-					),
+					successSummary,
 					"info"
 				)
 			end

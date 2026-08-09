@@ -86,7 +86,9 @@ catalog.
 
 1. Verify scope/count appears first and that virtual copies, per-photo review,
    masks, crop, and straighten match existing effective preferences.
-2. Confirm crop and straighten default off for a fresh preference set.
+2. Confirm virtual copies default on for a fresh preference set, then confirm
+   both enabling and disabling the option persist after a completed dialog.
+   Crop and straighten should still default off.
 3. Exercise profile/HDR Off, Suggest, and Auto without a local metadata LLM;
    trained editing should remain available when the vision model is ready.
 4. For all safety combinations, compare the bound summary with the actual
@@ -98,6 +100,10 @@ catalog.
    tracked photos.
 7. Confirm Rate Selected AI Edits opens at a compact reading width with a clear
    Outcome section and no single line determines screen-wide geometry.
+8. With virtual copies enabled, confirm edits affect only the copies, every
+   created copy appears in one new uniquely named `StyleAI <YYMMDD-HHMMSS>`
+   collection, the completion dialog names it, and Lightroom does not switch
+   the active source to that collection.
 
 ## 6. Styles & Training
 

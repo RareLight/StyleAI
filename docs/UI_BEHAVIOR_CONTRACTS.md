@@ -67,7 +67,7 @@ cancellation, and the single final rebuild/activation sequence are unchanged.
 | Scope | Uses the selection snapshot captured before the modal opens |
 | Style strength | Interpolates current settings toward learned absolute targets |
 | Profile / HDR Off, Suggest, Auto | Preserves separate evidence and compatibility gates |
-| Create virtual copies | Applies to copies when enabled; defaults on unless an existing preference says otherwise |
+| Create virtual copies | Applies to copies in a uniquely named `StyleAI <YYMMDD-HHMMSS>` collection when enabled; defaults on unless an existing preference says otherwise. The completion dialog names the collection without making it Lightroom's active source. |
 | Review each proposed edit | Opens the existing per-photo review flow; defaults on |
 | Apply masks | Applies only supported masks contained in the recipe; defaults on |
 | Allow crop / straighten | Separate opt-in controls; both default off |
