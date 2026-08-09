@@ -149,7 +149,10 @@ is created lazily, and is bounded by group count and bytes.
 
 `Learn From My Edits` accepts RAW/DNG photos, extracts target-independent source
 evidence plus absolute Develop targets, and excludes panoramas. It uploads
-bounded chunks and performs one rebuild only after the complete upload.
+bounded chunks and performs one rebuild only after the complete upload. A
+stable-ID preflight prevents exporting examples already stored unless the user
+requested an update. Compatible canonical vectors are reused; remaining neutral
+RAW previews use pressure-aware batched SigLIP2 inference.
 
 Within compatible HDR/profile partitions, burst groups preserve validation
 boundaries. Production chooses among the stable baseline, reduced-rank ridge,
@@ -157,6 +160,11 @@ weighted PLS, and eligible multi-task Elastic Net. Policy identity begins with
 grouped out-of-fold target residual behavior; normalized source embeddings then
 establish whether a component is recognizable. Genre, lighting, keywords,
 camera, and lens do not define styles.
+
+All multi-output estimators fit robustly normalized target coordinates and
+invert that transform at prediction time. This prevents Kelvin, crop, or other
+large-unit targets from dominating small-unit controls. Rebuilding is required
+when the policy algorithm version changes.
 
 Experts and policy-local residual correction are retained only after material
 held-out improvement with adequate support and stable selective coverage. Large
@@ -193,8 +201,9 @@ insufficient target-independent evidence abstains instead of falling back to an
 LLM or unrelated policy.
 
 Apply My Style uses the versioned multipart `style-edit-batch-v1` contract.
-Lua exports and submits ordered groups of at most 16 photos through one bounded
-producer, then restores source order for review/application. The backend
+Lua capture-time-orders the operation and submits groups through one bounded
+producer. Temporal continuity may extend a request to 64 photos while backend
+accelerator work remains pressure-batched. The backend
 business rules live in `services.edit_burst_coherence`; the route validates
 catalog-local operation membership and per-item contracts. Candidate grouping
 uses the 10-second/0.05 ceilings, bounded transitive components, and a
@@ -209,6 +218,10 @@ temporal, exposure, and color agreement. Exact reuse copies only
 settings. `STYLEAI_EDIT_BURST_COHERENCE=0` is the immediate kill switch.
 `STYLEAI_EDIT_BURST_EXACT_REUSE=1` is an internal evaluation gate and must not
 be enabled for release until the held-out and Lightroom checklist passes.
+
+The first accepted request pins the operation job to one generation and schema
+set. Retries and later chunks load that active-or-retired generation; pruning
+cannot remove it until the operation becomes terminal.
 
 ## Recommendations and feedback
 

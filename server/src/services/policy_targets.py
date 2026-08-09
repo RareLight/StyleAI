@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 
-TARGET_SCHEMA_VERSION = "policy-target-v3"
+TARGET_SCHEMA_VERSION = "policy-target-v4"
 
 CROP_APPLICABILITY_KEY = "crop_is_applied"
 ROTATION_APPLICABILITY_KEY = "rotation_is_applied"

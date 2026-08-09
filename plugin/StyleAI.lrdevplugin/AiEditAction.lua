@@ -62,6 +62,33 @@ local function copyOptions(source)
 	return copied
 end
 
+local function orderPhotosByCaptureTime(photos)
+	local decorated = {}
+	for index, photo in ipairs(photos or {}) do
+		local captureTime = photo:getRawMetadata("dateTime")
+		table.insert(decorated, {
+			photo = photo,
+			captureTime = type(captureTime) == "number" and captureTime or math.huge,
+			originalIndex = index,
+		})
+		if index % 200 == 0 then
+			LrTasks.yield()
+			LrTasks.sleep(0.01)
+		end
+	end
+	table.sort(decorated, function(left, right)
+		if left.captureTime == right.captureTime then
+			return left.originalIndex < right.originalIndex
+		end
+		return left.captureTime < right.captureTime
+	end)
+	local ordered = {}
+	for _, item in ipairs(decorated) do
+		table.insert(ordered, item.photo)
+	end
+	return ordered
+end
+
 local function createEditCollection(catalog)
 	local baseName = LOC(
 		"$$$/StyleAI/TaskAiEditPhotos/EditCollectionName=StyleAI ^1",
@@ -143,7 +170,6 @@ local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 	props.reviewBeforeApply = prefs.aiEditReviewBeforeApply ~= false
 	props.profileMode = prefs.aiEditProfileMode or "suggest"
 	props.hdrMode = prefs.aiEditHdrMode or "suggest"
-	props.applyMasks = prefs.aiEditApplyMasks ~= false
 	props.allowAutoCrop = prefs.aiEditAllowAutoCrop == true
 	props.allowAutoRotate = prefs.aiEditAllowAutoRotate == true
 
@@ -247,14 +273,10 @@ local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 					value = bind("reviewBeforeApply"),
 					title = LOC("$$$/StyleAI/TaskAiEditPhotos/ReviewProposed=Review each proposed edit before applying it"),
 				}),
-				f:checkbox({
-					value = bind("applyMasks"),
-					title = LOC("$$$/StyleAI/TaskAiEditPhotos/ApplyMasks=Apply learned masks when the recipe contains supported masks"),
-				}),
 				UIFactory.Summary(f, {
 					title = LOC("$$$/StyleAI/UI/Summary=Safety Summary"),
 					text = bind({
-						keys = { "createVirtualCopies", "reviewBeforeApply", "applyMasks", "allowAutoCrop", "allowAutoRotate" },
+						keys = { "createVirtualCopies", "reviewBeforeApply", "allowAutoCrop", "allowAutoRotate" },
 						transform = function()
 							local target = props.createVirtualCopies
 								and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryCopies=apply to new virtual copies in a new collection")
@@ -262,16 +284,13 @@ local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 						local review = props.reviewBeforeApply
 							and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryReview=review each edit")
 							or LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryAutomatic=apply without per-photo review")
-						local masks = props.applyMasks
-							and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryMasks=apply supported recipe masks")
-							or LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryNoMasks=do not apply masks")
 						local crop = props.allowAutoCrop
 							and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryCrop=crop allowed")
 							or LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryNoCrop=no crop")
 						local rotation = props.allowAutoRotate
 							and LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryRotate=straighten/rotation allowed")
 							or LOC("$$$/StyleAI/TaskAiEditPhotos/SummaryNoRotate=no straighten/rotation")
-						return target .. " — " .. review .. " — " .. masks .. " — " .. crop .. " — " .. rotation
+						return target .. " — " .. review .. " — " .. crop .. " — " .. rotation
 						end,
 					}),
 				}),
@@ -299,14 +318,12 @@ local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 	prefs.aiEditReviewBeforeApply = props.reviewBeforeApply
 	prefs.aiEditProfileMode = props.profileMode
 	prefs.aiEditHdrMode = props.hdrMode
-	prefs.aiEditApplyMasks = props.applyMasks
 	prefs.aiEditAllowAutoCrop = props.allowAutoCrop
 	prefs.aiEditAllowAutoRotate = props.allowAutoRotate
 
 	local options = {
 		scope = props.scope,
 		style_strength = props.styleStrength,
-		applyMasks = props.applyMasks,
 		reviewBeforeApply = props.reviewBeforeApply,
 		profile_mode = props.profileMode,
 		hdr_mode = props.hdrMode,
@@ -358,12 +375,12 @@ function AiEditAction.run()
 		end
 
 		local stats = SearchIndexAPI.getTrainingStats()
-		if not stats or (stats.count or 0) < 5 then
+		if not stats or stats.has_active_generation ~= true then
 			LrDialogs.showError(
 				LOC("$$$/StyleAI/TaskAiEditPhotos/ColdStartTitle=Cold Start"),
-				LOC("$$$/StyleAI/TaskAiEditPhotos/ColdStartMsg=StyleAI needs at least 5 examples to learn your baseline editing style. Run 'Learn From My Edits' first.")
+				LOC("$$$/StyleAI/TaskAiEditPhotos/ColdStartMsg=StyleAI does not have an active editing policy for these photos yet. Run 'Learn From My Edits', then rebuild if prompted.")
 			)
-			log:warn("AI Edit task aborted: Cold Start (<5 examples)")
+			log:warn("AI Edit task aborted: no active learned-policy generation")
 			return
 		end
 
@@ -374,8 +391,6 @@ function AiEditAction.run()
 				.. tostring(options.reviewBeforeApply)
 				.. " styleStrength="
 				.. tostring(options.style_strength)
-				.. " masks="
-				.. tostring(options.applyMasks)
 				.. " crop="
 				.. tostring(options.allow_auto_crop)
 				.. " rotate="
@@ -392,6 +407,9 @@ function AiEditAction.run()
 			log:warn("AI Edit task found no photos in scope: " .. tostring(options.scope))
 			return
 		end
+		-- Pack temporal neighbors independently of Lightroom's current view order.
+		-- The backend still evaluates every member's own neutral source evidence.
+		photos = orderPhotosByCaptureTime(photos)
 
 		local progressTitle = LOC("$$$/StyleAI/TaskAiEditPhotos/ProgressTitleML=Applying ML Edits...")
 		local completionTitle = LOC("$$$/StyleAI/TaskAiEditPhotos/CompletionTitleML=ML Edit Completed")
@@ -523,7 +541,9 @@ function AiEditAction.run()
 					status = status,
 					current_settings = currentSettings,
 					global_applied = applyOptions and applyOptions.applyGlobal == true or false,
-					masks_applied = applyOptions and applyOptions.applyMasks == true or false,
+					masks_applied = false,
+					applied_to_virtual_copy = applyOptions and applyOptions.appliedToVirtualCopy == true or false,
+					applied_copy_name = applyOptions and applyOptions.appliedCopyName or "",
 					warnings = warnings or {},
 					error = errorMessage or "",
 				},
@@ -547,6 +567,7 @@ function AiEditAction.run()
 			)
 		end
 		local maxWorkers = 1 -- One ordered producer keeps temporal neighbors together.
+		local maxBurstBatchSize = 64
 		local backendRequestLane = "backend_edit_request"
 		WorkCoordinator.configureLane(backendRequestLane, 1)
 
@@ -577,6 +598,19 @@ function AiEditAction.run()
 					LrTasks.sleep(0.1)
 				else
 					local lastIndex = math.min(#photos, firstIndex + batchSize - 1)
+					-- Avoid cutting a temporal burst at an arbitrary HTTP boundary. The
+					-- ceiling keeps exported previews and request memory bounded.
+					while lastIndex < #photos and lastIndex < firstIndex + maxBurstBatchSize - 1 do
+						local previousTime = photos[lastIndex]:getRawMetadata("dateTime")
+						local nextTime = photos[lastIndex + 1]:getRawMetadata("dateTime")
+						if type(previousTime) ~= "number"
+							or type(nextTime) ~= "number"
+							or math.abs(nextTime - previousTime) > 10
+						then
+							break
+						end
+						lastIndex = lastIndex + 1
+					end
 					nextIndexToProcess = lastIndex + 1
 					local requestItems = {}
 					for index = firstIndex, lastIndex do
@@ -728,25 +762,13 @@ function AiEditAction.run()
 				finishOperationItem(photoIdsByIndex[index], "failed", res.errorMsg or "Edit generation failed")
 			else
 				local response = res.response
-				local persistLease, persistLeaseError = WorkCoordinator.acquire("catalog_write", progressScope)
-				local okPersist, persistErr
-				local persistStartedAt = LrDate.currentTime()
-				if persistLease then
-					okPersist, persistErr = LrTasks.pcall(function()
-						DevelopEditManager.persistEditRecipe(photo, response, nil, "generated")
-					end)
-				else
-					okPersist, persistErr = false, persistLeaseError
-				end
-				WorkCoordinator.release(persistLease)
-				res.clientTimingsMs.recipe_persist = elapsedMilliseconds(persistStartedAt)
-				if not okPersist then
-					log:error("Persist generated recipe threw for " .. fileName .. ": " .. tostring(persistErr))
-					table.insert(errorMessages, fileName .. ": could not persist recipe: " .. tostring(persistErr))
-					errorCount = errorCount + 1
-					finishOperationItem(photoIdsByIndex[index], "failed", "Could not persist generated recipe")
-				else
-					local applyOptions = { applyGlobal = true, applyMasks = options.applyMasks }
+				-- Tracking is persisted only on the Lightroom instance that receives the
+				-- edit. The backend already owns the immutable generated inference.
+				res.clientTimingsMs.recipe_persist = 0
+				local applyOptions = {
+					applyGlobal = true,
+					appliedToVirtualCopy = false,
+				}
 
 					if options.reviewBeforeApply then
 						local result, validated = DevelopEditManager.showValidationDialog(ctx, photo, response, options)
@@ -774,7 +796,7 @@ function AiEditAction.run()
 						end
 					end
 
-					if res.continueProcessing and not applyOptions.applyGlobal and not applyOptions.applyMasks then
+				if res.continueProcessing and not applyOptions.applyGlobal then
 						skippedCount = skippedCount + 1
 						res.continueProcessing = false
 						local receiptOk, receiptError = recordApplicationEvent(
@@ -795,7 +817,7 @@ function AiEditAction.run()
 						end
 					end
 
-					if res.continueProcessing then
+				if res.continueProcessing then
 						local applyLease, applyLeaseError = WorkCoordinator.acquire("catalog_write", progressScope)
 						local applyStartedAt = LrDate.currentTime()
 						local editPhoto = photo
@@ -809,6 +831,11 @@ function AiEditAction.run()
 									editCollection, editCollectionName = createEditCollection(catalog)
 								end
 								editPhoto = createVirtualCopy(catalog, photo)
+								applyOptions.appliedToVirtualCopy = true
+								local okCopyName, copyName = LrTasks.pcall(function()
+									return editPhoto:getFormattedMetadata("copyName")
+								end)
+								if okCopyName then applyOptions.appliedCopyName = copyName end
 								table.insert(editCopies, editPhoto)
 							end
 							return DevelopEditManager.applyRecipe(editPhoto, response, applyOptions)
@@ -829,7 +856,7 @@ function AiEditAction.run()
 							local receiptStartedAt = LrDate.currentTime()
 							if readOk and type(readback) == "table" then
 								receiptOk, receiptError = recordApplicationEvent(
-									photo,
+									editPhoto,
 									photoIdsByIndex[index],
 									response,
 									"apply_confirmed",
@@ -841,7 +868,7 @@ function AiEditAction.run()
 								)
 							else
 								receiptOk, receiptError = recordApplicationEvent(
-									photo,
+									editPhoto,
 									photoIdsByIndex[index],
 									response,
 									"apply_unconfirmed",
@@ -871,7 +898,7 @@ function AiEditAction.run()
 							table.insert(runLog, string.format("- %s: %s", fileName, styleInfo))
 						else
 							local receiptOk, receiptError = recordApplicationEvent(
-								photo,
+									editPhoto,
 								photoIdsByIndex[index],
 								response,
 								"apply_failed",
@@ -892,7 +919,6 @@ function AiEditAction.run()
 						if warnings and #warnings > 0 then
 							log:warn("AI edit warnings for " .. fileName .. ": " .. table.concat(warnings, " | "))
 						end
-					end
 				end
 			end
 			res.clientTimingsMs.total = res.startedAt and elapsedMilliseconds(res.startedAt) or 0

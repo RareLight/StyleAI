@@ -77,6 +77,17 @@ def _job_payload(row: sqlite3.Row, items: list[dict[str, Any]] | None = None) ->
     return payload
 
 
+def _item_payload(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "item_id": row["item_id"],
+        "state": row["state"],
+        "request_fingerprint": row["request_fingerprint"],
+        "result": _decode_json(row["result_json"]),
+        "error": row["error"],
+        "updated_at": row["updated_at"],
+    }
+
+
 def create_job(
     db_path: str,
     *,
@@ -168,18 +179,43 @@ def get_job(db_path: str, job_id: str, *, include_items: bool = True) -> dict | 
                 """,
                 (job_id,),
             ).fetchall()
-            items = [
-                {
-                    "item_id": item["item_id"],
-                    "state": item["state"],
-                    "request_fingerprint": item["request_fingerprint"],
-                    "result": _decode_json(item["result_json"]),
-                    "error": item["error"],
-                    "updated_at": item["updated_at"],
-                }
-                for item in item_rows
-            ]
+            items = [_item_payload(item) for item in item_rows]
         return _job_payload(row, items)
+    finally:
+        connection.close()
+
+
+def get_job_item(db_path: str, job_id: str, item_id: str) -> dict[str, Any] | None:
+    """Fetch one operation item through its `(job_id, item_id)` primary key."""
+    items = get_job_items(db_path, job_id, [item_id])
+    return items[0] if items else None
+
+
+def get_job_items(
+    db_path: str,
+    job_id: str,
+    item_ids: list[str],
+) -> list[dict[str, Any]]:
+    """Fetch only the bounded item IDs required by the current request."""
+    normalized_ids = list(
+        dict.fromkeys(str(item_id or "").strip() for item_id in item_ids)
+    )
+    normalized_ids = [item_id for item_id in normalized_ids if item_id]
+    if not normalized_ids:
+        return []
+    placeholders = ",".join("?" for _ in normalized_ids)
+    connection = _connect(db_path)
+    try:
+        rows = connection.execute(
+            f"""
+            SELECT item_id, state, request_fingerprint, result_json, error, updated_at
+            FROM operation_job_items
+            WHERE job_id = ? AND item_id IN ({placeholders})
+            """,
+            (job_id, *normalized_ids),
+        ).fetchall()
+        by_id = {row["item_id"]: _item_payload(row) for row in rows}
+        return [by_id[item_id] for item_id in normalized_ids if item_id in by_id]
     finally:
         connection.close()
 

@@ -9,6 +9,7 @@ from services.policy_catalog_evaluation import (
     _score_predictions,
     evaluate_catalog_training_examples,
 )
+from services import source_embeddings
 
 
 def _catalog_examples(count=24):
@@ -32,6 +33,12 @@ def _catalog_examples(count=24):
                 "photo_id": f"catalog-{index:03d}",
                 "embedding": embedding.tolist(),
                 "metadata": {
+                    "source_provenance": "raw_preview",
+                    "source_embedding_provenance": "raw_preview",
+                    "source_embedding_fingerprint": f"catalog-fingerprint-{index}",
+                    "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+                    "source_embedding_model": source_embeddings.SOURCE_EMBEDDING_MODEL_ID,
+                    "source_embedding_preprocess": source_embeddings.SOURCE_EMBEDDING_PREPROCESS_VERSION,
                     "camera_profile": "Adobe Color",
                     "camera_make": "Example",
                     "camera_model": "Camera",

@@ -43,6 +43,7 @@ local ENDPOINTS = {
     SYNC_CLEANUP = "/sync/cleanup",
     TRAINING_ADD = "/training/add",
     TRAINING_ADD_BATCH = "/training/add-batch",
+    TRAINING_PREFLIGHT = "/training/preflight",
     TRAINING_LIST = "/training/list",
     TRAINING_COUNT = "/training/count",
     TRAINING_DELETE = "/training", -- DELETE /training/<photo_id>
@@ -4066,6 +4067,20 @@ function SearchIndexAPI.getTrainingStats()
         return nil, err or "Unknown error"
     end
     return response, nil
+end
+
+function SearchIndexAPI.preflightTrainingExamples(photoIds, forceRetrain)
+    local response, err = _request('POST', getBaseUrl() .. ENDPOINTS.TRAINING_PREFLIGHT, {
+        photo_ids = photoIds or {},
+        force_retrain = forceRetrain == true,
+    }, 30)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if type(response.needed_photo_ids) ~= "table" then
+        return false, response.error or "Unexpected training preflight response"
+    end
+    return true, response
 end
 
 ---

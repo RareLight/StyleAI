@@ -209,43 +209,54 @@ def prune_inactive_generations(
     """Bound derived history while preserving the complete active generation."""
     if retain_retired < 0:
         raise ValueError("retain_retired must be non-negative")
-    rows = connection.execute(
-        """
-        SELECT generation_id, status
-        FROM policy_v2_generations
-        WHERE status != 'active'
-        ORDER BY
-            CASE WHEN status = 'retired' THEN 0 ELSE 1 END,
-            COALESCE(activated_at, created_at) DESC,
-            generation_id DESC
-        """
-    ).fetchall()
-    retained = 0
     delete_ids: list[str] = []
-    for row in rows:
-        if row["status"] == "retired" and retained < retain_retired:
-            retained += 1
-        else:
-            delete_ids.append(str(row["generation_id"]))
-    if not delete_ids:
-        return []
-    placeholders = ",".join("?" for _ in delete_ids)
     with _immediate_transaction(connection):
-        connection.execute(
-            f"DELETE FROM policy_v2_generations "
-            f"WHERE generation_id IN ({placeholders})",
-            delete_ids,
-        )
-        connection.execute(
+        rows = connection.execute(
             """
-            DELETE FROM policy_v2_examples
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM policy_v2_memberships AS memberships
-                WHERE memberships.photo_id = policy_v2_examples.photo_id
+            SELECT generation_id, status
+            FROM policy_v2_generations
+            WHERE status != 'active'
+            ORDER BY
+                CASE WHEN status = 'retired' THEN 0 ELSE 1 END,
+                COALESCE(activated_at, created_at) DESC,
+                generation_id DESC
+            """
+        ).fetchall()
+        retained = 0
+        for row in rows:
+            referenced = connection.execute(
+                """
+                SELECT 1 FROM operation_jobs
+                WHERE kind = 'edit'
+                  AND state IN ('queued', 'preparing', 'running', 'committing')
+                  AND json_extract(details_json, '$.generation_id') = ?
+                LIMIT 1
+                """,
+                (row["generation_id"],),
+            ).fetchone()
+            if referenced:
+                continue
+            if row["status"] == "retired" and retained < retain_retired:
+                retained += 1
+            else:
+                delete_ids.append(str(row["generation_id"]))
+        if delete_ids:
+            placeholders = ",".join("?" for _ in delete_ids)
+            connection.execute(
+                f"DELETE FROM policy_v2_generations "
+                f"WHERE generation_id IN ({placeholders})",
+                delete_ids,
             )
-            """
-        )
+            connection.execute(
+                """
+                DELETE FROM policy_v2_examples
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM policy_v2_memberships AS memberships
+                    WHERE memberships.photo_id = policy_v2_examples.photo_id
+                )
+                """
+            )
     return delete_ids
 
 
@@ -378,13 +389,34 @@ def list_active_policy_models(
 ) -> list[dict[str, Any]]:
     rows = connection.execute(
         """
-        SELECT m.*, g.feature_schema_version, g.target_schema_version
+        SELECT m.*, g.algorithm_version, g.feature_schema_version,
+               g.target_schema_version
         FROM policy_v2_models AS m
         JOIN policy_v2_generations AS g
           ON g.generation_id = m.generation_id
         WHERE g.status = 'active'
         ORDER BY m.hard_partition_key, m.expert_index
         """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_generation_policy_models(
+    connection: sqlite3.Connection,
+    generation_id: str,
+) -> list[dict[str, Any]]:
+    """List a complete active or retired generation for an admitted edit job."""
+    rows = connection.execute(
+        """
+        SELECT m.*, g.algorithm_version, g.feature_schema_version,
+               g.target_schema_version
+        FROM policy_v2_models AS m
+        JOIN policy_v2_generations AS g
+          ON g.generation_id = m.generation_id
+        WHERE g.generation_id = ? AND g.status IN ('active', 'retired')
+        ORDER BY m.hard_partition_key, m.expert_index
+        """,
+        (generation_id,),
     ).fetchall()
     return [dict(row) for row in rows]
 

@@ -18,6 +18,18 @@ def client():
         yield c
 
 
+@pytest.fixture(autouse=True)
+def available_policy_generation(mocker):
+    mocker.patch(
+        "routes.style_edit.policy_runtime.active_generation_id",
+        return_value="generation-test",
+    )
+    mocker.patch(
+        "routes.style_edit.policy_runtime._load_generation_artifacts",
+        return_value={"partition": object()},
+    )
+
+
 def test_style_edit_missing_images_returns_400(client):
     response = client.post("/style_edit", data={"photo_id": "photo-1"})
     assert response.status_code == 400
@@ -181,7 +193,10 @@ def test_versioned_batch_preserves_per_photo_contracts(client, mocker, tmp_path)
     structured = run_batch.call_args.args[0]
     assert structured[0]["options"]["current_settings"] == {"Exposure2012": -0.25}
     assert structured[1]["options"]["raw_filepath"] == "/photos/two.cr3"
+    assert structured[0]["options"]["generation_id"] == "generation-test"
+    assert structured[1]["options"]["generation_id"] == "generation-test"
     stored = operations.get_job(db_path, job["job_id"])
+    assert stored["details"]["generation_id"] == "generation-test"
     assert [item["state"] for item in stored["items"]] == ["committing", "failed"]
 
 
@@ -204,6 +219,45 @@ def test_versioned_batch_rejects_mismatched_item_order(client, tmp_path, mocker)
 
     assert response.status_code == 400
     assert "multipart order" in response.get_json()["error"]
+
+
+def test_versioned_batch_retry_uses_job_pinned_generation(client, tmp_path, mocker):
+    db_path = str(tmp_path / "styleai.db")
+    run_migrations(db_path)
+    mocker.patch("routes.style_edit.config.DB_PATH", db_path)
+    job, _ = operations.create_job(
+        db_path,
+        kind="edit",
+        item_ids=["photo-1"],
+        details={"generation_id": "generation-old"},
+    )
+    run_batch = mocker.patch(
+        "routes.style_edit._run_coherent_style_edit_batch",
+        return_value=(
+            [{"status": "success", "photo_id": "photo-1", "confidence": 0.9}],
+            {"tier_counts": {"independent": 1}},
+        ),
+    )
+
+    response = client.post(
+        "/style_edit",
+        data={
+            "image": (io.BytesIO(b"first"), "one.jpg"),
+            "photo_id": "photo-1",
+            "job_id": job["job_id"],
+            "items_json": json.dumps([{"photo_id": "photo-1"}]),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert (
+        run_batch.call_args.args[0][0]["options"]["generation_id"] == "generation-old"
+    )
+    assert (
+        operations.get_job(db_path, job["job_id"])["details"]["generation_id"]
+        == "generation-old"
+    )
 
 
 @pytest.mark.parametrize(
