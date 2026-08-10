@@ -1768,7 +1768,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     
     local isServerEmpty = SearchIndexAPI.isServerEmpty()
 
-    progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/PreflightCheck=Verifying selection..."))
+    progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/PreflightCheck=Verifying and deduplicating selection..."))
     local allPhotoIds = {}
     local photoIdToPhotoMap = {}
     local totalSelected = #selectedPhotos
@@ -1888,9 +1888,10 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         modelDisplay = tostring(options.model or "AI")
     end
 
+    local uniquePhotosCount = #allPhotoIds
     progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhotos=Processing ^1 photos with ^2...",
         #photoToProcessStack, modelDisplay))
-    progressScope:setPortionComplete(stats.processed, numPhotos)
+    progressScope:setPortionComplete(stats.processed, uniquePhotosCount)
     local processedPhotos = {}
     local activeWorkers = 0
     local keepRunning = true
@@ -2279,7 +2280,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                                 LrTasks.sleep(0.15)
                             end
                             if not enableMetadata then
-                                progressScope:setPortionComplete(stats.processed, numPhotos)
+                                progressScope:setPortionComplete(stats.processed, uniquePhotosCount)
                             end
                         else
                             local operationFailures = {}
@@ -2423,7 +2424,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 					end
 					SearchIndexAPI.updateOperationItems(operationId, operationUpdates)
 
-					progressScope:setPortionComplete(stats.processed, numPhotos)
+					progressScope:setPortionComplete(stats.processed, uniquePhotosCount)
                 end
             end
         end
@@ -2498,7 +2499,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 
                 progressScope:setCaption(
                     LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
-                        totalSuccess, numPhotos, currentFailed)
+                        totalSuccess, uniquePhotosCount, currentFailed)
                 )
             end
         end
