@@ -19,6 +19,7 @@ local function showTrainDialog(ctx, selectedPhotosSnapshot)
 	local props = LrBinding.makePropertyTable(ctx)
 
 	props.scope = prefs.trainingScope or "selected"
+	if props.scope == "view" then props.scope = "selected" end
 	props.forceRetrain = false
 	props.selectedCount = #(selectedPhotosSnapshot or {})
 
@@ -39,7 +40,6 @@ local function showTrainDialog(ctx, selectedPhotosSnapshot)
 					width = 360,
 					items = {
 						{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
-						{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
 						{ title = LOC("$$$/StyleAI/common/ScopeAll=Entire Catalog"), value = "all" },
 					},
 				}),
