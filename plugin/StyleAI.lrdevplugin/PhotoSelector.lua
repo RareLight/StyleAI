@@ -91,7 +91,7 @@ function PhotoSelector.getPhotosInScope(scope, taskOptions, lookupProgressScope,
 				and (
 					source:type() == "LrCollection"
 					or source:type() == "LrFolder"
-					or source:type() == "LrPublishedCollection"
+					or source:type() == "LrPublishedCollection" or source:type() == "LrSmartCollection" or source:type() == "LrPublishedSmartCollection"
 				)
 			then
 				local includeChildren = false

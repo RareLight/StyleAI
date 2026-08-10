@@ -290,6 +290,12 @@ class AnalysisService:
             if GLOBAL_CANCEL_EVENT.is_set():
                 raise RuntimeError("Batch canceled by watchdog.")
             opt = options[i] if isinstance(options, list) else options
+            job_id = opt.get("job_id")
+            if job_id:
+                from services import operations
+                from config import DB_PATH
+                if operations.is_cancel_requested(DB_PATH, job_id):
+                    raise InterruptedError("operation job has been canceled")
             # Inject per-image EXIF location data without mutating the options dict
             if exif_location_map and uuid in exif_location_map:
                 per_image_options = dict(opt)
@@ -321,6 +327,8 @@ class AnalysisService:
             try:
                 idx, response = future.result()
                 results[idx] = response
+            except (InterruptedError, RuntimeError) as e:
+                raise
             except Exception as e:
                 logger.error(
                     f"Error in concurrent metadata generation: {e}", exc_info=True
