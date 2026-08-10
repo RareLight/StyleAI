@@ -1895,11 +1895,16 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local activeWorkers = 0
     local keepRunning = true
 
+    local function isCanceledSafe()
+        local ok, canceled = pcall(function() return progressScope and progressScope:isCanceled() end)
+        return ok and canceled
+    end
+
     -- Cancellation is scoped to this operation. Other Lightroom windows and
     -- their cached image payloads must continue independently.
     LrTasks.startAsyncTask(function()
         while keepRunning do
-            if progressScope and progressScope:isCanceled() then
+            if isCanceledSafe() then
                 SearchIndexAPI.cancelOperation(operationId)
                 break
             end
@@ -1962,7 +1967,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         local maxQueueCapacity = math.min(batchSize * 2, 24)
 
         while #photoToProcessStack > 0 do
-            if progressScope:isCanceled() then break end
+            if isCanceledSafe() then break end
             if not keepRunning then break end
 
             if #preparedQueue >= maxQueueCapacity then
@@ -2142,7 +2147,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 	local senderWorker = function()
 		local batchSize = (options.benchmarkConfig and options.benchmarkConfig.batch) or calculatedBatchSize
         
-        while keepRunning and not progressScope:isCanceled() do
+        while keepRunning and not isCanceledSafe() do
             if enableMetadata and #llmQueue >= maxLlmQueueCapacity then
                 -- Keep base64 previews bounded while the serial local LLM
                 -- drains prior work. This is especially important for
@@ -2310,7 +2315,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     
 
 	local llmWorker = function()
-		while keepRunning and not progressScope:isCanceled() do
+		while keepRunning and not isCanceledSafe() do
             if #llmQueue == 0 then
                 if preparationDone and activeSenderWorkers == 0 then
                     break
@@ -2484,7 +2489,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     -- Monitor workers and server availability
     while activeWorkers > 0 or activeSenderWorkers > 0 or activeLlmWorkers > 0 do
-        if progressScope:isCanceled() then break end
+        if isCanceledSafe() then break end
         LrTasks.yield()
         LrTasks.sleep(0.1)
     end
@@ -2500,7 +2505,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 	end
 
     local operationJob
-    if progressScope:isCanceled() then
+    if isCanceledSafe() then
         SearchIndexAPI.cancelOperation(operationId)
     else
         local completed, completionResult = SearchIndexAPI.completeOperation(operationId)
@@ -2516,7 +2521,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
             }
 			local pollCount = 0
 			while operationJob and not terminal[operationJob.state] and not options.deferCatalogHandoff and pollCount < 7200 do
-                if progressScope:isCanceled() then
+                if isCanceledSafe() then
                     SearchIndexAPI.cancelOperation(operationId)
                     break
                 end
@@ -2567,7 +2572,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         progressScope:done()
     end
 
-    if progressScope:isCanceled() then
+    if isCanceledSafe() then
         return "canceled", stats.processed, stats.failed, processedPhotos
     end
 

@@ -180,7 +180,14 @@ def get_job(db_path: str, job_id: str, *, include_items: bool = True) -> dict | 
                 (job_id,),
             ).fetchall()
             items = [_item_payload(item) for item in item_rows]
-        return _job_payload(row, items)
+            
+        payload = _job_payload(row, items)
+        # Dynamically inject live item state counts if not already frozen in details
+        counts = _item_state_counts(connection, job_id)
+        if "details" not in payload or payload["details"] is None:
+            payload["details"] = {}
+        payload["details"]["item_state_counts"] = counts
+        return payload
     finally:
         connection.close()
 
