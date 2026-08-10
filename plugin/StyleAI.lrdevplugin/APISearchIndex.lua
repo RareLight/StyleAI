@@ -1768,30 +1768,31 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     
     local isServerEmpty = SearchIndexAPI.isServerEmpty()
 
-    if options.regenerate_metadata ~= true and not isServerEmpty then
-        progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/PreflightCheck=Verifying existing index..."))
-        local allPhotoIds = {}
-        local photoIdToPhotoMap = {}
-        local totalSelected = #selectedPhotos
-        local updateInterval = math.max(1, math.floor(totalSelected / 50))
-        for i, photo in ipairs(selectedPhotos) do
-            if progressScope and progressScope:isCanceled() then
-                return "canceled", 0, 0, {}
-            end
-            local photoId = getPhotoIdForPhoto(photo, options)
-            if photoId then
-                if not photoIdToPhotoMap[photoId] then
-                    table.insert(allPhotoIds, photoId)
-                    photoIdToPhotoMap[photoId] = photo
-                end
-                photoIdByPhoto[photo] = photoId
-            end
-            if i % updateInterval == 0 then
-                progressScope:setPortionComplete(i, totalSelected)
-                LrTasks.yield()
-            end
+    progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/PreflightCheck=Verifying selection..."))
+    local allPhotoIds = {}
+    local photoIdToPhotoMap = {}
+    local totalSelected = #selectedPhotos
+    local updateInterval = math.max(1, math.floor(totalSelected / 50))
+    for i, photo in ipairs(selectedPhotos) do
+        if progressScope and progressScope:isCanceled() then
+            return "canceled", 0, 0, {}
         end
-        
+        local photoId = getPhotoIdForPhoto(photo, options)
+        if photoId then
+            if not photoIdToPhotoMap[photoId] then
+                table.insert(allPhotoIds, photoId)
+                photoIdToPhotoMap[photoId] = photo
+            end
+            photoIdByPhoto[photo] = photoId
+        end
+        if i % updateInterval == 0 then
+            progressScope:setPortionComplete(i, totalSelected)
+            LrTasks.yield()
+        end
+    end
+
+    if options.regenerate_metadata ~= true and not isServerEmpty then
+        progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/PreflightCheckDb=Verifying existing index..."))
         local body = {
             photo_ids = allPhotoIds,
             tasks = options.tasks,
@@ -1820,13 +1821,13 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
             ))
         else
             log:warn("Pre-flight check failed, falling back to full process. Error: " .. tostring(err))
-            for _, photo in ipairs(selectedPhotos) do
-                table.insert(photoToProcessStack, photo)
+            for _, pid in ipairs(allPhotoIds) do
+                table.insert(photoToProcessStack, photoIdToPhotoMap[pid])
             end
         end
     else
-        for _, photo in ipairs(selectedPhotos) do
-            table.insert(photoToProcessStack, photo)
+        for _, pid in ipairs(allPhotoIds) do
+            table.insert(photoToProcessStack, photoIdToPhotoMap[pid])
         end
     end
 
