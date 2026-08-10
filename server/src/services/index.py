@@ -498,6 +498,8 @@ def process_image_task(
                 exif_location_by_uuid or None,
                 pil_images,  # Reuse the decoded images (potentially blurred)
             )
+        except (InterruptedError, RuntimeError) as e:
+            raise
         except Exception as e:
             logger.error(f"Error in analyze_batch: {str(e)}", exc_info=True)
             message = str(e)
