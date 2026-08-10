@@ -430,6 +430,20 @@ def generate_metadata_batch():
             )
 
     item_results: list[dict] = []
+
+    # Wait for upstream embedding batches to complete to avoid racing a slow MPS worker.
+    # We must do this *before* claiming admission resources to avoid a hold-and-wait deadlock
+    # with the dynamic GPU worker which might need the accelerator to process these embeddings.
+    import time
+    from server_lifecycle import GLOBAL_CANCEL_EVENT
+    from services.index import active_embeddings_uuids
+
+    for photo_id, _, _ in valid_tasks:
+        while photo_id in active_embeddings_uuids:
+            if GLOBAL_CANCEL_EVENT.is_set():
+                return jsonify({"error": "Batch canceled while waiting for embeddings."}), 503
+            time.sleep(0.10)
+
     cpu_claim = min(len(valid_tasks), operations.admission.capacities["cpu_prepare"])
     try:
         with operations.admission.acquire(
