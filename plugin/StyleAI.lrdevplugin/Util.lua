@@ -264,7 +264,7 @@ function Util.computeStableMetadataPhotoId(photo)
 	if Util.nilOrEmpty(digest) then
 		return nil, "Stable metadata digest failed"
 	end
-	return "meta1:" .. digest, nil
+	return "meta2:" .. digest, nil
 end
 
 local function getFileAttributes(filePath)
