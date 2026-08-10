@@ -884,7 +884,7 @@ def enqueue_photo():
             for item in images_data
         ]
         if len(supplied_ids) != len(set(supplied_ids)):
-            return jsonify({"error": "Duplicate photo IDs are not allowed"}), 400
+            import logging; logging.warning(f"Duplicate photo IDs detected: {supplied_ids}"); return jsonify({"error": "Duplicate photo IDs are not allowed"}), 400
         expected_ids = {item["item_id"] for item in job.get("items", [])}
         unexpected_ids = sorted(
             item_id for item_id in supplied_ids if item_id not in expected_ids

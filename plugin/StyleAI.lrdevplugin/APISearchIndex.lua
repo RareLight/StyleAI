@@ -1780,8 +1780,10 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
             end
             local photoId = getPhotoIdForPhoto(photo, options)
             if photoId then
-                table.insert(allPhotoIds, photoId)
-                photoIdToPhotoMap[photoId] = photo
+                if not photoIdToPhotoMap[photoId] then
+                    table.insert(allPhotoIds, photoId)
+                    photoIdToPhotoMap[photoId] = photo
+                end
                 photoIdByPhoto[photo] = photoId
             end
             if i % updateInterval == 0 then
@@ -3223,6 +3225,7 @@ end
 
 _request = function(method, url, body, timeout, options)
     options = options or {}
+    timeout = timeout or 60
     local result, hdrs
     local bodyString = (body and type(body) == 'table') and JSON:encode(body) or nil
 
