@@ -155,6 +155,7 @@ local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 	local props = LrBinding.makePropertyTable(ctx)
 
 	props.scope = prefs.aiEditScope or "selected"
+	if props.scope == "view" then props.scope = "selected" end
 	props.selectedCount = #(selectedPhotosSnapshot or {})
 	local function getValidStyleStrength(val)
 		if type(val) ~= "number" then return Defaults.defaultEditStyleStrength or 0.75 end
@@ -188,7 +189,6 @@ local function getAiEditOptions(ctx, selectedPhotosSnapshot)
 						width = 360,
 						items = {
 							{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
-							{ title = LOC("$$$/StyleAI/common/ScopeView=Current view"), value = "view" },
 							{ title = LOC("$$$/StyleAI/common/ScopeAll=All photos in catalog"), value = "all" },
 						},
 					}),

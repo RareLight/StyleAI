@@ -22,6 +22,7 @@ local function showAnalyzeAndIndexDialog(ctx)
 
     -- Scope settings
     props.scope = prefs.indexScope or "selected"
+    if props.scope == "view" then props.scope = "selected" end
     props.indexingMode = prefs.indexingMode or "both"
 	local selectedPhotos = LrApplication.activeCatalog():getTargetPhotos() or {}
 	props.selectedCount = #selectedPhotos
@@ -505,7 +506,6 @@ local function showAnalyzeAndIndexDialog(ctx)
 					width = 360,
                     items = {
                         { title = LOC "$$$/StyleAI/common/ScopeSelected=Selected photos only", value = 'selected' },
-                        { title = LOC "$$$/StyleAI/common/ScopeView=Current view", value = 'view' },
                         { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeAll=All photos in catalog", value = 'all' },
                         { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", value = 'missing' },
                         { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeIndexed=Previously indexed photos", value = 'indexed' },
