@@ -686,7 +686,8 @@ def process_image_task(
                     if not main_metadata.get("model"):
                         main_metadata["model"] = model_name
 
-                main_metadata["run_date"] = time.now().strftime("%Y-%m-%d %H:%M:%S")
+                from datetime import datetime
+                main_metadata["run_date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 # Update embedding status
                 if embedding is not None:
@@ -1022,7 +1023,7 @@ def _process_dynamic_gpu_batch(batch: list[dict]) -> None:
             job_id = item.get("job_id")
             if not job_id or not config.DB_PATH:
                 continue
-            result = results_by_id.get(item["uuid"])
+            result = results_by_id.get(str(item["uuid"]))
             try:
                 if result and result.get("status") == "succeeded":
                     terminal_state = (
