@@ -179,21 +179,6 @@ class AnalysisService:
             logger.info(
                 f"Generating metadata for {len(uuids_needing_metadata)} images out of {len(uuids)} total"
             )
-            # Metadata may update the same Chroma records as the upstream
-            # embedding worker.  Keep the stages ordered without using a fixed
-            # timeout that can race a slow MPS batch.
-            import time
-
-            from server_lifecycle import GLOBAL_CANCEL_EVENT
-            from services.index import active_embeddings_uuids
-
-            for uuid in uuids:
-                while uuid in active_embeddings_uuids:
-                    if GLOBAL_CANCEL_EVENT.is_set():
-                        raise RuntimeError(
-                            "Batch canceled while waiting for embeddings."
-                        )
-                    time.sleep(0.10)
 
             metadata_indices = [
                 i for i, uuid in enumerate(uuids) if uuid in uuids_needing_metadata
