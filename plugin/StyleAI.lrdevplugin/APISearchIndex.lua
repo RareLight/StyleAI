@@ -2280,10 +2280,6 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                             end
                             if not enableMetadata then
                                 progressScope:setPortionComplete(stats.processed, numPhotos)
-                                progressScope:setCaption(
-                                    LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
-                                        stats.success, numPhotos, stats.failed)
-                                )
                             end
                         else
                             local operationFailures = {}
@@ -2428,10 +2424,6 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 					SearchIndexAPI.updateOperationItems(operationId, operationUpdates)
 
 					progressScope:setPortionComplete(stats.processed, numPhotos)
-                    progressScope:setCaption(
-                        LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
-                            stats.success, numPhotos, stats.failed)
-                    )
                 end
             end
         end
@@ -2488,8 +2480,30 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end
 
     -- Monitor workers and server availability
+    local monitorPollCount = 0
     while activeWorkers > 0 or activeSenderWorkers > 0 or activeLlmWorkers > 0 do
         if isCanceledSafe() then break end
+        
+        -- Poll backend for live item_state_counts every 1 second
+        if monitorPollCount % 10 == 0 and operationId then
+            local statusOk, statusResult = SearchIndexAPI.getOperation(operationId, false)
+            if statusOk and statusResult then
+                local counts = statusResult.details and statusResult.details.item_state_counts or {}
+                local currentSucceeded = counts.succeeded or 0
+                local currentFailed = stats.failed + (counts.failed or 0) + (counts.canceled or 0)
+                
+                -- When metadata is enabled, llmWorker contributes to stats.success directly.
+                -- Otherwise, only the backend counts matter.
+                local totalSuccess = enableMetadata and stats.success or currentSucceeded
+                
+                progressScope:setCaption(
+                    LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
+                        totalSuccess, numPhotos, currentFailed)
+                )
+            end
+        end
+        monitorPollCount = monitorPollCount + 1
+        
         LrTasks.yield()
         LrTasks.sleep(0.1)
     end
