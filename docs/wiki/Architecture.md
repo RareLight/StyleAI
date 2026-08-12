@@ -39,6 +39,10 @@ Ollama and LM Studio adapters are used only by optional metadata generation.
 5. Each photo retains its own proxy bytes through its own vision inference.
    Similarity or burst grouping may schedule work, but metadata is never copied
    from a representative photo.
+6. Stable source IDs are deduplicated before operation creation. A fully
+   complete selection returns as a successful no-op. Operation-scoped
+   cancellation is checked while metadata waits for embeddings and before each
+   queued local-model item; late results cannot reopen canceled work.
 
 ### Editing-policy training
 
@@ -49,10 +53,12 @@ Ollama and LM Studio adapters are used only by optional metadata generation.
 3. Training is partitioned only by incompatible HDR/profile state. Subject,
    genre, lighting, camera body, and lens do not create Cartesian style groups.
 4. Lightroom preflights stable photo IDs before exporting previews, skips
-   already-learned examples unless update was requested, and uploads bounded
-   transport chunks without fitting between chunks. Compatible canonical
-   source embeddings are reused and remaining RAW previews are embedded in
-   pressure-aware batches. One explicit rebuild begins after the complete run.
+   already-learned examples unless update was requested, and traverses preflight
+   and upload in bounded transport chunks without fitting between chunks.
+   Duplicate source instances are removed before operation creation. Compatible
+   canonical source embeddings are reused and remaining RAW previews are
+   embedded in pressure-aware batches. One explicit rebuild begins after the
+   complete run.
 5. Multi-output targets are robustly normalized during fitting so large-unit
    controls cannot dominate small-unit controls. Burst-grouped cross-validation
    selects a robust constant baseline,

@@ -755,6 +755,13 @@ LrTasks.startAsyncTask(function()
 		-- modal dialog or backend checks can move focus to a single photo.
 		local selectedPhotosSnapshot = PhotoSelector.snapshotSelectedPhotos()
 
+		-- The dialog performs model and provider checks while it is built. Wait
+		-- for an idle-shutdown replacement backend before opening it so a normal
+		-- startup connection refusal cannot be misreported as missing setup.
+		if not Util.waitForServerDialog({ suppressProgressDialog = false }) then
+			return
+		end
+
 		-- Show dialog
 		local props = showAnalyzeAndIndexDialog(context)
 		if not props then
@@ -786,11 +793,6 @@ LrTasks.startAsyncTask(function()
 			if confirm ~= "ok" then
 				return
 			end
-		end
-
-		-- Now that the user has committed to processing, ensure the backend is running.
-		if not Util.waitForServerDialog({ suppressProgressDialog = false }) then
-			return
 		end
 
 		-- Build tasks array
@@ -994,8 +996,8 @@ LrTasks.startAsyncTask(function()
 		end
 		options.deferCatalogHandoff = props.enableMetadata and props.saveDataToCatalog and not usedInlineApply
 
-		local status, processed, failed, processedPhotos, combinedError, combinedWarnings, operationId
-		status, processed, failed, processedPhotos, combinedError, combinedWarnings, operationId =
+		local status, processed, failed, processedPhotos, combinedError, combinedWarnings, operationId, alreadyComplete
+		status, processed, failed, processedPhotos, combinedError, combinedWarnings, operationId, alreadyComplete =
 			SearchIndexAPI.analyzeAndIndexSelectedPhotos(photosToProcess, progressScope, options, false)
 
 		-- De-clutter: cluster the generated keywords and build a name-mapping so that
@@ -1013,6 +1015,7 @@ LrTasks.startAsyncTask(function()
 			and props.enableMetadata
 			and props.saveDataToCatalog
 			and not usedInlineApply
+			and operationId ~= nil
 		then
 			log:trace("Saving metadata for processed photos...")
 			local savedCount = 0
@@ -1211,8 +1214,15 @@ LrTasks.startAsyncTask(function()
 				)
 			end
 		else -- success
-			local msg =
-				LOC("$$$/StyleAI/AnalyzeAndIndex/SuccessMessage=Successfully processed ^1 photos.", processed)
+			local msg
+			if alreadyComplete then
+				msg = LOC(
+					"$$$/StyleAI/AnalyzeAndIndex/AlreadyComplete=All ^1 unique photo(s) are already complete.",
+					processed
+				)
+			else
+				msg = LOC("$$$/StyleAI/AnalyzeAndIndex/SuccessMessage=Successfully processed ^1 photos.", processed)
+			end
 			if combinedWarnings then
 				msg = msg .. "\n\nWarnings:\n" .. combinedWarnings
 				LrDialogs.message(LOC("$$$/StyleAI/common/TaskCompleted/Title=Task Completed with Warnings"), msg)

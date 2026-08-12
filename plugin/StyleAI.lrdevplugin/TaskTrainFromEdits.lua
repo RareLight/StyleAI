@@ -148,6 +148,9 @@ LrTasks.startAsyncTask(function()
 
 		local photoIdsByPhoto = {}
 		local operationItemIds = {}
+		local representativeById = {}
+		local uniquePhotos = {}
+		local duplicateSourceCount = 0
 		for index, photo in ipairs(photos) do
 			progressScope:setCaption(
 				LOC("$$$/StyleAI/Training/PreparingOperation=Preparing training operation...")
@@ -155,10 +158,21 @@ LrTasks.startAsyncTask(function()
 			progressScope:setPortionComplete(index - 1, #photos)
 			local photoId = SearchIndexAPI.getPhotoIdForPhoto(photo)
 			if photoId then
-				photoIdsByPhoto[photo] = photoId
-				 table.insert(operationItemIds, photoId)
+				if representativeById[photoId] == nil then
+					-- Keep the first photo in the captured Lightroom scope as the
+					-- deterministic training target for this stable source ID.
+					-- Later instances (normally virtual copies) are reported rather
+					-- than silently overwriting the same backend example.
+					representativeById[photoId] = photo
+					photoIdsByPhoto[photo] = photoId
+					table.insert(uniquePhotos, photo)
+					table.insert(operationItemIds, photoId)
+				else
+					duplicateSourceCount = duplicateSourceCount + 1
+				end
 			end
 		end
+		photos = uniquePhotos
 		if #operationItemIds == 0 then
 			progressScope:done()
 			ErrorHandler.handleError(
@@ -169,7 +183,8 @@ LrTasks.startAsyncTask(function()
 		end
 		local preflightOk, preflight = SearchIndexAPI.preflightTrainingExamples(
 			operationItemIds,
-			options.forceRetrain
+			options.forceRetrain,
+			progressScope
 		)
 		if not preflightOk then
 			progressScope:done()
@@ -196,12 +211,25 @@ LrTasks.startAsyncTask(function()
 		operationItemIds = filteredOperationIds
 		if #photos == 0 then
 			progressScope:done()
+			local allExistingMessage = LOC(
+				"$$$/StyleAI/Training/AllExisting=All ^1 eligible photo(s) are already learned. Enable Update previously learned examples to refresh them.",
+				tostring(existingSkippedCount)
+			)
+			if duplicateSourceCount > 0 then
+				allExistingMessage = allExistingMessage .. "\n" .. LOC(
+					"$$$/StyleAI/Training/SkippedDuplicateSources=Skipped ^1 duplicate source instance(s), including virtual copies.",
+					tostring(duplicateSourceCount)
+				)
+			end
+			local trainingStats = SearchIndexAPI.getTrainingStats()
+			if trainingStats and trainingStats.has_active_generation ~= true then
+				allExistingMessage = allExistingMessage .. "\n" .. LOC(
+					"$$$/StyleAI/Training/ExistingNeedsRebuild=The examples are saved, but no active editing policy is available. Open Styles & Training and choose Rebuild."
+				)
+			end
 			LrDialogs.message(
 				LOC("$$$/StyleAI/Training/SuccessTitle=Training Examples Saved"),
-				LOC(
-					"$$$/StyleAI/Training/AllExisting=All ^1 eligible photo(s) are already learned. Enable Update previously learned examples to refresh them.",
-					tostring(existingSkippedCount)
-				),
+				allExistingMessage,
 				"info"
 			)
 			return
@@ -468,15 +496,6 @@ LrTasks.startAsyncTask(function()
 				errorCount = errorCount + 1
 				table.insert(errorMessages, fileName .. ": " .. tostring(photoIdErr))
 			else
-				-- Get JPEG preview for the backend to compute exposure metrics.
-				local jpegData, jpegErr = SearchIndexAPI.getJpegThumbnailForPhoto(photo, 1024, 1024)
-				local imageBytes = nil
-				if jpegData then
-					imageBytes = LrStringUtils.encodeBase64(jpegData)
-				else
-					log:warn("Could not get thumbnail for " .. fileName .. ": " .. tostring(jpegErr))
-				end
-
 				local example = {
 					photo_id = photoId,
 					develop_settings = developSettings or {},
@@ -491,7 +510,6 @@ LrTasks.startAsyncTask(function()
 					aperture = exifOptions.aperture,
 					shutter_speed = exifOptions.shutter_speed,
 					lens = exifOptions.lens,
-					image_bytes = imageBytes,
 					filepath = getPhotoRawMeta(photo, "path"),
 					rating = tonumber(getPhotoRawMeta(photo, "rating")) or 0,
 					pick_status = tonumber(getPhotoRawMeta(photo, "pickStatus")) or 0,
@@ -601,6 +619,12 @@ LrTasks.startAsyncTask(function()
 			combinedReport = combinedReport .. "\n" .. LOC(
 				"$$$/StyleAI/Training/SkippedExisting=Skipped ^1 photo(s) that were already learned.",
 				tostring(existingSkippedCount)
+			)
+		end
+		if duplicateSourceCount > 0 then
+			combinedReport = combinedReport .. "\n" .. LOC(
+				"$$$/StyleAI/Training/SkippedDuplicateSources=Skipped ^1 duplicate source instance(s), including virtual copies.",
+				tostring(duplicateSourceCount)
 			)
 		end
 		

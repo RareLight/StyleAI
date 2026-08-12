@@ -205,6 +205,20 @@ def test_generate_metadata_single_provider_exception_caught(service):
     assert "boom" in resp.error
 
 
+def test_canceled_metadata_job_never_calls_provider(service, mocker):
+    provider = service.providers["ollama"]
+    mocker.patch("services.operations.is_cancel_requested", return_value=True)
+
+    with pytest.raises(InterruptedError, match="canceled"):
+        service._generate_metadata_batch(
+            ["uuid-x"],
+            [_jpeg_bytes()],
+            [{"job_id": "job-1", "provider": "ollama"}],
+        )
+
+    provider.generate_metadata.assert_not_called()
+
+
 def test_generate_metadata_single_refuses_missing_image(service):
     provider = service.providers["ollama"]
 

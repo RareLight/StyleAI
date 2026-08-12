@@ -126,7 +126,77 @@ def _resolve_training_sources_batch(
         tuple[list[float], bytes, str, dict[str, Any]] | ValueError,
     ] = {}
     misses: list[tuple[str, source_embeddings.NeutralSource]] = []
+    cache_hit_count = 0
+    canonical_by_id: dict[str, dict[str, Any]] = {}
+    try:
+        canonical = chroma.get_images([photo_id for photo_id, _, _ in items])
+        canonical_ids = canonical.get("ids") or []
+        canonical_metadatas = canonical.get("metadatas") or []
+        canonical_embeddings = canonical.get("embeddings")
+        for index, canonical_id in enumerate(canonical_ids):
+            metadata = (
+                canonical_metadatas[index] if index < len(canonical_metadatas) else None
+            )
+            embedding = (
+                canonical_embeddings[index]
+                if canonical_embeddings is not None
+                and index < len(canonical_embeddings)
+                else None
+            )
+            canonical_by_id[str(canonical_id)] = {
+                "ids": [str(canonical_id)],
+                "metadatas": [metadata] if metadata is not None else [],
+                "embeddings": [embedding] if embedding is not None else [],
+            }
+    except Exception as exc:
+        logger.debug("Canonical training evidence batch lookup failed: %s", exc)
+
     for photo_id, rendered_image_bytes, raw_filepath in items:
+        # Prepare Photos stores the canonical RAW-preview vector and its source
+        # metrics under the same strict contract stamp training requires. Reuse
+        # the complete evidence tuple before launching ExifTool again. The
+        # compatibility check includes the current source-file fingerprint, so
+        # any changed or stale source still falls through to recomputation.
+        try:
+            existing = canonical_by_id.get(photo_id, {})
+            metadatas = existing.get("metadatas") or []
+            metadata = dict(metadatas[0]) if metadatas else {}
+            embedding = source_embeddings.compatible_embedding(
+                existing,
+                raw_filepath=raw_filepath,
+                rendered_image_bytes=rendered_image_bytes,
+            )
+            metrics = source_embeddings.cached_source_metrics(metadata)
+            provenance = metadata.get("source_embedding_provenance")
+            fingerprint = metadata.get("source_embedding_fingerprint")
+            if (
+                embedding is not None
+                and metrics is not None
+                and provenance == source_embeddings.RAW_PREVIEW_PROVENANCE
+                and fingerprint
+            ):
+                cached_source = source_embeddings.NeutralSource(
+                    image_bytes=b"",
+                    provenance=provenance,
+                    fingerprint=str(fingerprint),
+                )
+                resolved[photo_id] = (
+                    embedding,
+                    b"",
+                    provenance,
+                    source_embeddings.stamp_metadata(
+                        {}, cached_source, source_metrics=metrics
+                    ),
+                )
+                cache_hit_count += 1
+                continue
+        except Exception as exc:
+            logger.debug(
+                "Compatible cached training evidence lookup failed for photo_id=%s: %s",
+                photo_id,
+                exc,
+            )
+
         try:
             source = source_embeddings.resolve_neutral_source(
                 rendered_image_bytes,
@@ -236,6 +306,12 @@ def _resolve_training_sources_batch(
                     source.provenance,
                     source_embeddings.stamp_metadata({}, source),
                 )
+    logger.info(
+        "Prepared training source batch (items=%d, complete_cache_hits=%d, recomputed=%d)",
+        len(items),
+        cache_hit_count,
+        len(misses),
+    )
     return resolved
 
 
@@ -585,6 +661,27 @@ def _add_training_batch_impl(
         cancel_signal=cancel_signal,
     )
 
+    if job_id:
+        running_updates: dict[str, dict[str, str]] = {}
+        for item in examples:
+            photo_id = str(item.get("photo_id") or "").strip()
+            if not photo_id:
+                continue
+            current_item = job_items_by_id.get(photo_id)
+            if current_item is None:
+                raise LookupError(f"operation item not found: {job_id}/{photo_id}")
+            if current_item["state"] not in operations.TERMINAL_STATES:
+                running_updates[photo_id] = {
+                    "item_id": photo_id,
+                    "state": "running",
+                }
+        if running_updates:
+            operations.set_item_states(
+                config.DB_PATH,
+                job_id,
+                list(running_updates.values()),
+            )
+
     for item in examples:
         if cancel_signal is not None and cancel_signal.is_set():
             break
@@ -620,7 +717,6 @@ def _add_training_batch_impl(
                     }
                 )
                 continue
-            operations.set_item_state(config.DB_PATH, job_id, photo_id, "running")
 
         develop_settings = item.get("develop_settings", {})
         if not isinstance(develop_settings, dict):
@@ -718,27 +814,32 @@ def _add_training_batch_impl(
 
     success_count = sum(1 for r in results if r["status"] == "ok")
     if job_id:
+        terminal_updates: dict[str, dict[str, Any]] = {}
         for result in results:
             photo_id = str(result.get("photo_id") or "").strip()
             if not photo_id:
                 continue
             error = str(result.get("error") or "")
             if error.startswith("EXIFTOOL_"):
-                operations.set_item_state(
-                    config.DB_PATH,
-                    job_id,
-                    photo_id,
-                    "preparing",
-                    error=error,
-                )
+                terminal_updates[photo_id] = {
+                    "item_id": photo_id,
+                    "state": "preparing",
+                    "error": error,
+                }
                 continue
-            operations.set_item_state(
+            terminal_updates[photo_id] = {
+                "item_id": photo_id,
+                "state": "succeeded" if result["status"] == "ok" else "failed",
+                "error": (
+                    None if result["status"] == "ok" else error or "Training failed"
+                ),
+                "result": {"warning": result.get("warning")},
+            }
+        if terminal_updates:
+            operations.set_item_states(
                 config.DB_PATH,
                 job_id,
-                photo_id,
-                "succeeded" if result["status"] == "ok" else "failed",
-                error=None if result["status"] == "ok" else error or "Training failed",
-                result={"warning": result.get("warning")},
+                list(terminal_updates.values()),
             )
     total_count = training_service.get_training_count()
 

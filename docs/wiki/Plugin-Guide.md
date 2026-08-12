@@ -6,17 +6,24 @@ module. The checked-in release exposes six commands.
 ## Prepare Photos
 
 Creates local SigLIP2 visual embeddings, local-model metadata, or both. Scope
-can be selected photos, current view, the catalog, new/unprocessed photos, or
-previously indexed photos. Metadata settings control generated fields,
+can be selected photos, the catalog, new/unprocessed photos, or previously
+indexed photos. Metadata settings control generated fields,
 append/replace behavior, optional review, keyword organization, prompt,
 language, and local-only context.
+
+Virtual copies are deduplicated by their stable source identity. Rerunning an
+unchanged selection is a successful no-op and reports that its unique photos
+are already complete. Canceling metadata work is scoped to that operation;
+unrelated indexing and local-model work remain available.
 
 ## Learn From My Edits
 
 Reads—but does not change—the Develop settings of eligible RAW/DNG photos.
 Training stores target-independent source evidence and absolute targets, then
 builds one validated policy generation after the full upload. Panoramas and
-unsupported formats are excluded. Preparing these photos first is unnecessary.
+unsupported formats are excluded. Stable-ID preflight traverses large catalogs
+in bounded pages and skips duplicate source instances, including virtual
+copies. Preparing these photos first is unnecessary.
 
 ## Apply My Style
 

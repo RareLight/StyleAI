@@ -1074,6 +1074,8 @@ def style_edit():
             return jsonify({"error": f"operation job not found: {job_id}"}), 404
         if job["kind"] != "edit":
             return jsonify({"error": "job_id does not identify an edit operation"}), 400
+        if job["cancel_requested"]:
+            return jsonify({"error": "canceled"}), 422
         if job["state"] in operations.TERMINAL_STATES:
             return jsonify({"error": "edit operation is already complete"}), 409
 

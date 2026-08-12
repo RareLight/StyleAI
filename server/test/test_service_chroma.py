@@ -122,6 +122,23 @@ class TestChromaServiceCRUD(unittest.TestCase):
         )
 
     @patch("services.chroma._ensure_initialized")
+    def test_get_images_batches_and_deduplicates_ids(self, mock_init):
+        expected = {
+            "ids": ["photo-100", "photo-101"],
+            "metadatas": [{"photo_id": "photo-100"}, {"photo_id": "photo-101"}],
+            "embeddings": [[0.1, 0.2], [0.3, 0.4]],
+        }
+        self.mock_collection.get.return_value = expected
+
+        result = chroma_service.get_images(["photo-100", "photo-101", "photo-100", ""])
+
+        self.assertEqual(result, expected)
+        self.mock_collection.get.assert_called_once_with(
+            ids=["photo-100", "photo-101"],
+            include=["metadatas", "embeddings"],
+        )
+
+    @patch("services.chroma._ensure_initialized")
     def test_update_image(self, mock_init):
         metadata = {"rating": 5}
         chroma_service.update_image("photo-100", metadata, embedding=[0.2] * 1152)

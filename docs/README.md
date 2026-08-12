@@ -7,6 +7,10 @@ architecture.
 
 ## Implementation and release-gate checklists
 
+- [`INDEXING_RECOVERY_AUDIT_IMPLEMENTATION_CHECKLIST.md`](INDEXING_RECOVERY_AUDIT_IMPLEMENTATION_CHECKLIST.md)
+  tracks the stable-ID, cancellation, bounded training-preflight, progress,
+  validation, and repository-cleanup fixes identified by the August 2026
+  indexing recovery audit.
 - [`APPLY_STYLE_BURST_COHERENCE_IMPLEMENTATION_CHECKLIST.md`](APPLY_STYLE_BURST_COHERENCE_IMPLEMENTATION_CHECKLIST.md)
   tracks the implemented conservative batching/coherence foundation and the
   remaining held-out and human release gates for exact target reuse.

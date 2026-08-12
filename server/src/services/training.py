@@ -663,10 +663,10 @@ def add_training_example(
         _training_collection.update(
             ids=[photo_id], embeddings=[emb], metadatas=[metadata]
         )
-        logger.info("Updated training example photo_id=%s", photo_id)
+        logger.debug("Updated training example photo_id=%s", photo_id)
     else:
         _training_collection.add(ids=[photo_id], embeddings=[emb], metadatas=[metadata])
-        logger.info("Added training example photo_id=%s", photo_id)
+        logger.debug("Added training example photo_id=%s", photo_id)
 
     # Update style catalog
     if not skip_discovery:
@@ -725,7 +725,7 @@ def delete_training_example(photo_id: str) -> bool:
     except _ChromaInternalError:
         return False
     _training_collection.delete(ids=[photo_id])
-    logger.info("Deleted training example photo_id=%s", photo_id)
+    logger.debug("Deleted training example photo_id=%s", photo_id)
 
     try:
         from services import policy_runtime

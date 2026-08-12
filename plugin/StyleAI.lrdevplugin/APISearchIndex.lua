@@ -1216,7 +1216,10 @@ function SearchIndexAPI.generateMetadataBatch(items, options)
         return false, err or "Unknown error"
     end
     
-    if response.status == "processed" then
+    if response.status == "canceled" then
+        log:trace("Metadata batch was canceled.")
+        return false, response
+    elseif response.status == "processed" then
         local success_count = response.success_count or 0
         if success_count > 0 then
             log:trace("Successfully generated metadata for " .. tostring(success_count) .. " photos in batch.")
@@ -1771,6 +1774,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/PreflightCheck=Verifying and deduplicating selection..."))
     local allPhotoIds = {}
     local photoIdToPhotoMap = {}
+    local unresolvedPhotoCount = 0
     local totalSelected = #selectedPhotos
     local updateInterval = math.max(1, math.floor(totalSelected / 50))
     for i, photo in ipairs(selectedPhotos) do
@@ -1784,6 +1788,8 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 photoIdToPhotoMap[photoId] = photo
             end
             photoIdByPhoto[photo] = photoId
+        else
+            unresolvedPhotoCount = unresolvedPhotoCount + 1
         end
         if i % updateInterval == 0 then
             progressScope:setPortionComplete(i, totalSelected)
@@ -1831,6 +1837,18 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         end
     end
 
+    stats.processed = stats.processed + unresolvedPhotoCount
+    stats.failed = stats.failed + unresolvedPhotoCount
+
+    if #photoToProcessStack == 0 then
+        if #allPhotoIds > 0 and unresolvedPhotoCount == 0 then
+            return "success", stats.processed, 0, {}, nil, nil, nil, true
+        end
+        local noWorkStatus = stats.processed > stats.failed and "somefailed" or "allfailed"
+        return noWorkStatus, stats.processed, stats.failed, {},
+            "No stable Lightroom photo IDs could be resolved for one or more photos."
+    end
+
     local operationItemIds = {}
     local operationPhotoById = {}
 	for _, photo in ipairs(photoToProcessStack) do
@@ -1875,7 +1893,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     options.operation_id = operationId
     local preOperationProcessed = stats.processed
     local preOperationSuccess = stats.success
-    local untrackedOperationItems = #photoToProcessStack - #operationItemIds
+    local preOperationFailed = stats.failed
 
 
 
@@ -1888,7 +1906,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
         modelDisplay = tostring(options.model or "AI")
     end
 
-    local uniquePhotosCount = #allPhotoIds
+    local uniquePhotosCount = #allPhotoIds + unresolvedPhotoCount
     progressScope:setCaption(LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhotos=Processing ^1 photos with ^2...",
         #photoToProcessStack, modelDisplay))
     progressScope:setPortionComplete(stats.processed, uniquePhotosCount)
@@ -1897,7 +1915,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     local keepRunning = true
 
     local function isCanceledSafe()
-        local ok, canceled = pcall(function() return progressScope and progressScope:isCanceled() end)
+        local ok, canceled = LrTasks.pcall(function() return progressScope and progressScope:isCanceled() end)
         return ok and canceled
     end
 
@@ -2338,18 +2356,21 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 
                 if #batch > 0 then
                     local success, llmResponse = SearchIndexAPI.generateMetadataBatch(batch, options)
+                    local batchCanceled = type(llmResponse) == "table" and llmResponse.status == "canceled"
                     local itemStatuses = {}
                     local successfulBatch = {}
-                    if success and type(llmResponse) == "table" and type(llmResponse.items) == "table" then
+                    if type(llmResponse) == "table" and type(llmResponse.items) == "table" then
                         for _, result in ipairs(llmResponse.items) do
                             if result.photo_id then
                                 itemStatuses[result.photo_id] = result
                             end
                         end
-                        for _, item in ipairs(batch) do
-                            local result = itemStatuses[item.photo_id]
-                            if result and result.status == "succeeded" then
-                                table.insert(successfulBatch, item)
+                        if success then
+                            for _, item in ipairs(batch) do
+                                local result = itemStatuses[item.photo_id]
+                                if result and result.status == "succeeded" then
+                                    table.insert(successfulBatch, item)
+                                end
                             end
                         end
                     elseif success then
@@ -2377,16 +2398,19 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                     end
 
 					for _, item in ipairs(batch) do
-						stats.processed = stats.processed + 1
 						local result = itemStatuses[item.photo_id]
                         local itemSucceeded = success and (
                             result == nil or result.status == "succeeded"
                         )
 
-                        if itemSucceeded then
+                        if batchCanceled or (result and result.status == "canceled") then
+                            -- Cancellation is terminal but is not a processing failure.
+                        elseif itemSucceeded then
+							stats.processed = stats.processed + 1
                             stats.success = stats.success + 1
                             table.insert(processedPhotos, item.photo)
                         else
+							stats.processed = stats.processed + 1
                             stats.failed = stats.failed + 1
                             local errText = "Metadata generation failed for batch"
                             if result and result.error then
@@ -2410,15 +2434,17 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 						local itemSucceeded = success and (
 							result == nil or result.status == "succeeded"
 						)
+						local itemCanceled = batchCanceled or (result and result.status == "canceled")
 						local operationError = nil
-						if not itemSucceeded then
+						if not itemSucceeded and not itemCanceled then
 							operationError = (result and result.error)
 								or (type(llmResponse) == "string" and llmResponse)
 								or "Metadata generation failed"
 						end
 						table.insert(operationUpdates, {
 							item_id = item.photo_id,
-							state = itemSucceeded and (deferCatalogHandoff and "committing" or "succeeded") or "failed",
+							state = itemCanceled and "canceled"
+								or (itemSucceeded and (deferCatalogHandoff and "committing" or "succeeded") or "failed"),
 							error = operationError,
 						})
 					end
@@ -2490,12 +2516,12 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
             local statusOk, statusResult = SearchIndexAPI.getOperation(operationId, false)
             if statusOk and statusResult then
                 local counts = statusResult.details and statusResult.details.item_state_counts or {}
-                local currentSucceeded = counts.succeeded or 0
-                local currentFailed = stats.failed + (counts.failed or 0) + (counts.canceled or 0)
-                
-                -- When metadata is enabled, llmWorker contributes to stats.success directly.
-                -- Otherwise, only the backend counts matter.
-                local totalSuccess = enableMetadata and stats.success or currentSucceeded
+                local currentSucceeded = (counts.succeeded or 0) + (counts.committing or 0)
+                local currentFailed = preOperationFailed
+                    + (counts.failed or 0)
+                    + (counts.canceled or 0)
+                    + (counts.interrupted or 0)
+                local totalSuccess = preOperationSuccess + currentSucceeded
                 
                 progressScope:setCaption(
                     LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
@@ -2565,22 +2591,22 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
 
     if not enableMetadata and operationJob and type(operationJob.items) == "table" then
         local succeeded = 0
-        local failed = untrackedOperationItems
+        local operationFailed = 0
         for _, result in ipairs(operationJob.items) do
             if result.state == "succeeded" then
                 succeeded = succeeded + 1
                 local photo = operationPhotoById[result.item_id]
                 if photo then table.insert(processedPhotos, photo) end
             elseif result.state == "failed" or result.state == "canceled" or result.state == "interrupted" then
-                failed = failed + 1
+                operationFailed = operationFailed + 1
                 if result.error and result.error ~= "" then
                     table.insert(errorMessages, tostring(result.item_id) .. ": " .. tostring(result.error))
                 end
             end
         end
         stats.success = preOperationSuccess + succeeded
-        stats.failed = failed
-        stats.processed = preOperationProcessed + succeeded + failed
+        stats.failed = preOperationFailed + operationFailed
+        stats.processed = preOperationProcessed + succeeded + operationFailed
     end
 
     if shouldCloseScope then
@@ -2632,7 +2658,7 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     if stats.processed > 0 then avgTimePerPhoto = batchDuration / stats.processed end
     log:info(string.format("Performance Tracking: Processed %d photos in %.2f seconds (%.2f s/photo).", stats.processed, batchDuration, avgTimePerPhoto))
 
-	return status, stats.processed, stats.failed, processedPhotos, combinedError, combinedWarnings, operationId
+	return status, stats.processed, stats.failed, processedPhotos, combinedError, combinedWarnings, operationId, false
 end
 
 
@@ -3688,7 +3714,7 @@ end
 local lastClipReadyStatus = nil
 function SearchIndexAPI.isClipReady()
     local url = getBaseUrl() .. ENDPOINTS.CLIP_STATUS
-    local res, err = _request('GET', url, nil, 0.5)
+    local res, err = _request('GET', url, nil, 2)
     if err then
         local errStr = (type(err) == "string") and err or "unknown"
         log:error("isClipReady failed: " .. errStr)
@@ -4093,18 +4119,60 @@ function SearchIndexAPI.getTrainingStats()
     return response, nil
 end
 
-function SearchIndexAPI.preflightTrainingExamples(photoIds, forceRetrain)
-    local response, err = _request('POST', getBaseUrl() .. ENDPOINTS.TRAINING_PREFLIGHT, {
-        photo_ids = photoIds or {},
+function SearchIndexAPI.preflightTrainingExamples(photoIds, forceRetrain, progressScope)
+    local uniqueIds = {}
+    local seenIds = {}
+    for _, rawPhotoId in ipairs(photoIds or {}) do
+        local photoId = tostring(rawPhotoId or "")
+        if photoId ~= "" and not seenIds[photoId] then
+            seenIds[photoId] = true
+            table.insert(uniqueIds, photoId)
+        end
+    end
+
+    local existingSet = {}
+    local neededSet = {}
+    local chunkSize = 1000
+    for chunkStart = 1, #uniqueIds, chunkSize do
+        if progressScope and progressScope:isCanceled() then
+            return false, "Training preflight canceled"
+        end
+        local chunk = {}
+        local chunkEnd = math.min(#uniqueIds, chunkStart + chunkSize - 1)
+        for index = chunkStart, chunkEnd do
+            table.insert(chunk, uniqueIds[index])
+        end
+        local response, err = _request('POST', getBaseUrl() .. ENDPOINTS.TRAINING_PREFLIGHT, {
+            photo_ids = chunk,
+            force_retrain = forceRetrain == true,
+        }, 30)
+        if not response then
+            return false, err or "Unknown error"
+        end
+        if type(response.needed_photo_ids) ~= "table" then
+            return false, response.error or "Unexpected training preflight response"
+        end
+        for _, photoId in ipairs(response.existing_photo_ids or {}) do
+            existingSet[tostring(photoId)] = true
+        end
+        for _, photoId in ipairs(response.needed_photo_ids) do
+            neededSet[tostring(photoId)] = true
+        end
+        LrTasks.yield()
+        LrTasks.sleep(0.01)
+    end
+
+    local existingIds = {}
+    local neededIds = {}
+    for _, photoId in ipairs(uniqueIds) do
+        if existingSet[photoId] then table.insert(existingIds, photoId) end
+        if neededSet[photoId] then table.insert(neededIds, photoId) end
+    end
+    return true, {
+        existing_photo_ids = existingIds,
+        needed_photo_ids = neededIds,
         force_retrain = forceRetrain == true,
-    }, 30)
-    if not response then
-        return false, err or "Unknown error"
-    end
-    if type(response.needed_photo_ids) ~= "table" then
-        return false, response.error or "Unexpected training preflight response"
-    end
-    return true, response
+    }
 end
 
 ---

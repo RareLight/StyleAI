@@ -55,7 +55,7 @@ catalog.
    `UI_BEHAVIOR_CONTRACTS.md`.
 2. Verify neither task can proceed, metadata cannot proceed without a local
    model or output field, and missing/unprocessed scope cannot select Replace.
-3. Test selected, current view, entire catalog, missing, and indexed scopes.
+3. Test selected, entire catalog, missing, and indexed scopes.
 4. Test keep/replace StyleAI data and catalog append/replace on known metadata.
    Verify only the selected generated fields are replaced.
 5. Toggle metadata off and confirm the primary window remains compact. Toggle
@@ -69,10 +69,16 @@ catalog.
 8. Confirm the initial window uses a compact reading width, the Scope menu does
    not span the window, status text wraps, and resizing wider does not disturb
    alignment.
+9. Rerun a fully complete selection and confirm it reports a successful no-op
+   with deduplicated unique counts and performs no preview extraction.
+10. Include originals plus virtual copies and verify progress/final totals do
+    not double-count them or any local/backend failure.
+11. Cancel while metadata waits for embeddings and while a local-model batch is
+    active. Confirm a second operation proceeds without restarting the service.
 
 ## 4. Learn From My Edits
 
-1. Test selected, view, and catalog scopes with a mix of RAW, DNG, JPEG, TIFF,
+1. Test selected and catalog scopes with a mix of RAW, DNG, JPEG, TIFF,
    video, panorama, and already-learned photos.
 2. Confirm the selection snapshot survives focus changes caused by the modal.
 3. Test **Update previously learned examples** off and on.
@@ -81,6 +87,9 @@ catalog.
 5. Observe preparation, upload, policy fitting, validation/activation, success,
    failure, and cancellation states. Confirm exactly one rebuild follows a
    completed upload and the previous generation remains active on failure.
+6. Test more than 5,000 eligible source IDs and originals with virtual copies.
+   Confirm preflight continues in bounded pages and reports skipped duplicate
+   source instances without rejecting the workflow.
 
 ## 5. Apply My Style and review
 

@@ -470,6 +470,44 @@ def test_metadata_batch_reports_terminal_status_for_each_photo(client, mocker):
     ]
 
 
+def test_metadata_batch_reports_expected_cancellation_without_http_error(
+    client, mocker
+):
+    image_cache.clear()
+
+    def process(_triplets, *, options, item_results):
+        item_results.append(
+            {
+                "photo_id": "canceled",
+                "filename": "canceled.jpg",
+                "status": "canceled",
+                "error": "operation job has been canceled",
+            }
+        )
+        return 0, 0, [], []
+
+    mocker.patch("routes.index.process_image_task", side_effect=process)
+
+    response = client.post(
+        "/metadata/generate_batch",
+        json={
+            "tasks": [
+                {
+                    "photo_id": "canceled",
+                    "filename": "canceled.jpg",
+                    "image": base64.b64encode(b"image").decode("ascii"),
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()["results"]
+    assert payload["status"] == "canceled"
+    assert payload["success_count"] == 0
+    assert payload["failure_count"] == 0
+
+
 def test_metadata_job_waits_for_lightroom_handoff(client, mocker, index_operation_db):
     def process(_triplets, *, options, item_results):
         item_results.append({"photo_id": "p1", "status": "succeeded"})
@@ -496,6 +534,77 @@ def test_metadata_job_waits_for_lightroom_handoff(client, mocker, index_operatio
     stored = operations.get_job(index_operation_db, job["job_id"])
     assert stored["state"] == "running"
     assert stored["items"][0]["state"] == "committing"
+
+
+def test_metadata_job_id_reaches_every_worker_option(
+    client, mocker, index_operation_db
+):
+    captured_options = []
+
+    def process(_triplets, *, options, item_results):
+        captured_options.extend(options)
+        item_results.extend(
+            [
+                {"photo_id": "p1", "status": "succeeded"},
+                {"photo_id": "p2", "status": "succeeded"},
+            ]
+        )
+        return 2, 0, [], []
+
+    mocker.patch("routes.index.process_image_task", side_effect=process)
+    job, _ = operations.create_job(
+        index_operation_db, kind="index", item_ids=["p1", "p2"]
+    )
+
+    response = client.post(
+        "/metadata/generate_batch",
+        json={
+            "job_id": job["job_id"],
+            "tasks": [
+                {
+                    "photo_id": photo_id,
+                    "filename": f"{photo_id}.jpg",
+                    "image": base64.b64encode(b"image").decode("ascii"),
+                }
+                for photo_id in ("p1", "p2")
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert [option["job_id"] for option in captured_options] == [
+        job["job_id"],
+        job["job_id"],
+    ]
+
+
+def test_metadata_cancel_while_waiting_for_embedding_releases_cached_image(
+    client, mocker, index_operation_db
+):
+    image_cache.clear()
+    assert image_cache.store_image("p1", b"cached")
+    index_service.active_embeddings_uuids.add("p1")
+    process = mocker.patch("routes.index.process_image_task")
+    signal = mocker.patch("services.operations.JobCancelSignal").return_value
+    signal.is_set.return_value = True
+    job, _ = operations.create_job(index_operation_db, kind="index", item_ids=["p1"])
+
+    try:
+        response = client.post(
+            "/metadata/generate_batch",
+            json={
+                "job_id": job["job_id"],
+                "tasks": [{"photo_id": "p1", "filename": "p1.jpg"}],
+            },
+        )
+    finally:
+        index_service.active_embeddings_uuids.discard("p1")
+
+    assert response.status_code == 409
+    process.assert_not_called()
+    assert image_cache.get_image("p1") is None
+    stored = operations.get_job(index_operation_db, job["job_id"])
+    assert stored["items"][0]["state"] == "canceled"
 
 
 def test_metadata_job_rejects_unadmitted_photo_before_processing(

@@ -180,7 +180,7 @@ def get_job(db_path: str, job_id: str, *, include_items: bool = True) -> dict | 
                 (job_id,),
             ).fetchall()
             items = [_item_payload(item) for item in item_rows]
-            
+
         payload = _job_payload(row, items)
         # Dynamically inject live item state counts if not already frozen in details
         counts = _item_state_counts(connection, job_id)
@@ -313,14 +313,57 @@ def set_item_state(
     result: Mapping[str, Any] | None = None,
     request_fingerprint: str | None = None,
 ) -> None:
-    if state not in ALL_STATES:
-        raise ValueError(f"invalid item state: {state}")
+    set_item_states(
+        db_path,
+        job_id,
+        [
+            {
+                "item_id": item_id,
+                "state": state,
+                "error": error,
+                "result": result,
+                "request_fingerprint": request_fingerprint,
+            }
+        ],
+    )
+
+
+def set_item_states(
+    db_path: str,
+    job_id: str,
+    updates: list[Mapping[str, Any]],
+) -> None:
+    """Atomically publish a bounded group of item-state transitions."""
     normalized_job_id = str(job_id or "").strip()
-    normalized_item_id = str(item_id or "").strip()
     if not normalized_job_id:
         raise ValueError("job_id is required")
-    if not normalized_item_id:
-        raise ValueError("item_id is required")
+    if not updates:
+        return
+
+    normalized_updates: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for update in updates:
+        if not isinstance(update, Mapping):
+            raise ValueError("every item update must be an object")
+        normalized_item_id = str(update.get("item_id") or "").strip()
+        state = str(update.get("state") or "").strip()
+        if not normalized_item_id:
+            raise ValueError("item_id is required")
+        if normalized_item_id in seen_ids:
+            raise ValueError(f"duplicate item update: {normalized_item_id}")
+        if state not in ALL_STATES:
+            raise ValueError(f"invalid item state: {state}")
+        seen_ids.add(normalized_item_id)
+        normalized_updates.append(
+            {
+                "item_id": normalized_item_id,
+                "state": state,
+                "error": update.get("error"),
+                "result": update.get("result"),
+                "request_fingerprint": update.get("request_fingerprint"),
+            }
+        )
+
     connection = _connect(db_path)
     try:
         connection.execute("BEGIN IMMEDIATE")
@@ -330,52 +373,69 @@ def set_item_state(
         ).fetchone()
         if parent is None:
             raise LookupError(f"operation job not found: {normalized_job_id}")
-        if parent["state"] in TERMINAL_STATES:
-            raise ValueError("terminal operation job items cannot be changed")
-        existing = connection.execute(
-            """
-            SELECT state FROM operation_job_items
-            WHERE job_id = ? AND item_id = ?
+        placeholders = ",".join("?" for _ in normalized_updates)
+        rows = connection.execute(
+            f"""
+            SELECT item_id, state FROM operation_job_items
+            WHERE job_id = ? AND item_id IN ({placeholders})
             """,
-            (normalized_job_id, normalized_item_id),
-        ).fetchone()
-        if existing is None:
+            (normalized_job_id, *(update["item_id"] for update in normalized_updates)),
+        ).fetchall()
+        existing_by_id = {str(row["item_id"]): row for row in rows}
+        missing_ids = [
+            update["item_id"]
+            for update in normalized_updates
+            if update["item_id"] not in existing_by_id
+        ]
+        if missing_ids:
             raise LookupError(
-                f"operation item not found: {normalized_job_id}/{normalized_item_id}"
+                f"operation item not found: {normalized_job_id}/{missing_ids[0]}"
             )
-        if existing is not None and existing["state"] in TERMINAL_STATES:
-            if existing["state"] == state:
-                return
-            if existing["state"] == "canceled" and parent["cancel_requested"]:
-                return
-            raise ValueError("terminal operation item state cannot be changed")
-        if parent["cancel_requested"] and state in {
-            "queued",
-            "preparing",
-            "committing",
-        }:
-            state = "canceled"
-            error = error or "Operation canceled before client handoff"
-        connection.execute(
-            """
-            UPDATE operation_job_items
-            SET state = ?,
-                request_fingerprint = COALESCE(?, request_fingerprint),
-                result_json = COALESCE(?, result_json), error = ?, updated_at = ?
-            WHERE job_id = ? AND item_id = ?
-            """,
-            (
-                state,
-                request_fingerprint,
-                json.dumps(dict(result), sort_keys=True)
-                if result is not None
-                else None,
-                error,
-                time(),
-                normalized_job_id,
-                normalized_item_id,
-            ),
-        )
+
+        now = time()
+        for update in normalized_updates:
+            normalized_item_id = update["item_id"]
+            existing = existing_by_id[normalized_item_id]
+            state = update["state"]
+            error = update["error"]
+            if parent["state"] in TERMINAL_STATES:
+                # Cancellation may terminalize queued items while an admitted
+                # worker batch winds down. Late publication is idempotent.
+                if parent["state"] == "canceled" and (
+                    existing["state"] == "canceled" or existing["state"] == state
+                ):
+                    continue
+                raise ValueError("terminal operation job items cannot be changed")
+            if existing["state"] in TERMINAL_STATES:
+                if existing["state"] == state:
+                    continue
+                if existing["state"] == "canceled" and parent["cancel_requested"]:
+                    continue
+                raise ValueError("terminal operation item state cannot be changed")
+            if parent["cancel_requested"] and state != "canceled":
+                state = "canceled"
+                error = error or "Operation canceled before completion"
+            result = update["result"]
+            connection.execute(
+                """
+                UPDATE operation_job_items
+                SET state = ?,
+                    request_fingerprint = COALESCE(?, request_fingerprint),
+                    result_json = COALESCE(?, result_json), error = ?, updated_at = ?
+                WHERE job_id = ? AND item_id = ?
+                """,
+                (
+                    state,
+                    update["request_fingerprint"],
+                    json.dumps(dict(result), sort_keys=True)
+                    if isinstance(result, Mapping)
+                    else None,
+                    error,
+                    now,
+                    normalized_job_id,
+                    normalized_item_id,
+                ),
+            )
         connection.commit()
     finally:
         connection.close()
@@ -465,16 +525,23 @@ def request_cancel(db_path: str, job_id: str) -> dict[str, Any]:
             raise LookupError(f"operation job not found: {job_id}")
         if row["state"] in TERMINAL_STATES:
             return _job_payload(row)
+        details = _decode_json(row["details_json"])
+        details["submission_complete"] = True
         connection.execute(
-            "UPDATE operation_jobs SET cancel_requested = 1 WHERE job_id = ?",
-            (job_id,),
+            """
+            UPDATE operation_jobs
+            SET cancel_requested = 1, details_json = ?
+            WHERE job_id = ?
+            """,
+            (json.dumps(details, sort_keys=True), job_id),
         )
         connection.execute(
             """
             UPDATE operation_job_items
             SET state = 'canceled', error = 'Operation canceled before execution',
                 updated_at = ?
-            WHERE job_id = ? AND state IN ('queued', 'preparing', 'committing')
+            WHERE job_id = ?
+              AND state IN ('queued', 'preparing', 'running', 'committing')
             """,
             (time(), job_id),
         )

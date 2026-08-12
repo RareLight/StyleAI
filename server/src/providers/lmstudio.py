@@ -4,6 +4,7 @@ LM Studio Provider for metadata generation using the lmstudio-python library
 
 import json
 import re
+import time
 from urllib.parse import urlsplit
 import lmstudio as lms
 from .base import (
@@ -11,7 +12,13 @@ from .base import (
     MetadataGenerationRequest,
     MetadataGenerationResponse,
 )
-from config import logger, LMSTUDIO_HOST, DEFAULT_MAX_TOKENS
+from config import (
+    DEFAULT_MAX_TOKENS,
+    LMSTUDIO_CONTEXT_LENGTH,
+    LMSTUDIO_HOST,
+    LMSTUDIO_IDLE_TTL_SECONDS,
+    logger,
+)
 
 
 def _extract_json_from_prose(text: str) -> dict:
@@ -38,6 +45,7 @@ class LMStudioProvider(LLMProviderBase):
     def __init__(self):
         super().__init__()
         self.host = self._normalize_host(LMSTUDIO_HOST)
+        self._logged_load_configs: set[str] = set()
         self.timeout = 720
         # lmstudio-python's synchronous API defaults to timing out after ~60s of
         # inactivity when waiting for a response/stream event. Wire our configured
@@ -144,11 +152,13 @@ class LMStudioProvider(LLMProviderBase):
             MetadataGenerationResponse with generated metadata
         """
         try:
+            request_started = time.perf_counter()
             effective_host = self._resolve_host()
 
             # Use a scoped client for this host instead of global default client
             with lms.Client(effective_host) as client:
                 # Prepare image via client so we don't depend on the default client
+                upload_started = time.perf_counter()
                 if request.image_data is None:
                     image_handles = []
                 elif isinstance(request.image_data, list):
@@ -159,7 +169,37 @@ class LMStudioProvider(LLMProviderBase):
                     ]
                 else:
                     image_handles = [client.files.prepare_image(request.image_data)]
-                model = client.llm.model(request.model)
+                upload_seconds = time.perf_counter() - upload_started
+
+                model_started = time.perf_counter()
+                model = client.llm.model(
+                    request.model,
+                    ttl=LMSTUDIO_IDLE_TTL_SECONDS,
+                    config={
+                        "contextLength": LMSTUDIO_CONTEXT_LENGTH,
+                        "flashAttention": True,
+                    },
+                )
+                model_seconds = time.perf_counter() - model_started
+                if request.model not in self._logged_load_configs:
+                    try:
+                        load_config = model.get_load_config()
+                        logger.info(
+                            "LM Studio model load config "
+                            "(context_length=%s, flash_attention=%s, "
+                            "offload_kv_cache_to_gpu=%s, fp16_kv_cache=%s, ttl=%ds)",
+                            getattr(load_config, "context_length", None),
+                            getattr(load_config, "flash_attention", None),
+                            getattr(load_config, "offload_kv_cache_to_gpu", None),
+                            getattr(load_config, "use_fp16_for_kv_cache", None),
+                            LMSTUDIO_IDLE_TTL_SECONDS,
+                        )
+                    except Exception:
+                        logger.debug(
+                            "Could not inspect LM Studio model load config",
+                            exc_info=True,
+                        )
+                    self._logged_load_configs.add(request.model)
 
                 # Prepare prompts
                 system_prompt = self._prepare_system_prompt(request)
@@ -167,6 +207,16 @@ class LMStudioProvider(LLMProviderBase):
 
                 # Normalize the compatible response shape returned by LM Studio.
                 response_schema = self._prepare_response_structure(request)
+                schema_chars = len(json.dumps(response_schema, separators=(",", ":")))
+                image_bytes = sum(
+                    len(image)
+                    for image in (
+                        request.image_data
+                        if isinstance(request.image_data, list)
+                        else [request.image_data]
+                    )
+                    if image is not None
+                )
 
                 # Make request to LM Studio
                 logger.debug("Sending request to LM Studio")
@@ -177,11 +227,17 @@ class LMStudioProvider(LLMProviderBase):
                 else:
                     chat.add_user_message(user_prompt)
 
+                inference_started = time.perf_counter()
+                max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
                 response = model.respond(
                     chat,
                     response_format=response_schema,
-                    config={"temperature": request.temperature},
+                    config={
+                        "temperature": request.temperature,
+                        "maxTokens": max_tokens,
+                    },
                 )
+                inference_seconds = time.perf_counter() - inference_started
 
             # Extract message content
             content = response.parsed
@@ -202,14 +258,17 @@ class LMStudioProvider(LLMProviderBase):
                     if hasattr(response, "stats") and hasattr(
                         response.stats, "stop_reason"
                     ):
-                        if response.stats.stop_reason in ("length", "max_tokens"):
-                            _max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
+                        if response.stats.stop_reason in (
+                            "length",
+                            "max_tokens",
+                            "maxPredictedTokensReached",
+                        ):
                             return MetadataGenerationResponse(
                                 uuid=request.uuid,
                                 success=False,
                                 error=(
                                     f"LM Studio stopped before finishing the response because the token "
-                                    f"limit was reached (num_predict={_max_tokens}). Please raise the "
+                                    f"limit was reached (maxTokens={max_tokens}). Please raise the "
                                     f"Max Tokens setting in the plugin (General tab → AI Model section) "
                                     f"— try 4096 or higher."
                                 ),
@@ -233,42 +292,65 @@ class LMStudioProvider(LLMProviderBase):
             # Token usage reporting
             input_tokens = 0
             output_tokens = 0
+            time_to_first_token = 0
+            tokens_per_second = 0
             try:
                 # 1. Try to get usage from the response object directly (lms 0.4.x+)
                 stats = getattr(response, "stats", None) or getattr(
                     response, "usage", None
                 )
                 if stats:
-                    input_tokens = getattr(stats, "prompt_tokens", 0) or getattr(
-                        stats, "input_tokens", 0
-                    )
-                    output_tokens = getattr(stats, "completion_tokens", 0) or getattr(
-                        stats, "output_tokens", 0
-                    )
 
-                # 2. Fallback: Manual tokenization for accuracy
-                if input_tokens == 0 and hasattr(model, "tokenize"):
-                    # For input, we should tokenize the full prompt as seen by the model
-                    try:
-                        # model.apply_prompt_template(chat) returns the raw string if available
-                        full_prompt = (
-                            model.apply_prompt_template(chat)
-                            if hasattr(model, "apply_prompt_template")
-                            else user_prompt
+                    def numeric_stat(*names):
+                        for name in names:
+                            value = getattr(stats, name, None)
+                            if isinstance(value, (int, float)) and not isinstance(
+                                value, bool
+                            ):
+                                return value
+                        return 0
+
+                    input_tokens = int(
+                        numeric_stat(
+                            "prompt_tokens_count", "prompt_tokens", "input_tokens"
                         )
-                        input_tokens = len(model.tokenize(full_prompt))
-                    except Exception:
-                        input_tokens = len(model.tokenize(user_prompt))
+                    )
+                    output_tokens = int(
+                        numeric_stat(
+                            "predicted_tokens_count",
+                            "completion_tokens",
+                            "output_tokens",
+                        )
+                    )
+                    time_to_first_token = numeric_stat("time_to_first_token_sec")
+                    tokens_per_second = numeric_stat("tokens_per_second")
 
-                if (
-                    output_tokens == 0
-                    and hasattr(model, "tokenize")
-                    and isinstance(content, dict)
-                ):
-                    output_tokens = len(model.tokenize(json.dumps(content)))
+                # Do not call model tokenization after the scoped client has
+                # closed. Some lmstudio-python versions try to reconnect via an
+                # async handler from this synchronous path, leaking an un-awaited
+                # coroutine. Missing SDK usage statistics are safely reported as
+                # zero instead of opening another model session.
 
+                total_seconds = time.perf_counter() - request_started
                 logger.info(
-                    f"LM Studio token usage for {request.uuid}: input={input_tokens}, output={output_tokens}"
+                    "LM Studio request completed in %.2fs "
+                    "(upload=%.2fs, model=%.2fs, inference=%.2fs, "
+                    "time_to_first_token=%.2fs, tokens_per_second=%.2f, "
+                    "input_tokens=%d, output_tokens=%d, max_tokens=%d, "
+                    "image_bytes=%d, system_chars=%d, user_chars=%d, schema_chars=%d)",
+                    total_seconds,
+                    upload_seconds,
+                    model_seconds,
+                    inference_seconds,
+                    time_to_first_token,
+                    tokens_per_second,
+                    input_tokens,
+                    output_tokens,
+                    max_tokens,
+                    image_bytes,
+                    len(system_prompt),
+                    len(user_prompt),
+                    schema_chars,
                 )
             except Exception as usage_err:
                 logger.debug(f"Could not calculate LM Studio token usage: {usage_err}")

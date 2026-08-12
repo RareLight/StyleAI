@@ -264,7 +264,10 @@ function Util.computeStableMetadataPhotoId(photo)
 	if Util.nilOrEmpty(digest) then
 		return nil, "Stable metadata digest failed"
 	end
-	return "meta2:" .. digest, nil
+	-- The prefix is part of the persisted stable_meta_v1 identity contract.
+	-- Changing it without migrating every catalog-local consumer splits one
+	-- Lightroom photo across multiple database identities.
+	return "meta1:" .. digest, nil
 end
 
 local function getFileAttributes(filePath)

@@ -11,11 +11,11 @@ def clip_cached():
     try:
         if is_model_cached():
             return jsonify(
-                {"clip": "ready", "message": "CLIP model is loaded and ready."}
+                {"clip": "ready", "message": "CLIP model is installed and ready."}
             )
         else:
             return jsonify(
-                {"clip": "not_ready", "message": "CLIP model is not loaded."}
+                {"clip": "not_ready", "message": "CLIP model is not installed."}
             )
 
     except Exception as e:

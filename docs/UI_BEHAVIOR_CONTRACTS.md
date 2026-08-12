@@ -33,7 +33,7 @@ changes registered menus.
 | --- | --- | --- |
 | Analyze photos for StyleAI | `enableEmbeddings`; legacy `indexingMode` remains synchronized | Commits local image embeddings before dependent metadata work |
 | Generate keywords and descriptions | `enableMetadata`, selected local `modelKey` | Uses the batch metadata endpoint only |
-| Scope | `indexScope` / `scope` | Resolves selected, view, catalog, missing, or indexed photos through existing selection logic |
+| Scope | `indexScope` / `scope` | Resolves selected, catalog, missing, or indexed photos through existing selection logic |
 | Keep or replace StyleAI data | `regenerateMetadata`; replacement forces `appendMetadata=false` | Controls reprocessing and generated-field replacement |
 | Generated fields | `generateKeywords`, `generateTitle`, `generateCaption`, `generateAltText` | Controls catalog/backend metadata fields |
 | Write to Lightroom / review | `saveDataToCatalog`, `enableValidation` | Controls catalog handoff and per-photo metadata review |
@@ -53,12 +53,19 @@ local model, and metadata generation with no output fields. `replaceSS` and the
 top-level keyword behavior remain compatibility-reserved pending a product
 decision.
 
+Prepare Photos deduplicates stable source IDs before creating an operation.
+When every unique photo is already complete, it performs no preview/export or
+backend work and shows a successful already-complete message. Live success and
+failure captions derive from mutually exclusive operation-item counts plus
+preflight-complete or unresolved photos.
+
 ### Learn From My Edits
 
 Scope and `forceRetrain` (now labeled **Update previously learned examples**)
 map to the existing training operation. Eligibility remains RAW/DNG-only.
-Selection snapshots, bounded upload chunks, durable operation items,
-cancellation, and the single final rebuild/activation sequence are unchanged.
+Selection snapshots, bounded preflight/upload chunks, stable-source
+deduplication, durable operation items, cancellation, and the single final
+rebuild/activation sequence are unchanged.
 
 ### Apply My Style
 

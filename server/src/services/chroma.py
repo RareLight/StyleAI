@@ -259,6 +259,39 @@ def get_image(photo_id, *, legacy_uuid=None):
     return data
 
 
+def get_images(photo_ids):
+    """Fetch a bounded group of canonical image records in one Chroma read."""
+    _ensure_initialized()
+    if collection is None:
+        return {"ids": [], "metadatas": [], "embeddings": []}
+    normalized_ids = []
+    seen_ids = set()
+    for photo_id in photo_ids or []:
+        normalized = _normalize_photo_id(photo_id)
+        if normalized and normalized not in seen_ids:
+            normalized_ids.append(normalized)
+            seen_ids.add(normalized)
+    if not normalized_ids:
+        return {"ids": [], "metadatas": [], "embeddings": []}
+    if len(normalized_ids) > COLLECTION_PAGE_SIZE:
+        raise ValueError(f"get_images accepts at most {COLLECTION_PAGE_SIZE} photo IDs")
+    try:
+        return collection.get(
+            ids=normalized_ids,
+            include=["metadatas", "embeddings"],
+        )
+    except Exception as exc:
+        if type(exc).__name__ != "InternalError" or not getattr(
+            type(exc), "__module__", ""
+        ).startswith("chromadb"):
+            raise
+        logger.debug(
+            "ChromaDB get_images: index not yet built (empty collection): %s",
+            exc,
+        )
+        return {"ids": [], "metadatas": [], "embeddings": []}
+
+
 def delete_image(photo_id, *, legacy_uuid=None):
     _ensure_initialized()
     if collection is None:

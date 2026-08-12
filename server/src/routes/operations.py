@@ -93,20 +93,7 @@ def update_operation_items(job_id: str):
     if not isinstance(items, list) or not items or len(items) > 500:
         return jsonify({"error": "items must be a non-empty list of at most 500"}), 400
     try:
-        for item in items:
-            if not isinstance(item, dict):
-                raise ValueError("every item update must be an object")
-            operations.set_item_state(
-                _db_path(),
-                job_id,
-                str(item.get("item_id") or "").strip(),
-                str(item.get("state") or "").strip(),
-                error=item.get("error"),
-                result=item.get("result")
-                if isinstance(item.get("result"), dict)
-                else None,
-                request_fingerprint=item.get("request_fingerprint"),
-            )
+        operations.set_item_states(_db_path(), job_id, items)
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:

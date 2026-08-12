@@ -17,7 +17,7 @@ import server_lifecycle as server_lifecycle
 from . import exif as exif_service
 import gc
 import json
-from datetime import datetime as time
+from datetime import datetime, timezone
 from PIL import Image
 import io
 import numpy as np
@@ -416,12 +416,6 @@ def process_image_task(
         siglip_model = None
         siglip_processor = None
 
-        if not compute_embeddings:
-            logger.info(
-                "Embeddings disabled (LLM Only path); actively unloading SigLIP2 to free memory."
-            )
-            server_lifecycle.unload_model()
-
         if len(images_needing_embeddings) > 0:
             siglip_model = server_lifecycle.get_model()
             siglip_processor = server_lifecycle.get_processor()
@@ -498,7 +492,7 @@ def process_image_task(
                 exif_location_by_uuid or None,
                 pil_images,  # Reuse the decoded images (potentially blurred)
             )
-        except (InterruptedError, RuntimeError) as e:
+        except (InterruptedError, RuntimeError):
             raise
         except Exception as e:
             logger.error(f"Error in analyze_batch: {str(e)}", exc_info=True)
@@ -551,7 +545,9 @@ def process_image_task(
 
                 # If nothing is needed for this UUID, skip the write.
                 if not need_embedding and not need_metadata and not regenerate_metadata:
-                    logger.info(f"UUID {uuid}: already fully indexed; skipping update.")
+                    logger.debug(
+                        "Photo %s is already fully indexed; skipping update", uuid
+                    )
                     success_count += 1
                     record_item(
                         uuid,
@@ -602,8 +598,6 @@ def process_image_task(
                             catalog_time_unix,
                         )
                 elif opt.get("date_time"):
-                    from datetime import datetime, timezone
-
                     dt_str = opt["date_time"]
                     try:
                         # Normalize common W3C/ISO forms (e.g. trailing 'Z').
@@ -688,7 +682,6 @@ def process_image_task(
                     if not main_metadata.get("model"):
                         main_metadata["model"] = model_name
 
-                from datetime import datetime
                 main_metadata["run_date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 # Update embedding status
@@ -788,10 +781,10 @@ def process_image_task(
                 else:
                     # New record
                     if embedding is not None:
-                        logger.info(f"UUID {uuid} is new. Indexing with embeddings.")
+                        logger.debug("Photo %s is new; indexing with embeddings", uuid)
                     else:
-                        logger.info(
-                            f"UUID {uuid} is new. Indexing metadata-only entry (no embedding)."
+                        logger.debug(
+                            "Photo %s is new; indexing metadata-only entry", uuid
                         )
                     try:
                         from services import operations
@@ -841,6 +834,11 @@ def process_image_task(
                 record_item(uuid, filename, "failed", error=str(e))
 
         return success_count, failure_count, error_messages, warnings
+    except InterruptedError as e:
+        message = str(e) or "Indexing operation canceled"
+        logger.info("Batch processing canceled: %s", message)
+        record_unfinished("canceled", message)
+        return 0, 0, error_messages, warnings
     except DatabaseNotReadyError as e:
         logger.warning(f"Batch processing aborted: {str(e)}")
         message = str(e)
@@ -1027,7 +1025,16 @@ def _process_dynamic_gpu_batch(batch: list[dict]) -> None:
                 continue
             result = results_by_id.get(str(item["uuid"]))
             try:
-                if result and result.get("status") == "succeeded":
+                if result and result.get("status") == "canceled":
+                    operations.set_item_state(
+                        config.DB_PATH,
+                        job_id,
+                        item["uuid"],
+                        "canceled",
+                        error=str(result.get("error") or "Indexing operation canceled"),
+                        result=result,
+                    )
+                elif result and result.get("status") == "succeeded":
                     terminal_state = (
                         "preparing"
                         if item.get("options", {}).get("defer_terminal")
