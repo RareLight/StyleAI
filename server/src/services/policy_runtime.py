@@ -1641,14 +1641,32 @@ def get_upgrade_recommendations(
     for artifact in sorted(artifacts.values(), key=lambda item: item.partition_key):
         if cancel_event is not None and cancel_event.is_set():
             raise InterruptedError("Recommendation generation canceled")
+        hard_labels = np.argmax(
+            artifact.mixture.training_responsibilities_,
+            axis=1,
+        )
+        eligible_policies = []
+        for policy_index, policy_id in enumerate(artifact.policy_ids):
+            current_count = int(np.sum(hard_labels == policy_index))
+            needed_count = max(0, target_examples_per_policy - current_count)
+            if needed_count > 0:
+                eligible_policies.append(
+                    (policy_index, str(policy_id), current_count, needed_count)
+                )
+        eligible_policies.sort(key=lambda item: (-item[3], item[1], item[0]))
+
         remaining_budget = policy_budget - len(payloads)
         if remaining_budget <= 0:
             return payloads
-        policy_indices = list(range(min(len(artifact.policy_ids), remaining_budget)))
+        selected_policies = eligible_policies[:remaining_budget]
+        policy_indices = [item[0] for item in selected_policies]
+        if not policy_indices:
+            continue
         neighbor_sets = retrieve_policy_neighbor_sets(
             collection,
             [artifact.image_anchors[index] for index in policy_indices],
             existing_photo_ids=existing_photo_ids,
+            include_metadata=False,
         )
         neighbor_ids = list(
             dict.fromkeys(
@@ -1736,22 +1754,16 @@ def get_upgrade_recommendations(
                     "coverage_gains": coverage_gains[row_index],
                 }
 
-        hard_labels = np.argmax(
-            artifact.mixture.training_responsibilities_,
-            axis=1,
-        )
-        for neighbor_set_index, policy_index in enumerate(policy_indices):
+        for neighbor_set_index, policy_data in enumerate(selected_policies):
             if cancel_event is not None and cancel_event.is_set():
                 raise InterruptedError("Recommendation generation canceled")
-            policy_id = artifact.policy_ids[policy_index]
+            policy_index, policy_id, current_count, needed_count = policy_data
             local_correctors = getattr(
                 artifact,
                 "local_correctors",
                 [None] * len(artifact.policy_ids),
             )
             local_enabled = local_correctors[policy_index] is not None
-            current_count = int(np.sum(hard_labels == policy_index))
-            needed_count = max(0, target_examples_per_policy - current_count)
             candidates: list[PolicyCandidate] = []
             for neighbor in neighbor_sets[neighbor_set_index]:
                 data = candidate_data.get(neighbor.photo_id)

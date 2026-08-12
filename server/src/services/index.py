@@ -278,6 +278,8 @@ def process_image_task(
     error_messages = []
     warnings = []
     total_images = len(image_triplets)
+    batch_started_at = monotonic_time.perf_counter()
+    stage_timings_ms: dict[str, float] = {}
 
     def record_item(
         photo_id: str,
@@ -334,6 +336,7 @@ def process_image_task(
         # Always check existing records to preserve previously stored metadata.
         # even when regenerating specific metadata.
         existing_records = {}
+        stage_started_at = monotonic_time.perf_counter()
         logger.info(
             "Checking existing records to determine what needs generation and preserve fields..."
         )
@@ -350,6 +353,9 @@ def process_image_task(
                     existing_records[pid] = meta
         except Exception as e:
             logger.warning(f"Bulk ChromaDB get failed: {e}")
+        stage_timings_ms["existing_lookup"] = round(
+            (monotonic_time.perf_counter() - stage_started_at) * 1000.0, 1
+        )
 
         # Determine what actually needs to be computed for each image.
         # Sets (not lists) because downstream code does `uuid in ...` membership
@@ -420,12 +426,15 @@ def process_image_task(
             siglip_model = server_lifecycle.get_model()
             siglip_processor = server_lifecycle.get_processor()
 
-        # Pre-extract EXIF location data for each image (always, when available).
+        # Extract location only for photos whose own rendered pixels will be sent
+        # to the local metadata model. Embeddings-only runs do not consume it.
         # Keyed by uuid so it can be passed to analyze_batch for per-image injection.
         # Decode each JPEG to a single PIL.Image up front so embedding and metadata
         # work can reuse it instead of decoding the same bytes repeatedly.
         exif_location_by_uuid: dict[str, dict | None] = {}
         for image_bytes, uuid, filename, lr_uuid in image_triplets:
+            if uuid not in images_needing_metadata:
+                continue
             try:
                 exif_location_by_uuid[uuid] = exif_service.extract_location_tags(
                     image_bytes
@@ -453,6 +462,7 @@ def process_image_task(
                 training_service.compute_exposure_metrics(source.image_bytes),
             )
 
+        stage_started_at = monotonic_time.perf_counter()
         with ThreadPoolExecutor(
             max_workers=_decode_worker_count(len(image_triplets))
         ) as executor:
@@ -462,6 +472,9 @@ def process_image_task(
         embedding_sources = [prepared[0] for prepared in prepared_sources]
         pil_images = [prepared[1] for prepared in prepared_sources]
         embedding_source_metrics = [prepared[2] for prepared in prepared_sources]
+        stage_timings_ms["source_prepare"] = round(
+            (monotonic_time.perf_counter() - stage_started_at) * 1000.0, 1
+        )
 
         blurred_image_triplets = image_triplets
 
@@ -481,6 +494,7 @@ def process_image_task(
                         )
 
         # 2. SigLIP2 & LLM via analyze_batch
+        stage_started_at = monotonic_time.perf_counter()
         try:
             embeddings, metadata_results = analysis_service.analyze_batch(
                 blurred_image_triplets,
@@ -500,7 +514,11 @@ def process_image_task(
             error_messages.append(message)
             record_unfinished("failed", message)
             return 0, total_images, error_messages, warnings
+        stage_timings_ms["model_inference"] = round(
+            (monotonic_time.perf_counter() - stage_started_at) * 1000.0, 1
+        )
 
+        stage_started_at = monotonic_time.perf_counter()
         for i, (image_bytes, uuid, filename, lr_uuid) in enumerate(image_triplets):
             try:
                 item_error = None
@@ -753,8 +771,7 @@ def process_image_task(
                         with operations.admission.acquire(
                             {"catalog_write": 1}, priority=10
                         ):
-                            existing_in_chroma = chroma_service.get_image(uuid)
-                            if existing_in_chroma and existing_in_chroma.get("ids"):
+                            if existing:
                                 chroma_service.update_image(
                                     uuid,
                                     main_metadata,
@@ -833,6 +850,25 @@ def process_image_task(
                 failure_count += 1
                 record_item(uuid, filename, "failed", error=str(e))
 
+        stage_timings_ms["storage"] = round(
+            (monotonic_time.perf_counter() - stage_started_at) * 1000.0, 1
+        )
+        stage_timings_ms["total"] = round(
+            (monotonic_time.perf_counter() - batch_started_at) * 1000.0, 1
+        )
+        logger.info(
+            "Index batch timings count=%d embedding_count=%d metadata_count=%d "
+            "existing_lookup_ms=%.1f source_prepare_ms=%.1f model_inference_ms=%.1f "
+            "storage_ms=%.1f total_ms=%.1f",
+            total_images,
+            len(images_needing_embeddings),
+            len(images_needing_metadata),
+            stage_timings_ms.get("existing_lookup", 0.0),
+            stage_timings_ms.get("source_prepare", 0.0),
+            stage_timings_ms.get("model_inference", 0.0),
+            stage_timings_ms.get("storage", 0.0),
+            stage_timings_ms.get("total", 0.0),
+        )
         return success_count, failure_count, error_messages, warnings
     except InterruptedError as e:
         message = str(e) or "Indexing operation canceled"
@@ -944,35 +980,45 @@ def _process_dynamic_gpu_batch(batch: list[dict]) -> None:
     image_triplets = []
     options = []
     try:
+        items_by_job: dict[str, list[dict]] = {}
         for item in batch:
             job_id = item.get("job_id")
             if job_id and config.DB_PATH:
-                try:
-                    if operations.is_cancel_requested(config.DB_PATH, job_id):
-                        operations.set_item_state(
-                            config.DB_PATH,
-                            job_id,
-                            item["uuid"],
-                            "canceled",
-                            error="Indexing operation canceled",
-                        )
-                        from services import image_cache
-
-                        image_cache.remove_image(item["uuid"])
-                        continue
-                    operations.set_item_state(
-                        config.DB_PATH, job_id, item["uuid"], "running"
-                    )
-                except Exception:
-                    logger.exception(
-                        "Could not update indexing operation state for %s",
-                        item["uuid"],
-                    )
+                items_by_job.setdefault(str(job_id), []).append(item)
+            else:
+                work_batch.append(item)
+        for job_id, job_items in items_by_job.items():
+            try:
+                canceled = operations.is_cancel_requested(config.DB_PATH, job_id)
+                operations.set_item_states(
+                    config.DB_PATH,
+                    job_id,
+                    [
+                        {
+                            "item_id": item["uuid"],
+                            "state": "canceled" if canceled else "running",
+                            "error": "Indexing operation canceled"
+                            if canceled
+                            else None,
+                        }
+                        for item in job_items
+                    ],
+                )
+                if canceled:
                     from services import image_cache
 
+                    for item in job_items:
+                        image_cache.remove_image(item["uuid"])
+                else:
+                    work_batch.extend(job_items)
+            except Exception:
+                logger.exception(
+                    "Could not update indexing operation state for job %s", job_id
+                )
+                from services import image_cache
+
+                for item in job_items:
                     image_cache.remove_image(item["uuid"])
-                    continue
-            work_batch.append(item)
 
         image_triplets = [
             (
@@ -1019,51 +1065,50 @@ def _process_dynamic_gpu_batch(batch: list[dict]) -> None:
             ]
 
         results_by_id = {str(result.get("photo_id")): result for result in item_results}
+        terminal_items_by_job: dict[str, list[tuple[dict, dict | None]]] = {}
         for item in work_batch:
             job_id = item.get("job_id")
             if not job_id or not config.DB_PATH:
                 continue
             result = results_by_id.get(str(item["uuid"]))
+            terminal_items_by_job.setdefault(str(job_id), []).append((item, result))
+        for job_id, job_results in terminal_items_by_job.items():
             try:
-                if result and result.get("status") == "canceled":
-                    operations.set_item_state(
-                        config.DB_PATH,
-                        job_id,
-                        item["uuid"],
-                        "canceled",
-                        error=str(result.get("error") or "Indexing operation canceled"),
-                        result=result,
-                    )
-                elif result and result.get("status") == "succeeded":
-                    terminal_state = (
-                        "preparing"
-                        if item.get("options", {}).get("defer_terminal")
-                        else "succeeded"
-                    )
-                    if operations.is_cancel_requested(config.DB_PATH, job_id):
-                        terminal_state = "canceled"
-                    operations.set_item_state(
-                        config.DB_PATH,
-                        job_id,
-                        item["uuid"],
-                        terminal_state,
-                        result=result,
-                    )
-                else:
-                    operations.set_item_state(
-                        config.DB_PATH,
-                        job_id,
-                        item["uuid"],
-                        "failed",
-                        error=str(
+                canceled = operations.is_cancel_requested(config.DB_PATH, job_id)
+                updates = []
+                for item, result in job_results:
+                    if result and result.get("status") == "canceled":
+                        state = "canceled"
+                        error = str(
+                            result.get("error") or "Indexing operation canceled"
+                        )
+                    elif result and result.get("status") == "succeeded":
+                        state = (
+                            "preparing"
+                            if item.get("options", {}).get("defer_terminal")
+                            else "succeeded"
+                        )
+                        if canceled:
+                            state = "canceled"
+                        error = None
+                    else:
+                        state = "failed"
+                        error = str(
                             (result or {}).get("error")
                             or "Indexing did not return a terminal result"
-                        ),
-                        result=result,
+                        )
+                    updates.append(
+                        {
+                            "item_id": item["uuid"],
+                            "state": state,
+                            "error": error,
+                            "result": result,
+                        }
                     )
+                operations.set_item_states(config.DB_PATH, job_id, updates)
             except Exception:
                 logger.exception(
-                    "Could not persist indexing result for %s", item["uuid"]
+                    "Could not persist indexing results for job %s", job_id
                 )
     finally:
         for item in batch:

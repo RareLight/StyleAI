@@ -158,12 +158,47 @@ def _prepare_batch_source_embeddings(
     """Resolve canonical evidence and batch only compatible cache misses."""
     prepared: list[dict[str, Any]] = [{} for _ in items]
     misses: list[int] = []
+    existing_by_id: dict[str, dict[str, Any]] = {}
+    bulk_read_failed = False
+    try:
+        existing_batch = chroma_service.get_images([item["photo_id"] for item in items])
+        ids = existing_batch.get("ids") or []
+        metadatas = existing_batch.get("metadatas") or []
+        embeddings = existing_batch.get("embeddings")
+        if embeddings is None:
+            embeddings = []
+        for row_index, photo_id in enumerate(ids):
+            existing_by_id[str(photo_id)] = {
+                "ids": [photo_id],
+                "metadatas": [
+                    metadatas[row_index]
+                    if row_index < len(metadatas) and metadatas[row_index]
+                    else {}
+                ],
+                "embeddings": [
+                    embeddings[row_index] if row_index < len(embeddings) else None
+                ],
+            }
+    except Exception as exc:
+        bulk_read_failed = True
+        logger.debug("Could not bulk-read canonical source embeddings: %s", exc)
     for index, item in enumerate(items):
-        embedding, metadata, metrics = _get_canonical_source_embedding(
-            item["photo_id"],
-            raw_filepath=item["options"].get("raw_filepath"),
-            rendered_image_bytes=item["image_bytes"],
-        )
+        if bulk_read_failed:
+            embedding, metadata, metrics = _get_canonical_source_embedding(
+                item["photo_id"],
+                raw_filepath=item["options"].get("raw_filepath"),
+                rendered_image_bytes=item["image_bytes"],
+            )
+        else:
+            existing = existing_by_id.get(item["photo_id"], {})
+            metadatas = existing.get("metadatas") or []
+            metadata = dict(metadatas[0]) if metadatas else {}
+            embedding = source_embeddings.compatible_embedding(
+                existing,
+                raw_filepath=item["options"].get("raw_filepath"),
+                rendered_image_bytes=item["image_bytes"],
+            )
+            metrics = source_embeddings.cached_source_metrics(metadata)
         if embedding is not None and metrics is not None:
             prepared[index] = {
                 "embedding": embedding,
@@ -855,7 +890,6 @@ def _run_coherent_style_edit_batch(
     diagnostics["independent_policy_predictions"] = len(pending)
     diagnostics["policy_predictions_executed"] = len(pending)
     diagnostics["avoided_policy_predictions"] = 0
-    diagnostics["avoided_policy_predictions"] = 0
     return results, diagnostics
 
 
@@ -1257,33 +1291,43 @@ def style_edit():
         except (TypeError, ValueError) as exc:
             return jsonify({"results": None, "error": str(exc), "warning": None}), 400
 
-        for item in structured_items:
-            operations.set_item_state(
-                config.DB_PATH, job_id, item["photo_id"], "running"
-            )
+        operations.set_item_states(
+            config.DB_PATH,
+            job_id,
+            [
+                {"item_id": item["photo_id"], "state": "running"}
+                for item in structured_items
+            ],
+        )
         results, diagnostics = _run_coherent_style_edit_batch(
             structured_items, job_id=job_id
         )
+        item_updates = []
         for result in results:
             photo_id = str(result.get("photo_id") or "")
             canceled = result.get("error") == "canceled"
             succeeded = result.get("status") == "success"
-            operations.set_item_state(
-                config.DB_PATH,
-                job_id,
-                photo_id,
-                "canceled" if canceled else ("committing" if succeeded else "failed"),
-                error=(
-                    None
-                    if succeeded or canceled
-                    else str(result.get("error") or "Edit failed")
-                ),
-                result={
-                    "engine": result.get("engine"),
-                    "confidence": result.get("confidence"),
-                    "burst_coherence": result.get("burst_coherence"),
-                },
+            item_updates.append(
+                {
+                    "item_id": photo_id,
+                    "state": (
+                        "canceled"
+                        if canceled
+                        else ("committing" if succeeded else "failed")
+                    ),
+                    "error": (
+                        None
+                        if succeeded or canceled
+                        else str(result.get("error") or "Edit failed")
+                    ),
+                    "result": {
+                        "engine": result.get("engine"),
+                        "confidence": result.get("confidence"),
+                        "burst_coherence": result.get("burst_coherence"),
+                    },
+                }
             )
+        operations.set_item_states(config.DB_PATH, job_id, item_updates)
         return jsonify(
             {
                 "results": {

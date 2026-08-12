@@ -467,12 +467,14 @@ def test_upgrade_recommendations_batch_candidate_assignment(
         def __init__(self):
             self.query_count = 0
             self.get_count = 0
+            self.query_kwargs = None
 
         def count(self):
             return 100
 
-        def query(self, **_kwargs):
+        def query(self, **kwargs):
             self.query_count += 1
+            self.query_kwargs = kwargs
             return {
                 "ids": [["candidate-a", "candidate-b"]],
                 "metadatas": [[{}, {}]],
@@ -501,7 +503,115 @@ def test_upgrade_recommendations_batch_candidate_assignment(
     assert payloads
     assert collection.query_count == 1
     assert collection.get_count == 1
+    assert collection.query_kwargs["include"] == ["distances"]
     assert assignment_batch_sizes == [2]
+
+
+def test_upgrade_recommendations_skip_complete_policies_before_query(
+    policy_database,
+    monkeypatch,
+):
+    examples = _examples()
+    monkeypatch.setattr(
+        policy_runtime.training_service,
+        "list_training_examples_with_embeddings",
+        lambda **_kwargs: examples,
+    )
+    policy_runtime.rebuild_active_generation(seed=9)
+
+    class FakeCollection:
+        def __init__(self):
+            self.query_count = 0
+
+        def count(self):
+            return 100
+
+        def query(self, **_kwargs):
+            self.query_count += 1
+            return {"ids": [], "distances": []}
+
+    from services import chroma as chroma_service
+
+    collection = FakeCollection()
+    monkeypatch.setattr(chroma_service, "_ensure_initialized", lambda: None)
+    monkeypatch.setattr(chroma_service, "collection", collection)
+
+    payloads = policy_runtime.get_upgrade_recommendations(target_examples_per_policy=1)
+
+    assert payloads == []
+    assert collection.query_count == 0
+
+
+def test_upgrade_recommendation_budget_is_applied_after_eligibility(
+    policy_database,
+    monkeypatch,
+):
+    from types import SimpleNamespace
+    from services import chroma as chroma_service
+    from services import policy_feedback
+
+    artifact = SimpleNamespace(
+        partition_key="default",
+        generation_id="generation-1",
+        policy_ids=["complete", "needs-examples"],
+        policy_names=["Complete", "Needs Examples"],
+        image_anchors=[
+            [np.asarray([1.0, 0.0])],
+            [np.asarray([0.0, 1.0])],
+        ],
+        example_photo_ids=[[], []],
+        example_embeddings=[
+            np.asarray([[1.0, 0.0]]),
+            np.asarray([[0.0, 1.0]]),
+        ],
+        mixture=SimpleNamespace(
+            training_responsibilities_=np.asarray(
+                [
+                    [1.0, 0.0],
+                    [1.0, 0.0],
+                    [1.0, 0.0],
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                ]
+            )
+        ),
+        local_correctors=[None, None],
+        descriptors=[{}, {}],
+        camera_profile="Adobe Color",
+        estimator_name="ridge",
+    )
+    monkeypatch.setattr(
+        policy_runtime, "_load_active_artifacts", lambda: {"default": artifact}
+    )
+    monkeypatch.setattr(policy_runtime, "_custom_policy_names", lambda: {})
+    monkeypatch.setattr(
+        policy_feedback,
+        "capture_recommendation_review",
+        lambda **_kwargs: "review-1",
+    )
+
+    class FakeCollection:
+        def __init__(self):
+            self.query_embeddings = None
+
+        def count(self):
+            return 10
+
+        def query(self, **kwargs):
+            self.query_embeddings = kwargs["query_embeddings"]
+            return {"ids": [[]], "distances": [[]]}
+
+    collection = FakeCollection()
+    monkeypatch.setattr(chroma_service, "_ensure_initialized", lambda: None)
+    monkeypatch.setattr(chroma_service, "collection", collection)
+
+    payloads = policy_runtime.get_upgrade_recommendations(
+        top_policies_limit=1,
+        target_examples_per_policy=3,
+    )
+
+    assert [payload["policy_id"] for payload in payloads] == ["needs-examples"]
+    assert collection.query_embeddings == [[0.0, 1.0]]
 
 
 def test_failed_candidate_preserves_active_generation(policy_database, monkeypatch):

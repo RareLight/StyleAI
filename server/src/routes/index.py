@@ -352,7 +352,7 @@ def generate_metadata_batch():
     if job_id:
         if not config.DB_PATH:
             return jsonify({"error": "StyleAI database path is not configured"}), 500
-        job = operations.get_job(config.DB_PATH, job_id, include_items=True)
+        job = operations.get_job(config.DB_PATH, job_id, include_items=False)
         if job is None:
             return jsonify({"error": f"operation job not found: {job_id}"}), 404
         if job["kind"] not in {"index", "metadata"}:
@@ -423,7 +423,10 @@ def generate_metadata_batch():
     if len(photo_ids) != len(set(photo_ids)):
         return jsonify({"error": "Duplicate photo_id values are not allowed"}), 400
     if job is not None:
-        expected_ids = {item["item_id"] for item in job.get("items", [])}
+        expected_ids = {
+            item["item_id"]
+            for item in operations.get_job_items(config.DB_PATH, job_id, photo_ids)
+        }
         unexpected_ids = sorted(set(photo_ids) - expected_ids)
         if unexpected_ids:
             return (
@@ -537,19 +540,21 @@ def generate_metadata_batch():
                     if cancel_signal is None or not cancel_signal.is_set():
                         raise
                     raise InterruptedError("operation job has been canceled") from None
-                for photo_id in photo_ids:
-                    if cancel_signal is not None and cancel_signal.is_set():
-                        raise InterruptedError("operation job has been canceled")
-                    try:
-                        operations.set_item_state(
-                            config.DB_PATH, job_id, photo_id, "running"
-                        )
-                    except ValueError:
-                        if cancel_signal is None or not cancel_signal.is_set():
-                            raise
-                        raise InterruptedError(
-                            "operation job has been canceled"
-                        ) from None
+                if cancel_signal is not None and cancel_signal.is_set():
+                    raise InterruptedError("operation job has been canceled")
+                try:
+                    operations.set_item_states(
+                        config.DB_PATH,
+                        job_id,
+                        [
+                            {"item_id": photo_id, "state": "running"}
+                            for photo_id in photo_ids
+                        ],
+                    )
+                except ValueError:
+                    if cancel_signal is None or not cancel_signal.is_set():
+                        raise
+                    raise InterruptedError("operation job has been canceled") from None
 
             success_count, failure_count, error_messages, warnings = process_image_task(
                 image_triplets,
@@ -559,38 +564,42 @@ def generate_metadata_batch():
     except InterruptedError:
         for photo_id in photo_ids:
             image_cache.remove_image(photo_id)
-            if job_id:
-                try:
-                    operations.set_item_state(
-                        config.DB_PATH,
-                        job_id,
-                        photo_id,
-                        "canceled",
-                        error="Metadata operation canceled",
-                    )
-                except ValueError:
-                    current_job = operations.get_job(
-                        config.DB_PATH, job_id, include_items=False
-                    )
-                    if not current_job or current_job["state"] != "canceled":
-                        raise
+        if job_id:
+            try:
+                operations.set_item_states(
+                    config.DB_PATH,
+                    job_id,
+                    [
+                        {
+                            "item_id": photo_id,
+                            "state": "canceled",
+                            "error": "Metadata operation canceled",
+                        }
+                        for photo_id in photo_ids
+                    ],
+                )
+            except ValueError:
+                current_job = operations.get_job(
+                    config.DB_PATH, job_id, include_items=False
+                )
+                if not current_job or current_job["state"] != "canceled":
+                    raise
         return jsonify({"error": "operation job has been canceled"}), 409
 
     if job_id:
         results_by_id = {str(result.get("photo_id")): result for result in item_results}
+        item_updates = []
         for photo_id in photo_ids:
             result = results_by_id.get(photo_id)
             result_status = (result or {}).get("status")
             target_state = "committing" if result_status == "succeeded" else "failed"
             if result_status == "canceled":
                 target_state = "canceled"
-            try:
-                operations.set_item_state(
-                    config.DB_PATH,
-                    job_id,
-                    photo_id,
-                    target_state,
-                    error=(
+            item_updates.append(
+                {
+                    "item_id": photo_id,
+                    "state": target_state,
+                    "error": (
                         None
                         if target_state == "committing"
                         else str(
@@ -598,18 +607,22 @@ def generate_metadata_batch():
                             or "Metadata generation did not return a terminal result"
                         )
                     ),
-                    result=result,
-                )
-            except ValueError:
-                current_job = operations.get_job(
-                    config.DB_PATH, job_id, include_items=False
-                )
-                if not (
-                    target_state == "canceled"
-                    and current_job
-                    and current_job["state"] == "canceled"
-                ):
-                    raise
+                    "result": result,
+                }
+            )
+        try:
+            operations.set_item_states(config.DB_PATH, job_id, item_updates)
+        except ValueError:
+            current_job = operations.get_job(
+                config.DB_PATH, job_id, include_items=False
+            )
+            if not (
+                item_updates
+                and all(update["state"] == "canceled" for update in item_updates)
+                and current_job
+                and current_job["state"] == "canceled"
+            ):
+                raise
 
     all_canceled = bool(item_results) and all(
         result.get("status") == "canceled" for result in item_results
@@ -940,7 +953,7 @@ def enqueue_photo():
 
         if not config.DB_PATH:
             return jsonify({"error": "StyleAI database path is not configured"}), 500
-        job = operations.get_job(config.DB_PATH, job_id, include_items=True)
+        job = operations.get_job(config.DB_PATH, job_id, include_items=False)
         if job is None:
             return jsonify({"error": f"operation job not found: {job_id}"}), 404
         if job["kind"] != "index":
@@ -959,7 +972,10 @@ def enqueue_photo():
                 len(supplied_ids),
             )
             return jsonify({"error": "Duplicate photo IDs are not allowed"}), 400
-        expected_ids = {item["item_id"] for item in job.get("items", [])}
+        expected_ids = {
+            item["item_id"]
+            for item in operations.get_job_items(config.DB_PATH, job_id, supplied_ids)
+        }
         unexpected_ids = sorted(
             item_id for item_id in supplied_ids if item_id not in expected_ids
         )

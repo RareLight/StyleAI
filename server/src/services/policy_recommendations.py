@@ -157,6 +157,7 @@ def retrieve_policy_neighbor_sets(
     results_per_anchor: int = 300,
     maximum_anchors: int = 6,
     maximum_candidates: int = 1200,
+    include_metadata: bool = True,
 ) -> list[list[RetrievedPolicyNeighbor]]:
     """Retrieve all policy neighborhoods through one bounded Chroma query."""
     if results_per_anchor <= 0 or maximum_anchors <= 0 or maximum_candidates <= 0:
@@ -187,7 +188,7 @@ def retrieve_policy_neighbor_sets(
     response = collection.query(
         query_embeddings=[value.tolist() for value in anchors],
         n_results=bounded_results,
-        include=["metadatas", "distances"],
+        include=["metadatas", "distances"] if include_metadata else ["distances"],
     )
     nested_ids = response.get("ids") or []
     nested_metadata = response.get("metadatas") or []
