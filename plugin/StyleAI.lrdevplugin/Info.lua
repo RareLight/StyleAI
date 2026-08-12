@@ -50,6 +50,4 @@ return {
 			file = "TaskDiscoverUpgradeCandidates.lua",
 		},
 	},
-
-	LrShutdownApp = "ShutdownApp.lua",
 }

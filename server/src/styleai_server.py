@@ -215,6 +215,10 @@ if __name__ == "__main__":
     # Write PID for lifecycle management
     server_lifecycle.write_pid_file()
 
+    # Preserve clean session state and marker ownership if launchd or another
+    # process manager asks the backend to terminate gracefully.
+    server_lifecycle.install_signal_handlers()
+
     # Start optional background schedulers (housekeeping only)
     _start_housekeeping_scheduler()
 

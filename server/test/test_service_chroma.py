@@ -47,6 +47,17 @@ class TestChromaHelpers(unittest.TestCase):
         self.assertAlmostEqual(dist_ortho, 1.0, places=5)
         self.assertIsNone(_cosine_distance(None, emb_a))
 
+    def test_unload_closes_persistent_client(self):
+        client = MagicMock()
+        with (
+            patch.object(chroma_service, "chroma_client", client),
+            patch.object(chroma_service, "collection", MagicMock()),
+        ):
+            chroma_service.unload_collections()
+            client.close.assert_called_once_with()
+            self.assertIsNone(chroma_service.chroma_client)
+            self.assertIsNone(chroma_service.collection)
+
 
 class TestChromaCollectionIsolation(unittest.TestCase):
     """Verify strict isolation between search image collection and training examples collection."""

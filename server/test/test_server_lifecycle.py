@@ -225,3 +225,16 @@ def test_scheduled_shutdown_removes_markers_before_forced_exit(mocker):
     remove_pid.assert_called_once()
     remove_ok.assert_called_once()
     exit_process.assert_called_once_with(0)
+
+
+def test_sigterm_requests_graceful_shutdown(mocker):
+    register = mocker.patch.object(server_lifecycle.signal, "signal")
+    shutdown = mocker.patch.object(server_lifecycle, "request_shutdown")
+
+    server_lifecycle.install_signal_handlers()
+
+    register.assert_called_once()
+    registered_signal, handler = register.call_args.args
+    assert registered_signal == server_lifecycle.signal.SIGTERM
+    handler(registered_signal, None)
+    shutdown.assert_called_once_with()

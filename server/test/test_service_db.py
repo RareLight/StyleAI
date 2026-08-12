@@ -169,6 +169,45 @@ class TestBackupSafety:
         assert os.path.isfile(result["pre_restore_backup"])
         os.remove(archive_path)
 
+    def test_restore_reopens_chroma_before_the_next_write(
+        self, monkeypatch, mocker, tmp_path
+    ):
+        """An atomic restore must not reuse handles to the replaced SQLite file."""
+        from services import chroma as chroma_service
+        from services import training as training_service
+
+        db_path = tmp_path / "styleai.db"
+        db_path.mkdir()
+        monkeypatch.setattr("config.DB_PATH", str(db_path))
+        mocker.patch("core.migrations.run_migrations")
+        mocker.patch("server_lifecycle.recover_catalog_session")
+        mocker.patch("services.policy_runtime.invalidate_runtime_cache")
+
+        try:
+            chroma_service._ensure_initialized()
+            training_service._ensure_initialized()
+            training_service._training_collection.upsert(
+                ids=["before-restore"],
+                embeddings=[[0.1] * training_service.EMBEDDING_DIM],
+                metadatas=[{"photo_id": "before-restore"}],
+            )
+            archive_path, _ = service_db.build_backup_zip(reason="chroma-reopen")
+
+            service_db.restore_backup_archive(archive_path)
+
+            training_service._ensure_initialized()
+            training_service._training_collection.upsert(
+                ids=["after-restore"],
+                embeddings=[[0.2] * training_service.EMBEDDING_DIM],
+                metadatas=[{"photo_id": "after-restore"}],
+            )
+            assert training_service._training_collection.count() == 2
+        finally:
+            chroma_service.unload_collections()
+            training_service.unload_collections()
+            if "archive_path" in locals() and os.path.exists(archive_path):
+                os.remove(archive_path)
+
     def test_restore_rejects_a_different_catalog(self, monkeypatch, tmp_path):
         first = tmp_path / "first" / "styleai.db"
         second = tmp_path / "second" / "styleai.db"

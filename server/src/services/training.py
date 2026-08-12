@@ -66,10 +66,13 @@ def _ensure_initialized() -> None:
 
 
 def unload_collections() -> None:
-    """Release the training Chroma client before a catalog database restore."""
+    """Close the training client before replacing its persistent database."""
     global _chroma_client, _training_collection
+    client = _chroma_client
     _training_collection = None
     _chroma_client = None
+    if client is not None:
+        client.close()
 
 
 def _iter_training_pages(include):
