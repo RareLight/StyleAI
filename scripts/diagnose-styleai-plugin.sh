@@ -24,7 +24,7 @@ echo ""
 # 1. Check for missing critical files
 echo "=== Checking critical files ==="
 MISSING=0
-for file in Info.lua MetadataProvider.lua MetadataTagset.lua Init.lua PluginInfo.lua ShutdownApp.lua AiEditAction.lua TaskAnalyzeAndIndex.lua TaskAiEditPredictive.lua TaskTrainFromEdits.lua TaskReviewAIEditOutcome.lua TaskStyleCatalog.lua TaskDiscoverUpgradeCandidates.lua; do
+for file in Info.lua MetadataProvider.lua MetadataTagset.lua Init.lua PluginInfo.lua AiEditAction.lua TaskAnalyzeAndIndex.lua TaskAiEditPredictive.lua TaskTrainFromEdits.lua TaskReviewAIEditOutcome.lua TaskStyleCatalog.lua TaskDiscoverUpgradeCandidates.lua; do
     if [ -f "${PLUGIN_DIR}/${file}" ]; then
         echo "  OK: $file"
     else

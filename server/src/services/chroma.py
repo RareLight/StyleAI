@@ -164,13 +164,21 @@ def ensure_db_path(db_path: str) -> bool:
 
 
 def unload_collections():
-    """Unload the ChromaDB collections and client to free memory."""
+    """Close ChromaDB and release its shared SQLite system.
+
+    Dropping the Python references is insufficient: PersistentClient instances
+    for the same path share a process-wide Chroma system.  Restore atomically
+    replaces the database directory, so that system must be closed first or a
+    later client can reuse SQLite handles to the replaced files.
+    """
     global chroma_client, collection
     if chroma_client is None:
         return
     logger.info("Unloading ChromaDB collections...")
+    client = chroma_client
     chroma_client = None
     collection = None
+    client.close()
     import gc
 
     gc.collect()

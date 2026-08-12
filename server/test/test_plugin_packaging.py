@@ -24,6 +24,10 @@ def test_release_and_developer_packages_keep_manifest_separation(tmp_path):
 
     release_manifest = (release / "Info.lua").read_text(encoding="utf-8")
     developer_manifest = (developer / "Info.lua").read_text(encoding="utf-8")
+    assert "LrShutdownApp" not in release_manifest
+    assert "LrShutdownApp" not in developer_manifest
+    assert not (release / "ShutdownApp.lua").exists()
+    assert not (developer / "ShutdownApp.lua").exists()
     assert "LrHelpMenuItems" not in release_manifest
     assert "developerBuild = false" in (release / "BuildConfig.lua").read_text(
         encoding="utf-8"
@@ -39,3 +43,14 @@ def test_release_and_developer_packages_keep_manifest_separation(tmp_path):
     assert (packager.SOURCE_PLUGIN / "Info.lua").read_text(
         encoding="utf-8"
     ) == source_manifest
+
+
+def test_macos_development_backend_is_detached_from_lightroom():
+    api_source = (
+        REPOSITORY_ROOT / "plugin" / "StyleAI.lrdevplugin" / "APISearchIndex.lua"
+    ).read_text(encoding="utf-8")
+
+    assert "launchctl submit -l" in api_source
+    assert "com.styleai.server.dev." in api_source
+    assert 'LrPathUtils.child(devServerDir, ".venv")' in api_source
+    assert "venvPython, devServerScript, dbPath" in api_source

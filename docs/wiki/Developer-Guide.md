@@ -92,13 +92,19 @@ clean frozen database unusable.
 - Do not query a newly created collection set in its creation transaction;
   track it in memory until commit.
 
-`ShutdownApp.lua` deliberately calls synchronous `doneFunc` with native
-`pcall` and does nothing else. Lightroom teardown must never wait for HTTP,
-logging, filesystem, tasks, or process launch. The backend unloads idle
-SigLIP2 weights after 10 minutes and exits after 10 request-idle minutes when no
-live operation/admission/index work exists. Explicit developer redeploy uses
+StyleAI deliberately does not register `LrShutdownApp`. Lightroom 15.5 can
+deadlock while dispatching a shutdown callback's completion function, even when
+the callback performs no cleanup. The backend unloads idle SigLIP2 weights
+after 10 minutes and exits after 10 request-idle minutes when no live
+operation/admission/index work exists. Explicit developer redeploy uses
 `scripts/server.sh stop`, which cancels, requests shutdown, verifies the port,
 and escalates only against a recognized StyleAI PID.
+
+On macOS, the copied development plug-in submits the virtualenv Python backend
+directly to `launchd` with a unique job label. This keeps the backend lifetime
+and signal ownership independent of Lightroom. The backend also converts
+`SIGTERM` into its bounded shutdown path so a process-manager stop records
+session state and removes only its owned lifecycle markers.
 
 ## Durable operations and resource admission
 

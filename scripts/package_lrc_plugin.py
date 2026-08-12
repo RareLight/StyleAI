@@ -20,7 +20,7 @@ DEFAULT_OUTPUTS = {
     "release": REPOSITORY_ROOT / "build" / "StyleAI.lrplugin",
     "developer": REPOSITORY_ROOT / "build" / "StyleAI-dev.lrdevplugin",
 }
-MANIFEST_ANCHOR = '\tLrShutdownApp = "ShutdownApp.lua",\n'
+MANIFEST_ANCHOR = "\tLrExportMenuItems = {\n"
 DEVELOPER_HELP_MENU = """\
 \tLrHelpMenuItems = {
 \t\t{

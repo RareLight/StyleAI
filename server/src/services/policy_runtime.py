@@ -202,6 +202,14 @@ def _safe_descriptor_values(value: Any) -> list[str]:
     return []
 
 
+_RESERVED_DESCRIPTOR_KEYS = {"styleai top level keyword"}
+
+
+def _descriptor_input_key(value: str) -> str:
+    """Normalize descriptor identity without imposing a content taxonomy."""
+    return re.sub(r"[\s_-]+", " ", str(value).strip().casefold())
+
+
 def _source_row(
     metadata: dict[str, Any],
     embedding: Any,
@@ -781,10 +789,23 @@ def _descriptor_observations(metadata_rows: list[dict[str, Any]]):
     observations: list[list[DescriptorObservation]] = []
     for metadata in metadata_rows:
         row: list[DescriptorObservation] = []
+        seen: set[str] = set()
         for value in _safe_descriptor_values(metadata.get("user_keywords")):
+            key = _descriptor_input_key(value)
+            if not key or key in _RESERVED_DESCRIPTOR_KEYS or key in seen:
+                continue
+            seen.add(key)
             row.append(DescriptorObservation("user_keyword", value, "user"))
         for key in ("content_tags", "tags"):
             for value in _safe_descriptor_values(metadata.get(key)):
+                descriptor_key = _descriptor_input_key(value)
+                if (
+                    not descriptor_key
+                    or descriptor_key in _RESERVED_DESCRIPTOR_KEYS
+                    or descriptor_key in seen
+                ):
+                    continue
+                seen.add(descriptor_key)
                 row.append(DescriptorObservation("local_visual_tag", value, key))
         observations.append(row)
     return observations

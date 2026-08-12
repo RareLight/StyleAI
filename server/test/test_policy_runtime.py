@@ -53,6 +53,37 @@ def _examples(count=12, *, camera_profile="Adobe Color", photo_prefix="photo"):
     return rows
 
 
+def test_descriptor_inputs_exclude_reserved_marker_and_deduplicate_provenance():
+    observations = policy_runtime._descriptor_observations(
+        [
+            {
+                "user_keywords": [
+                    "Portrait",
+                    "styleai_top-level_keyword",
+                    "portrait",
+                ],
+                "content_tags": [
+                    "Portrait",
+                    "StyleAI Top-Level Keyword",
+                    "Natural Light",
+                ],
+                "tags": ["natural-light", "Indoor"],
+            }
+        ]
+    )[0]
+
+    assert [item.descriptor for item in observations] == [
+        "Portrait",
+        "Natural Light",
+        "Indoor",
+    ]
+    assert [item.descriptor_kind for item in observations] == [
+        "user_keyword",
+        "local_visual_tag",
+        "local_visual_tag",
+    ]
+
+
 @pytest.fixture
 def policy_database(tmp_path, monkeypatch):
     database = tmp_path / "styleai.db"

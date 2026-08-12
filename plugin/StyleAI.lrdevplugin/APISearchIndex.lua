@@ -3143,6 +3143,22 @@ function SearchIndexAPI.startServer(opts)
             if WIN_ENV then
                 startServerCmd = string.format("cd /d \"%s\" && start /b \"\" uv run python src/styleai_server.py --db-path \"%s\" > \"%s\" 2>&1",
                     devServerDir, dbPath, launchLogPath)
+            elseif MAC_ENV then
+                -- LrTasks.execute children can be terminated with Lightroom even when
+                -- the shell backgrounds them with nohup. Submit the development server
+                -- to launchd so it owns an independent process lifetime, matching the
+                -- installed macOS service. A unique label avoids stale-job collisions.
+                local launchLabel = "com.styleai.server.dev." .. tostring(os.time())
+                local venvPython = LrPathUtils.child(LrPathUtils.child(devServerDir, ".venv"), "bin/python")
+                if LrFileUtils.exists(venvPython) then
+                    -- Let launchd supervise Python itself. An intermediate `uv run`
+                    -- process can obscure signal ownership and clean exit status.
+                    startServerCmd = string.format("launchctl submit -l '%s' -o '%s' -e '%s' -- '%s' '%s' --db-path '%s'",
+                        launchLabel, launchLogPath, launchLogPath, venvPython, devServerScript, dbPath)
+                else
+                    startServerCmd = string.format("launchctl submit -l '%s' -o '%s' -e '%s' -- /bin/bash -c 'cd \"%s\" && PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" exec uv run python src/styleai_server.py --db-path \"%s\"'",
+                        launchLabel, launchLogPath, launchLogPath, devServerDir, dbPath)
+                end
             else
                 startServerCmd = string.format("cd '%s' && nohup bash -c 'PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run python src/styleai_server.py --db-path \"%s\"' </dev/null > '%s' 2>&1 &",
                     devServerDir, dbPath, launchLogPath)

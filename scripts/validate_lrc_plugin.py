@@ -24,6 +24,11 @@ def check_info_manifest(plugin_dir):
         info_source = info_file.read()
 
     source_errors = []
+    if re.search(r"\bLrShutdownApp\s*=", info_source):
+        source_errors.append(
+            "[Manifest Error] LrShutdownApp must not be registered; Lightroom 15.5 "
+            "can deadlock while dispatching its completion callback."
+        )
     for key in ("LrLibraryMenuItems", "LrExportMenuItems", "LrHelpMenuItems"):
         assignment = re.search(rf"\b{key}\s*=\s*([^\s,]+)", info_source)
         if not assignment:
@@ -198,11 +203,9 @@ def scan_files(plugin_dir):
 
                 # Check 2: pcall should usually be LrTasks.pcall
                 if pcall_pattern.search(line):
-                    # Lightroom's teardown callback and the synchronous OS probe during
-                    # plugin initialization cannot safely enter the task scheduler.
-                    if file == "ShutdownApp.lua" or (
-                        file == "Init.lua" and line_num == 36
-                    ):
+                    # The synchronous OS probe during plug-in initialization cannot
+                    # safely enter the task scheduler.
+                    if file == "Init.lua" and line_num == 36:
                         continue
                     # Ignore lines that are explicitly doing fallback
                     if "status, a, b, c = pcall(" not in line:

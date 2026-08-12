@@ -112,14 +112,15 @@ during the preceding 36 hours.
   Studio inference. All nine canceled durable jobs are terminal, with no failed
   or nonterminal items; immediate follow-up jobs succeeded, and the later idle
   shutdown discarded zero pending or queued index items.
-- [x] Investigated the reported post-test Lightroom shutdown delay. The backend
-  had already completed an empty-queue idle shutdown, and the installed,
-  packaged, and source `ShutdownApp.lua` files are identical and perform only a
-  synchronous protected `doneFunc` call. macOS recorded termination approval in
-  0.18 seconds followed by roughly 28 seconds of Lightroom post-approval
-  teardown, with no StyleAI activity, plug-in timeout, or Lightroom diagnostic
-  report. Treat as an unassigned one-off unless a controlled repeat reproduces
-  it; capture a process sample if it does.
+- [x] Re-test Lightroom quit after removing `LrShutdownApp`. A controlled repeat
+  reproduced an indefinite shutdown hang after the backend had already exited
+  cleanly. A live process sample placed Lightroom's main thread in
+  `AgShutdownNotification_appWillTerminate`, blocked while the StyleAI callback's
+  `doneFunc` waited on `AgTransitQueue_dequeueToLuaState`. StyleAI has no required
+  application-exit work, so the manifest no longer registers a shutdown hook;
+  the backend continues to own idle shutdown and interrupted-session recovery.
+  The deployed hook-free plug-in was then confirmed to let Lightroom quit
+  promptly without waiting on StyleAI.
 - [x] Verified the 1,118-photo training test crossed the 1,000-ID preflight page
   boundary and deterministically reduced five duplicate source instances to
   1,113 durable items. All 1,113 items succeeded with no failed, canceled, or
@@ -149,6 +150,22 @@ during the preceding 36 hours.
 - [x] Fetch each chunk's ten canonical embedding/source-metric records in one
   bounded Chroma read instead of ten individual reads. Preserve exact per-photo
   contract validation and independently recompute any missing or stale source.
+- [ ] Keep Data & Recovery confirmations and completion status visible above
+  Plug-in Manager on macOS and guard maintenance buttons against repeat
+  submission. The human prune test exposed an obscured modal and two completed
+  prune requests (0 removals followed by 3), each with a valid pre-prune backup.
+- [x] Close both Chroma `PersistentClient` instances before an atomic database
+  restore. Clearing StyleAI's collection references alone left Chroma's shared
+  process-wide SQLite system attached to the replaced `chroma.sqlite3`; reads
+  survived but the next training upload failed every write as read-only. Cover
+  the restore-to-next-write transition with a real persistent-Chroma test.
+- [x] Rebuild once in Lightroom after descriptor-input filtering and confirm
+  learned-style names/evidence omit the reserved `StyleAI Top-Level Keyword`
+  marker and do not repeat terms synchronized as both user keywords and local
+  tags. The implementation prefers user provenance and deduplicates normalized
+  terms per photo. Lightroom displayed six corrected styles; the active
+  generation contains zero reserved markers and zero duplicate normalized
+  descriptors per policy.
 
 ## Goals and product boundaries
 
@@ -521,12 +538,36 @@ the developer package was generated at `build/StyleAI-dev.lrdevplugin`.
   proceeds without service restart or prolonged starvation.
 - [x] Run **Learn From My Edits** on more than one preflight page and on a
   selection containing virtual copies.
-- [ ] Confirm all-already-learned behavior distinguishes an active policy from
-  a catalog that still needs **Styles & Training → Rebuild**.
-- [ ] Restart Lightroom and the service between identity checks to exercise
+- [x] Confirm all-already-learned behavior reports immediate success when an
+  active policy generation is available.
+- [x] Confirm saved examples with no active policy direct the user to
+  **Styles & Training → Rebuild**. The 99-photo Lightroom selection resolved
+  to 34 already-learned eligible sources plus 65 duplicate source instances,
+  returned immediately without creating another operation job, and preserved
+  all 1,517 examples.
+- [x] Restart Lightroom and the service between identity checks to exercise
   cached and uncached resolution.
-- [ ] Verify prune, backup, restore, and service idle shutdown remain safe and
-  nonblocking after the fixes.
+- [x] Re-verify prune, backup, restore, and the first post-restore training
+  write remain safe and nonblocking after the Chroma client-close fix. The
+  Lightroom run saved all 34 new examples, skipped 65 duplicate source
+  instances, completed its training and discovery jobs, and atomically
+  activated a six-policy generation; SQLite integrity remained clean.
+- [x] Verify service idle shutdown remains safe and nonblocking after the
+  maintenance cycle. The first hook-free Lightroom quit exposed that the macOS
+  copied-development `nohup` launcher still shared Lightroom's process lifetime:
+  the backend disappeared without shutdown logs and left its owned PID, ready,
+  and running-session markers behind. The development launch path now submits a
+  uniquely labelled launchd job, matching the independent lifetime of the
+  installed production service. A repeat confirmed that the backend then
+  survived Lightroom exit, but an external termination still bypassed Python
+  cleanup. Launchd now supervises the virtualenv Python process directly instead
+  of an intermediate `uv run`, and `SIGTERM` enters the same bounded owned-marker
+  cleanup path as idle shutdown. The deployed repeat handled Lightroom-exit
+  `SIGTERM` synchronously, recorded a clean catalog session, discarded zero
+  queued items, removed its PID/ready markers, released port 19819, and did not
+  delay Lightroom. An isolated backend-process test also reached its real
+  request-idle threshold, entered bounded shutdown, removed both owned markers,
+  released its loopback port, and exited with status 0.
 - [x] Let the backend idle-shutdown, reopen **Prepare Photos**, and confirm the
   startup wait is followed by enabled SigLIP controls and a ready LM Studio
   status without resetting or re-downloading either model.

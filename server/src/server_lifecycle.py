@@ -10,6 +10,7 @@ to free GPU resources after a period of inactivity.
 import os
 import time
 import json
+import signal
 import config
 from config import logger, IMAGE_MODEL_ID, CLIP_MODEL_NAME, get_torch_device
 import threading
@@ -594,6 +595,16 @@ def request_shutdown():
         os._exit(0)
 
     threading.Thread(target=_exit_after_delay, daemon=True).start()
+
+
+def install_signal_handlers() -> None:
+    """Turn a graceful external termination into normal owned cleanup."""
+
+    def _handle_sigterm(signum, _frame):
+        logger.info("Received signal %s; requesting graceful shutdown", signum)
+        request_shutdown()
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
 
 
 def get_health_status():
