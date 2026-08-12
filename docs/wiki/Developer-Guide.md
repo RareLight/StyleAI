@@ -140,6 +140,13 @@ similarity information may improve scheduling, but complete keywords, title,
 caption, and alt text must never be cloned between photos. Missing pixels must
 fail closed or use an explicitly text-only operation.
 
+The metadata route propagates the durable operation ID into every worker item.
+It checks scoped cancellation while waiting for an upstream embedding, during
+resource admission, and before queued local-model inference. Canceling closes
+submission, releases cached image bytes, and prevents late results from
+changing canceled operation items. The process-wide watchdog remains reserved
+for service shutdown.
+
 Ollama uses loopback port 11434. LM Studio starts from loopback port 1234 and
 may be resolved through the SDK's local dynamic-port discovery. Remote/LAN
 hosts are rejected. Debug image capture requires both Debug and Capture inputs,
@@ -151,8 +158,10 @@ is created lazily, and is bounded by group count and bytes.
 evidence plus absolute Develop targets, and excludes panoramas. It uploads
 bounded chunks and performs one rebuild only after the complete upload. A
 stable-ID preflight prevents exporting examples already stored unless the user
-requested an update. Compatible canonical vectors are reused; remaining neutral
-RAW previews use pressure-aware batched SigLIP2 inference.
+requested an update. Lightroom deduplicates source IDs and sends preflight in
+bounded pages, so the endpoint's per-request limit is not a catalog ceiling.
+Compatible canonical vectors are reused; remaining neutral RAW previews use
+pressure-aware batched SigLIP2 inference.
 
 Within compatible HDR/profile partitions, burst groups preserve validation
 boundaries. Production chooses among the stable baseline, reduced-rank ridge,

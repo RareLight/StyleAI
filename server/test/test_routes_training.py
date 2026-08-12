@@ -133,6 +133,38 @@ def test_training_preflight_returns_only_needed_ids(client, mocker):
     assert payload["needed_photo_ids"] == ["p1", "p3"]
 
 
+def test_training_preflight_accepts_full_transport_page(client, mocker):
+    get_existing = mocker.patch(
+        "routes.training.training_service.get_existing_training_ids",
+        return_value=set(),
+    )
+    photo_ids = [f"p{index}" for index in range(5000)]
+
+    response = client.post(
+        "/training/preflight",
+        json={"photo_ids": photo_ids, "force_retrain": False},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["results"]["needed_photo_ids"] == photo_ids
+    get_existing.assert_called_once_with(photo_ids)
+
+
+def test_training_preflight_rejects_duplicates_with_clear_error(client, mocker):
+    get_existing = mocker.patch(
+        "routes.training.training_service.get_existing_training_ids"
+    )
+
+    response = client.post(
+        "/training/preflight",
+        json={"photo_ids": ["p1", "p1"], "force_retrain": False},
+    )
+
+    assert response.status_code == 400
+    assert "duplicates" in response.get_json()["error"]
+    get_existing.assert_not_called()
+
+
 def test_training_rejects_missing_neutral_source(client, neutral_training_source):
     neutral_training_source.side_effect = ValueError("NEUTRAL_SOURCE_REQUIRED")
     response = client.post(
@@ -161,7 +193,7 @@ def test_batch_embedding_failure_is_isolated_to_one_training_source(mocker):
         "routes.training.source_embeddings.compatible_embedding",
         return_value=None,
     )
-    mocker.patch("services.chroma.get_image", return_value={})
+    mocker.patch("services.chroma.get_images", return_value={})
     images = [mocker.MagicMock(), mocker.MagicMock()]
     mocker.patch(
         "routes.training.source_embeddings.decode_for_embedding",
@@ -206,7 +238,7 @@ def test_batch_embedding_recomputes_after_canonical_cache_error(mocker):
         "routes.training.source_embeddings.resolve_neutral_source",
         return_value=source,
     )
-    mocker.patch("services.chroma.get_image", side_effect=RuntimeError("cache busy"))
+    mocker.patch("services.chroma.get_images", side_effect=RuntimeError("cache busy"))
     image = mocker.MagicMock()
     mocker.patch(
         "routes.training.source_embeddings.decode_for_embedding",
@@ -227,6 +259,44 @@ def test_batch_embedding_recomputes_after_canonical_cache_error(mocker):
 
     assert resolved["photo-1"][0] == [1.0, 0.0]
     image.close.assert_called_once()
+
+
+def test_batch_reuses_complete_cached_training_evidence_without_raw_extraction(mocker):
+    mocker.stopall()
+    from routes.training import _resolve_training_sources_batch
+    from services.policy_features import SOURCE_METRIC_KEYS
+
+    metrics = {key: float(index) for index, key in enumerate(SOURCE_METRIC_KEYS)}
+    metadata = {
+        "source_embedding_provenance": "raw_preview",
+        "source_embedding_fingerprint": "current-fingerprint",
+        "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+        "source_embedding_model": source_embeddings.SOURCE_EMBEDDING_MODEL_ID,
+        "source_embedding_preprocess": source_embeddings.SOURCE_EMBEDDING_PREPROCESS_VERSION,
+        **metrics,
+    }
+    mocker.patch(
+        "services.chroma.get_images",
+        return_value={
+            "ids": ["photo-1"],
+            "metadatas": [metadata],
+            "embeddings": [[1.0, 0.0]],
+        },
+    )
+    mocker.patch(
+        "routes.training.source_embeddings.compatible_embedding",
+        return_value=[1.0, 0.0],
+    )
+    extract = mocker.patch("routes.training.source_embeddings.resolve_neutral_source")
+
+    resolved = _resolve_training_sources_batch([("photo-1", b"", "/photos/one.raw")])
+
+    embedding, image_bytes, provenance, source_stamp = resolved["photo-1"]
+    assert embedding == [1.0, 0.0]
+    assert image_bytes == b""
+    assert provenance == "raw_preview"
+    assert source_embeddings.cached_source_metrics(source_stamp) == metrics
+    extract.assert_not_called()
 
 
 def test_batch_can_defer_policy_rebuild_until_all_chunks_are_saved(client, mocker):
@@ -275,6 +345,7 @@ def test_batch_updates_predeclared_training_job_item(
 ):
     mocker.patch("routes.training.training_service.add_training_example")
     mocker.patch("routes.training.training_service.get_training_count", return_value=1)
+    publish_states = mocker.spy(operations, "set_item_states")
     job, _ = operations.create_job(
         training_operation_db, kind="training", item_ids=["p1"]
     )
@@ -292,6 +363,11 @@ def test_batch_updates_predeclared_training_job_item(
     stored = operations.get_job(training_operation_db, job["job_id"])
     assert stored["state"] == "running"
     assert stored["items"][0]["state"] == "succeeded"
+    assert publish_states.call_count == 2
+    assert [call.args[2][0]["state"] for call in publish_states.call_args_list] == [
+        "running",
+        "succeeded",
+    ]
     completed = operations.complete_submission(training_operation_db, job["job_id"])
     assert completed["state"] == "succeeded"
 

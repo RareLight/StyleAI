@@ -154,29 +154,31 @@ def _needs_unload():
 
 
 def is_model_cached() -> bool:
-    """Check if the model is bundled or cached locally without downloading."""
-    global model
-    with _model_lock:
-        if model is not None:
-            return True
+    """Check if the model is bundled or cached locally without downloading.
 
-        try:
-            cached_model_file = hf_hub_download(
-                repo_id=IMAGE_MODEL_ID,
-                filename="open_clip_model.safetensors",
-                local_files_only=True,
-            )
-            cached_model_dir = os.path.dirname(cached_model_file)
-            if os.path.isdir(cached_model_dir):
-                config_file = os.path.join(cached_model_dir, "open_clip_config.json")
-                weights_file = os.path.join(
-                    cached_model_dir, "open_clip_model.safetensors"
-                )
-                if os.path.isfile(config_file) and os.path.isfile(weights_file):
-                    return True
-            return False
-        except Exception:
-            return False
+    This intentionally does not acquire ``_model_lock``. The endpoint reports
+    installation readiness, not whether the model is currently resident, and
+    must remain responsive while another thread is loading the model.
+    """
+    global model
+    if model is not None:
+        return True
+
+    try:
+        cached_model_file = hf_hub_download(
+            repo_id=IMAGE_MODEL_ID,
+            filename="open_clip_model.safetensors",
+            local_files_only=True,
+        )
+        cached_model_dir = os.path.dirname(cached_model_file)
+        if os.path.isdir(cached_model_dir):
+            config_file = os.path.join(cached_model_dir, "open_clip_config.json")
+            weights_file = os.path.join(cached_model_dir, "open_clip_model.safetensors")
+            if os.path.isfile(config_file) and os.path.isfile(weights_file):
+                return True
+        return False
+    except Exception:
+        return False
 
 
 def load_model():
@@ -184,6 +186,7 @@ def load_model():
     global model, processor, tokenizer, _model_load_error
     with _model_lock:
         if model is not None:
+            _model_load_error = None
             _set_last_used()
             return
 
@@ -300,6 +303,8 @@ def load_model():
                 tokenizer = wrap_tokenizer(tok)
                 _set_last_used()
                 logger.info("Loaded OpenCLIP model via hf-hub fallback")
+
+            _model_load_error = None
 
         except Exception as e:
             _model_load_error = str(e)

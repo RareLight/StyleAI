@@ -122,6 +122,42 @@ class TestProcessImageTask(unittest.TestCase):
             ],
         )
 
+    @patch("server_lifecycle.unload_model")
+    @patch("services.index.get_analysis_service")
+    @patch("services.index.chroma_service")
+    @patch("services.index.exif_service")
+    @patch("server_lifecycle.GLOBAL_CANCEL_EVENT")
+    def test_provider_cancellation_is_a_canceled_result_not_a_batch_error(
+        self,
+        mock_cancel_event,
+        mock_exif,
+        mock_chroma,
+        mock_get_analysis_service,
+        _mock_unload_model,
+    ):
+        mock_cancel_event.is_set.return_value = False
+        mock_exif.extract_location_tags.return_value = None
+        mock_chroma.collection.get.return_value = {"ids": []}
+        mock_get_analysis_service.return_value.analyze_batch.side_effect = (
+            InterruptedError("operation job has been canceled")
+        )
+        item_results = []
+
+        success, failure, errors, warnings = process_image_task(
+            [(make_dummy_jpeg(100, 100), "uuid-1", "test.jpg", "lr-1")],
+            {
+                "regenerate_metadata": True,
+                "compute_embeddings": False,
+                "compute_metadata": True,
+            },
+            item_results=item_results,
+        )
+
+        self.assertEqual((success, failure, errors, warnings), (0, 0, [], []))
+        self.assertEqual(item_results[0]["status"], "canceled")
+        self.assertEqual(item_results[0]["error"], "operation job has been canceled")
+        _mock_unload_model.assert_not_called()
+
     @patch("server_lifecycle.GLOBAL_CANCEL_EVENT")
     @patch("services.index.chroma_service")
     @patch("services.index.exif_service")

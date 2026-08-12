@@ -4,6 +4,7 @@ and the malformed-content/empty-content fallbacks. The SDKs are fully mocked.
 """
 
 import io
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -185,14 +186,40 @@ def test_lmstudio_unexpected_type_returns_failure(lmstudio_provider):
 def test_lmstudio_token_usage_from_stats(lmstudio_provider):
     provider, fake_response = lmstudio_provider
     fake_response.parsed = {"keywords": [], "caption": "x"}
-    stats = MagicMock()
-    stats.prompt_tokens = 12
-    stats.completion_tokens = 34
+    stats = SimpleNamespace(
+        prompt_tokens_count=12,
+        predicted_tokens_count=34,
+        time_to_first_token_sec=0.5,
+        tokens_per_second=20.0,
+    )
     fake_response.stats = stats
     resp = provider.generate_metadata(_request())
     assert resp.success is True
     assert resp.input_tokens == 12
     assert resp.output_tokens == 34
+
+
+def test_lmstudio_passes_configured_max_tokens(lmstudio_provider):
+    provider, fake_response = lmstudio_provider
+    fake_response.parsed = {"keywords": [], "caption": "x"}
+    fake_response.stats = None
+
+    response = provider.generate_metadata(_request(max_tokens=777))
+
+    assert response.success is True
+    from providers import lmstudio as lmstudio_module
+
+    fake_model = lmstudio_module.lms.Client.return_value.__enter__.return_value.llm.model.return_value
+    assert fake_model.respond.call_args.kwargs["config"] == {
+        "temperature": 0.2,
+        "maxTokens": 777,
+    }
+    fake_client = lmstudio_module.lms.Client.return_value.__enter__.return_value
+    fake_client.llm.model.assert_called_once_with(
+        "test-model",
+        ttl=600,
+        config={"contextLength": 8192, "flashAttention": True},
+    )
 
 
 def test_lmstudio_zero_tokens_when_no_stats_no_tokenize(lmstudio_provider):
@@ -204,3 +231,24 @@ def test_lmstudio_zero_tokens_when_no_stats_no_tokenize(lmstudio_provider):
     assert resp.success is True
     assert resp.input_tokens == 0
     assert resp.output_tokens == 0
+
+
+def test_lmstudio_does_not_tokenize_after_scoped_client_closes(lmstudio_provider):
+    provider, fake_response = lmstudio_provider
+    fake_response.parsed = {"keywords": [], "caption": "x"}
+    fake_response.stats = None
+    fake_response.usage = None
+
+    from providers import lmstudio as lmstudio_module
+
+    fake_model = lmstudio_module.lms.Client.return_value.__enter__.return_value.llm.model.return_value
+    fake_model.tokenize = MagicMock(return_value=[1, 2, 3])
+    fake_model.apply_prompt_template = MagicMock(return_value="prompt")
+
+    response = provider.generate_metadata(_request())
+
+    assert response.success is True
+    assert response.input_tokens == 0
+    assert response.output_tokens == 0
+    fake_model.tokenize.assert_not_called()
+    fake_model.apply_prompt_template.assert_not_called()

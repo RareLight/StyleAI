@@ -99,6 +99,71 @@ def test_submission_finalizes_only_after_every_item_is_terminal(operation_db):
     assert completed["details"]["item_state_counts"] == {"succeeded": 2}
 
 
+def test_item_states_publish_as_one_batch(operation_db):
+    job, _ = operations.create_job(operation_db, kind="training", item_ids=["p1", "p2"])
+
+    operations.set_item_states(
+        operation_db,
+        job["job_id"],
+        [
+            {"item_id": "p1", "state": "running"},
+            {"item_id": "p2", "state": "running"},
+        ],
+    )
+    operations.set_item_states(
+        operation_db,
+        job["job_id"],
+        [
+            {"item_id": "p1", "state": "succeeded"},
+            {"item_id": "p2", "state": "succeeded"},
+        ],
+    )
+
+    stored = operations.get_job(operation_db, job["job_id"])
+    assert [item["state"] for item in stored["items"]] == [
+        "succeeded",
+        "succeeded",
+    ]
+
+
+def test_item_states_batch_rolls_back_when_an_item_is_missing(operation_db):
+    job, _ = operations.create_job(operation_db, kind="training", item_ids=["p1", "p2"])
+
+    with pytest.raises(LookupError, match="missing"):
+        operations.set_item_states(
+            operation_db,
+            job["job_id"],
+            [
+                {"item_id": "p1", "state": "running"},
+                {"item_id": "missing", "state": "running"},
+            ],
+        )
+
+    stored = operations.get_job(operation_db, job["job_id"])
+    assert [item["state"] for item in stored["items"]] == ["queued", "queued"]
+
+
+def test_cancel_terminalizes_an_entire_running_batch(operation_db):
+    job, _ = operations.create_job(operation_db, kind="training", item_ids=["p1", "p2"])
+    operations.set_item_states(
+        operation_db,
+        job["job_id"],
+        [
+            {"item_id": "p1", "state": "running"},
+            {"item_id": "p2", "state": "running"},
+        ],
+    )
+
+    canceled = operations.request_cancel(operation_db, job["job_id"])
+
+    assert canceled["state"] == "canceled"
+    stored = operations.get_job(operation_db, job["job_id"])
+    assert [item["state"] for item in stored["items"]] == [
+        "canceled",
+        "canceled",
+    ]
+
+
 def test_lightroom_handoff_preserves_backend_item_result(operation_db):
     job, _ = operations.create_job(operation_db, kind="edit", item_ids=["p1"])
     operations.set_item_state(
@@ -159,12 +224,52 @@ def test_cancel_marks_pre_application_items_and_finalizes(operation_db):
     }
 
 
+@pytest.mark.parametrize("late_state", ["running", "succeeded", "failed"])
+def test_late_worker_update_is_ignored_after_canceled_job_finalizes(
+    operation_db, late_state
+):
+    job, _ = operations.create_job(operation_db, kind="index", item_ids=["p1"])
+    operations.complete_submission(operation_db, job["job_id"])
+    canceled = operations.request_cancel(operation_db, job["job_id"])
+    assert canceled["state"] == "canceled"
+
+    operations.set_item_state(
+        operation_db,
+        job["job_id"],
+        "p1",
+        late_state,
+        error="late worker result",
+    )
+
+    stored = operations.get_job(operation_db, job["job_id"])
+    assert stored["state"] == "canceled"
+    assert stored["items"][0]["state"] == "canceled"
+
+
 def test_inflight_item_cancels_instead_of_entering_client_handoff(operation_db):
     job, _ = operations.create_job(operation_db, kind="edit", item_ids=["p1"])
     operations.set_item_state(operation_db, job["job_id"], "p1", "running")
     operations.request_cancel(operation_db, job["job_id"])
 
     operations.set_item_state(operation_db, job["job_id"], "p1", "committing")
+
+    stored = operations.get_job(operation_db, job["job_id"])
+    assert stored["items"][0]["state"] == "canceled"
+
+
+@pytest.mark.parametrize("late_state", ["succeeded", "failed", "committing"])
+def test_canceled_inflight_item_cannot_publish_late_result(operation_db, late_state):
+    job, _ = operations.create_job(operation_db, kind="metadata", item_ids=["p1"])
+    operations.set_item_state(operation_db, job["job_id"], "p1", "running")
+    operations.request_cancel(operation_db, job["job_id"])
+
+    operations.set_item_state(
+        operation_db,
+        job["job_id"],
+        "p1",
+        late_state,
+        error="late provider result" if late_state == "failed" else None,
+    )
 
     stored = operations.get_job(operation_db, job["job_id"])
     assert stored["items"][0]["state"] == "canceled"
@@ -229,6 +334,18 @@ def test_resource_claims_are_atomic_and_bounded():
     second.join(timeout=2)
     assert second_entered.is_set() is True
     assert admission.snapshot()["in_use"] == {"accelerator": 0, "cpu": 0}
+
+
+def test_resource_claims_release_after_worker_failure():
+    admission = operations.ResourceAdmission({"accelerator": 1, "cpu": 2})
+
+    with pytest.raises(RuntimeError, match="worker failed"):
+        with admission.acquire({"accelerator": 1, "cpu": 2}):
+            assert admission.snapshot()["in_use"] == {"accelerator": 1, "cpu": 2}
+            raise RuntimeError("worker failed")
+
+    assert admission.snapshot()["in_use"] == {"accelerator": 0, "cpu": 0}
+    assert admission.snapshot()["waiting"] == 0
 
 
 def test_waiting_resource_claim_can_be_canceled():

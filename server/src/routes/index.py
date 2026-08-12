@@ -124,7 +124,13 @@ def index_images_batch_base64():
     filename = data.get("filename")
 
     if not image or not photo_id or not filename:
-        logger.info(f"{image}, {photo_id}, {filename}")
+        logger.warning(
+            "Index base64 request missing required fields "
+            "(image_present=%s, photo_id_present=%s, filename_present=%s)",
+            bool(image),
+            bool(photo_id),
+            bool(filename),
+        )
         return jsonify(
             {"error": "Missing required fields: image, photo_id, filename"}
         ), 400
@@ -391,6 +397,7 @@ def generate_metadata_batch():
         # Force overrides for metadata route
         photo_options["compute_embeddings"] = False
         photo_options["compute_metadata"] = True
+        photo_options["job_id"] = job_id
 
         inline_image = task.get("image")
         inline_image_payload = None
@@ -438,14 +445,18 @@ def generate_metadata_batch():
     from server_lifecycle import GLOBAL_CANCEL_EVENT
     from services.index import active_embeddings_uuids
 
-    for photo_id, _, _ in valid_tasks:
-        while photo_id in active_embeddings_uuids:
-            if GLOBAL_CANCEL_EVENT.is_set():
-                return jsonify({"error": "Batch canceled while waiting for embeddings."}), 503
-            time.sleep(0.10)
-
     cpu_claim = min(len(valid_tasks), operations.admission.capacities["cpu_prepare"])
     try:
+        for photo_id, _, _ in valid_tasks:
+            while photo_id in active_embeddings_uuids:
+                if cancel_signal is not None and cancel_signal.is_set():
+                    raise InterruptedError("operation job has been canceled")
+                if GLOBAL_CANCEL_EVENT.is_set():
+                    raise RuntimeError(
+                        "Batch canceled while waiting for embeddings during shutdown."
+                    )
+                time.sleep(0.10)
+
         with operations.admission.acquire(
             {
                 "accelerator": 1,
@@ -518,11 +529,27 @@ def generate_metadata_batch():
                 for photo_id, filename, inline_image_bytes in decoded_tasks
             ]
             if job_id:
-                operations.set_job_state(config.DB_PATH, job_id, "running")
+                if cancel_signal is not None and cancel_signal.is_set():
+                    raise InterruptedError("operation job has been canceled")
+                try:
+                    operations.set_job_state(config.DB_PATH, job_id, "running")
+                except ValueError:
+                    if cancel_signal is None or not cancel_signal.is_set():
+                        raise
+                    raise InterruptedError("operation job has been canceled") from None
                 for photo_id in photo_ids:
-                    operations.set_item_state(
-                        config.DB_PATH, job_id, photo_id, "running"
-                    )
+                    if cancel_signal is not None and cancel_signal.is_set():
+                        raise InterruptedError("operation job has been canceled")
+                    try:
+                        operations.set_item_state(
+                            config.DB_PATH, job_id, photo_id, "running"
+                        )
+                    except ValueError:
+                        if cancel_signal is None or not cancel_signal.is_set():
+                            raise
+                        raise InterruptedError(
+                            "operation job has been canceled"
+                        ) from None
 
             success_count, failure_count, error_messages, warnings = process_image_task(
                 image_triplets,
@@ -530,38 +557,69 @@ def generate_metadata_batch():
                 item_results=item_results,
             )
     except InterruptedError:
+        for photo_id in photo_ids:
+            image_cache.remove_image(photo_id)
+            if job_id:
+                try:
+                    operations.set_item_state(
+                        config.DB_PATH,
+                        job_id,
+                        photo_id,
+                        "canceled",
+                        error="Metadata operation canceled",
+                    )
+                except ValueError:
+                    current_job = operations.get_job(
+                        config.DB_PATH, job_id, include_items=False
+                    )
+                    if not current_job or current_job["state"] != "canceled":
+                        raise
         return jsonify({"error": "operation job has been canceled"}), 409
 
     if job_id:
         results_by_id = {str(result.get("photo_id")): result for result in item_results}
         for photo_id in photo_ids:
             result = results_by_id.get(photo_id)
-            if result and result.get("status") == "succeeded":
+            result_status = (result or {}).get("status")
+            target_state = "committing" if result_status == "succeeded" else "failed"
+            if result_status == "canceled":
+                target_state = "canceled"
+            try:
                 operations.set_item_state(
                     config.DB_PATH,
                     job_id,
                     photo_id,
-                    "committing",
-                    result=result,
-                )
-            else:
-                operations.set_item_state(
-                    config.DB_PATH,
-                    job_id,
-                    photo_id,
-                    "failed",
-                    error=str(
-                        (result or {}).get("error")
-                        or "Metadata generation did not return a terminal result"
+                    target_state,
+                    error=(
+                        None
+                        if target_state == "committing"
+                        else str(
+                            (result or {}).get("error")
+                            or "Metadata generation did not return a terminal result"
+                        )
                     ),
                     result=result,
                 )
+            except ValueError:
+                current_job = operations.get_job(
+                    config.DB_PATH, job_id, include_items=False
+                )
+                if not (
+                    target_state == "canceled"
+                    and current_job
+                    and current_job["state"] == "canceled"
+                ):
+                    raise
 
-    status_code = 500 if success_count == 0 else 200
+    all_canceled = bool(item_results) and all(
+        result.get("status") == "canceled" for result in item_results
+    )
+    response_status = "canceled" if all_canceled else "processed"
+    status_code = 200 if all_canceled or success_count > 0 else 500
 
     return jsonify(
         {
-            "status": "processed",
+            "status": response_status,
             "success_count": success_count,
             "failure_count": failure_count,
             "items": item_results,
@@ -675,7 +733,7 @@ def remove_image():
 
     try:
         chroma_service.delete_image(photo_id)
-        logger.info(f"Image ID {photo_id} removed from ChromaDB.")
+        logger.info("Removed one image record from ChromaDB")
         return jsonify({"status": "removed", "photo_id": photo_id, "uuid": photo_id})
     except Exception as e:
         logger.error(f"Error removing image {photo_id}: {e}")
@@ -698,7 +756,7 @@ def remove_metadata():
         cleared = chroma_service.clear_image_metadata(photo_id)
         if not cleared:
             return jsonify({"error": "photo_id not found"}), 404
-        logger.info(f"Metadata cleared for photo_id {photo_id} (embeddings kept).")
+        logger.info("Cleared metadata for one photo (embedding kept)")
         return jsonify({"status": "ok", "photo_id": photo_id, "uuid": photo_id})
     except Exception as e:
         logger.error(f"Error clearing metadata for {photo_id}: {e}", exc_info=True)
@@ -733,7 +791,7 @@ def get_photo_data():
         logger.debug(f"Retrieved photo data for photo_id {photo_id}: {photo_data}")
 
         if not photo_data or not photo_data["ids"]:
-            logger.warning(f"Photo with photo_id {photo_id} not found in database")
+            logger.warning("Requested photo was not found in the database")
             return jsonify({"status": "error", "error": "Photo not found"}), 404
 
         # Extract metadata
@@ -752,7 +810,7 @@ def get_photo_data():
 
         for key, value in metadata_dict.items():
             if key in metadata_keys:
-                logger.info(f"Processing metadata field {key}: {value}")
+                logger.debug("Processing stored metadata field %s", key)
                 # Keywords must be returned as JSON string (not parsed) for plugin to handle
                 if key == "keywords" and isinstance(value, str) and value:
                     # Keep keywords as JSON string for plugin to parse
@@ -772,18 +830,16 @@ def get_photo_data():
                 try:
                     edit_recipe = json.loads(value)
                 except (json.JSONDecodeError, ValueError):
-                    logger.warning(f"Error decoding edit_recipe JSON for {photo_id}")
+                    logger.warning("Error decoding stored edit_recipe JSON")
             elif key == "edit_warnings" and isinstance(value, str) and value:
                 try:
                     decoded_warnings = json.loads(value)
                     if isinstance(decoded_warnings, list):
                         edit_warnings = decoded_warnings
                 except (json.JSONDecodeError, ValueError):
-                    logger.warning(f"Error decoding edit_warnings JSON for {photo_id}")
+                    logger.warning("Error decoding stored edit_warnings JSON")
 
-        logger.info(
-            f"Retrieved data for photo {photo_id}: {len(metadata_fields)} metadata fields"
-        )
+        logger.debug("Retrieved %d stored metadata fields", len(metadata_fields))
 
         return jsonify(
             {
@@ -898,7 +954,11 @@ def enqueue_photo():
             for item in images_data
         ]
         if len(supplied_ids) != len(set(supplied_ids)):
-            import logging; logging.warning(f"Duplicate photo IDs detected: {supplied_ids}"); return jsonify({"error": "Duplicate photo IDs are not allowed"}), 400
+            logger.warning(
+                "Rejected index batch containing duplicate photo IDs (count=%d)",
+                len(supplied_ids),
+            )
+            return jsonify({"error": "Duplicate photo IDs are not allowed"}), 400
         expected_ids = {item["item_id"] for item in job.get("items", [])}
         unexpected_ids = sorted(
             item_id for item_id in supplied_ids if item_id not in expected_ids

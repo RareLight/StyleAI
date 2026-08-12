@@ -294,6 +294,7 @@ class AnalysisService:
             if job_id:
                 from services import operations
                 from config import DB_PATH
+
                 if operations.is_cancel_requested(DB_PATH, job_id):
                     raise InterruptedError("operation job has been canceled")
             # Inject per-image EXIF location data without mutating the options dict
@@ -327,11 +328,15 @@ class AnalysisService:
             try:
                 idx, response = future.result()
                 results[idx] = response
-            except (InterruptedError, RuntimeError) as e:
+            except (InterruptedError, RuntimeError):
+                for pending in futures:
+                    pending.cancel()
                 raise
-            except Exception as e:
+            except Exception as exc:
                 logger.error(
-                    f"Error in concurrent metadata generation: {e}", exc_info=True
+                    "Error in concurrent metadata generation: %s",
+                    exc,
+                    exc_info=True,
                 )
 
         return results
@@ -366,7 +371,7 @@ class AnalysisService:
             logger.warning(warning_msg)
 
         selected_provider = self.providers[provider]
-        logger.info(f"Generating metadata for {uuid} using {provider}")
+        logger.info("Generating metadata using %s", provider)
 
         request = MetadataGenerationRequest(
             image_data=image_data,
@@ -407,7 +412,7 @@ class AnalysisService:
         if request.location_data:
             ctx_summary.append("Location")
         if ctx_summary:
-            logger.info(f"Context for {uuid}: {', '.join(ctx_summary)}")
+            logger.info("Metadata context: %s", ", ".join(ctx_summary))
         else:
             logger.debug(f"No additional context for {uuid}")
 

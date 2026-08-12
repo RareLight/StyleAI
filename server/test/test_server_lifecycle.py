@@ -171,6 +171,7 @@ def test_tokenizer_fallback_does_not_reload_vision_model(mocker, tmp_path):
     server_lifecycle.model = None
     server_lifecycle.processor = None
     server_lifecycle.tokenizer = None
+    server_lifecycle._model_load_error = "earlier transient failure"
 
     server_lifecycle.load_model()
 
@@ -179,10 +180,26 @@ def test_tokenizer_fallback_does_not_reload_vision_model(mocker, tmp_path):
     assert server_lifecycle.model is model_obj
     assert server_lifecycle.processor is processor
     assert server_lifecycle.tokenizer is fallback_tokenizer
+    assert server_lifecycle._model_load_error is None
 
     server_lifecycle.model = None
     server_lifecycle.processor = None
     server_lifecycle.tokenizer = None
+
+
+def test_cached_model_check_does_not_wait_for_model_load_lock(mocker, tmp_path):
+    cached_dir = tmp_path / "model"
+    cached_dir.mkdir()
+    weights = cached_dir / "open_clip_model.safetensors"
+    weights.write_bytes(b"weights")
+    (cached_dir / "open_clip_config.json").write_text("{}", encoding="utf-8")
+    model_lock = MagicMock()
+    mocker.patch.object(server_lifecycle, "_model_lock", model_lock)
+    mocker.patch.object(server_lifecycle, "model", None)
+    mocker.patch.object(server_lifecycle, "hf_hub_download", return_value=str(weights))
+
+    assert server_lifecycle.is_model_cached() is True
+    model_lock.__enter__.assert_not_called()
 
 
 def test_scheduled_shutdown_removes_markers_before_forced_exit(mocker):
