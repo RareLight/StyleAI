@@ -310,6 +310,42 @@ def test_index_queue_updates_only_predeclared_operation_items(
     index_service.active_embeddings_uuids.discard("p1")
 
 
+def test_index_queue_validates_only_submitted_operation_items(
+    client, monkeypatch, mocker, index_operation_db
+):
+    bounded_queue = queue.Queue(maxsize=2)
+    monkeypatch.setattr(index_service, "index_queue", bounded_queue)
+    index_service._index_queue_accepting.set()
+    job, _ = operations.create_job(
+        index_operation_db,
+        kind="index",
+        item_ids=["p1", *[f"other-{index}" for index in range(100)]],
+    )
+    get_job = mocker.spy(operations, "get_job")
+    get_items = mocker.spy(operations, "get_job_items")
+
+    response = client.post(
+        "/index_queue",
+        json={
+            "job_id": job["job_id"],
+            "images": [
+                {
+                    "image": base64.b64encode(b"image").decode("ascii"),
+                    "photo_id": "p1",
+                    "filename": "p1.jpg",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 202
+    assert get_job.call_args_list[0].kwargs == {"include_items": False}
+    get_items.assert_called_once_with(index_operation_db, job["job_id"], ["p1"])
+    bounded_queue.get_nowait()
+    bounded_queue.task_done()
+    index_service.active_embeddings_uuids.discard("p1")
+
+
 def test_metadata_batch_missing_image_fails_without_consuming_present_image(
     client, mocker
 ):
@@ -556,6 +592,7 @@ def test_metadata_job_id_reaches_every_worker_option(
         index_operation_db, kind="index", item_ids=["p1", "p2"]
     )
 
+    publish_states = mocker.spy(operations, "set_item_states")
     response = client.post(
         "/metadata/generate_batch",
         json={
@@ -575,6 +612,19 @@ def test_metadata_job_id_reaches_every_worker_option(
     assert [option["job_id"] for option in captured_options] == [
         job["job_id"],
         job["job_id"],
+    ]
+    published_batches = [
+        call.args[2]
+        for call in publish_states.call_args_list
+        if len(call.args) >= 3 and call.args[1] == job["job_id"]
+    ]
+    assert [update["state"] for update in published_batches[0]] == [
+        "running",
+        "running",
+    ]
+    assert [update["state"] for update in published_batches[1]] == [
+        "committing",
+        "committing",
     ]
 
 

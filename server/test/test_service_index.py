@@ -6,6 +6,7 @@ batch processing flow and cancellation handling, and keyword flattening.
 
 import io
 import unittest
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 import numpy as np
 from PIL import Image
@@ -228,6 +229,7 @@ class TestProcessImageTask(unittest.TestCase):
         self.assertEqual(failure, 0)
         self.assertEqual(errors, [])
         mock_chroma.add_image.assert_called_once()
+        mock_exif.extract_location_tags.assert_not_called()
         stored_metadata = mock_chroma.add_image.call_args.args[2]
         self.assertEqual(
             stored_metadata["source_embedding_provenance"],
@@ -268,6 +270,59 @@ class TestProcessImageTask(unittest.TestCase):
         self.assertEqual(failure, 0)
         # Should not call add_image because regenerate_metadata='false' and image already has embedding
         mock_chroma.add_image.assert_not_called()
+
+
+class TestDynamicGpuBatch(unittest.TestCase):
+    @patch("services.index._maybe_collect_garbage")
+    @patch("services.index.index_queue.task_done")
+    @patch("services.operations.admission.acquire", return_value=nullcontext())
+    @patch("services.operations.set_item_states")
+    @patch("services.operations.is_cancel_requested", return_value=False)
+    @patch("services.index.process_image_task")
+    @patch("services.index.config.DB_PATH", "/tmp/styleai-operation-test")
+    def test_operation_states_are_published_once_per_bounded_batch(
+        self,
+        mock_process,
+        _mock_cancel,
+        mock_set_states,
+        _mock_acquire,
+        mock_task_done,
+        _mock_collect,
+    ):
+        def process(_triplets, _options, *, item_results):
+            item_results.extend(
+                [
+                    {"photo_id": "p1", "status": "succeeded"},
+                    {"photo_id": "p2", "status": "succeeded"},
+                ]
+            )
+            return 2, 0, [], []
+
+        mock_process.side_effect = process
+        batch = [
+            {
+                "uuid": photo_id,
+                "image_bytes": b"image",
+                "filename": f"{photo_id}.jpg",
+                "lr_uuid": None,
+                "options": {},
+                "job_id": "job-1",
+            }
+            for photo_id in ("p1", "p2")
+        ]
+
+        index_service._process_dynamic_gpu_batch(batch)
+
+        self.assertEqual(mock_set_states.call_count, 2)
+        self.assertEqual(
+            [update["state"] for update in mock_set_states.call_args_list[0].args[2]],
+            ["running", "running"],
+        )
+        self.assertEqual(
+            [update["state"] for update in mock_set_states.call_args_list[1].args[2]],
+            ["succeeded", "succeeded"],
+        )
+        self.assertEqual(mock_task_done.call_count, 2)
 
 
 if __name__ == "__main__":

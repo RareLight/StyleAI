@@ -549,6 +549,97 @@ def test_batch_source_cache_misses_use_one_embedding_call(mocker):
         image.close.assert_called_once()
 
 
+def test_batch_source_cache_hits_use_one_order_independent_chroma_read(mocker):
+    from routes.style_edit import _prepare_batch_source_embeddings
+
+    metrics = {key: 0.25 for key in SOURCE_METRIC_KEYS}
+    bulk_get = mocker.patch(
+        "routes.style_edit.chroma_service.get_images",
+        return_value={
+            "ids": ["photo-2", "photo-1"],
+            "metadatas": [
+                {"source_embedding_provenance": "raw_preview", "slot": 2},
+                {"source_embedding_provenance": "raw_preview", "slot": 1},
+            ],
+            "embeddings": [[0.0, 1.0], [1.0, 0.0]],
+        },
+    )
+
+    def compatible(existing, **_kwargs):
+        return existing["embeddings"][0]
+
+    mocker.patch(
+        "routes.style_edit.source_embeddings.compatible_embedding",
+        side_effect=compatible,
+    )
+    mocker.patch(
+        "routes.style_edit.source_embeddings.cached_source_metrics",
+        side_effect=lambda metadata: metrics if metadata.get("slot") else None,
+    )
+    resolve = mocker.patch("routes.style_edit.source_embeddings.resolve_neutral_source")
+    items = [
+        {
+            "photo_id": "photo-1",
+            "image_bytes": b"rendered-one",
+            "filename": "one.jpg",
+            "options": {"raw_filepath": "/photos/one.cr3"},
+        },
+        {
+            "photo_id": "photo-2",
+            "image_bytes": b"rendered-two",
+            "filename": "two.jpg",
+            "options": {"raw_filepath": "/photos/two.cr3"},
+        },
+    ]
+
+    prepared = _prepare_batch_source_embeddings(items, "operation-1")
+
+    bulk_get.assert_called_once_with(["photo-1", "photo-2"])
+    assert [item["embedding"] for item in prepared] == [[1.0, 0.0], [0.0, 1.0]]
+    assert all(item["cache_hit"] for item in prepared)
+    resolve.assert_not_called()
+
+
+def test_batch_source_bulk_read_failure_uses_compatible_per_photo_fallback(mocker):
+    from routes.style_edit import _prepare_batch_source_embeddings
+
+    metrics = {key: 0.5 for key in SOURCE_METRIC_KEYS}
+    mocker.patch(
+        "routes.style_edit.chroma_service.get_images",
+        side_effect=RuntimeError("bulk read unavailable"),
+    )
+    fallback = mocker.patch(
+        "routes.style_edit._get_canonical_source_embedding",
+        return_value=(
+            [1.0, 0.0],
+            {"source_embedding_provenance": "raw_preview"},
+            metrics,
+        ),
+    )
+    item = {
+        "photo_id": "photo-1",
+        "image_bytes": b"rendered-one",
+        "filename": "one.jpg",
+        "options": {"raw_filepath": "/photos/one.cr3"},
+    }
+
+    prepared = _prepare_batch_source_embeddings([item], "operation-1")
+
+    fallback.assert_called_once_with(
+        "photo-1",
+        raw_filepath="/photos/one.cr3",
+        rendered_image_bytes=b"rendered-one",
+    )
+    assert prepared == [
+        {
+            "embedding": [1.0, 0.0],
+            "source_provenance": "raw_preview",
+            "source_metrics": metrics,
+            "cache_hit": True,
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     ("member_tier", "expected_exposure"),
     (("policy_coherent", -0.25), ("global_target_reuse", 0.5)),
