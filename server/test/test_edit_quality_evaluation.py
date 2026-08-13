@@ -1,7 +1,17 @@
+import json
 import math
+from pathlib import Path
+
+from jsonschema.validators import Draft202012Validator
 
 from services import edit_history
 from services.edit_quality_evaluation import evaluate_applied_edit_histories
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+APPLIED_EDIT_QUALITY_SCHEMA = (
+    REPOSITORY_ROOT / "docs" / "schemas" / "applied-edit-quality-v2.schema.json"
+)
 
 
 def _applied_history(
@@ -109,6 +119,13 @@ def test_empty_applied_edit_report_is_well_defined():
     assert report["delivered_target_corrections"]["evaluated_reviews"] == 0
     assert report["schema_version"] == "applied-edit-quality-v2"
     assert report["burst_coherence"]["admitted_photos"] == 0
+
+
+def test_generated_report_conforms_to_applied_edit_quality_v2_schema():
+    schema = json.loads(APPLIED_EDIT_QUALITY_SCHEMA.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+
+    Draft202012Validator(schema).validate(evaluate_applied_edit_histories([]))
 
 
 def test_burst_report_tracks_coverage_leakage_and_geometry_disagreement(tmp_path):
