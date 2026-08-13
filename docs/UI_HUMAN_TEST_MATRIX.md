@@ -1,9 +1,8 @@
 # StyleAI UI Human Test Matrix
 
-Use a backed-up disposable Lightroom Classic catalog. Test the checked-in
-release configuration first (`developerBuild=false` in `BuildConfig.lua`). Do
-not confirm deletion, pruning, or restore actions against the production
-catalog.
+Use a backed-up disposable Lightroom Classic catalog. Test first with **Enable
+Developer Options** off. Do not confirm deletion, pruning, or restore actions
+against the production catalog.
 
 ## 1. Release navigation and Settings & Status
 
@@ -11,7 +10,8 @@ catalog.
    Library and Develop modules.
 2. Confirm the six production commands appear in the documented order, all
    dialog-opening commands use ellipses, no duplicates appear in Export, and no
-   developer commands appear in Help.
+   developer commands do not appear in Help and no developer-tool controls are
+   visible in Plug-in Manager while Developer Options is disabled.
 3. Open Plugin Manager and verify the Status & Setup, Styles, Data & Recovery,
    Support & Debug, Updates, and About sections appear in that order. Confirm
    overall, background service, vision model, optional metadata model,
@@ -126,7 +126,7 @@ catalog.
     profile/HDR, virtual copy, application receipt, Develop readback,
     progress/error accounting, and source order. Cancel during an in-flight
     batch and verify already applied handoffs finish while new work stops.
-12. In a developer build only, enable
+12. With Developer Options enabled, enable
     `STYLEAI_EDIT_BURST_EXACT_REUSE=1` and compare its output with independent
     inference. Confirm white balance, geometry, profile/HDR, and sparse
     families remain photo-specific; test cached/uncached RAW previews, missing
@@ -162,12 +162,13 @@ button reachability, regular-size supporting text, wrapped text, bounded popup
 menus, clipped controls, overlapping controls, scroller access, dialog resize
 behavior, and status meaning without color.
 
-## 8. Developer-build smoke suite
+## 8. Developer-options smoke suite
 
-Create a separate development package with
-`python scripts/package_lrc_plugin.py developer`. Confirm the four Help commands
-appear, then run
+In Plug-in Manager, select **Enable Developer Options**, close the dialog, and
+confirm the developer-tool buttons appear immediately without installing
+another plug-in.
+Then run
 **Developer: Run Automated Tests...**. Record Lightroom version, operating
 system, display scale, language, pass/fail totals, and the first error for any
-failure. The generated package lives under ignored `build/`; the checked-in
-release manifest remains unchanged.
+failure. Turn Developer Options off again and confirm every developer control
+is hidden and direct task entry points still fail closed before doing work.

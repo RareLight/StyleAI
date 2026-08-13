@@ -132,6 +132,43 @@ def test_metadata_benchmark_backend_service_has_no_persistence_dependency():
     assert "catalog_write" not in source
 
 
+def test_single_build_developer_options_hide_and_gate_every_tool():
+    info_source = _source("Info.lua")
+    settings_source = _source("SettingsManager.lua")
+    dialog_source = _source("PluginInfoDialogSections.lua")
+    gate_source = _source("DeveloperOptions.lua")
+
+    assert "LrHelpMenuItems" not in info_source
+    assert "enableDeveloperOptions = false" in settings_source
+    assert 'bind("enableDeveloperOptions")' in dialog_source
+    assert 'visible = bind("enableDeveloperOptions")' in dialog_source
+    assert 'visible = bind("debugMode")' in dialog_source
+    assert 'propertyTable:addObserver("enableDeveloperOptions"' in dialog_source
+    assert 'propertyTable.runDeveloperTool("TaskMetadataBenchmark")' in dialog_source
+    assert (
+        "prefs.enableDeveloperOptions = propertyTable.enableDeveloperOptions == true"
+        in dialog_source
+    )
+    assert "developerPrefs.enableDeveloperOptions == true" in gate_source
+    assert "DeveloperOptions/Disabled=" in gate_source
+    assert not (PLUGIN_ROOT / "BuildConfig.lua").exists()
+
+    entry_points = {
+        "TaskAutomatedTests.lua": "local confirm = LrDialogs.confirm",
+        "TaskBenchmark.lua": "local catalog = LrApplication.activeCatalog()",
+        "TaskMetadataBenchmark.lua": "MetadataBenchmark.run(ctx)",
+        "TaskRenderingStateCapabilitySpike.lua": "local ok, err = LrTasks.pcall(runSpike)",
+        "TaskReconcileAIEditState.lua": "Util.waitForServerDialog",
+    }
+    for filename, first_work in entry_points.items():
+        source = _source(filename)
+        assert ".run()" in source
+        assert "return Task" in source
+        gate = source.index("DeveloperOptions.requireEnabled()")
+        work = source.index(first_work, gate)
+        assert gate < work
+
+
 def test_training_uses_raw_source_contract_without_rendered_preview_payloads():
     task_source = _source("TaskTrainFromEdits.lua")
 

@@ -17,15 +17,14 @@ The canonical cross-module entry point is **File > Plug-in Extras**.
 | Styles & Training... | `TaskStyleCatalog.lua` | Browse, rename, reveal, and rebuild learned styles |
 | Find More Training Examples... | `TaskDiscoverUpgradeCandidates.lua` | Review policy-specific candidate photos and record evaluation-only feedback |
 
-Release builds register one cross-module File-menu command set and no developer
-Help commands. `python scripts/package_lrc_plugin.py developer` generates a
-separate package with literal Help-menu registrations and flips
-`BuildConfig.developerBuild`, adding the
-automated tests, benchmark, rendering capability spike, and reconciliation
-command only to developer builds. Runtime Debug never
-changes registered menus.
+The canonical plug-in does not register developer Help commands because
+Lightroom cannot hide static manifest entries from a runtime preference.
+**Enable Developer Options** in Plug-in Manager defaults off; turning it on
+immediately reveals developer-tool buttons in **Support & Debug**, and turning
+it off hides them. Every tool also fails closed through that preference. Debug
+options and Developer options are separate visibility gates.
 
-The developer package also adds **Compare Local Metadata Models...**. It
+**Compare Local Metadata Models...**
 snapshots the current photo selection before opening its dialog, creates a
 uniquely named collection under **StyleAI → Benchmarks**, prepares each proxy
 once, and runs the same bytes successively through every selected local vision

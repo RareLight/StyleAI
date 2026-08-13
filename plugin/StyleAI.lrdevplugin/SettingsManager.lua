@@ -28,6 +28,7 @@ function SettingsManager.initializeDefaults()
         prompt = Defaults.defaultPromptName,
         periodicalUpdateCheck = false,
         debugMode = false,
+        enableDeveloperOptions = false,
         captureLlmInputs = false,
         submitFolderName = false,
         useGlobalPhotoId = true,

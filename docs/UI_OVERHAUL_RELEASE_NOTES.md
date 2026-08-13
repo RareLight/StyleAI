@@ -1,7 +1,9 @@
 # UI Overhaul Release Notes
 
 These notes describe the completed 0.8-era UI transition. For the maintained
-UI contract, use `UI_BEHAVIOR_CONTRACTS.md`.
+UI contract, use `UI_BEHAVIOR_CONTRACTS.md`. The former developer/release build
+separation described below was superseded by the single-build, dynamically
+hidden Plug-in Manager Developer Options panel in August 2026.
 
 ## Navigation and workflow names
 

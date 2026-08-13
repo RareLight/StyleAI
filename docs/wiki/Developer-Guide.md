@@ -13,21 +13,28 @@ cd server
 uv run python scripts/download_models.py
 ```
 
-The checked-in `plugin/StyleAI.lrdevplugin` is the release source and registers
-only the six production workflows. Generate disposable packages without
-changing that manifest:
+The checked-in `plugin/StyleAI.lrdevplugin` is the canonical deployed source.
+It registers only production menu workflows. Developer tasks remain hidden
+until **Enable Developer Options** is selected under **File → Plug-in Manager →
+StyleAI → Support & Debug**; the preference defaults off and is independent of
+**Enable Debug options**. Enabling it immediately reveals the developer-tool
+buttons in that section, and disabling it hides them again.
+
+Lightroom cannot preference-gate static Help-menu registrations, so developer
+tools intentionally live in the dynamic Plug-in Manager panel instead. Their
+entry points retain a second fail-closed preference check. No separate
+development plug-in or database is required.
+
+Generate a disposable package when needed with:
 
 ```sh
-python scripts/package_lrc_plugin.py developer
 python scripts/package_lrc_plugin.py release
 ```
 
-The developer package adds automated tests, benchmarks, edit reconciliation,
-and rendering-state capability checks to Lightroom's Help menu.
-
 ### Local metadata model benchmark
 
-**Help → Developer: Compare Local Metadata Models...** is a non-persisting
+**Plug-in Manager → StyleAI → Support & Debug → Compare Local Metadata
+Models...** is a non-persisting
 evaluation harness. Select a representative photo set before opening it, choose
 one or more locally available Ollama or LM Studio vision models, and hold the
 prompt and generation settings constant across the run. StyleAI creates a
