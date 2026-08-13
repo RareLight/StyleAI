@@ -1,7 +1,15 @@
 local MetadataBenchmark = require("MetadataBenchmark")
+local DeveloperOptions = require("DeveloperOptions")
 
-LrTasks.startAsyncTask(function()
-	LrFunctionContext.callWithContext("metadataBenchmarkTask", function(ctx)
-		MetadataBenchmark.run(ctx)
+local TaskMetadataBenchmark = {}
+
+function TaskMetadataBenchmark.run()
+	LrTasks.startAsyncTask(function()
+		LrFunctionContext.callWithContext("metadataBenchmarkTask", function(ctx)
+			if not DeveloperOptions.requireEnabled() then return end
+			MetadataBenchmark.run(ctx)
+		end)
 	end)
-end)
+end
+
+return TaskMetadataBenchmark

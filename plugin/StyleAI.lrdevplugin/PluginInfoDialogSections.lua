@@ -1,6 +1,6 @@
 local TaskDiagnostics = require("TaskDiagnostics")
 local UIFactory = require("UIFactory")
-local BuildConfig = require("BuildConfig")
+local DeveloperOptions = require("DeveloperOptions")
 
 PluginInfoDialogSections = {}
 
@@ -20,11 +20,11 @@ end
 
 function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.keepChecksRunning = true
-	propertyTable.developerBuild = BuildConfig.developerBuild == true
 	propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck == true
 	propertyTable.processingLoadMode = processingLoadMode(prefs.indexingPerformanceProfile)
 
 	propertyTable.debugMode = prefs.debugMode == true
+	propertyTable.enableDeveloperOptions = prefs.enableDeveloperOptions == true
 	propertyTable.captureLlmInputs = propertyTable.debugMode and prefs.captureLlmInputs == true
 	propertyTable.captureLlmInputsPath = prefs.captureLlmInputsPath or ""
 	propertyTable.captureInfoText = LOC("$$$/StyleAI/Debug/NoCaptures=No diagnostic captures saved.")
@@ -33,6 +33,31 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 			properties.captureLlmInputs = false
 		end
 	end)
+	propertyTable:addObserver("enableDeveloperOptions", function(_, _, newValue)
+		-- Developer buttons live in this dialog, so persist the gate immediately
+		-- rather than requiring the user to close and reopen Plug-in Manager.
+		prefs.enableDeveloperOptions = newValue == true
+	end)
+	propertyTable.runDeveloperTool = function(moduleName)
+		if not DeveloperOptions.requireEnabled() then return end
+		local loaded, tool = LrTasks.pcall(function() return require(moduleName) end)
+		if not loaded or type(tool) ~= "table" or type(tool.run) ~= "function" then
+			LrDialogs.message(
+				LOC("$$$/StyleAI/DeveloperOptions/LaunchFailedTitle=Developer Tool Unavailable"),
+				LOC("$$$/StyleAI/DeveloperOptions/LaunchFailed=The developer tool could not be loaded: ^1", tostring(tool)),
+				"critical"
+			)
+			return
+		end
+		local started, startError = LrTasks.pcall(function() tool.run() end)
+		if not started then
+			LrDialogs.message(
+				LOC("$$$/StyleAI/DeveloperOptions/LaunchFailedTitle=Developer Tool Unavailable"),
+				tostring(startError),
+				"critical"
+			)
+		end
+	end
 
 	local function refreshCaptureInfo()
 		if propertyTable.debugMode ~= true then return end
@@ -470,6 +495,50 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				}),
 				f:separator({ fill_horizontal = 1 }),
 				f:checkbox({
+					value = bind("enableDeveloperOptions"),
+					title = LOC("$$$/StyleAI/DeveloperOptions/Enable=Enable Developer Options"),
+				}),
+				UIFactory.HelpText(f, {
+					visible = bind("enableDeveloperOptions"),
+					title = LOC("$$$/StyleAI/DeveloperOptions/Warning=These tools are intended for testing and may perform intensive or catalog-changing operations."),
+				}),
+				f:column({
+					visible = bind("enableDeveloperOptions"),
+					fill_horizontal = 1,
+					spacing = f:control_spacing(),
+					f:row({
+						f:push_button({
+							title = LOC("$$$/StyleAI/DeveloperOptions/RunTests=Run Automated Tests..."),
+							action = function() propertyTable.runDeveloperTool("TaskAutomatedTests") end,
+						}),
+					}),
+					f:row({
+						f:push_button({
+							title = LOC("$$$/StyleAI/DeveloperOptions/RunBenchmark=Run Performance Benchmark..."),
+							action = function() propertyTable.runDeveloperTool("TaskBenchmark") end,
+						}),
+					}),
+					f:row({
+						f:push_button({
+							title = LOC("$$$/StyleAI/DeveloperOptions/CompareMetadataModels=Compare Local Metadata Models..."),
+							action = function() propertyTable.runDeveloperTool("TaskMetadataBenchmark") end,
+						}),
+					}),
+					f:row({
+						f:push_button({
+							title = LOC("$$$/StyleAI/DeveloperOptions/TestRendering=Test Profile and HDR Capabilities..."),
+							action = function() propertyTable.runDeveloperTool("TaskRenderingStateCapabilitySpike") end,
+						}),
+					}),
+					f:row({
+						f:push_button({
+							title = LOC("$$$/StyleAI/DeveloperOptions/Reconcile=Reconcile Selected AI Edits..."),
+							action = function() propertyTable.runDeveloperTool("TaskReconcileAIEditState") end,
+						}),
+					}),
+				}),
+				f:separator({ fill_horizontal = 1 }),
+				f:checkbox({
 					value = bind("debugMode"),
 					title = LOC("$$$/StyleAI/Debug/Enable=Enable Debug options"),
 				}),
@@ -628,11 +697,6 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 					labelWidth = share("aboutLabelWidth"),
 					f:static_text({ title = bind("backendVersionText") }),
 				}),
-				UIFactory.Notice(f, {
-					kind = "warning",
-					visible = bind("developerBuild"),
-					title = LOC("$$$/StyleAI/PluginInfo/DeveloperBuild=Developer build — developer-only tools are enabled."),
-				}),
 				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfoDialogSections/Docs=Read documentation online"),
@@ -665,6 +729,7 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 
 	prefs.periodicalUpdateCheck = propertyTable.periodicalUpdateCheck == true
 	prefs.debugMode = propertyTable.debugMode == true
+	prefs.enableDeveloperOptions = propertyTable.enableDeveloperOptions == true
 	prefs.captureLlmInputs = prefs.debugMode and propertyTable.captureLlmInputs == true
 	prefs.captureLlmInputsPath = propertyTable.captureLlmInputsPath
 	propertyTable.keepChecksRunning = false

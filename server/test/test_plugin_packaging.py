@@ -14,7 +14,7 @@ def _load_packager():
     return module
 
 
-def test_release_and_developer_packages_keep_manifest_separation(tmp_path):
+def test_legacy_package_modes_copy_the_same_runtime_gated_manifest(tmp_path):
     packager = _load_packager()
     source_manifest = (packager.SOURCE_PLUGIN / "Info.lua").read_text(encoding="utf-8")
     release = packager.build_package("release", tmp_path / "StyleAI.lrplugin")
@@ -29,19 +29,23 @@ def test_release_and_developer_packages_keep_manifest_separation(tmp_path):
     assert not (release / "ShutdownApp.lua").exists()
     assert not (developer / "ShutdownApp.lua").exists()
     assert "LrHelpMenuItems" not in release_manifest
-    assert "developerBuild = false" in (release / "BuildConfig.lua").read_text(
-        encoding="utf-8"
-    )
-    assert "LrHelpMenuItems" in developer_manifest
-    assert "TaskAutomatedTests.lua" in developer_manifest
-    assert "TaskBenchmark.lua" in developer_manifest
-    assert "TaskMetadataBenchmark.lua" in developer_manifest
-    assert "TaskMetadataBenchmark.lua" not in release_manifest
-    assert "TaskRenderingStateCapabilitySpike.lua" in developer_manifest
-    assert "TaskReconcileAIEditState.lua" in developer_manifest
-    assert "developerBuild = true" in (developer / "BuildConfig.lua").read_text(
-        encoding="utf-8"
-    )
+    assert "LrHelpMenuItems" not in developer_manifest
+    for task in (
+        "TaskAutomatedTests.lua",
+        "TaskBenchmark.lua",
+        "TaskMetadataBenchmark.lua",
+        "TaskRenderingStateCapabilitySpike.lua",
+        "TaskReconcileAIEditState.lua",
+    ):
+        assert task not in release_manifest
+        assert task not in developer_manifest
+        assert 'require("DeveloperOptions")' in (release / task).read_text(
+            encoding="utf-8"
+        )
+        assert ".run()" in (release / task).read_text(encoding="utf-8")
+    assert release_manifest == developer_manifest == source_manifest
+    assert not (release / "BuildConfig.lua").exists()
+    assert not (developer / "BuildConfig.lua").exists()
     assert (packager.SOURCE_PLUGIN / "Info.lua").read_text(
         encoding="utf-8"
     ) == source_manifest

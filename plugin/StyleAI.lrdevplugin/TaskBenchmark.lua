@@ -1,6 +1,8 @@
 -- TaskBenchmark.lua
 -- A developer utility task to empirically test pipeline permutations for GPU saturation.
 
+local TaskBenchmark = {}
+
 local LrTasks = import("LrTasks")
 local LrDialogs = import("LrDialogs")
 local LrFunctionContext = import("LrFunctionContext")
@@ -9,9 +11,12 @@ local LrDate = import("LrDate")
 
 require("Util")
 local SearchIndexAPI = require("APISearchIndex")
+local DeveloperOptions = require("DeveloperOptions")
 
-LrTasks.startAsyncTask(function()
-	LrFunctionContext.callWithContext("benchmarkTask", function(ctx)
+function TaskBenchmark.run()
+	LrTasks.startAsyncTask(function()
+		LrFunctionContext.callWithContext("benchmarkTask", function(ctx)
+		if not DeveloperOptions.requireEnabled() then return end
 		local catalog = LrApplication.activeCatalog()
 		local selectedPhotos = catalog:getTargetPhotos()
 		
@@ -146,5 +151,8 @@ LrTasks.startAsyncTask(function()
 		log:info("--- END BENCHMARK ---")
 
 		LrDialogs.message("Benchmark Complete", summary, "info")
+		end)
 	end)
-end)
+end
+
+return TaskBenchmark

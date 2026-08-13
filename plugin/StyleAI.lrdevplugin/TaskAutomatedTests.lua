@@ -1,6 +1,8 @@
 -- TaskAutomatedTests.lua
 -- A developer task to run automated diagnostics and logic assertions inside the Lightroom runtime.
 
+local TaskAutomatedTests = {}
+
 local LrTasks = import("LrTasks")
 local LrDialogs = import("LrDialogs")
 local LrFunctionContext = import("LrFunctionContext")
@@ -13,7 +15,7 @@ local DevelopEditManager = require("DevelopEditManager")
 local RenderingStateCapability = require("RenderingStateCapability")
 local PhotoSelector = require("PhotoSelector")
 local StyleUI = require("StyleUI")
-local BuildConfig = require("BuildConfig")
+local DeveloperOptions = require("DeveloperOptions")
 
 ---
 -- Helper function to evaluate test conditions safely.
@@ -32,8 +34,10 @@ local function assertTrue(condition, message)
 	end
 end
 
-LrTasks.startAsyncTask(function()
-	LrFunctionContext.callWithContext("automatedTestsTask", function(ctx)
+function TaskAutomatedTests.run()
+	LrTasks.startAsyncTask(function()
+		LrFunctionContext.callWithContext("automatedTestsTask", function(ctx)
+		if not DeveloperOptions.requireEnabled() then return end
 		local confirm = LrDialogs.confirm(
 			LOC("$$$/StyleAI/TaskAutomatedTests/RunConfirmTitle=Run Automated Tests?"),
 			LOC(
@@ -140,8 +144,8 @@ LrTasks.startAsyncTask(function()
 			assertEqual(7, StyleUI.resolveSelectedIndex({ value = 7 }, items), "Lightroom table selection should resolve")
 		end)
 
-		runTest("Build configuration exposes an explicit developer-build boolean", function()
-			assertEqual("boolean", type(BuildConfig.developerBuild), "Developer-build flag must be explicit")
+		runTest("Developer options runtime gate is enabled", function()
+			assertEqual(true, DeveloperOptions.isEnabled(), "Developer task must fail closed when disabled")
 		end)
 
 		---------------------------------------------------------
@@ -299,5 +303,8 @@ LrTasks.startAsyncTask(function()
 		else
 			LrDialogs.message(LOC("$$$/StyleAI/TaskAutomatedTests/PassedTitle=All Tests Passed"), summary, "info")
 		end
+		end)
 	end)
-end)
+end
+
+return TaskAutomatedTests

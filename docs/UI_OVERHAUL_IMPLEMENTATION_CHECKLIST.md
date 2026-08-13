@@ -1,5 +1,9 @@
 # StyleAI UI Overhaul Implementation Checklist
 
+> Historical note: the build-separation items below were superseded in August
+> 2026 by one canonical plug-in manifest and the runtime **Enable Developer
+> Options** gate. See `UI_BEHAVIOR_CONTRACTS.md` for current behavior.
+
 Status: implemented; remaining unchecked items require human Lightroom/platform
 validation. This file is a historical implementation record, not the current
 architecture source of truth. See `UI_BEHAVIOR_CONTRACTS.md`, `AGENTS.md`, and
