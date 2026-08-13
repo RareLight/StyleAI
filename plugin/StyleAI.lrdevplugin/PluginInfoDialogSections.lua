@@ -75,6 +75,40 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 		and LrPathUtils.child(LrPathUtils.parent(catalogPath), "styleai.db")
 		or ""
 	propertyTable.databaseDisplayPath = abbreviatePath(propertyTable.databasePath)
+	propertyTable.dataRecoveryBusy = false
+	propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryReady=Ready.")
+	propertyTable.runDataRecovery = function(runningStatus, errorTitle, work, onSuccess)
+		if propertyTable.dataRecoveryBusy then return end
+		-- Claim the UI before scheduling so rapid repeat clicks cannot submit twice.
+		propertyTable.dataRecoveryBusy = true
+		propertyTable.dataRecoveryStatus = runningStatus
+		LrTasks.startAsyncTask(function()
+			local callOk, actionOk, result, detail = LrTasks.pcall(work)
+			local errorDetail = nil
+			if not callOk then
+				propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryFailed=The action failed. Review the error details and try again.")
+				errorDetail = actionOk
+			elseif actionOk == nil and result == "canceled" then
+				propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryReady=Ready.")
+			elseif actionOk ~= true then
+				propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryFailed=The action failed. Review the error details and try again.")
+				errorDetail = result
+			else
+				local completionOk, completionError = LrTasks.pcall(function()
+					onSuccess(result, detail)
+					-- Keep the durable inline summary, and add conspicuous feedback
+					-- without a modal window that can hide behind Plug-In Manager.
+					LrDialogs.showBezel(propertyTable.dataRecoveryStatus, 4)
+				end)
+				if not completionOk then
+					propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryFailed=The action failed. Review the error details and try again.")
+					errorDetail = completionError
+				end
+			end
+			propertyTable.dataRecoveryBusy = false
+			if errorDetail ~= nil then ErrorHandler.handleError(errorTitle, tostring(errorDetail)) end
+		end)
+	end
 
 	propertyTable.styleSummaryText = LOC("$$$/StyleAI/PluginInfo/StyleSummaryLoading=Loading style summary...")
 	local function updateStyleSummary()
@@ -324,45 +358,62 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				UIFactory.HelpText(f, {
 					title = LOC("$$$/StyleAI/PluginInfo/BackupScopeNote=StyleAI backups protect AI indexes, training data, learned styles, and history. They do not back up the Lightroom catalog, photo files, or Develop edits."),
 				}),
+				UIFactory.StatusRow(f, {
+					label = LOC("$$$/StyleAI/PluginInfo/DataRecoveryStatus=Status:"),
+					labelWidth = share("dataLabelWidth"),
+					title = bind("dataRecoveryStatus"),
+				}),
 				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/ExportDbBackup=Export Backup..."),
+						enabled = bind({ key = "dataRecoveryBusy", transform = function(value) return value ~= true end }),
 						action = function()
-						LrTasks.startAsyncTask(function()
-							local ok, path = SearchIndexAPI.downloadDatabaseBackup()
-							if ok then
-								LrShell.revealInShell(path)
-								LrDialogs.message(LOC("$$$/StyleAI/PluginInfo/BackupExported=Backup Exported"), tostring(path), "info")
-							elseif path ~= "canceled" then
-								ErrorHandler.handleError(LOC("$$$/StyleAI/PluginInfo/DbBackupFailed=Database backup failed"), tostring(path))
+							if propertyTable.dataRecoveryBusy then return end
+							propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryReady=Ready.")
+							local outputPath, chooseError = SearchIndexAPI.chooseDatabaseBackupDestination()
+							if not outputPath then
+								if chooseError ~= "canceled" then ErrorHandler.handleError(LOC("$$$/StyleAI/PluginInfo/DbBackupFailed=Database backup failed"), tostring(chooseError)) end
+								return
 							end
-						end)
-					end,
+							propertyTable.runDataRecovery(
+								LOC("$$$/StyleAI/PluginInfo/BackupRunning=Creating and validating the backup..."),
+								LOC("$$$/StyleAI/PluginInfo/DbBackupFailed=Database backup failed"),
+								function() return SearchIndexAPI.createDatabaseBackup(outputPath) end,
+								function(path)
+									propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/BackupComplete=Backup exported successfully.")
+									LrShell.revealInShell(path)
+								end
+							)
+						end,
 					}),
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/RestoreDbBackup=Restore Backup..."),
+						enabled = bind({ key = "dataRecoveryBusy", transform = function(value) return value ~= true end }),
 						action = function()
-						local confirm = LrDialogs.confirm(
-							LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupTitle=Restore StyleAI Database"),
-							LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupConfirm=This restores StyleAI's AI data only. It does not restore your Lightroom catalog, photo files, or Develop edits. StyleAI will validate the backup and create a pre-restore recovery snapshot before replacing its current database. Continue?"),
-							LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupAction=Choose Backup"),
-							LOC("$$$/StyleAI/common/Cancel=Cancel")
-						)
-						if confirm ~= "ok" then return end
-						LrTasks.startAsyncTask(function()
-							local ok, result = SearchIndexAPI.restoreDatabaseBackup()
-							if ok then
-								propertyTable.refreshStyleSummary()
-								LrDialogs.message(
-									LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupComplete=StyleAI database restored"),
-									LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupCompleteMessage=The validated backup was restored successfully. Your Lightroom catalog and Develop edits were not changed."),
-									"info"
-								)
-							elseif result ~= "canceled" then
-								ErrorHandler.handleError(LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupFailed=Database restore failed"), tostring(result))
+							if propertyTable.dataRecoveryBusy then return end
+							propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryReady=Ready.")
+							local confirm = LrDialogs.confirm(
+								LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupTitle=Restore StyleAI Database"),
+								LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupConfirm=This restores StyleAI's AI data only. It does not restore your Lightroom catalog, photo files, or Develop edits. StyleAI will validate the backup and create a pre-restore recovery snapshot before replacing its current database. Continue?"),
+								LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupAction=Choose Backup"),
+								LOC("$$$/StyleAI/common/Cancel=Cancel")
+							)
+							if confirm ~= "ok" then return end
+							local archivePath, chooseError = SearchIndexAPI.chooseDatabaseBackupArchive()
+							if not archivePath then
+								if chooseError ~= "canceled" then ErrorHandler.handleError(LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupFailed=Database restore failed"), tostring(chooseError)) end
+								return
 							end
-						end)
-					end,
+							propertyTable.runDataRecovery(
+								LOC("$$$/StyleAI/PluginInfo/RestoreRunning=Validating and restoring the backup..."),
+								LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupFailed=Database restore failed"),
+								function() return SearchIndexAPI.restoreDatabaseBackupFromPath(archivePath) end,
+								function()
+									propertyTable.refreshStyleSummary()
+									propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupCompleteMessage=The validated backup was restored successfully. Your Lightroom catalog and Develop edits were not changed.")
+								end
+							)
+						end,
 					}),
 				}),
 				f:separator({ fill_horizontal = 1 }),
@@ -372,12 +423,27 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/CleanupRemovedPhotos=Clean Up Removed Photos..."),
+						enabled = bind({ key = "dataRecoveryBusy", transform = function(value) return value ~= true end }),
 						action = function()
-						LrTasks.startAsyncTask(function()
+							if propertyTable.dataRecoveryBusy then return end
+							propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryReady=Ready.")
 							local task = require("TaskPruneDatabase")
-							task.process()
-						end)
-					end,
+							if not task.confirm() then return end
+							propertyTable.runDataRecovery(
+								LOC("$$$/StyleAI/PluginInfo/CleanupRunning=Checking the catalog and cleaning removed-photo records..."),
+								LOC("$$$/StyleAI/PruneDatabase/FailedTitle=Database Cleanup Failed"),
+								function() return task.process() end,
+								function(results)
+									results = type(results) == "table" and results or {}
+									propertyTable.dataRecoveryStatus = LOC(
+										"$$$/StyleAI/PluginInfo/CleanupComplete=Cleanup complete — checked ^1; removed ^2; disassociated ^3. A backup was created.",
+										tostring(results.checked or 0),
+										tostring(results.deleted or 0),
+										tostring(results.disassociated or 0)
+									)
+								end
+							)
+						end,
 					}),
 				}),
 			}),

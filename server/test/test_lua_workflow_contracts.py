@@ -21,22 +21,22 @@ def test_stable_metadata_v1_prefix_matches_algorithm_contract():
 
 
 def test_training_preflight_is_chunked_and_deduplicated_in_lightroom():
-    api_source = _source("APISearchIndex.lua")
+    preflight_source = _source("TrainingPreflight.lua")
     task_source = _source("TaskTrainFromEdits.lua")
 
-    assert "local chunkSize = 1000" in api_source
-    assert "seenIds[photoId]" in api_source
+    assert "local chunkSize = 1000" in preflight_source
+    assert "seenIds[photoId]" in preflight_source
     assert "representativeById[photoId]" in task_source
     assert "duplicateSourceCount" in task_source
 
 
 @pytest.mark.parametrize("catalog_size", [0, 1, 5_000, 5_001, 10_000])
 def test_training_preflight_contract_has_no_fixed_catalog_ceiling(catalog_size):
-    api_source = _source("APISearchIndex.lua")
-    chunk_match = re.search(r"local chunkSize = (\d+)", api_source)
+    preflight_source = _source("TrainingPreflight.lua")
+    chunk_match = re.search(r"local chunkSize = (\d+)", preflight_source)
 
     assert chunk_match is not None
-    assert "for chunkStart = 1, #uniqueIds, chunkSize do" in api_source
+    assert "for chunkStart = 1, #uniqueIds, chunkSize do" in preflight_source
     chunk_size = int(chunk_match.group(1))
     pages = [
         range(start, min(start + chunk_size, catalog_size))
@@ -73,3 +73,72 @@ def test_training_uses_raw_source_contract_without_rendered_preview_payloads():
     assert "getJpegThumbnailForPhoto(photo, 1024, 1024)" not in task_source
     assert "image_bytes = imageBytes" not in task_source
     assert 'filepath = getPhotoRawMeta(photo, "path")' in task_source
+
+
+def test_data_recovery_actions_share_single_flight_inline_status_contract():
+    source = _source("PluginInfoDialogSections.lua")
+    prune_source = _source("TaskPruneDatabase.lua")
+
+    assert "propertyTable.dataRecoveryBusy = false" in source
+    assert "DataRecoveryReady=Ready." in source
+    assert source.count('key = "dataRecoveryBusy"') == 3
+    assert source.count("propertyTable.runDataRecovery(") == 3
+    claim = source.index("propertyTable.dataRecoveryBusy = true")
+    launch = source.index("LrTasks.startAsyncTask(function()", claim)
+    assert claim < launch
+    assert 'title = bind("dataRecoveryStatus")' in source
+    assert "DataRecoveryStatus=Status:" in source
+    assert "CleanupComplete=Cleanup complete" in source
+    assert "LrDialogs.showBezel(propertyTable.dataRecoveryStatus, 4)" in source
+    data_recovery_section = source[
+        source.index("DataRecovery=Data & Recovery") : source.index(
+            "SupportDebug=Support & Debug"
+        )
+    ]
+    assert "LrDialogs.message" not in data_recovery_section
+    assert "function TaskPruneDatabase.confirm()" in prune_source
+    assert "function TaskPruneDatabase.process()" in prune_source
+    assert "LrTasks.startAsyncTask" not in prune_source
+
+
+def test_training_operation_fingerprint_covers_complete_deduplicated_request():
+    api_source = _source("APISearchIndex.lua")
+    preflight_source = _source("TrainingPreflight.lua")
+    task_source = _source("TaskTrainFromEdits.lua")
+
+    helper = api_source[
+        api_source.index(
+            "function SearchIndexAPI.trainingOperationFingerprint"
+        ) : api_source.index(
+            "function SearchIndexAPI.getOperation",
+            api_source.index("function SearchIndexAPI.trainingOperationFingerprint"),
+        )
+    ]
+    assert "TrainingPreflight.fingerprintPayload" in helper
+    assert 'schema = "training_operation_v1"' in preflight_source
+    assert 'kind = "training"' in preflight_source
+    assert "TrainingPreflight.sortedUniqueIds(photoIds)" in preflight_source
+    assert "force_retrain = forceRetrain == true" in preflight_source
+    assert 'scope = tostring(scope or "selected")' in preflight_source
+
+    capture = task_source.index("local requestedOperationItemIds = operationItemIds")
+    filtering = task_source.index("operationItemIds = filteredOperationIds")
+    fingerprint = task_source.index("SearchIndexAPI.trainingOperationFingerprint")
+    operation = task_source.index('SearchIndexAPI.startOperation(\n\t\t\t"training"')
+    assert capture < filtering < fingerprint < operation
+    assert "requestedOperationItemIds," in task_source[fingerprint:operation]
+    assert "requestFingerprint," in task_source[operation : operation + 900]
+    assert "false\n\t\t)" in task_source[operation : operation + 900]
+
+
+def test_training_preflight_failure_is_atomic_before_operation_or_source_work():
+    source = _source("TaskTrainFromEdits.lua")
+
+    preflight = source.index("SearchIndexAPI.preflightTrainingExamples")
+    failure = source.index("if not preflightOk then", preflight)
+    operation = source.index('SearchIndexAPI.startOperation(\n\t\t\t"training"')
+    source_collection = source.index("local producerDone = false")
+    assert preflight < failure < operation < source_collection
+    failure_block = source[failure:operation]
+    assert "progressScope:done()" in failure_block
+    assert "return" in failure_block

@@ -121,6 +121,20 @@ by default. Catalog writes are short critical sections. Maintenance uses a
 writer-preferring barrier that drains inference-to-commit work before backup,
 restore, prune, reset, migration, or policy activation.
 
+Plug-In Manager's Data & Recovery controls add a UI-level single-flight guard:
+export, restore, and prune disable together before asynchronous work starts and
+report completion through both a temporary Lightroom bezel and a durable inline
+summary. File/archive selection and destructive confirmation run while Plug-In
+Manager owns focus so macOS cannot hide them behind the parent window. Backend
+maintenance admission remains authoritative.
+
+Training operation fingerprints use the sorted, complete deduplicated source-ID
+set plus an explicit fingerprint schema, scope, and force-retrain state. The
+fingerprint includes examples preflight currently considers complete, while job
+items contain only examples that actually need work. Training keeps coalescing
+disabled, so the fingerprint provides deterministic audit/retry identity without
+attaching two active training requests to one job.
+
 Hardware detection sets startup maxima. Apple Silicon limits account for
 unified memory; the runtime pressure governor can lower CPU, GPU batch,
 in-flight image bytes, and queue use under pressure. Explicit `STYLEAI_*`

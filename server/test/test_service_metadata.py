@@ -1,4 +1,6 @@
 import io
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
 import pytest
 from PIL import Image
@@ -217,6 +219,66 @@ def test_canceled_metadata_job_never_calls_provider(service, mocker):
         )
 
     provider.generate_metadata.assert_not_called()
+
+
+def test_canceling_queued_job_a_does_not_starve_job_b(service, mocker):
+    from services import metadata as metadata_module
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    mocker.patch.object(metadata_module, "_global_llm_executor", executor, create=True)
+    cancel_a = threading.Event()
+    a_started = threading.Event()
+    release_a = threading.Event()
+    b_finished = threading.Event()
+    calls = []
+
+    def is_canceled(_db_path, job_id):
+        return job_id == "job-a" and cancel_a.is_set()
+
+    mocker.patch("services.operations.is_cancel_requested", side_effect=is_canceled)
+
+    def generate(uuid, _image, _options):
+        calls.append(uuid)
+        if uuid == "a-running":
+            a_started.set()
+            assert release_a.wait(timeout=2)
+        if uuid == "b":
+            b_finished.set()
+        return MetadataGenerationResponse(uuid=uuid, success=True)
+
+    mocker.patch.object(service, "generate_metadata_single", side_effect=generate)
+    outcomes = {}
+
+    def run_a():
+        try:
+            service._generate_metadata_batch(
+                ["a-running", "a-queued"],
+                [_jpeg_bytes(), _jpeg_bytes()],
+                [{"job_id": "job-a"}, {"job_id": "job-a"}],
+            )
+        except InterruptedError as exc:
+            outcomes["a"] = str(exc)
+
+    def run_b():
+        outcomes["b"] = service._generate_metadata_batch(
+            ["b"], [_jpeg_bytes()], [{"job_id": "job-b"}]
+        )
+
+    thread_a = threading.Thread(target=run_a)
+    thread_a.start()
+    assert a_started.wait(timeout=1)
+    thread_b = threading.Thread(target=run_b)
+    thread_b.start()
+    cancel_a.set()
+    release_a.set()
+    thread_a.join(timeout=2)
+    thread_b.join(timeout=2)
+    executor.shutdown(wait=True)
+
+    assert outcomes["a"] == "operation job has been canceled"
+    assert b_finished.is_set()
+    assert outcomes["b"][0].uuid == "b"
+    assert calls == ["a-running", "b"]
 
 
 def test_generate_metadata_single_refuses_missing_image(service):

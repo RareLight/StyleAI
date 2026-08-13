@@ -3,6 +3,8 @@
 
 SearchIndexAPI = {}
 local WorkCoordinator = require("WorkCoordinator")
+local ProgressAccounting = require("ProgressAccounting")
+local TrainingPreflight = require("TrainingPreflight")
 
 local function getBaseUrl()
     -- The catalog-local bridge has one fixed loopback address.
@@ -1049,6 +1051,15 @@ function SearchIndexAPI.startOperation(kind, itemIds, details, requestFingerprin
     return true, response.job
 end
 
+function SearchIndexAPI.trainingOperationFingerprint(photoIds, scope, forceRetrain)
+    -- Include every deduplicated requested source, including examples that
+    -- preflight currently considers complete. That keeps request identity
+    -- stable when durable state changes between retries.
+    return LrMD5.digest(JSON:encode(
+        TrainingPreflight.fingerprintPayload(photoIds, scope, forceRetrain)
+    ))
+end
+
 function SearchIndexAPI.getOperation(jobId, includeItems)
     if not jobId or jobId == "" then return false, "Missing operation job ID" end
     local suffix = includeItems == false and "?include_items=false" or ""
@@ -1891,7 +1902,6 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
     end
     local operationId = operation.job_id
     options.operation_id = operationId
-    local preOperationProcessed = stats.processed
     local preOperationSuccess = stats.success
     local preOperationFailed = stats.failed
 
@@ -2516,16 +2526,16 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
             local statusOk, statusResult = SearchIndexAPI.getOperation(operationId, false)
             if statusOk and statusResult then
                 local counts = statusResult.details and statusResult.details.item_state_counts or {}
-                local currentSucceeded = (counts.succeeded or 0) + (counts.committing or 0)
-                local currentFailed = preOperationFailed
-                    + (counts.failed or 0)
-                    + (counts.canceled or 0)
-                    + (counts.interrupted or 0)
-                local totalSuccess = preOperationSuccess + currentSucceeded
+                local progress = ProgressAccounting.live(
+                    preOperationSuccess,
+                    preOperationFailed,
+                    counts,
+                    uniquePhotosCount
+                )
                 
                 progressScope:setCaption(
                     LOC("$$$/StyleAI/AnalyzeAndIndex/ProcessingPhoto=Processing ^1 successful (^2 total/^3 failed)",
-                        totalSuccess, uniquePhotosCount, currentFailed)
+                        progress.success, progress.total, progress.failed)
                 )
             end
         end
@@ -2604,9 +2614,16 @@ function SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressSc
                 end
             end
         end
-        stats.success = preOperationSuccess + succeeded
-        stats.failed = preOperationFailed + operationFailed
-        stats.processed = preOperationProcessed + succeeded + operationFailed
+        local finalProgress = ProgressAccounting.terminal(
+            preOperationSuccess,
+            preOperationFailed,
+            succeeded,
+            operationFailed,
+            uniquePhotosCount
+        )
+        stats.success = finalProgress.success
+        stats.failed = finalProgress.failed
+        stats.processed = finalProgress.processed
     end
 
     if shouldCloseScope then
@@ -2680,9 +2697,7 @@ function SearchIndexAPI.isBackendOnLocalhost()
     return not not (url:match("^https?://127%.0%.0%.1") or url:match("^https?://localhost"))
 end
 
-function SearchIndexAPI.downloadDatabaseBackup()
-    local url = getBaseUrl() .. ENDPOINTS.DB_BACKUP
-    log:info("downloadDatabaseBackup: start, url=" .. tostring(url))
+function SearchIndexAPI.chooseDatabaseBackupDestination()
     local catalog = LrApplication.activeCatalog()
     local catalogPath = catalog:getPath()
     local catalogDir = LrPathUtils.parent(catalogPath)
@@ -2701,11 +2716,8 @@ function SearchIndexAPI.downloadDatabaseBackup()
         initialDirectory = defaultBackupDir,
         initialFilename = initialFilename,
     })
-    log:info("downloadDatabaseBackup: save panel returned type=" ..
-        tostring(type(outputPath)) .. " value=" .. tostring(outputPath))
 
     if not outputPath or outputPath == "" then
-        log:info("Database backup download canceled by user")
         return nil, "canceled"
     end
 
@@ -2718,8 +2730,16 @@ function SearchIndexAPI.downloadDatabaseBackup()
     if not outputPath:lower():match("%.zip$") then
         outputPath = outputPath .. ".zip"
     end
+    return outputPath, nil
+end
 
-    log:info("Requesting backend to write database backup to " .. outputPath)
+function SearchIndexAPI.createDatabaseBackup(outputPath)
+    if type(outputPath) ~= "string" or outputPath == "" then
+        return false, "A backup destination is required"
+    end
+    local url = getBaseUrl() .. ENDPOINTS.DB_BACKUP
+    log:info("Requesting catalog-local database backup")
+    log:trace("Database backup destination: " .. outputPath)
 
     local payload = {
         output_path = outputPath
@@ -2737,11 +2757,17 @@ function SearchIndexAPI.downloadDatabaseBackup()
         return false, existErr
     end
 
-    log:info("Database backup created successfully by backend at: " .. outputPath)
+    log:info("Catalog-local database backup created successfully")
     return true, outputPath
 end
 
-function SearchIndexAPI.restoreDatabaseBackup()
+function SearchIndexAPI.downloadDatabaseBackup()
+    local outputPath, err = SearchIndexAPI.chooseDatabaseBackupDestination()
+    if not outputPath then return nil, err end
+    return SearchIndexAPI.createDatabaseBackup(outputPath)
+end
+
+function SearchIndexAPI.chooseDatabaseBackupArchive()
     local selected = LrDialogs.runOpenPanel({
         title = LOC("$$$/StyleAI/PluginInfo/ChooseDbBackup=Choose a StyleAI database backup"),
         canChooseFiles = true,
@@ -2752,7 +2778,13 @@ function SearchIndexAPI.restoreDatabaseBackup()
     if not selected or not selected[1] then
         return nil, "canceled"
     end
-    local archivePath = selected[1]
+    return selected[1], nil
+end
+
+function SearchIndexAPI.restoreDatabaseBackupFromPath(archivePath)
+    if type(archivePath) ~= "string" or archivePath == "" then
+        return false, "A backup archive is required"
+    end
     local results, err = _request(
         'POST',
         getBaseUrl() .. ENDPOINTS.DB_RESTORE,
@@ -2763,6 +2795,12 @@ function SearchIndexAPI.restoreDatabaseBackup()
         return false, err or "Unknown restore error"
     end
     return true, results
+end
+
+function SearchIndexAPI.restoreDatabaseBackup()
+    local archivePath, err = SearchIndexAPI.chooseDatabaseBackupArchive()
+    if not archivePath then return nil, err end
+    return SearchIndexAPI.restoreDatabaseBackupFromPath(archivePath)
 end
 
 -- -----------------------------
@@ -4136,59 +4174,21 @@ function SearchIndexAPI.getTrainingStats()
 end
 
 function SearchIndexAPI.preflightTrainingExamples(photoIds, forceRetrain, progressScope)
-    local uniqueIds = {}
-    local seenIds = {}
-    for _, rawPhotoId in ipairs(photoIds or {}) do
-        local photoId = tostring(rawPhotoId or "")
-        if photoId ~= "" and not seenIds[photoId] then
-            seenIds[photoId] = true
-            table.insert(uniqueIds, photoId)
+    return TrainingPreflight.run(
+        photoIds,
+        forceRetrain,
+        progressScope,
+        function(chunk, force)
+            return _request('POST', getBaseUrl() .. ENDPOINTS.TRAINING_PREFLIGHT, {
+                photo_ids = chunk,
+                force_retrain = force,
+            }, 30)
+        end,
+        function()
+            LrTasks.yield()
+            LrTasks.sleep(0.01)
         end
-    end
-
-    local existingSet = {}
-    local neededSet = {}
-    local chunkSize = 1000
-    for chunkStart = 1, #uniqueIds, chunkSize do
-        if progressScope and progressScope:isCanceled() then
-            return false, "Training preflight canceled"
-        end
-        local chunk = {}
-        local chunkEnd = math.min(#uniqueIds, chunkStart + chunkSize - 1)
-        for index = chunkStart, chunkEnd do
-            table.insert(chunk, uniqueIds[index])
-        end
-        local response, err = _request('POST', getBaseUrl() .. ENDPOINTS.TRAINING_PREFLIGHT, {
-            photo_ids = chunk,
-            force_retrain = forceRetrain == true,
-        }, 30)
-        if not response then
-            return false, err or "Unknown error"
-        end
-        if type(response.needed_photo_ids) ~= "table" then
-            return false, response.error or "Unexpected training preflight response"
-        end
-        for _, photoId in ipairs(response.existing_photo_ids or {}) do
-            existingSet[tostring(photoId)] = true
-        end
-        for _, photoId in ipairs(response.needed_photo_ids) do
-            neededSet[tostring(photoId)] = true
-        end
-        LrTasks.yield()
-        LrTasks.sleep(0.01)
-    end
-
-    local existingIds = {}
-    local neededIds = {}
-    for _, photoId in ipairs(uniqueIds) do
-        if existingSet[photoId] then table.insert(existingIds, photoId) end
-        if neededSet[photoId] then table.insert(neededIds, photoId) end
-    end
-    return true, {
-        existing_photo_ids = existingIds,
-        needed_photo_ids = neededIds,
-        force_retrain = forceRetrain == true,
-    }
+    )
 end
 
 ---
