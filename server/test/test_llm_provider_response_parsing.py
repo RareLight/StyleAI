@@ -113,6 +113,26 @@ def test_ollama_caption_omitted_when_not_requested(ollama_provider):
     assert resp.caption is None
 
 
+def test_default_metadata_prompts_request_specific_searchable_details(ollama_provider):
+    provider, _ = ollama_provider
+    request = _request(generate_alt_text=True)
+
+    system_prompt = provider._prepare_system_prompt(request)
+    user_prompt = provider._prepare_user_prompt(request)
+
+    assert "up to 12 distinct, highly relevant terms" in system_prompt
+    assert "typically 8-12 total across all categories" in system_prompt
+    assert "species, breed, plant type, landmark, vehicle type" in system_prompt
+    assert "specific term and one useful broader class" in system_prompt
+    assert "important actions, interactions, behavior, or events" in system_prompt
+    assert "clearly supported season, weather, time of day" in system_prompt
+    assert "supplied context as factual context" in system_prompt
+    assert "for a screen-reader user" in system_prompt
+    assert "Return up to 12 highly descriptive tags" in user_prompt
+    assert "typically 8-12" in user_prompt
+    assert "Do not pad the list" in user_prompt
+
+
 # ----- LMStudio ------------------------------------------------------------
 
 

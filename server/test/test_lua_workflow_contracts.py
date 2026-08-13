@@ -67,6 +67,29 @@ def test_prepare_photos_waits_for_backend_before_model_status_dialog():
     assert task_source.count("Util.waitForServerDialog") == 1
 
 
+def test_lightroom_default_metadata_prompt_is_specific_and_migrates_prior_default():
+    defaults_source = _source("Defaults.lua")
+    settings_source = _source("SettingsManager.lua")
+    legacy_end = defaults_source.index("\n}\nDefaults.defaultSystemInstruction")
+    legacy_source = defaults_source[:legacy_end]
+    active_source = defaults_source[legacy_end:]
+
+    assert "Limit output to 5-10 highly relevant tags" in legacy_source
+    assert "return 10-12 distinct, highly relevant tags" in legacy_source
+    assert "return up to 12 distinct, highly relevant terms" in active_source
+    assert "typically 8-12 total across all categories" in active_source
+    assert "species, breed, plant type, landmark, vehicle type" in active_source
+    assert "specific term and one useful broader class" in active_source
+    assert "important actions, interactions, behavior, or events" in active_source
+    assert "clearly supported season, weather, time of day" in active_source
+    assert "supplied context as factual context" in active_source
+    assert "for a screen-reader user" in active_source
+    assert (
+        "for _, legacy in ipairs(Defaults.legacySystemInstructions or {})"
+        in settings_source
+    )
+
+
 def test_training_uses_raw_source_contract_without_rendered_preview_payloads():
     task_source = _source("TaskTrainFromEdits.lua")
 

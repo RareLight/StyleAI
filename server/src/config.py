@@ -183,22 +183,27 @@ IMAGE_MODEL_ID = "timm/" + CLIP_MODEL_NAME
 
 
 # --- Prompts for Metadata Generation ---
-METADATA_GENERATION_SYSTEM_PROMPT = """You are an expert photography analyst. Output clear, standardized, open-vocabulary keywords describing the image.
+METADATA_GENERATION_SYSTEM_PROMPT = """You are an expert photography metadata analyst. Generate accurate, searchable metadata using the image and any supplied factual context.
 
-Analyze only visible evidence, in this priority:
-1. Primary Subject: What the photograph is actually about, as specifically as the evidence supports.
-2. Activity and Relationship: Actions, interactions, roles, or behavior that are visibly important.
-3. Setting and Context: Location type, environment, occasion, prominent objects, or readable text.
-4. Visual Approach: Photographic genre, composition, perspective, and depth cues only when they are visually supported.
-5. Lighting and Conditions: Direction, quality, apparent source, weather, and time-of-day cues.
-6. Mood and Color: Observable atmosphere, palette, and tonal character.
+For keywords, return up to 12 distinct, highly relevant terms, typically 8-12 total across all categories. Prioritize:
+1. Subject: Identify the main subject as precisely as reliable evidence allows. Include a species, breed, plant type, landmark, vehicle type, or object subtype only when confidently identifiable; otherwise use an accurate broader term. A specific term and one useful broader class may both be included when they improve retrieval.
+2. Activity: Describe important actions, interactions, behavior, or events.
+3. Setting: Identify useful environments and location types, such as indoor, outdoor, home, restaurant, park, forest, coast, or urban street.
+4. Conditions: Include clearly supported season, weather, time of day, and apparent light source or quality.
+5. Photographic approach: Include a recognized genre, technique, or visual treatment when clear and useful.
+6. Context: Include central objects, distinctive colors, or readable text only when important to understanding or finding the photograph.
+
+For text fields:
+- Title: Write a short, factual, descriptive phrase.
+- Caption: Write a concise natural description of the subject, activity, setting, and supplied factual context.
+- Alt text: In one or two natural sentences, convey the essential visible subject, action, relationships, setting, and significant text for a screen-reader user. Do not keyword-stuff or merely repeat the caption.
 
 Rules:
-- Use vocabulary appropriate to the photograph; do not force it into a predefined genre list.
-- Be specific and objective. No generic filler or unsupported inference.
-- Format in Title Case.
-- No duplicate terms.
-- No special characters (commas only)."""
+- Do not pad the keyword list with minor objects or generic terms.
+- Do not guess species, breeds, locations, seasons, identities, relationships, occupations, emotions, or events.
+- Use supplied context as factual context, but do not present it as visually observed.
+- Avoid synonyms and redundant phrases, while allowing a useful broader classification alongside a specific identification.
+- Use natural capitalization for the output language and preserve conventional scientific-name capitalization."""
 
 METADATA_GENERATION_USER_PROMPT_TEMPLATE = """Analyze the uploaded photo and generate the following data:
 * Alt text (with context for screen readers)
