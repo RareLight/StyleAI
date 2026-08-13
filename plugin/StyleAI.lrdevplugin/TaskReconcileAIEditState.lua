@@ -1,20 +1,15 @@
 -- Developer/manual QA task for reconciling selected Lightroom photos with
 -- StyleAI's immutable edit inference history.
 
-local TaskReconcileAIEditState = {}
-
 local LrApplication = import("LrApplication")
 local LrDialogs = import("LrDialogs")
 local LrTasks = import("LrTasks")
 
 local SearchIndexAPI = require("APISearchIndex")
 local Util = require("Util")
-local DeveloperOptions = require("DeveloperOptions")
 
-function TaskReconcileAIEditState.run()
-	LrTasks.startAsyncTask(function()
-		local ok, taskError = LrTasks.pcall(function()
-		if not DeveloperOptions.requireEnabled() then return end
+LrTasks.startAsyncTask(function()
+	local ok, taskError = LrTasks.pcall(function()
 		if not Util.waitForServerDialog({ suppressProgressDialog = false }) then
 			return
 		end
@@ -88,15 +83,12 @@ function TaskReconcileAIEditState.run()
 		LrDialogs.message(LOC("$$$/StyleAI/ReconcileEdits/Title=Reconcile AI Edit State"), summary, "info")
 	end)
 
-		if not ok then
-			log:error("AI edit reconciliation failed: " .. tostring(taskError))
-			LrDialogs.message(
-				LOC("$$$/StyleAI/ReconcileEdits/FailedTitle=Reconciliation Failed"),
-				tostring(taskError),
-				"critical"
-			)
-		end
-	end)
-end
-
-return TaskReconcileAIEditState
+	if not ok then
+		log:error("AI edit reconciliation failed: " .. tostring(taskError))
+		LrDialogs.message(
+			LOC("$$$/StyleAI/ReconcileEdits/FailedTitle=Reconciliation Failed"),
+			tostring(taskError),
+			"critical"
+		)
+	end
+end)

@@ -1,6 +1,4 @@
-local TaskDiagnostics = require("TaskDiagnostics")
 local UIFactory = require("UIFactory")
-local DeveloperOptions = require("DeveloperOptions")
 
 PluginInfoDialogSections = {}
 
@@ -23,44 +21,11 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck == true
 	propertyTable.processingLoadMode = processingLoadMode(prefs.indexingPerformanceProfile)
 
-	propertyTable.debugMode = prefs.debugMode == true
-	propertyTable.enableDeveloperOptions = prefs.enableDeveloperOptions == true
-	propertyTable.captureLlmInputs = propertyTable.debugMode and prefs.captureLlmInputs == true
+	propertyTable.captureLlmInputs = prefs.captureLlmInputs == true
 	propertyTable.captureLlmInputsPath = prefs.captureLlmInputsPath or ""
 	propertyTable.captureInfoText = LOC("$$$/StyleAI/Debug/NoCaptures=No diagnostic captures saved.")
-	propertyTable:addObserver("debugMode", function(properties, _, newValue)
-		if newValue ~= true then
-			properties.captureLlmInputs = false
-		end
-	end)
-	propertyTable:addObserver("enableDeveloperOptions", function(_, _, newValue)
-		-- Developer buttons live in this dialog, so persist the gate immediately
-		-- rather than requiring the user to close and reopen Plug-in Manager.
-		prefs.enableDeveloperOptions = newValue == true
-	end)
-	propertyTable.runDeveloperTool = function(moduleName)
-		if not DeveloperOptions.requireEnabled() then return end
-		local loaded, tool = LrTasks.pcall(function() return require(moduleName) end)
-		if not loaded or type(tool) ~= "table" or type(tool.run) ~= "function" then
-			LrDialogs.message(
-				LOC("$$$/StyleAI/DeveloperOptions/LaunchFailedTitle=Developer Tool Unavailable"),
-				LOC("$$$/StyleAI/DeveloperOptions/LaunchFailed=The developer tool could not be loaded: ^1", tostring(tool)),
-				"critical"
-			)
-			return
-		end
-		local started, startError = LrTasks.pcall(function() tool.run() end)
-		if not started then
-			LrDialogs.message(
-				LOC("$$$/StyleAI/DeveloperOptions/LaunchFailedTitle=Developer Tool Unavailable"),
-				tostring(startError),
-				"critical"
-			)
-		end
-	end
 
 	local function refreshCaptureInfo()
-		if propertyTable.debugMode ~= true then return end
 		LrTasks.startAsyncTask(function()
 			local info = SearchIndexAPI.getDiagnosticCaptureInfo(propertyTable.captureLlmInputsPath)
 			if type(info) ~= "table" then return end
@@ -77,7 +42,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 		end)
 	end
 	propertyTable.refreshCaptureInfo = refreshCaptureInfo
-	if propertyTable.debugMode then refreshCaptureInfo() end
+	refreshCaptureInfo()
 
 	propertyTable.pluginVersionText = string.format(
 		"%d.%d.%d (%d)",
@@ -243,34 +208,25 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 
 	propertyTable.updateStatus = propertyTable.periodicalUpdateCheck
 		and LOC("$$$/StyleAI/common/Checking=Checking...")
-		or LOC("$$$/StyleAI/PluginInfo/UpdatesManual=Updates are checked manually.")
+		or LOC("$$$/StyleAI/PluginInfo/UpdatesManual=Use Help > Plug-in Extras to check for updates manually.")
 	propertyTable.updateStatusColor = { 0.5, 0.5, 0.5 }
-	propertyTable.updateButtonTitle = LOC("$$$/StyleAI/PluginInfoDialogSections/UpdateCheck=Check for updates")
 	propertyTable.updateAvailable = false
-	propertyTable.latestReleaseInfo = nil
 
 	local function checkUpdates()
 		LrTasks.startAsyncTask(function()
 			propertyTable.updateStatus = LOC("$$$/StyleAI/common/Checking=Checking...")
 			local info = UpdateCheck.getLatestReleaseInfo()
 			if info and info.is_newer then
-				propertyTable.latestReleaseInfo = info
 				propertyTable.updateAvailable = true
 				propertyTable.updateStatus = LOC("$$$/StyleAI/PluginInfo/UpdateAvailable=Update Available: ^1", info.tag_name)
 				propertyTable.updateStatusColor = { 0.1, 0.5, 0.8 }
-				propertyTable.updateButtonTitle = info.is_code_only
-					and LOC("$$$/StyleAI/UpdateCheck/UpdateNow=Update Now")
-					or LOC("$$$/StyleAI/PluginInfo/DownloadUpdate=Download Update")
 			else
-				propertyTable.latestReleaseInfo = nil
 				propertyTable.updateAvailable = false
 				propertyTable.updateStatus = LOC("$$$/StyleAI/PluginInfo/UpToDate=Plugin is up to date")
 				propertyTable.updateStatusColor = { 0.5, 0.5, 0.5 }
-				propertyTable.updateButtonTitle = LOC("$$$/StyleAI/PluginInfoDialogSections/UpdateCheck=Check for updates")
 			end
 		end)
 	end
-	propertyTable.manualCheckUpdates = checkUpdates
 	propertyTable:addObserver("periodicalUpdateCheck", function(_, _, newValue)
 		if newValue == true then checkUpdates() end
 	end)
@@ -475,80 +431,21 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 		},
 		{
 			bind_to_object = propertyTable,
-			title = LOC("$$$/StyleAI/PluginInfo/SupportDebug=Support & Debug"),
-			synopsis = LOC("$$$/StyleAI/PluginInfo/SupportSynopsis=Logs, diagnostics, and optional debug capture"),
+			title = LOC("$$$/StyleAI/PluginInfo/Diagnostics=Diagnostics"),
+			synopsis = LOC("$$$/StyleAI/PluginInfo/DiagnosticsSynopsis=Performance and optional diagnostic capture"),
 			f:column({
 				fill_horizontal = 1,
 				spacing = f:control_spacing(),
 				UIFactory.HelpText(f, {
-					title = LOC("$$$/StyleAI/PluginInfo/SupportHelp=Generate a support report when troubleshooting. It contains system details and available StyleAI logs, but never your Lightroom catalog or original photos."),
-				}),
-				f:row({
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfo/GenerateSupportReport=Generate Support Report..."),
-						action = function() TaskDiagnostics.generateReport() end,
-					}),
-					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfo/OpenLogsFolder=Open Logs Folder"),
-						action = function() LrShell.revealInShell(Util.getLogfilePath()) end,
-					}),
+					title = LOC("$$$/StyleAI/PluginInfo/DiagnosticsHelp=Performance overrides and diagnostic image capture are normally unnecessary. Support reports and logs are available under Help > Plug-in Extras."),
 				}),
 				f:separator({ fill_horizontal = 1 }),
-				f:checkbox({
-					value = bind("enableDeveloperOptions"),
-					title = LOC("$$$/StyleAI/DeveloperOptions/Enable=Enable Developer Options"),
-				}),
-				UIFactory.HelpText(f, {
-					visible = bind("enableDeveloperOptions"),
-					title = LOC("$$$/StyleAI/DeveloperOptions/Warning=These tools are intended for testing and may perform intensive or catalog-changing operations."),
-				}),
 				f:column({
-					visible = bind("enableDeveloperOptions"),
-					fill_horizontal = 1,
-					spacing = f:control_spacing(),
-					f:row({
-						f:push_button({
-							title = LOC("$$$/StyleAI/DeveloperOptions/RunTests=Run Automated Tests..."),
-							action = function() propertyTable.runDeveloperTool("TaskAutomatedTests") end,
-						}),
-					}),
-					f:row({
-						f:push_button({
-							title = LOC("$$$/StyleAI/DeveloperOptions/RunBenchmark=Run Performance Benchmark..."),
-							action = function() propertyTable.runDeveloperTool("TaskBenchmark") end,
-						}),
-					}),
-					f:row({
-						f:push_button({
-							title = LOC("$$$/StyleAI/DeveloperOptions/CompareMetadataModels=Compare Local Metadata Models..."),
-							action = function() propertyTable.runDeveloperTool("TaskMetadataBenchmark") end,
-						}),
-					}),
-					f:row({
-						f:push_button({
-							title = LOC("$$$/StyleAI/DeveloperOptions/TestRendering=Test Profile and HDR Capabilities..."),
-							action = function() propertyTable.runDeveloperTool("TaskRenderingStateCapabilitySpike") end,
-						}),
-					}),
-					f:row({
-						f:push_button({
-							title = LOC("$$$/StyleAI/DeveloperOptions/Reconcile=Reconcile Selected AI Edits..."),
-							action = function() propertyTable.runDeveloperTool("TaskReconcileAIEditState") end,
-						}),
-					}),
-				}),
-				f:separator({ fill_horizontal = 1 }),
-				f:checkbox({
-					value = bind("debugMode"),
-					title = LOC("$$$/StyleAI/Debug/Enable=Enable Debug options"),
-				}),
-				f:column({
-					visible = bind("debugMode"),
 					fill_horizontal = 1,
 					spacing = f:control_spacing(),
 					UIFactory.Notice(f, {
 						kind = "warning",
-						title = LOC("$$$/StyleAI/Debug/PrivacyWarning=Debug capture is local, but saved files can contain photo pixels and metadata. Enable it only while troubleshooting."),
+						title = LOC("$$$/StyleAI/Debug/PrivacyWarning=Diagnostic capture is local, but saved files can contain photo pixels and metadata. Enable it only while troubleshooting."),
 					}),
 					UIFactory.FormRow(f, {
 						label = LOC("$$$/StyleAI/PluginInfo/ProcessingLoad=Processing load:"),
@@ -606,11 +503,11 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					UIFactory.HelpText(f, { title = bind("captureInfoText") }),
 					f:row({
 						f:push_button({
-							title = LOC("$$$/StyleAI/Debug/ClearCaptures=Clear Captured Debug Data..."),
+							title = LOC("$$$/StyleAI/Debug/ClearCaptures=Clear Diagnostic Captures..."),
 							action = function()
 								local confirmed = LrDialogs.confirm(
-									LOC("$$$/StyleAI/Debug/ClearTitle=Clear Captured Debug Data?"),
-									LOC("$$$/StyleAI/Debug/ClearMessage=This deletes only StyleAI diagnostic capture files in the selected debug folder. Photos, catalogs, databases, and normal logs are not changed."),
+									LOC("$$$/StyleAI/Debug/ClearTitle=Clear Diagnostic Captures?"),
+									LOC("$$$/StyleAI/Debug/ClearMessage=This deletes only StyleAI diagnostic capture files in the selected capture folder. Photos, catalogs, databases, and normal logs are not changed."),
 									LOC("$$$/StyleAI/Debug/ClearAction=Clear Captures"),
 									LOC("$$$/StyleAI/common/Cancel=Cancel")
 								)
@@ -620,12 +517,12 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 									if result then
 										propertyTable.refreshCaptureInfo()
 										LrDialogs.message(
-											LOC("$$$/StyleAI/Debug/ClearedTitle=Debug Captures Cleared"),
+											LOC("$$$/StyleAI/Debug/ClearedTitle=Diagnostic Captures Cleared"),
 											LOC("$$$/StyleAI/Debug/ClearedMessage=Deleted ^1 diagnostic file(s).", tostring(result.deleted_files or 0)),
 											"info"
 										)
 									else
-										ErrorHandler.handleError(LOC("$$$/StyleAI/Debug/ClearFailed=Could Not Clear Debug Captures"), tostring(err))
+										ErrorHandler.handleError(LOC("$$$/StyleAI/Debug/ClearFailed=Could Not Clear Diagnostic Captures"), tostring(err))
 									end
 								end)
 							end,
@@ -654,24 +551,6 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 					fill_horizontal = 1,
 					wrap = true,
 				}),
-				f:row({
-					f:push_button({
-						title = bind("updateButtonTitle"),
-						action = function()
-						local info = propertyTable.latestReleaseInfo
-						if propertyTable.updateAvailable and type(info) == "table" then
-							if info.is_code_only then
-								local taskUpdate = require("TaskUpdate")
-								taskUpdate.runUpdate(info)
-							else
-								LrHttp.openUrlInBrowser(info.release_url or UpdateCheck.latestReleaseUrl)
-							end
-						else
-							propertyTable.manualCheckUpdates()
-						end
-					end,
-					}),
-				}),
 				f:checkbox({
 					value = bind("periodicalUpdateCheck"),
 					title = LOC("$$$/StyleAI/PluginInfo/AutomaticUpdates=Automatically check for updates"),
@@ -699,12 +578,6 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 				}),
 				f:row({
 					f:push_button({
-						title = LOC("$$$/StyleAI/PluginInfoDialogSections/Docs=Read documentation online"),
-						action = function() LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki") end,
-					}),
-				}),
-				f:row({
-					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/ViewCredits=View Credits"),
 						action = function() LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Credits") end,
 					}),
@@ -728,9 +601,7 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 	end
 
 	prefs.periodicalUpdateCheck = propertyTable.periodicalUpdateCheck == true
-	prefs.debugMode = propertyTable.debugMode == true
-	prefs.enableDeveloperOptions = propertyTable.enableDeveloperOptions == true
-	prefs.captureLlmInputs = prefs.debugMode and propertyTable.captureLlmInputs == true
+	prefs.captureLlmInputs = propertyTable.captureLlmInputs == true
 	prefs.captureLlmInputsPath = propertyTable.captureLlmInputsPath
 	propertyTable.keepChecksRunning = false
 end

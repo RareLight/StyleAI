@@ -132,26 +132,34 @@ def test_metadata_benchmark_backend_service_has_no_persistence_dependency():
     assert "catalog_write" not in source
 
 
-def test_single_build_developer_options_hide_and_gate_every_tool():
+def test_single_build_registers_support_and_developer_tools_in_help_menu():
     info_source = _source("Info.lua")
     settings_source = _source("SettingsManager.lua")
     dialog_source = _source("PluginInfoDialogSections.lua")
-    gate_source = _source("DeveloperOptions.lua")
 
-    assert "LrHelpMenuItems" not in info_source
-    assert "enableDeveloperOptions = false" in settings_source
-    assert 'bind("enableDeveloperOptions")' in dialog_source
-    assert 'visible = bind("enableDeveloperOptions")' in dialog_source
-    assert 'visible = bind("debugMode")' in dialog_source
-    assert 'propertyTable:addObserver("enableDeveloperOptions"' in dialog_source
-    assert 'propertyTable.runDeveloperTool("TaskMetadataBenchmark")' in dialog_source
-    assert (
-        "prefs.enableDeveloperOptions = propertyTable.enableDeveloperOptions == true"
-        in dialog_source
-    )
-    assert "developerPrefs.enableDeveloperOptions == true" in gate_source
-    assert "DeveloperOptions/Disabled=" in gate_source
+    assert "LrHelpMenuItems" in info_source
+    for filename in (
+        "TaskOpenDocumentation.lua",
+        "TaskCheckUpdates.lua",
+        "TaskGenerateSupportReport.lua",
+        "TaskOpenLogsFolder.lua",
+        "TaskMetadataBenchmark.lua",
+    ):
+        assert f'file = "{filename}"' in info_source
+    assert "enableDeveloperOptions" not in settings_source
+    assert "enableDeveloperOptions" not in dialog_source
+    assert "debugMode" not in settings_source
+    assert "debugMode" not in dialog_source
+    assert "captureLlmInputs = false" in settings_source
+    assert 'bind("captureLlmInputs")' in dialog_source
+    assert "TaskDiagnostics" not in dialog_source
+    assert "manualCheckUpdates" not in dialog_source
+    assert 'github.com/RareLight/StyleAI/wiki")' not in dialog_source
+    assert "ExportDbBackup=Export Backup..." in dialog_source
+    assert "RestoreDbBackup=Restore Backup..." in dialog_source
+    assert "ClearCaptures=Clear Diagnostic Captures..." in dialog_source
     assert not (PLUGIN_ROOT / "BuildConfig.lua").exists()
+    assert not (PLUGIN_ROOT / "DeveloperOptions.lua").exists()
 
     entry_points = {
         "TaskAutomatedTests.lua": "local confirm = LrDialogs.confirm",
@@ -162,11 +170,10 @@ def test_single_build_developer_options_hide_and_gate_every_tool():
     }
     for filename, first_work in entry_points.items():
         source = _source(filename)
-        assert ".run()" in source
-        assert "return Task" in source
-        gate = source.index("DeveloperOptions.requireEnabled()")
-        work = source.index(first_work, gate)
-        assert gate < work
+        assert "DeveloperOptions" not in source
+        launch = source.index("LrTasks.startAsyncTask")
+        work = source.index(first_work, launch)
+        assert launch < work
 
 
 def test_training_uses_raw_source_contract_without_rendered_preview_payloads():
@@ -194,7 +201,7 @@ def test_data_recovery_actions_share_single_flight_inline_status_contract():
     assert "LrDialogs.showBezel(propertyTable.dataRecoveryStatus, 4)" in source
     data_recovery_section = source[
         source.index("DataRecovery=Data & Recovery") : source.index(
-            "SupportDebug=Support & Debug"
+            "Diagnostics=Diagnostics"
         )
     ]
     assert "LrDialogs.message" not in data_recovery_section

@@ -51,10 +51,12 @@ history. Use Lightroom's catalog backup separately.
 
 ## Diagnostics
 
-Plug-in Manager → **Support & Debug** can generate a local support report from
-service health and available logs. Debug image capture is off by default,
-requires both Debug and capture to be enabled, may contain photo pixels and
-metadata, and has bounded local retention.
+**Help → Plug-in Extras → StyleAI: Generate Support Report...** creates a
+local report from service health and available logs, and **StyleAI: Open Logs
+Folder** reveals the source logs. Diagnostic image capture is configured under
+Plug-in Manager → **Diagnostics**. It is off by default, requires an explicit
+capture opt-in, may contain photo pixels and metadata, and has bounded local
+retention.
 
 See [Architecture](Architecture) and the [Developer Guide](Developer-Guide) for
 the API, storage, and ML contracts.

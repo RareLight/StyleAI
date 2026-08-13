@@ -81,9 +81,16 @@ evaluation-only.
   validated backup, and clean records for removed photos. These maintenance
   actions run one at a time; completion appears as a prominent temporary
   Lightroom notification and remains visible inside Plug-In Manager.
-- **Support & Debug:** local support report, logs, hardware-load override, and
-  explicitly gated diagnostic image capture.
-- **Updates / About:** version, update, documentation, credit, and license links.
+- **Diagnostics:** hardware-load override and explicitly gated diagnostic image
+  capture configuration, including its destination, Reveal, and safe Clear.
+- **Updates / About:** automatic-update status and preference, versions, credits,
+  and license links.
+
+Use **Help → Plug-in Extras** for documentation, a manual update check,
+support-report generation, the logs folder, and developer tools. The database
+backup, restore, cleanup, and data-folder controls remain in **Data & Recovery**
+because their catalog-local scope and status belong beside the database they
+affect.
 
 Each catalog must live in its own folder and owns the adjacent `styleai.db`.
 Stable `globalPhotoId` values link Lightroom photos to local indexes, training,

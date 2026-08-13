@@ -1,8 +1,6 @@
 -- TaskRenderingStateCapabilitySpike.lua
 -- Destructive-on-disposable-copies Phase 0 probe for profile/HDR SDK behavior.
 
-local TaskRenderingStateCapabilitySpike = {}
-
 local LrApplication = import("LrApplication")
 local LrDialogs = import("LrDialogs")
 local LrFunctionContext = import("LrFunctionContext")
@@ -12,7 +10,6 @@ local LrTasks = import("LrTasks")
 require("JSON")
 local Defaults = require("Defaults")
 local Capability = require("RenderingStateCapability")
-local DeveloperOptions = require("DeveloperOptions")
 
 local MAX_PHOTOS = 8
 
@@ -365,20 +362,15 @@ local function runSpike()
 	)
 end
 
-function TaskRenderingStateCapabilitySpike.run()
-	LrTasks.startAsyncTask(function()
-		LrFunctionContext.callWithContext("renderingStateCapabilitySpike", function()
-			if not DeveloperOptions.requireEnabled() then return end
-			local ok, err = LrTasks.pcall(runSpike)
-			if not ok then
-				log:error("Rendering-state SDK spike failed: " .. tostring(err))
-				ErrorHandler.handleError(
-					LOC("$$$/StyleAI/RenderingSpike/FailedTitle=Rendering-State Spike Failed"),
-					tostring(err)
-				)
-			end
-		end)
+LrTasks.startAsyncTask(function()
+	LrFunctionContext.callWithContext("renderingStateCapabilitySpike", function()
+		local ok, err = LrTasks.pcall(runSpike)
+		if not ok then
+			log:error("Rendering-state SDK spike failed: " .. tostring(err))
+			ErrorHandler.handleError(
+				LOC("$$$/StyleAI/RenderingSpike/FailedTitle=Rendering-State Spike Failed"),
+				tostring(err)
+			)
+		end
 	end)
-end
-
-return TaskRenderingStateCapabilitySpike
+end)

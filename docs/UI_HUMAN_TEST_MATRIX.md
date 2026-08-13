@@ -1,8 +1,7 @@
 # StyleAI UI Human Test Matrix
 
-Use a backed-up disposable Lightroom Classic catalog. Test first with **Enable
-Developer Options** off. Do not confirm deletion, pruning, or restore actions
-against the production catalog.
+Use a backed-up disposable Lightroom Classic catalog. Do not confirm deletion,
+pruning, or restore actions against the production catalog.
 
 ## 1. Release navigation and Settings & Status
 
@@ -10,10 +9,12 @@ against the production catalog.
    Library and Develop modules.
 2. Confirm the six production commands appear in the documented order, all
    dialog-opening commands use ellipses, no duplicates appear in Export, and no
-   developer commands do not appear in Help and no developer-tool controls are
-   visible in Plug-in Manager while Developer Options is disabled.
+   developer commands appear in this menu. Under **Help > Plug-in Extras**,
+   confirm documentation, manual update check, support report, logs, and the
+   developer commands appear, with no corresponding launch buttons in Plug-in
+   Manager.
 3. Open Plugin Manager and verify the Status & Setup, Styles, Data & Recovery,
-   Support & Debug, Updates, and About sections appear in that order. Confirm
+   Diagnostics, Updates, and About sections appear in that order. Confirm
    overall, background service, vision model, optional metadata model,
    learned-style counts, versions, and the abbreviated catalog-local data path
    are readable without relying on color.
@@ -23,31 +24,33 @@ against the production catalog.
    the service, reopen Plugin Manager, confirm Repair appears, and verify it
    restores service readiness without losing settings.
 6. Verify Reveal Data Folder, Export Backup, Restore Backup, Clean Up Removed
-   Photos, Generate Support Report, Open Logs Folder, credits, documentation,
-   and license remain reachable. Confirm no database-statistics, preview-source,
-   legacy restart, or training-deletion control remains in Plugin Manager.
+   Photos, Repair Background Service when applicable, credits, and license
+   remain reachable from their contextual Plug-in Manager sections. Verify
+   documentation, Check for Updates, Generate Support Report, and Open Logs
+   Folder from Help > Plug-in Extras. Confirm no database-statistics,
+   preview-source, legacy restart, or training-deletion control remains in
+   Plug-in Manager.
 7. Open Styles & Training from Plugin Manager. Confirm Delete All Training Data
    appears only in its maintenance area and its scope is clear.
-8. Enable Debug and verify the processing choices are Automatic, Lower Resource
-   Use, and Faster. Confirm Debug off leaves no empty or unbalanced layout area.
+8. Verify the processing choices are Automatic, Lower Resource Use, and Faster,
+   and that diagnostic capture remains unchecked by default.
 9. Open every destructive confirmation and cancel it. Confirm the exact scope
    is stated and no data changes.
 
-## 2. Debug-off and Debug-on capture
+## 2. Diagnostic capture
 
 1. Start from an upgraded preference set with legacy `auditLlmInputs=true` and
-   a legacy destination. Confirm **Enable Debug options** and capture both load
-   off while the old destination is retained.
-2. With Debug off, run metadata generation through Ollama and LM Studio. Confirm
-   no default debug directory is created and no diagnostic files are written.
-3. Enable Debug only. Confirm subordinate controls appear without a blank band
-   when hidden again, and confirm metadata generation still writes no captures.
-4. Enable capture. Generate metadata and verify each accepted photo creates its
+   a legacy destination. Confirm capture loads off while the old destination is
+   retained.
+2. With capture off, run metadata generation through Ollama and LM Studio.
+   Confirm no default diagnostic directory is created and no files are written.
+3. Enable capture. Generate metadata and verify each accepted photo creates its
    own original diagnostic image in the displayed local destination.
-5. Confirm Reveal opens the destination. Create an unrelated file there, use
+4. Confirm Reveal opens the destination. Create an unrelated file there, use
    Clear, and verify captured groups are removed while the unrelated file
    remains.
-6. Disable Debug and run metadata again. Confirm capture stops immediately.
+6. Clear the capture checkbox and run metadata again. Confirm capture stops
+   immediately.
 
 ## 3. Prepare Photos
 
@@ -157,18 +160,16 @@ paths, model names, prompt names, filenames, status errors, and descriptions.
 | macOS Tahoe or newer | Light, dark, increased contrast; small laptop; scaled display; external display; move dialogs between displays |
 | Windows 11 | 100%, 125%, 150%, and 200% scaling; light and dark |
 
-For each configuration, check keyboard traversal, focus after hiding Debug,
-button reachability, regular-size supporting text, wrapped text, bounded popup
+For each configuration, check keyboard traversal, button reachability,
+regular-size supporting text, wrapped text, bounded popup
 menus, clipped controls, overlapping controls, scroller access, dialog resize
 behavior, and status meaning without color.
 
-## 8. Developer-options smoke suite
+## 8. Developer-tools smoke suite
 
-In Plug-in Manager, select **Enable Developer Options**, close the dialog, and
-confirm the developer-tool buttons appear immediately without installing
-another plug-in.
-Then run
+Open **Help > Plug-in Extras**, confirm the support and developer commands
+appear, then run
 **Developer: Run Automated Tests...**. Record Lightroom version, operating
 system, display scale, language, pass/fail totals, and the first error for any
-failure. Turn Developer Options off again and confirm every developer control
-is hidden and direct task entry points still fail closed before doing work.
+failure. Confirm the normal **File > Plug-in Extras** workflow menu remains
+unchanged.

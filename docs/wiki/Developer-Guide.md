@@ -14,16 +14,11 @@ uv run python scripts/download_models.py
 ```
 
 The checked-in `plugin/StyleAI.lrdevplugin` is the canonical deployed source.
-It registers only production menu workflows. Developer tasks remain hidden
-until **Enable Developer Options** is selected under **File → Plug-in Manager →
-StyleAI → Support & Debug**; the preference defaults off and is independent of
-**Enable Debug options**. Enabling it immediately reveals the developer-tool
-buttons in that section, and disabling it hides them again.
-
-Lightroom cannot preference-gate static Help-menu registrations, so developer
-tools intentionally live in the dynamic Plug-in Manager panel instead. Their
-entry points retain a second fail-closed preference check. No separate
-development plug-in or database is required.
+It registers normal photography workflows under **File → Plug-in Extras** and
+support/developer workflows under **Help → Plug-in Extras**. No toggle,
+separate development plug-in, or separate database is required. Diagnostic
+image capture remains an individual opt-in under Plug-in Manager → StyleAI →
+Diagnostics and defaults off.
 
 Generate a disposable package when needed with:
 
@@ -33,8 +28,7 @@ python scripts/package_lrc_plugin.py release
 
 ### Local metadata model benchmark
 
-**Plug-in Manager → StyleAI → Support & Debug → Compare Local Metadata
-Models...** is a non-persisting
+**Help → Plug-in Extras → Developer: Compare Local Metadata Models...** is a non-persisting
 evaluation harness. Select a representative photo set before opening it, choose
 one or more locally available Ollama or LM Studio vision models, and hold the
 prompt and generation settings constant across the run. StyleAI creates a
@@ -210,8 +204,8 @@ for service shutdown.
 
 Ollama uses loopback port 11434. LM Studio starts from loopback port 1234 and
 may be resolved through the SDK's local dynamic-port discovery. Remote/LAN
-hosts are rejected. Debug image capture requires both Debug and Capture inputs,
-is created lazily, and is bounded by group count and bytes.
+hosts are rejected. Diagnostic image capture requires the explicit Capture
+opt-in, is created lazily, and is bounded by group count and bytes.
 
 ## Editing-policy training
 

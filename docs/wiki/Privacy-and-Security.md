@@ -24,10 +24,10 @@ downloads, and initial model downloads, but those requests do not include
 catalog images or photo metadata. Ollama and LM Studio are separate applications
 whose own settings remain the user's responsibility.
 
-Diagnostic image capture is off by default and requires Debug plus an explicit
-capture toggle. Captures stay in a local user-selected folder, can contain
-pixels and metadata, and are bounded/clearable. Inspect diagnostic reports
-before sharing them.
+Diagnostic image capture is off by default and requires an explicit capture
+toggle. Captures stay in a local user-selected folder, can contain pixels and
+metadata, and are bounded/clearable. Inspect diagnostic reports before sharing
+them.
 
 See the repository [privacy statement](https://github.com/RareLight/StyleAI/blob/main/PRIVACY.md)
 for storage and retention details.

@@ -1306,8 +1306,7 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
 
     globalOptions = globalOptions or {}
     local url = getBaseUrl() .. ENDPOINTS.INDEX_BASE64_BATCH
-	local diagnosticCaptureEnabled = (prefs and prefs.debugMode) == true
-		and (prefs and prefs.captureLlmInputs) == true
+	local diagnosticCaptureEnabled = (prefs and prefs.captureLlmInputs) == true
 
     -- Construct global options table to send in JSON body
     local bodyOptions = {
@@ -1331,7 +1330,7 @@ function SearchIndexAPI.analyzeAndIndexPhotosBatch(batch, globalOptions)
         keyword_secondary_language = globalOptions.keyword_secondary_language or (prefs and prefs.keywordSecondaryLanguage) or "English",
         regenerate_metadata = (globalOptions.regenerate_metadata == true),
         cache_images = globalOptions.cache_images == true,
-        diagnostic_mode = tostring((prefs and prefs.debugMode) == true),
+		diagnostic_mode = tostring(diagnosticCaptureEnabled),
 		audit_llm_inputs = tostring(diagnosticCaptureEnabled),
 		audit_llm_inputs_path = diagnosticCaptureEnabled
 			and (globalOptions.audit_llm_inputs_path or (prefs and prefs.captureLlmInputsPath))
@@ -1495,7 +1494,7 @@ function SearchIndexAPI.analyzeAndIndexPhoto(photoId, filepath, options)
     -- Regeneration control: if false, server will only fill missing fields
     table.insert(mimeChunks, { name = "regenerate_metadata", value = tostring(options.regenerate_metadata ~= false) })
 
-    if prefs and prefs.debugMode == true and prefs.captureLlmInputs == true then
+    if prefs and prefs.captureLlmInputs == true then
         table.insert(mimeChunks, { name = "diagnostic_mode", value = "true" })
         table.insert(mimeChunks, { name = "audit_llm_inputs", value = "true" })
         if prefs.captureLlmInputsPath then

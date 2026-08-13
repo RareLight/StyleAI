@@ -17,12 +17,12 @@ The canonical cross-module entry point is **File > Plug-in Extras**.
 | Styles & Training... | `TaskStyleCatalog.lua` | Browse, rename, reveal, and rebuild learned styles |
 | Find More Training Examples... | `TaskDiscoverUpgradeCandidates.lua` | Review policy-specific candidate photos and record evaluation-only feedback |
 
-The canonical plug-in does not register developer Help commands because
-Lightroom cannot hide static manifest entries from a runtime preference.
-**Enable Developer Options** in Plug-in Manager defaults off; turning it on
-immediately reveals developer-tool buttons in **Support & Debug**, and turning
-it off hides them. Every tool also fails closed through that preference. Debug
-options and Developer options are separate visibility gates.
+The canonical plug-in registers one-shot support actions and developer
+workflows under **Help > Plug-in Extras**. Documentation, manual update checks,
+support-report generation, and the logs folder live there instead of appearing
+as Plug-in Manager buttons. Developer tools remain separate from the six normal
+photography workflows under **File > Plug-in Extras**. There is one canonical
+build and no Developer Options or Debug Options wrapper preference.
 
 **Compare Local Metadata Models...**
 snapshots the current photo selection before opening its dialog, creates a
@@ -130,29 +130,35 @@ enabled only for developer evaluation with
   user-facing Plugin Manager action.
 - Preview acquisition is automatic and falls back to Lightroom export after
   failures or repeated timeouts.
-- Processing-load overrides are Debug-only and map to automatic,
+- Processing-load overrides live in Diagnostics and map to automatic,
   lower-resource, or faster operation. Maximum is no longer a user-facing
   choice.
-- Support reports contain system details and available StyleAI/provider logs,
-  never the Lightroom catalog or original photos.
+- Diagnostics retains the explicit capture opt-in, destination, Reveal, and
+  safe Clear controls because those actions configure and manage that setting.
+- Updates retains automatic-check configuration and status; manual checks are
+  launched from Help > Plug-in Extras.
+- Support reports launched from Help contain system details and available
+  StyleAI/provider logs, never the Lightroom catalog or original photos.
 
 ## Debug capture contract
 
-Diagnostic LLM image capture is authorized only when both `debugMode` and
-`captureLlmInputs` are true. Both default false. The plugin transmits both gates
-and the backend ignores a legacy audit flag without `diagnostic_mode`.
+Diagnostic LLM image capture is authorized only when the explicit
+`captureLlmInputs` checkbox is true; it defaults false. The plug-in transmits
+both backend authorization fields from that one opt-in, and the backend ignores
+a legacy audit flag without `diagnostic_mode`.
 
 The destination is created lazily on first authorized capture. Defaults use the
 platform support/state directory, retention is bounded to 50 request groups and
 512 MiB, and Clear removes only recognized StyleAI capture groups. Disabling
-Debug immediately disables effective capture. The former LM Studio cache write
+Capture immediately disables when its checkbox is cleared. The former LM Studio cache write
 has been removed.
 
 ## Preference cleanup classification
 
 | Preference / state | Classification | Treatment |
 | --- | --- | --- |
-| `debugMode`, `captureLlmInputs`, `captureLlmInputsPath` | Active | New double-gated Debug UI |
+| `captureLlmInputs`, `captureLlmInputsPath` | Active | Explicit diagnostic capture opt-in and destination |
+| `debugMode`, `enableDeveloperOptions` | Obsolete | Wrapper toggles removed; existing stored values are ignored |
 | `auditLlmInputs`, `auditLlmInputsPath` | Migration-only | Never migrate enabled state; retain old path once |
 | `usePreviewThumbnails` | Compatibility-reserved, ignored by current UI orchestration | Preview acquisition is automatic with export fallback |
 | `exportSize`, `exportQuality` | Compatibility-reserved, currently unused | Removed from Plugin Manager state; defaults retained to avoid upgrade churn |

@@ -76,13 +76,15 @@ uv run python scripts/evaluate_catalog_policies.py --db-path /path/to/styleai.db
 uv run python scripts/evaluate_applied_edits.py --db-path /path/to/styleai.db
 ```
 
-The checked-in plug-in is the canonical deployed build. Do not register
-developer commands in the static Help manifest: expose them as controls in
-Plug-in Manager only while the persisted **Enable Developer Options** preference
-is on, and retain a fail-closed runtime gate in every tool. The preference
-defaults off. Do not create behaviorally distinct developer/release plug-in
-builds. Package a disposable copy with `python scripts/package_lrc_plugin.py
-release`. Keep English, Catalan, German, Spanish, and French synchronized.
+The checked-in plug-in is the canonical deployed build. Register one-shot
+support actions and developer workflows under **Help > Plug-in Extras**,
+separate from normal photography workflows under **File > Plug-in Extras**.
+Keep catalog data/recovery and service-repair controls contextual in Plug-in
+Manager. Do not add developer/debug wrapper preferences or create behaviorally
+distinct developer/release plug-in builds. Sensitive diagnostic capture remains
+individually opt-in and defaults off.
+Package a disposable copy with `python scripts/package_lrc_plugin.py release`.
+Keep English, Catalan, German, Spanish, and French synchronized.
 
 ## Lightroom frontend rules
 
