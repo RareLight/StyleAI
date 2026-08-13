@@ -14,7 +14,7 @@ def _load_packager():
     return module
 
 
-def test_legacy_package_modes_copy_the_same_runtime_gated_manifest(tmp_path):
+def test_legacy_package_modes_copy_the_same_canonical_manifest(tmp_path):
     packager = _load_packager()
     source_manifest = (packager.SOURCE_PLUGIN / "Info.lua").read_text(encoding="utf-8")
     release = packager.build_package("release", tmp_path / "StyleAI.lrplugin")
@@ -28,8 +28,18 @@ def test_legacy_package_modes_copy_the_same_runtime_gated_manifest(tmp_path):
     assert "LrShutdownApp" not in developer_manifest
     assert not (release / "ShutdownApp.lua").exists()
     assert not (developer / "ShutdownApp.lua").exists()
-    assert "LrHelpMenuItems" not in release_manifest
-    assert "LrHelpMenuItems" not in developer_manifest
+    assert "LrHelpMenuItems" in release_manifest
+    assert "LrHelpMenuItems" in developer_manifest
+    support_tasks = {
+        "TaskOpenDocumentation.lua": "LrHttp.openUrlInBrowser",
+        "TaskCheckUpdates.lua": "UpdateCheck.checkForNewVersion",
+        "TaskGenerateSupportReport.lua": "TaskDiagnostics.generateReport",
+        "TaskOpenLogsFolder.lua": "LrShell.revealInShell",
+    }
+    for task, expected_action in support_tasks.items():
+        assert task in release_manifest
+        assert task in developer_manifest
+        assert expected_action in (release / task).read_text(encoding="utf-8")
     for task in (
         "TaskAutomatedTests.lua",
         "TaskBenchmark.lua",
@@ -37,15 +47,15 @@ def test_legacy_package_modes_copy_the_same_runtime_gated_manifest(tmp_path):
         "TaskRenderingStateCapabilitySpike.lua",
         "TaskReconcileAIEditState.lua",
     ):
-        assert task not in release_manifest
-        assert task not in developer_manifest
-        assert 'require("DeveloperOptions")' in (release / task).read_text(
-            encoding="utf-8"
-        )
-        assert ".run()" in (release / task).read_text(encoding="utf-8")
+        assert task in release_manifest
+        assert task in developer_manifest
+        task_source = (release / task).read_text(encoding="utf-8")
+        assert "DeveloperOptions" not in task_source
+        assert "LrTasks.startAsyncTask" in task_source
     assert release_manifest == developer_manifest == source_manifest
     assert not (release / "BuildConfig.lua").exists()
     assert not (developer / "BuildConfig.lua").exists()
+    assert not (release / "DeveloperOptions.lua").exists()
     assert (packager.SOURCE_PLUGIN / "Info.lua").read_text(
         encoding="utf-8"
     ) == source_manifest

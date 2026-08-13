@@ -8,9 +8,8 @@ editing state.
 
 ## Product boundary and acceptance criteria
 
-- [x] Reveal the workflow in the canonical Plug-in Manager only while the
-      runtime **Enable Developer Options** preference is enabled, and retain a
-      fail-closed check in the tool itself.
+- [x] Register the workflow in the canonical plug-in under Lightroom's
+      **Help > Plug-in Extras** menu, separate from normal File-menu workflows.
 - [x] Snapshot the selected photos before opening any modal dialog and reject an
       empty selection.
 - [x] Create one uniquely named regular collection under `StyleAI → Benchmarks`
@@ -128,8 +127,7 @@ editing state.
 
 ## Developer packaging, localization, and documentation
 
-- [x] Add a preference-bound Plug-in Manager button and protect its reusable
-      task entry point with the shared developer-options gate.
+- [x] Add a literal developer Help-menu registration to the canonical manifest.
 - [x] Keep the existing embedding throughput benchmark as a separate command
       with an unambiguous title.
 - [x] Add every visible string to English, Catalan, German, Spanish, and French
@@ -137,7 +135,7 @@ editing state.
 - [x] Update UI behavior contracts and the developer guide with the benchmark's
       non-persistence, privacy, report, and cancellation contracts.
 - [x] Add packaging tests proving every compatibility package contains the same
-      runtime-gated tool and no statically visible developer Help commands.
+      developer Help commands.
 
 ## Automated validation
 
@@ -153,7 +151,7 @@ editing state.
 
 ## Required human validation
 
-- [ ] With **Enable Developer Options** selected, choose a mixed 10–20 photo set and verify the
+- [ ] From **Help > Plug-in Extras**, choose a mixed 10–20 photo set and verify the
       uniquely named collection contains exactly the frozen selection without
       becoming Lightroom's active source.
 - [ ] Run at least two vision-capable local model variants and confirm identical

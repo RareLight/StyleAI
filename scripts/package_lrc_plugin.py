@@ -3,8 +3,7 @@
 
 The legacy release/developer mode names remain accepted so existing automation
 does not break, but both now copy the same single-build plug-in. Developer task
-entry points are revealed dynamically in Plug-in Manager and fail closed
-through the persisted Enable Developer Options preference.
+entry points are registered under Help > Plug-in Extras.
 """
 
 from __future__ import annotations

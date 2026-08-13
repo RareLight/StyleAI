@@ -1,8 +1,6 @@
 -- TaskAutomatedTests.lua
 -- A developer task to run automated diagnostics and logic assertions inside the Lightroom runtime.
 
-local TaskAutomatedTests = {}
-
 local LrTasks = import("LrTasks")
 local LrDialogs = import("LrDialogs")
 local LrFunctionContext = import("LrFunctionContext")
@@ -15,7 +13,6 @@ local DevelopEditManager = require("DevelopEditManager")
 local RenderingStateCapability = require("RenderingStateCapability")
 local PhotoSelector = require("PhotoSelector")
 local StyleUI = require("StyleUI")
-local DeveloperOptions = require("DeveloperOptions")
 
 ---
 -- Helper function to evaluate test conditions safely.
@@ -34,10 +31,8 @@ local function assertTrue(condition, message)
 	end
 end
 
-function TaskAutomatedTests.run()
-	LrTasks.startAsyncTask(function()
-		LrFunctionContext.callWithContext("automatedTestsTask", function(ctx)
-		if not DeveloperOptions.requireEnabled() then return end
+LrTasks.startAsyncTask(function()
+	LrFunctionContext.callWithContext("automatedTestsTask", function(ctx)
 		local confirm = LrDialogs.confirm(
 			LOC("$$$/StyleAI/TaskAutomatedTests/RunConfirmTitle=Run Automated Tests?"),
 			LOC(
@@ -142,10 +137,6 @@ function TaskAutomatedTests.run()
 			assertEqual(7, StyleUI.keepSelection(items, 7), "Visible selection should be preserved")
 			assertEqual(2, StyleUI.keepSelection(items, 99), "Missing selection should fall back deterministically")
 			assertEqual(7, StyleUI.resolveSelectedIndex({ value = 7 }, items), "Lightroom table selection should resolve")
-		end)
-
-		runTest("Developer options runtime gate is enabled", function()
-			assertEqual(true, DeveloperOptions.isEnabled(), "Developer task must fail closed when disabled")
 		end)
 
 		---------------------------------------------------------
@@ -303,8 +294,5 @@ function TaskAutomatedTests.run()
 		else
 			LrDialogs.message(LOC("$$$/StyleAI/TaskAutomatedTests/PassedTitle=All Tests Passed"), summary, "info")
 		end
-		end)
 	end)
-end
-
-return TaskAutomatedTests
+end)

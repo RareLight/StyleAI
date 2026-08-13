@@ -21,6 +21,47 @@ return {
 	LrMetadataProvider = "MetadataProvider.lua",
 	LrMetadataTagsetFactory = "MetadataTagset.lua",
 
+	-- Support and developer workflows live in Help > Plug-in Extras so they
+	-- remain separate from normal File > Plug-in Extras photography workflows.
+	LrHelpMenuItems = {
+		{
+			title = LOC("$$$/StyleAI/Menu/Documentation=StyleAI: Documentation"),
+			file = "TaskOpenDocumentation.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Menu/CheckUpdates=StyleAI: Check for Updates..."),
+			file = "TaskCheckUpdates.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Menu/SupportReport=StyleAI: Generate Support Report..."),
+			file = "TaskGenerateSupportReport.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Menu/OpenLogs=StyleAI: Open Logs Folder"),
+			file = "TaskOpenLogsFolder.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Menu/DeveloperTests=Developer: Run Automated Tests..."),
+			file = "TaskAutomatedTests.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Menu/DeveloperBenchmark=Developer: Run Performance Benchmark..."),
+			file = "TaskBenchmark.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Menu/DeveloperMetadataBenchmark=Developer: Compare Local Metadata Models..."),
+			file = "TaskMetadataBenchmark.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Menu/DeveloperRenderingSpike=Developer: Test Profile and HDR Capabilities..."),
+			file = "TaskRenderingStateCapabilitySpike.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Menu/DeveloperReconcile=Developer: Reconcile Selected AI Edits..."),
+			file = "TaskReconcileAIEditState.lua",
+		},
+	},
+
 	-- LrExportMenuItems is Lightroom's cross-module File > Plug-in Extras
 	-- registration point. LrLibraryMenuItems disappears outside the Library
 	-- module. Keep this declaration literal and omit menu keys with no entries.

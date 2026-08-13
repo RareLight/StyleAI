@@ -2,8 +2,8 @@
 
 These notes describe the completed 0.8-era UI transition. For the maintained
 UI contract, use `UI_BEHAVIOR_CONTRACTS.md`. The former developer/release build
-separation described below was superseded by the single-build, dynamically
-hidden Plug-in Manager Developer Options panel in August 2026.
+separation described below was superseded by the single canonical build with
+developer workflows under Help > Plug-in Extras in August 2026.
 
 ## Navigation and workflow names
 
@@ -60,11 +60,11 @@ hidden Plug-in Manager Developer Options panel in August 2026.
 
 ## Debug and preference migration
 
-- **Enable Debug options** defaults off. Diagnostic LLM image capture is hidden
-  and disabled until Debug is explicitly enabled, and capture itself must then
-  be enabled separately.
+- Superseded behavior: the wrapper **Enable Debug options** control was later
+  removed. Diagnostic LLM image capture remains an explicit checkbox that
+  defaults off.
 - Existing `auditLlmInputs=true` values are not carried forward. A legacy custom
-  destination is retained for possible reuse, but both new gates migrate off.
+  destination is retained for possible reuse, and capture migrates off.
 - Diagnostic directories are created lazily, retention is bounded, and Clear
   removes only recognized StyleAI capture groups.
 - The ineffective Plugin Manager fields for export sizing, indexing batch size,

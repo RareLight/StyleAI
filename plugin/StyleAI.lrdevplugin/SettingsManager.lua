@@ -27,8 +27,6 @@ function SettingsManager.initializeDefaults()
         prompts = { Default = Defaults.defaultSystemInstruction },
         prompt = Defaults.defaultPromptName,
         periodicalUpdateCheck = false,
-        debugMode = false,
-        enableDeveloperOptions = false,
         captureLlmInputs = false,
         submitFolderName = false,
         useGlobalPhotoId = true,
@@ -43,13 +41,12 @@ function SettingsManager.initializeDefaults()
     end
 
     -- Diagnostic image capture used to be controlled directly by
-    -- `auditLlmInputs`.  Never carry an enabled legacy value into a release:
-    -- Debug mode and its subordinate capture option are both opt-in.
+    -- `auditLlmInputs`. Never carry an enabled legacy value forward; capture
+    -- remains an explicit, independent opt-in.
     if prefs.debugSettingsMigrated ~= true then
         if prefs.auditLlmInputsPath and not prefs.captureLlmInputsPath then
             prefs.captureLlmInputsPath = prefs.auditLlmInputsPath
         end
-        prefs.debugMode = false
         prefs.captureLlmInputs = false
         prefs.auditLlmInputs = false
         prefs.debugSettingsMigrated = true

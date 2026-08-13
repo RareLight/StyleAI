@@ -1,8 +1,9 @@
 # Troubleshooting
 
 Start in **File → Plug-in Manager → StyleAI**. Status & Setup reports the local
-service, SigLIP2 model, and optional metadata-provider readiness. Support &
-Debug can generate a local diagnostic report.
+service, SigLIP2 model, and optional metadata-provider readiness. Use **Help →
+Plug-in Extras → StyleAI: Generate Support Report...** to collect a local
+diagnostic report.
 
 ## Service is unreachable
 
@@ -53,7 +54,7 @@ report.
 
 Current metadata jobs retain each photo's own pixels and perform independent
 vision inference. Do not continue a batch if output clearly describes a
-different image. Generate a support report; if Debug capture is explicitly
+different image. Generate a support report; if diagnostic capture is explicitly
 enabled, inspect the affected local capture and clear it after troubleshooting.
 Reprocess affected photos with **Replace selected StyleAI-generated data**.
 
