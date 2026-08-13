@@ -76,6 +76,11 @@ class MetadataGenerationResponse:
     input_tokens: int = 0
     output_tokens: int = 0
 
+    # Optional provider/service timings used by the developer benchmark. Normal
+    # metadata callers may ignore these fields.
+    timing: dict[str, float] | None = None
+    retry_count: int = 0
+
     # Error information
     error: str | None = None
     warning: str | None = None

@@ -140,6 +140,34 @@ class OllamaProvider(LLMProviderBase):
                     getattr(message, "content", None) if message is not None else None
                 )
 
+            def numeric_result(name):
+                value = (
+                    result.get(name)
+                    if isinstance(result, dict)
+                    else getattr(result, name, None)
+                )
+                return (
+                    value
+                    if isinstance(value, (int, float)) and not isinstance(value, bool)
+                    else 0
+                )
+
+            input_tokens = int(numeric_result("prompt_eval_count"))
+            output_tokens = int(numeric_result("eval_count"))
+            eval_duration_ns = float(numeric_result("eval_duration"))
+            timing = {
+                "provider_total_ms": float(numeric_result("total_duration"))
+                / 1_000_000.0,
+                "model_load_ms": float(numeric_result("load_duration")) / 1_000_000.0,
+                "prompt_evaluation_ms": float(numeric_result("prompt_eval_duration"))
+                / 1_000_000.0,
+                "inference_ms": eval_duration_ns / 1_000_000.0,
+            }
+            if output_tokens > 0 and eval_duration_ns > 0:
+                timing["tokens_per_second"] = output_tokens / (
+                    eval_duration_ns / 1_000_000_000.0
+                )
+
             if done_reason == "length":
                 _max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
                 return MetadataGenerationResponse(
@@ -183,8 +211,9 @@ class OllamaProvider(LLMProviderBase):
                 caption=caption,
                 title=title,
                 alt_text=alt_text,
-                input_tokens=0,  # Ollama SDK doesn't provide token counts
-                output_tokens=0,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                timing=timing,
             )
 
         except json.JSONDecodeError as e:

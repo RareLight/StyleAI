@@ -25,6 +25,16 @@ automated tests, benchmark, rendering capability spike, and reconciliation
 command only to developer builds. Runtime Debug never
 changes registered menus.
 
+The developer package also adds **Compare Local Metadata Models...**. It
+snapshots the current photo selection before opening its dialog, creates a
+uniquely named collection under **StyleAI → Benchmarks**, prepares each proxy
+once, and runs the same bytes successively through every selected local vision
+model. Generated fields are never written to Lightroom, Chroma, or learned
+editing state. Incremental JSONL plus comparison CSV, summary CSV, manifest, and
+HTML reports are written beneath the catalog-local
+`styleai.db/evaluation_reports` directory and revealed when the run finishes or
+stops with partial results.
+
 ## Control-to-behavior mapping
 
 ### Prepare Photos

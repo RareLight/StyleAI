@@ -21,6 +21,7 @@ local ENDPOINTS = {
     INDEX_BASE64 = "/index_base64",
     INDEX_BASE64_BATCH = "/index_base64_batch",
     METADATA_GENERATE = "/metadata/generate",
+    METADATA_BENCHMARK = "/metadata_benchmark/run_batch",
     STATS = "/db/stats",
     MODELS = "/models",
     GET_IDS = "/get/ids",
@@ -1005,6 +1006,7 @@ function SearchIndexAPI.enqueuePhotosBase64Batch(batch, globalOptions)
         table.insert(bodyImages, {
             image = item.image,
             photo_id = item.photo_id,
+            source_photo_id = item.source_photo_id,
             lr_uuid = item.lr_uuid,
             filename = item.filename or "photo.jpg",
             options = encodedItemOptions
@@ -1243,6 +1245,50 @@ function SearchIndexAPI.generateMetadataBatch(items, options)
     
     log:error("Unexpected response status for metadata generate_batch: " .. tostring(response.status))
     return false, "Unexpected response status"
+end
+
+---
+-- Runs a non-persisting developer metadata benchmark batch. The backend returns
+-- normalized outputs and measurements but performs no Chroma or catalog write.
+function SearchIndexAPI.runMetadataBenchmarkBatch(items, options)
+    if type(items) ~= "table" or #items == 0 then
+        return false, "No benchmark items provided"
+    end
+    if #items > 12 then
+        return false, "Metadata benchmark batches are limited to 12 photos"
+    end
+    options = options or {}
+    local tasks = {}
+    for _, item in ipairs(items) do
+        table.insert(tasks, {
+            photo_id = item.photo_id,
+            source_photo_id = item.source_photo_id,
+            filename = item.filename or "photo.jpg",
+            image = item.image,
+            operation_item_id = item.operation_item_id,
+            options = item.options or {},
+        })
+    end
+    local requestLease, leaseError = WorkCoordinator.acquire("request")
+    if not requestLease then
+        return false, leaseError or "Could not acquire the request lane"
+    end
+    local response, err
+    local requestOk, requestError = LrTasks.pcall(function()
+        response, err = _request("POST", getBaseUrl() .. ENDPOINTS.METADATA_BENCHMARK, {
+            tasks = tasks,
+            options = options,
+            job_id = options.operation_id,
+        }, 1800)
+    end)
+    WorkCoordinator.release(requestLease)
+    if not requestOk then
+        return false, tostring(requestError)
+    end
+    if not response then
+        return false, err or "Metadata benchmark request failed"
+    end
+    return true, response
 end
 
 ---

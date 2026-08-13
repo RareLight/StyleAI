@@ -22,6 +22,7 @@ from routes.style_edit import style_edit_bp
 from routes.style_catalog import style_catalog_bp
 from routes.clip import clip_bp
 from routes.operations import operations_bp
+from routes.metadata_benchmark import metadata_benchmark_bp
 from services import chroma as service_chroma
 from services import db as service_db
 from services import operations
@@ -49,6 +50,7 @@ app.register_blueprint(style_edit_bp)
 app.register_blueprint(style_catalog_bp)
 app.register_blueprint(clip_bp)
 app.register_blueprint(operations_bp)
+app.register_blueprint(metadata_benchmark_bp)
 
 
 def _start_housekeeping_scheduler() -> None:
