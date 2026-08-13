@@ -157,7 +157,7 @@ class LLMProviderBase(ABC):
                 base_prompt += "* Image title\n"
 
             if request.generate_keywords:
-                base_prompt += "* Keywords (Target exactly 10 highly descriptive tags. Do not exceed 10 new keywords.)\n"
+                base_prompt += "* Keywords (Return up to 12 highly descriptive tags, typically 8-12. Do not pad the list.)\n"
 
         # Add language instruction
         base_prompt += f"\n\nAll results should be generated in {request.language}."
