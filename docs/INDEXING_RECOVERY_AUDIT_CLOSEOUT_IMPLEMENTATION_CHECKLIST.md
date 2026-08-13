@@ -1,7 +1,7 @@
 # Indexing Recovery Audit Closeout Implementation Checklist
 
-Status: implementation and automated validation complete on August 12, 2026;
-Lightroom acceptance testing remains.
+Status: complete and closed on August 12, 2026. Implementation, automated
+validation, packaging, deployment, and Lightroom acceptance all passed.
 
 This checklist supersedes
 `INDEXING_RECOVERY_AUDIT_IMPLEMENTATION_CHECKLIST.md` for all remaining work.
@@ -22,8 +22,8 @@ carries forward only verified unfinished work.
   accounting gaps have explicit automated regression coverage.
 - [x] The old audit is classified as historical/superseded, and this checklist
   is the sole source of truth for closeout status.
-- [ ] All focused, full-suite, plug-in, packaging, translation, and Lightroom
-  acceptance gates pass. Automated gates pass; Lightroom acceptance remains.
+- [x] All focused, full-suite, plug-in, packaging, translation, and Lightroom
+  acceptance gates pass.
 
 ## Scope and non-goals
 
@@ -266,43 +266,43 @@ unless a test itself corrupts disposable state.
 
 ### 5.1 Data & Recovery UI
 
-- [ ] Open Plug-In Manager → StyleAI → Data & Recovery.
-- [ ] Start **Export Backup** and immediately try all three maintenance buttons;
+- [x] Open Plug-In Manager → StyleAI → Data & Recovery.
+- [x] Start **Export Backup** and immediately try all three maintenance buttons;
   confirm no second action starts and visible status progresses to completion.
-- [ ] Cancel the export chooser and confirm controls re-enable with no success
+- [x] Cancel the export chooser and confirm controls re-enable with no success
   status or backend operation.
-- [ ] Start **Restore Backup**, cancel confirmation, and then cancel archive
+- [x] Start **Restore Backup**, cancel confirmation, and then cancel archive
   selection; confirm controls re-enable after both paths.
-- [ ] Complete a restore and confirm success remains visible above/in Plug-In
+- [x] Complete a restore and confirm success remains visible above/in Plug-In
   Manager without searching for a hidden dialog.
-- [ ] Start **Clean Up Removed Photos**, verify its confirmation is frontmost,
+- [x] Start **Clean Up Removed Photos**, verify its confirmation is frontmost,
   and attempt rapid repeat clicks; confirm exactly one prune and one pre-prune
   backup occur.
-- [ ] Cancel prune while scanning a sufficiently large catalog and confirm the
+- [x] Cancel prune while scanning a sufficiently large catalog and confirm the
   UI returns to idle without pruning or leaving maintenance admission held.
-- [ ] Confirm Plug-In Manager can be closed normally after every success,
+- [x] Confirm Plug-In Manager can be closed normally after every success,
   cancellation, and error path.
 
 ### 5.2 Training fingerprint behavior
 
-- [ ] Run **Learn From My Edits** on a selection containing originals, virtual
+- [x] Run **Learn From My Edits** on a selection containing originals, virtual
   copies, already-current examples, and at least one new example.
-- [ ] Confirm saved, skipped-existing, duplicate-source, and total counts remain
+- [x] Confirm saved, skipped-existing, duplicate-source, and total counts remain
   unchanged from established behavior.
-- [ ] Retry the unchanged selection and confirm the all-current result remains
+- [x] Retry the unchanged selection and confirm the all-current result remains
   immediate and creates no empty training operation.
-- [ ] Enable **Update previously learned examples** and confirm the operation
+- [x] Enable **Update previously learned examples** and confirm the operation
   runs normally and rebuilds once after the complete upload.
-- [ ] Inspect only bounded operation metadata/logging needed to confirm stable
+- [x] Inspect only bounded operation metadata/logging needed to confirm stable
   fingerprints; do not log photo IDs or source data at INFO.
 
 ### 5.3 Cancellation and progress spot checks
 
-- [ ] Run one combined indexing cancellation followed immediately by an
+- [x] Run one combined indexing cancellation followed immediately by an
   unrelated embedding-only job; confirm the second job proceeds.
-- [ ] Run one fully complete no-op and one partially complete selection; confirm
+- [x] Run one fully complete no-op and one partially complete selection; confirm
   visible totals are monotonic and match final results.
-- [ ] Quit Lightroom once after maintenance/testing and confirm prompt shutdown
+- [x] Quit Lightroom once after maintenance/testing and confirm prompt shutdown
   with clean backend marker/port state.
 
 Human exit gate: maintenance UI cannot hide or duplicate actions, training
@@ -322,9 +322,9 @@ existing indexing/cancellation workflows remain regression-free.
 - [x] Update the Developer Guide for Plug-In Manager maintenance single-flight
   behavior and training fingerprint semantics if implementation changes a
   documented contract.
-- [ ] Record exact files changed, validation commands, automated pass count,
+- [x] Record exact files changed, validation commands, automated pass count,
   Lightroom results, and any remaining risks.
-- [ ] Mark the old audit closed/superseded and this checklist complete only when
+- [x] Mark the old audit closed/superseded and this checklist complete only when
   all applicable automated and Lightroom gates above pass.
 
 ## Lightroom rerun requirements
@@ -340,13 +340,47 @@ normal existing behavior.
 
 ## Definition of done
 
-- [ ] Data & Recovery actions are single-flight and their status cannot be
+- [x] Data & Recovery actions are single-flight and their status cannot be
   hidden behind Plug-In Manager.
 - [x] Training fingerprints cover the canonical complete deduplicated request
   and are stable across order/preflight changes.
 - [x] Scoped cancellation and progress invariants have the focused automated
   coverage defined above.
 - [x] Full validation and packaging pass.
-- [ ] Lightroom acceptance tests pass on the disposable catalog.
-- [ ] The prior audit is clearly superseded and contains no ambiguous live work.
-- [ ] No applicable item in this checklist remains unchecked.
+- [x] Lightroom acceptance tests pass on the disposable catalog.
+- [x] The prior audit is clearly superseded and contains no ambiguous live work.
+- [x] No applicable item in this checklist remains unchecked.
+
+## Final acceptance record
+
+Lightroom acceptance completed on August 12, 2026. The user confirmed the full
+matrix passed after the completion presentation was strengthened from inline
+status alone to a four-second Lightroom bezel plus durable inline summary.
+Read-only log review corroborated the final workflow sequence: 497 refreshed
+training examples completed; a combined indexing job canceled cleanly; the
+next 17-photo indexing job succeeded with zero failures; and its immediate
+all-current rerun reported 17 complete with zero failures. Restore and cleanup
+had previously been corroborated in the service log, including a zero-change
+cleanup that checked 13,403 records and created its pre-prune backup.
+
+Final automated validation recorded above remains 522 tests passed with 71
+established warnings. Subsequent presentation-only corrections passed 25 and
+13 focused tests respectively, lint/format, translation synchronization,
+source validation, disposable package validation, and deployed-file/source
+comparison.
+
+Implementation commit `3e67ddc` changed the following exact files:
+
+- `docs/INDEXING_RECOVERY_AUDIT_CLOSEOUT_IMPLEMENTATION_CHECKLIST.md`,
+  `docs/INDEXING_RECOVERY_AUDIT_IMPLEMENTATION_CHECKLIST.md`,
+  `docs/wiki/Developer-Guide.md`, and `docs/wiki/Plugin-Guide.md`;
+- `plugin/StyleAI.lrdevplugin/APISearchIndex.lua`,
+  `PluginInfoDialogSections.lua`, `ProgressAccounting.lua`,
+  `TaskPruneDatabase.lua`, `TaskTrainFromEdits.lua`, and
+  `TrainingPreflight.lua`;
+- `plugin/StyleAI.lrdevplugin/TranslatedStrings_ca.txt`,
+  `TranslatedStrings_de.txt`, `TranslatedStrings_en.txt`,
+  `TranslatedStrings_es.txt`, and `TranslatedStrings_fr.txt`;
+- `server/test/test_lua_progress_accounting.py`,
+  `test_lua_training_preflight.py`, `test_lua_workflow_contracts.py`,
+  `test_operations.py`, and `test_service_metadata.py`.
