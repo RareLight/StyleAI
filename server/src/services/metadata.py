@@ -419,9 +419,15 @@ class AnalysisService:
         import time
 
         response = None
+        generation_started = time.perf_counter()
         for attempt in range(2):
             try:
                 response = selected_provider.generate_metadata(request)
+                response.retry_count = attempt
+                response.timing = dict(response.timing or {})
+                response.timing["generation_total_ms"] = round(
+                    (time.perf_counter() - generation_started) * 1000.0, 3
+                )
                 if response.success:
                     if "warning_msg" in locals():
                         response.warning = warning_msg
@@ -436,7 +442,16 @@ class AnalysisService:
                 )
                 if attempt == 1:
                     return MetadataGenerationResponse(
-                        uuid=uuid, success=False, error=str(e)
+                        uuid=uuid,
+                        success=False,
+                        error=str(e),
+                        retry_count=attempt,
+                        timing={
+                            "generation_total_ms": round(
+                                (time.perf_counter() - generation_started) * 1000.0,
+                                3,
+                            )
+                        },
                     )
 
             if attempt < 1:

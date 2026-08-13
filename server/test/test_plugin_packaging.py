@@ -35,6 +35,8 @@ def test_release_and_developer_packages_keep_manifest_separation(tmp_path):
     assert "LrHelpMenuItems" in developer_manifest
     assert "TaskAutomatedTests.lua" in developer_manifest
     assert "TaskBenchmark.lua" in developer_manifest
+    assert "TaskMetadataBenchmark.lua" in developer_manifest
+    assert "TaskMetadataBenchmark.lua" not in release_manifest
     assert "TaskRenderingStateCapabilitySpike.lua" in developer_manifest
     assert "TaskReconcileAIEditState.lua" in developer_manifest
     assert "developerBuild = true" in (developer / "BuildConfig.lua").read_text(

@@ -90,6 +90,48 @@ def test_lightroom_default_metadata_prompt_is_specific_and_migrates_prior_defaul
     )
 
 
+def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
+    source = _source("MetadataBenchmark.lua")
+    api_source = _source("APISearchIndex.lua")
+    report_source = _source("MetadataBenchmarkReport.lua")
+
+    assert "PhotoSelector.snapshotSelectedPhotos()" in source
+    assert 'createCollectionSet("Benchmarks", rootSet, true)' in source
+    assert "getJpegThumbnailForPhoto(photo, 1024, 1024" in source
+    assert "LrStringUtils.encodeBase64(jpegData)" in source
+    assert "Util.getPhotoExif(photo)" in source
+    assert '"metadata_benchmark"' in source
+    assert "runMetadataBenchmarkBatch" in source
+    assert 'WorkCoordinator.acquire("render", progressScope)' in source
+    assert 'WorkCoordinator.acquire("catalog_write")' in source
+    assert "analyzeAndIndexSelectedPhotos" not in source
+    assert "applyMetadata" not in source
+    assert 'METADATA_BENCHMARK = "/metadata_benchmark/run_batch"' in api_source
+    assert "source_photo_id = item.source_photo_id" in api_source
+    assert 'WorkCoordinator.acquire("request")' in api_source
+    for filename in (
+        "manifest.json",
+        "results.jsonl",
+        "comparison.csv",
+        "summary.csv",
+        "report.html",
+    ):
+        assert filename in report_source
+    assert "proxy_consistency" in report_source
+    assert "proxy_mismatches" in report_source
+
+
+def test_metadata_benchmark_backend_service_has_no_persistence_dependency():
+    source = (
+        REPOSITORY_ROOT / "server" / "src" / "services" / "metadata_benchmark.py"
+    ).read_text(encoding="utf-8")
+
+    assert "generate_metadata_single" in source
+    assert "from services import chroma" not in source
+    assert "services.chroma" not in source
+    assert "catalog_write" not in source
+
+
 def test_training_uses_raw_source_contract_without_rendered_preview_payloads():
     task_source = _source("TaskTrainFromEdits.lua")
 

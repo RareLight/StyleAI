@@ -8,6 +8,7 @@ return {
 	developerMenuTitles = {
 		LOC("$$$/StyleAI/Menu/DeveloperTests=Developer: Run Automated Tests..."),
 		LOC("$$$/StyleAI/Menu/DeveloperBenchmark=Developer: Run Performance Benchmark..."),
+		LOC("$$$/StyleAI/Menu/DeveloperMetadataBenchmark=Developer: Compare Local Metadata Models..."),
 		LOC("$$$/StyleAI/Menu/DeveloperRenderingSpike=Developer: Test Profile and HDR Capabilities..."),
 		LOC("$$$/StyleAI/Menu/DeveloperReconcile=Developer: Reconcile Selected AI Edits..."),
 	},

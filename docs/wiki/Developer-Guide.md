@@ -25,6 +25,40 @@ python scripts/package_lrc_plugin.py release
 The developer package adds automated tests, benchmarks, edit reconciliation,
 and rendering-state capability checks to Lightroom's Help menu.
 
+### Local metadata model benchmark
+
+**Help → Developer: Compare Local Metadata Models...** is a non-persisting
+evaluation harness. Select a representative photo set before opening it, choose
+one or more locally available Ollama or LM Studio vision models, and hold the
+prompt and generation settings constant across the run. StyleAI creates a
+uniquely named collection under **StyleAI → Benchmarks** so the evaluated set
+can be revisited without changing Lightroom's active source.
+
+The workflow prepares each 1024-pixel Lightroom proxy once and reuses those
+exact bytes for every model. It performs an optional excluded warm-up request,
+runs models successively with effective LLM concurrency one, records normalized
+metadata and timing per photo, and uses a catalog-local `metadata_benchmark`
+operation for cancellation. It does not write generated titles, captions, alt
+text, or keywords to Lightroom or either Chroma collection.
+
+Reports are revealed from:
+
+```text
+styleai.db/evaluation_reports/llm-metadata-<timestamp>/
+  manifest.json
+  results.jsonl
+  comparison.csv
+  summary.csv
+  report.html
+```
+
+The manifest records the prompt, fixed settings, model order, stable photo IDs,
+proxy dimensions, and runtime versions without absolute source paths or image
+bytes. `results.jsonl` is flushed incrementally, so canceled and partially
+failed runs remain inspectable. Human verification should compare the proxy
+hash repeated for a photo across models and confirm catalog/Chroma metadata is
+unchanged.
+
 On macOS, `scripts/styleai-installer.sh redeploy` is a source-development tool.
 Lightroom must be stopped. The command stops the recognized StyleAI process on
 port 19819, stages and verifies a complete `StyleAI.lrdevplugin` copy, then

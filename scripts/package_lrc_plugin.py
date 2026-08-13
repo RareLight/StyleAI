@@ -32,6 +32,10 @@ DEVELOPER_HELP_MENU = """\
 \t\t\tfile = "TaskBenchmark.lua",
 \t\t},
 \t\t{
+\t\t\ttitle = LOC("$$$/StyleAI/Menu/DeveloperMetadataBenchmark=Developer: Compare Local Metadata Models..."),
+\t\t\tfile = "TaskMetadataBenchmark.lua",
+\t\t},
+\t\t{
 \t\t\ttitle = LOC("$$$/StyleAI/Menu/DeveloperRenderingSpike=Developer: Test Profile and HDR Capabilities..."),
 \t\t\tfile = "TaskRenderingStateCapabilitySpike.lua",
 \t\t},

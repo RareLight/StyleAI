@@ -79,6 +79,32 @@ def test_ollama_typed_object_response_parsed(ollama_provider):
     assert resp.keywords == ["X"]
 
 
+def test_ollama_exposes_provider_timing_and_token_usage(ollama_provider):
+    provider, fake_client = ollama_provider
+    fake_client.chat.return_value = {
+        "message": {"content": '{"keywords": ["Fox"], "caption": "fox"}'},
+        "prompt_eval_count": 100,
+        "eval_count": 25,
+        "total_duration": 2_000_000_000,
+        "load_duration": 500_000_000,
+        "prompt_eval_duration": 250_000_000,
+        "eval_duration": 1_000_000_000,
+    }
+
+    response = provider.generate_metadata(_request())
+
+    assert response.success is True
+    assert response.input_tokens == 100
+    assert response.output_tokens == 25
+    assert response.timing == {
+        "provider_total_ms": 2000.0,
+        "model_load_ms": 500.0,
+        "prompt_evaluation_ms": 250.0,
+        "inference_ms": 1000.0,
+        "tokens_per_second": 25.0,
+    }
+
+
 def test_ollama_empty_content_returns_failure(ollama_provider):
     provider, fake_client = ollama_provider
     fake_client.chat.return_value = {"message": {"content": ""}}
@@ -217,6 +243,8 @@ def test_lmstudio_token_usage_from_stats(lmstudio_provider):
     assert resp.success is True
     assert resp.input_tokens == 12
     assert resp.output_tokens == 34
+    assert resp.timing["time_to_first_token_ms"] == 500.0
+    assert resp.timing["tokens_per_second"] == 20.0
 
 
 def test_lmstudio_passes_configured_max_tokens(lmstudio_provider):

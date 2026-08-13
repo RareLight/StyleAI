@@ -1,6 +1,33 @@
 from styleai_server import app
 
 
+def test_metadata_benchmark_is_an_allowed_operation_kind(mocker):
+    app.config["TESTING"] = True
+    created_job = {
+        "job_id": "benchmark-1",
+        "kind": "metadata_benchmark",
+        "state": "queued",
+    }
+    mocker.patch("routes.operations.config.DB_PATH", "/catalog/styleai.db")
+    create = mocker.patch(
+        "routes.operations.operations.create_job", return_value=(created_job, True)
+    )
+
+    with app.test_client() as client:
+        response = client.post(
+            "/operations",
+            json={
+                "kind": "metadata_benchmark",
+                "item_ids": ["ollama::model::photo-1"],
+                "coalesce": False,
+            },
+        )
+
+    assert response.status_code == 202
+    assert response.get_json()["results"]["job"]["kind"] == "metadata_benchmark"
+    assert create.call_args.kwargs["kind"] == "metadata_benchmark"
+
+
 def test_operation_status_and_scoped_cancel(mocker):
     app.config["TESTING"] = True
     job = {

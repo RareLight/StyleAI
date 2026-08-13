@@ -11,6 +11,7 @@ _ALLOWED_KINDS = frozenset(
     {
         "index",
         "metadata",
+        "metadata_benchmark",
         "training",
         "discovery",
         "edit",

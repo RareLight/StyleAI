@@ -294,6 +294,7 @@ class LMStudioProvider(LLMProviderBase):
             output_tokens = 0
             time_to_first_token = 0
             tokens_per_second = 0
+            total_seconds = time.perf_counter() - request_started
             try:
                 # 1. Try to get usage from the response object directly (lms 0.4.x+)
                 stats = getattr(response, "stats", None) or getattr(
@@ -364,6 +365,14 @@ class LMStudioProvider(LLMProviderBase):
                 alt_text=alt_text,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                timing={
+                    "provider_total_ms": total_seconds * 1000.0,
+                    "image_upload_ms": upload_seconds * 1000.0,
+                    "model_load_ms": model_seconds * 1000.0,
+                    "inference_ms": inference_seconds * 1000.0,
+                    "time_to_first_token_ms": time_to_first_token * 1000.0,
+                    "tokens_per_second": float(tokens_per_second),
+                },
             )
 
         except Exception as e:
