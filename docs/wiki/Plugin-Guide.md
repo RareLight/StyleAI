@@ -78,7 +78,9 @@ evaluation-only.
 - **Status & Setup:** service, SigLIP2, and optional metadata-model readiness.
 - **Styles:** factual training/policy summary and access to Styles & Training.
 - **Data & Recovery:** reveal the catalog-local database, export/restore a
-  validated backup, and clean records for removed photos.
+  validated backup, and clean records for removed photos. These maintenance
+  actions run one at a time; completion appears as a prominent temporary
+  Lightroom notification and remains visible inside Plug-In Manager.
 - **Support & Debug:** local support report, logs, hardware-load override, and
   explicitly gated diagnostic image capture.
 - **Updates / About:** version, update, documentation, credit, and license links.

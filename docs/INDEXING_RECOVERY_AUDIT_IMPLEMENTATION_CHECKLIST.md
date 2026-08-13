@@ -1,6 +1,11 @@
 # Indexing Recovery Audit Implementation Checklist
 
-Status: implementation and automated validation complete on August 12, 2026.
+Status: historical and superseded on August 12, 2026 by
+`INDEXING_RECOVERY_AUDIT_CLOSEOUT_IMPLEMENTATION_CHECKLIST.md`. Retained as the
+audit trail for completed implementation, database inspection, and Lightroom
+validation; unchecked historical or inapplicable boxes are not active work.
+
+Implementation and automated validation completed on August 12, 2026.
 The disposable test database/debug artifacts were removed; no data migration
 was built. The Lightroom human validation matrix remains for execution in a
 real Lightroom Classic catalog with the local models available. This document

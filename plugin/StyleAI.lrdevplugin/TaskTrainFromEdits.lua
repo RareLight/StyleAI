@@ -128,6 +128,7 @@ LrTasks.startAsyncTask(function()
 				table.insert(photos, photo)
 			end
 		end
+		local ineligibleFormatCount = #photosToProcess - #photos
 
 		if #photos == 0 then
 			LrDialogs.message(
@@ -173,6 +174,7 @@ LrTasks.startAsyncTask(function()
 			end
 		end
 		photos = uniquePhotos
+		local requestedOperationItemIds = operationItemIds
 		if #operationItemIds == 0 then
 			progressScope:done()
 			ErrorHandler.handleError(
@@ -234,11 +236,24 @@ LrTasks.startAsyncTask(function()
 			)
 			return
 		end
+		local requestFingerprint = SearchIndexAPI.trainingOperationFingerprint(
+			requestedOperationItemIds,
+			options.scope,
+			options.forceRetrain
+		)
 		local operationOk, operation = SearchIndexAPI.startOperation(
 			"training",
 			operationItemIds,
-			{ scope = tostring(options.scope), photo_count = #operationItemIds },
-			nil,
+			{
+				scope = tostring(options.scope),
+				force_retrain = options.forceRetrain == true,
+				photo_count = #operationItemIds,
+				requested_photo_count = #requestedOperationItemIds,
+				existing_photo_count = existingSkippedCount,
+				duplicate_source_count = duplicateSourceCount,
+				ineligible_format_count = ineligibleFormatCount,
+			},
+			requestFingerprint,
 			8,
 			false
 		)

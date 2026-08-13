@@ -33,6 +33,29 @@ def test_identical_active_jobs_coalesce(operation_db):
     assert second["job_id"] == first["job_id"]
 
 
+def test_identical_training_fingerprints_remain_distinct_when_coalescing_disabled(
+    operation_db,
+):
+    first, first_created = operations.create_job(
+        operation_db,
+        kind="training",
+        request_fingerprint="same-training-request",
+        item_ids=["p1"],
+        coalesce=False,
+    )
+    second, second_created = operations.create_job(
+        operation_db,
+        kind="training",
+        request_fingerprint="same-training-request",
+        item_ids=["p1"],
+        coalesce=False,
+    )
+
+    assert first_created is True
+    assert second_created is True
+    assert second["job_id"] != first["job_id"]
+
+
 def test_scoped_cancel_does_not_change_another_job(operation_db):
     first, _ = operations.create_job(
         operation_db, kind="index", request_fingerprint="first"
@@ -372,6 +395,70 @@ def test_waiting_resource_claim_can_be_canceled():
     waiter.join(timeout=1)
 
     assert errors == ["resource admission canceled"]
+    assert admission.snapshot()["waiting"] == 0
+
+
+def test_canceling_job_a_waiter_does_not_starve_job_b():
+    admission = operations.ResourceAdmission({"local_llm": 1})
+    cancel_a = threading.Event()
+    a_finished = threading.Event()
+    b_entered = threading.Event()
+
+    def job_a():
+        try:
+            with admission.acquire({"local_llm": 1}, cancel_event=cancel_a):
+                raise AssertionError("canceled job A must not be admitted")
+        except InterruptedError:
+            pass
+        finally:
+            a_finished.set()
+
+    with admission.acquire({"local_llm": 1}):
+        waiter_a = threading.Thread(target=job_a)
+        waiter_a.start()
+        time.sleep(0.05)
+        cancel_a.set()
+        assert a_finished.wait(timeout=1)
+
+    def job_b():
+        with admission.acquire({"local_llm": 1}):
+            b_entered.set()
+
+    waiter_b = threading.Thread(target=job_b)
+    waiter_b.start()
+    assert b_entered.wait(timeout=1)
+    waiter_a.join(timeout=1)
+    waiter_b.join(timeout=1)
+    assert admission.snapshot()["in_use"] == {"local_llm": 0}
+    assert admission.snapshot()["waiting"] == 0
+
+
+def test_repeated_canceled_waiters_release_all_admission_capacity():
+    admission = operations.ResourceAdmission({"local_llm": 1})
+
+    with admission.acquire({"local_llm": 1}):
+        for _ in range(25):
+            cancel = threading.Event()
+            finished = threading.Event()
+
+            def canceled_waiter():
+                try:
+                    with admission.acquire({"local_llm": 1}, cancel_event=cancel):
+                        raise AssertionError("canceled waiter must not run")
+                except InterruptedError:
+                    pass
+                finally:
+                    finished.set()
+
+            waiter = threading.Thread(target=canceled_waiter)
+            waiter.start()
+            cancel.set()
+            assert finished.wait(timeout=1)
+            waiter.join(timeout=1)
+
+    with admission.acquire({"local_llm": 1}):
+        assert admission.snapshot()["in_use"] == {"local_llm": 1}
+    assert admission.snapshot()["in_use"] == {"local_llm": 0}
     assert admission.snapshot()["waiting"] == 0
 
 
