@@ -25,6 +25,7 @@ styleai-server.log.*
 styleai-server.OK
 styleai-server.pid
 /styleai.db
+*.zip
 
 run.sh
 run.bat
