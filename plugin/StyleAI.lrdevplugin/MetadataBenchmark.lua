@@ -7,6 +7,7 @@ local PhotoSelector = require("PhotoSelector")
 local Defaults = require("Defaults")
 local WorkCoordinator = require("WorkCoordinator")
 local runSequence = 0
+local RECOMMENDED_MAX_PHOTOS = 32
 
 local function availableModels()
 	local response = SearchIndexAPI.getModels()
@@ -55,6 +56,26 @@ local function showDialog(ctx, selectedCount, models)
 		if not anySelected then props.benchmarkModel1 = true end
 	end
 
+	local function updateRequestEstimate()
+		local selectedModelCount = 0
+		for index = 1, #models do
+			if props["benchmarkModel" .. tostring(index)] then selectedModelCount = selectedModelCount + 1 end
+		end
+		local measuredRequests = selectedCount * selectedModelCount
+		local warmupRequests = props.warmup and selectedModelCount or 0
+		props.requestEstimate = LOC(
+			"$$$/StyleAI/MetadataBenchmark/RequestEstimate=Measured requests: ^1 photos × ^2 models = ^3. Excluded warm-ups: ^4. Total model calls: ^5.",
+			tostring(selectedCount),
+			tostring(selectedModelCount),
+			tostring(measuredRequests),
+			tostring(warmupRequests),
+			tostring(measuredRequests + warmupRequests)
+		)
+	end
+	for index = 1, #models do props:addObserver("benchmarkModel" .. tostring(index), updateRequestEstimate) end
+	props:addObserver("warmup", updateRequestEstimate)
+	updateRequestEstimate()
+
 	local modelColumn = { spacing = f:control_spacing(), fill_horizontal = 1 }
 	for _, control in ipairs(modelControls) do table.insert(modelColumn, control) end
 
@@ -67,7 +88,7 @@ local function showDialog(ctx, selectedCount, models)
 		UIFactory.SettingsGroup(f, {
 			title = LOC("$$$/StyleAI/MetadataBenchmark/Set=Frozen Benchmark Set"),
 			UIFactory.HelpText(f, {
-				title = LOC("$$$/StyleAI/MetadataBenchmark/SelectedCount=^1 selected photo(s) will be frozen into a uniquely named StyleAI benchmark collection.", tostring(selectedCount)),
+				title = LOC("$$$/StyleAI/MetadataBenchmark/SelectedCount=^1 selected photo(s) will be frozen into a uniquely named StyleAI benchmark collection. A representative set of 24–32 photos is recommended for normal comparisons.", tostring(selectedCount)),
 			}),
 		}),
 		UIFactory.SettingsGroup(f, {
@@ -82,6 +103,7 @@ local function showDialog(ctx, selectedCount, models)
 				title = LOC("$$$/StyleAI/MetadataBenchmark/Warmup=Run one excluded warm-up photo per model"),
 				value = bind("warmup"),
 			}),
+			UIFactory.HelpText(f, { title = bind("requestEstimate") }),
 		}),
 		UIFactory.SettingsGroup(f, {
 			title = LOC("$$$/StyleAI/MetadataBenchmark/Outputs=Fixed Metadata Settings"),
@@ -127,7 +149,7 @@ local function showDialog(ctx, selectedCount, models)
 	})
 
 	local result = LrDialogs.presentModalDialog({
-		title = LOC("$$$/StyleAI/MetadataBenchmark/Title=Compare Local Metadata Models"),
+		title = LOC("$$$/StyleAI/MetadataBenchmark/LlmTitle=Local LLM Tagging & Metadata Benchmark"),
 		contents = contents,
 		actionVerb = LOC("$$$/StyleAI/MetadataBenchmark/Run=Run Benchmark"),
 		cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
@@ -330,10 +352,17 @@ function MetadataBenchmark.run(ctx)
 	end
 	local options = showDialog(ctx, #selectedPhotos, models)
 	if not options then return end
-	if #selectedPhotos > 50 then
+	if #selectedPhotos > RECOMMENDED_MAX_PHOTOS then
+		local measuredRequests = #selectedPhotos * #options.models
+		local warmupRequests = options.warmup and #options.models or 0
 		local confirmation = LrDialogs.confirm(
 			LOC("$$$/StyleAI/MetadataBenchmark/LargeTitle=Large Benchmark Set"),
-			LOC("$$$/StyleAI/MetadataBenchmark/Large=This benchmark will make ^1 model-photo requests and may take a long time. Continue?", tostring(#selectedPhotos * #options.models)),
+			LOC(
+				"$$$/StyleAI/MetadataBenchmark/Large=The recommended normal benchmark size is 24–32 photos. This run will make ^1 measured requests plus ^2 excluded warm-ups (^3 total model calls) and may take a long time. Continue?",
+				tostring(measuredRequests),
+				tostring(warmupRequests),
+				tostring(measuredRequests + warmupRequests)
+			),
 			LOC("$$$/StyleAI/MetadataBenchmark/Continue=Continue"),
 			LOC("$$$/StyleAI/common/Cancel=Cancel")
 		)

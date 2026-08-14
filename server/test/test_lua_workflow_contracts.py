@@ -106,6 +106,11 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
     assert 'WorkCoordinator.acquire("catalog_write")' in source
     assert "analyzeAndIndexSelectedPhotos" not in source
     assert "applyMetadata" not in source
+    assert "local RECOMMENDED_MAX_PHOTOS = 32" in source
+    assert "selectedPhotos > RECOMMENDED_MAX_PHOTOS" in source
+    assert "Measured requests: ^1 photos × ^2 models = ^3" in source
+    assert 'props:addObserver("warmup", updateRequestEstimate)' in source
+    assert "A representative set of 24–32 photos is recommended" in source
     assert 'METADATA_BENCHMARK = "/metadata_benchmark/run_batch"' in api_source
     assert "source_photo_id = item.source_photo_id" in api_source
     assert 'WorkCoordinator.acquire("request")' in api_source
@@ -119,6 +124,19 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
         assert filename in report_source
     assert "proxy_consistency" in report_source
     assert "proxy_mismatches" in report_source
+
+
+def test_help_menu_distinguishes_llm_and_indexing_benchmarks():
+    info_source = _source("Info.lua")
+    indexing_source = _source("TaskBenchmark.lua")
+
+    llm_entry = info_source.index("DeveloperLlmBenchmark")
+    indexing_entry = info_source.index("DeveloperIndexingBenchmark")
+    assert llm_entry < indexing_entry
+    assert "Benchmark Local LLM Tagging & Metadata" in info_source
+    assert "Benchmark Indexing Throughput (256+ Photos)" in info_source
+    assert "local minRequired = 256" in indexing_source
+    assert "not the local LLM tagging benchmark" in indexing_source
 
 
 def test_metadata_benchmark_backend_service_has_no_persistence_dependency():
@@ -174,6 +192,22 @@ def test_single_build_registers_support_and_developer_tools_in_help_menu():
         launch = source.index("LrTasks.startAsyncTask")
         work = source.index(first_work, launch)
         assert launch < work
+
+
+def test_plugin_manager_capture_status_uses_local_query_encoding_and_safe_task_boundary():
+    api_source = _source("APISearchIndex.lua")
+    dialog_source = _source("PluginInfoDialogSections.lua")
+
+    assert "local function encodeQueryValue(value)" in api_source
+    assert '"?path=" .. encodeQueryValue(path)' in api_source
+    assert "LrHttp.encodeForUrl" not in api_source
+    refresh = dialog_source[
+        dialog_source.index(
+            "local function refreshCaptureInfo()"
+        ) : dialog_source.index("propertyTable.refreshCaptureInfo = refreshCaptureInfo")
+    ]
+    assert "LrTasks.pcall" in refresh
+    assert "SearchIndexAPI.getDiagnosticCaptureInfo" in refresh
 
 
 def test_training_uses_raw_source_contract_without_rendered_preview_payloads():

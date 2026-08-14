@@ -45,12 +45,12 @@ return {
 			file = "TaskAutomatedTests.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Menu/DeveloperBenchmark=Developer: Run Performance Benchmark..."),
-			file = "TaskBenchmark.lua",
+			title = LOC("$$$/StyleAI/Menu/DeveloperLlmBenchmark=Developer: Benchmark Local LLM Tagging & Metadata..."),
+			file = "TaskMetadataBenchmark.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Menu/DeveloperMetadataBenchmark=Developer: Compare Local Metadata Models..."),
-			file = "TaskMetadataBenchmark.lua",
+			title = LOC("$$$/StyleAI/Menu/DeveloperIndexingBenchmark=Developer: Benchmark Indexing Throughput (256+ Photos)..."),
+			file = "TaskBenchmark.lua",
 		},
 		{
 			title = LOC("$$$/StyleAI/Menu/DeveloperRenderingSpike=Developer: Test Profile and HDR Capabilities..."),

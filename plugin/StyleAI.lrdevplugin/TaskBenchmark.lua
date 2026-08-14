@@ -26,18 +26,25 @@ LrTasks.startAsyncTask(function()
 		
 		if not selectedPhotos or #selectedPhotos < minRequired then
 			LrDialogs.message(
-				"Benchmark Error",
-				"Please select a representative batch of at least " .. minRequired .. " photos (ideally more) to run the benchmark.\n\nRunning it on the exact same set of photos ensures the backend gets fully saturated on later runs once Lightroom's thumbnail previews are cached.",
+				LOC("$$$/StyleAI/TaskBenchmark/SelectionTitle=Indexing Throughput Benchmark Needs 256+ Photos"),
+				LOC(
+					"$$$/StyleAI/TaskBenchmark/SelectionMessage=This is the indexing-throughput benchmark, not the local LLM tagging benchmark. Select at least ^1 photos so the preview, embedding, worker, and batch pipelines can reach sustained load. For local LLM comparisons, use “Benchmark Local LLM Tagging & Metadata” instead.",
+					tostring(minRequired)
+				),
 				"critical"
 			)
 			return
 		end
 		
 		local confirm = LrDialogs.confirm(
-			"Run Performance Benchmark?",
-			"This will test " .. #permutations .. " permutations of worker threads and batch sizes on your selected " .. #selectedPhotos .. " photos. This will take a while and will force full processing.\n\nOpen StyleAI.log after completion to view results.",
-			"Run Benchmark",
-			"Cancel"
+			LOC("$$$/StyleAI/TaskBenchmark/ConfirmTitle=Run Indexing Throughput Benchmark?"),
+			LOC(
+				"$$$/StyleAI/TaskBenchmark/ConfirmMessage=This will test ^1 permutations of worker threads and batch sizes on ^2 selected photos. It will take a while and force full embedding processing. Open StyleAI.log afterward for results.",
+				tostring(#permutations),
+				tostring(#selectedPhotos)
+			),
+			LOC("$$$/StyleAI/TaskBenchmark/Run=Run Indexing Benchmark"),
+			LOC("$$$/StyleAI/common/Cancel=Cancel")
 		)
 		if confirm == "cancel" then return end
 		
@@ -49,7 +56,7 @@ LrTasks.startAsyncTask(function()
 
 		local results = {}
 		local progressScope = LrDialogs.showModalProgressDialog({
-			title = LOC("$$$/StyleAI/TaskBenchmark/Running=Running Performance Benchmark..."),
+			title = LOC("$$$/StyleAI/TaskBenchmark/Running=Running Indexing Throughput Benchmark..."),
 			functionContext = ctx
 		})
 
