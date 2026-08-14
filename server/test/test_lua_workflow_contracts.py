@@ -108,6 +108,10 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
     assert 'WorkCoordinator.acquire("catalog_write")' in source
     assert "current_photo_index" in source
     assert "progressModelTitle" in source
+    assert "local MAX_PROGRESS_MODEL_CHARS = 48" in source
+    assert "details.quantization" in source
+    assert "details.format" in source
+    assert 'publisher .. ":"' in source
     assert '"$$$/StyleAI/MetadataBenchmark/Model=^1 (^2/^3)"' in source
     assert "model_index = modelIndex" in source
     assert "photo_index = photoIndex" in source

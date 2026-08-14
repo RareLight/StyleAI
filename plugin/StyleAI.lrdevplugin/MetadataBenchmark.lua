@@ -8,7 +8,7 @@ local Defaults = require("Defaults")
 local WorkCoordinator = require("WorkCoordinator")
 local runSequence = 0
 local RECOMMENDED_MAX_PHOTOS = 32
-local MAX_PROGRESS_MODEL_CHARS = 72
+local MAX_PROGRESS_MODEL_CHARS = 48
 
 local function roundMilliseconds(value)
 	return math.floor((tonumber(value) or 0) + 0.5)
@@ -37,13 +37,44 @@ local function utf8Characters(value)
 	return characters
 end
 
+local function containsIgnoreCase(value, fragment)
+	if fragment == nil or tostring(fragment) == "" then return false end
+	return string.find(string.lower(tostring(value)), string.lower(tostring(fragment)), 1, true) ~= nil
+end
+
+local function addCompactQualifier(qualifiers, modelName, value)
+	if value == nil or tostring(value) == "" or containsIgnoreCase(modelName, value) then return end
+	local normalized = tostring(value)
+	for _, existing in ipairs(qualifiers) do
+		if string.lower(existing) == string.lower(normalized) then return end
+	end
+	table.insert(qualifiers, normalized)
+end
+
 local function progressModelTitle(model)
-	local title = model and model.details and model.details.label
-	if title == nil or tostring(title) == "" then title = model and (model.model or model.title) or "" end
-	title = tostring(title)
+	local details = model and type(model.details) == "table" and model.details or {}
+	local modelName = tostring(details.display_name or (model and model.model) or (model and model.title) or "")
+	local namespace, leafName = string.match(modelName, "^([^/]+)/(.+)$")
+	local publisher = tostring(details.publisher or namespace or "")
+	if leafName then modelName = leafName end
+	if publisher ~= "" then
+		local publisherPrefix = string.lower(publisher) .. "-"
+		if string.sub(string.lower(modelName), 1, #publisherPrefix) == publisherPrefix then
+			modelName = string.sub(modelName, #publisherPrefix + 1)
+		end
+	end
+
+	local qualifiers = {}
+	addCompactQualifier(qualifiers, modelName, details.params_string)
+	addCompactQualifier(qualifiers, modelName, details.quantization)
+	addCompactQualifier(qualifiers, modelName, details.format and string.upper(tostring(details.format)) or nil)
+	if details.quantization == nil then addCompactQualifier(qualifiers, modelName, details.selected_variant) end
+
+	local title = (publisher ~= "" and (publisher .. ":") or "") .. modelName
+	if #qualifiers > 0 then title = title .. " [" .. table.concat(qualifiers, "/") .. "]" end
 	local characters = utf8Characters(title)
 	if #characters <= MAX_PROGRESS_MODEL_CHARS then return title end
-	local suffixLength = 28
+	local suffixLength = 16
 	local prefixLength = MAX_PROGRESS_MODEL_CHARS - suffixLength - 3
 	return table.concat(characters, "", 1, prefixLength)
 		.. "..."
