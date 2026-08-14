@@ -38,6 +38,8 @@ IDLE_SHUTDOWN_SECONDS = config.args.idle_shutdown_seconds
 
 _last_used = None
 _last_request_time = time.time()  # track last HTTP request for server idle shutdown
+_active_client_requests = 0
+_client_request_lock = threading.Lock()
 _resources_unloaded = False
 _model_lock = threading.RLock()
 _unloader_thread = None
@@ -385,10 +387,26 @@ def unload_all_resources():
 
 
 def note_request():
-    """Called by Flask before_request to record that the server is active."""
+    """Record client activity for idle-unload and idle-shutdown timing."""
     global _last_request_time, _resources_unloaded
     _last_request_time = time.time()
     _resources_unloaded = False
+
+
+def begin_client_request() -> None:
+    """Keep idle shutdown blocked for one substantive HTTP request."""
+    global _active_client_requests
+    with _client_request_lock:
+        _active_client_requests += 1
+    note_request()
+
+
+def end_client_request() -> None:
+    """Refresh activity before releasing one substantive HTTP request."""
+    global _active_client_requests
+    note_request()
+    with _client_request_lock:
+        _active_client_requests = max(0, _active_client_requests - 1)
 
 
 def _has_live_work() -> bool:
@@ -398,6 +416,9 @@ def _has_live_work() -> bool:
     Lightroom has exited, those jobs cannot finish and shutdown recovery must
     mark them interrupted instead of keeping the backend alive forever.
     """
+    with _client_request_lock:
+        if _active_client_requests > 0:
+            return True
     try:
         from services import operations
 

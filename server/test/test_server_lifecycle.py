@@ -49,6 +49,24 @@ def test_idle_shutdown_requires_timeout_and_no_live_work(mocker):
     assert server_lifecycle._idle_shutdown_due(now=2_000.0) is False
 
 
+def test_active_client_request_blocks_idle_shutdown_and_refreshes_on_completion(
+    mocker,
+):
+    mocker.patch.object(server_lifecycle, "IDLE_SHUTDOWN_SECONDS", 600)
+    mocker.patch.object(server_lifecycle, "_last_request_time", 1_000.0)
+    mocker.patch.object(server_lifecycle, "_active_client_requests", 0)
+    clock = mocker.patch.object(server_lifecycle.time, "time", return_value=1_601.0)
+
+    server_lifecycle.begin_client_request()
+
+    assert server_lifecycle._idle_shutdown_due(now=10_000.0) is False
+    clock.return_value = 2_000.0
+    server_lifecycle.end_client_request()
+    assert server_lifecycle._active_client_requests == 0
+    assert server_lifecycle._idle_shutdown_due(now=2_599.0) is False
+    assert server_lifecycle._idle_shutdown_due(now=2_600.0) is True
+
+
 def test_idle_shutdown_can_be_disabled(mocker):
     mocker.patch.object(server_lifecycle, "IDLE_SHUTDOWN_SECONDS", 0)
     has_live_work = mocker.patch.object(server_lifecycle, "_has_live_work")

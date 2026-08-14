@@ -105,6 +105,12 @@ REST is fixed to `127.0.0.1:19819`. Responses use:
 {"results": {}, "error": null, "warning": null}
 ```
 
+Substantive requests refresh the backend idle timer when they start and again
+when their response completes. This prevents a single long local-model or ML
+request from exhausting the idle window while it is still doing useful work.
+Lightweight `/ping`, `/health`, and status polling remain excluded so they do
+not keep an otherwise orphaned backend alive.
+
 New endpoints must preserve this envelope and catalog ownership checks. The
 main API groups are `/initialize`, `/operations`, `/index*`,
 `/metadata/generate_batch`, `/training*`, `/styles*`, `/style_edit*`, `/db*`,
