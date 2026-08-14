@@ -26,6 +26,7 @@ def stub_providers(mocker):
         mock_instance.is_available.return_value = True
         mock_instance.list_available_models.return_value = []
         mock_instance.list_available_model_details.return_value = []
+        mock_instance.list_available_draft_model_details.return_value = []
         mock_instance.generate_metadata.return_value = MetadataGenerationResponse(
             uuid="stub", success=True, keywords={}, caption=None
         )
@@ -63,6 +64,22 @@ def test_available_models_returns_normalized_descriptors(service):
             "key": "publisher/model@q4_k_m",
             "label": "Model — Q4_K_M · GGUF · publisher",
             "quantization": "Q4_K_M",
+        }
+    ]
+
+
+def test_available_draft_models_are_separate_from_vision_choices(service):
+    service.providers["lmstudio"].list_available_draft_model_details.return_value = [
+        {"key": "publisher/model-draft@q4", "vision": False}
+    ]
+
+    drafts = service.get_available_draft_models()
+
+    assert drafts["lmstudio"] == [
+        {
+            "key": "publisher/model-draft@q4",
+            "label": "publisher/model-draft@q4",
+            "vision": False,
         }
     ]
 

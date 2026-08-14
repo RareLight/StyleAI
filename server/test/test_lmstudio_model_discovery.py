@@ -100,6 +100,7 @@ def test_lmstudio_uses_sdk_identity_when_native_metadata_is_unavailable(mocker):
             "format": "gguf",
             "selected_variant": "q4_k_m",
             "size_bytes": 4_000_000_000,
+            "vision": True,
             "label": "Model 7B Vision — GGUF · google · q4_k_m",
         }
     ]
@@ -122,6 +123,64 @@ def test_lmstudio_displays_safetensors_models_as_mlx(mocker):
     assert details[0]["format"] == "mlx"
     assert details[0]["label"] == "Model 7B Vision — MLX · mlx-community · 4bit"
     assert "SAFETENSORS" not in details[0]["label"]
+
+
+def test_lmstudio_draft_candidates_include_downloaded_nonvision_models(mocker):
+    vision_model = _downloaded_model()
+    text_draft = _downloaded_model(
+        key="google/model-draft@q4_k_m",
+        vision=False,
+        path="google/model-draft-GGUF/model-draft-Q4_K_M.gguf",
+    )
+    provider, _ = _provider_with_client(mocker, [vision_model, text_draft])
+    session = MagicMock()
+    session.get.side_effect = RuntimeError("native endpoint unavailable")
+    mocker.patch("providers.lmstudio.requests.Session", return_value=session)
+
+    details = provider.list_available_draft_model_details()
+
+    assert [detail["key"] for detail in details] == [
+        "google/model@q4_k_m",
+        "google/model-draft@q4_k_m",
+    ]
+    assert [detail["vision"] for detail in details] == [True, False]
+
+
+def test_lmstudio_hides_dedicated_mtp_artifacts_only_from_main_list(mocker):
+    vision_model = _downloaded_model()
+    mtp_draft = _downloaded_model(
+        key="google/model-GGUF/mtp-model-Q8_0.gguf",
+        vision=True,
+        path="google/model-GGUF/mtp-model-Q8_0.gguf",
+    )
+    provider, _ = _provider_with_client(mocker, [vision_model, mtp_draft])
+    session = MagicMock()
+    session.get.side_effect = RuntimeError("native endpoint unavailable")
+    mocker.patch("providers.lmstudio.requests.Session", return_value=session)
+
+    main_models = provider.list_available_model_details()
+    draft_models = provider.list_available_draft_model_details()
+
+    assert [detail["key"] for detail in main_models] == ["google/model@q4_k_m"]
+    assert [detail["key"] for detail in draft_models] == [
+        "google/model@q4_k_m",
+        "google/model-GGUF/mtp-model-Q8_0.gguf",
+    ]
+
+
+def test_lmstudio_draft_token_matching_does_not_hide_unrelated_names(mocker):
+    drafting_model = _downloaded_model(
+        key="publisher/drafting-assistant@q4",
+        path="publisher/drafting-assistant-GGUF/model-Q4.gguf",
+    )
+    provider, _ = _provider_with_client(mocker, [drafting_model])
+    session = MagicMock()
+    session.get.side_effect = RuntimeError("native endpoint unavailable")
+    mocker.patch("providers.lmstudio.requests.Session", return_value=session)
+
+    assert [detail["key"] for detail in provider.list_available_model_details()] == [
+        "publisher/drafting-assistant@q4"
+    ]
 
 
 def test_lmstudio_native_metadata_request_refuses_non_loopback_host(mocker):

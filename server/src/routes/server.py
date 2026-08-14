@@ -214,8 +214,10 @@ def list_models():
     try:
         # Get all available multimodal models
         # This will dynamically re-check Ollama and LM Studio availability
-        models = get_analysis_service().get_available_models()
-        return jsonify({"models": models})
+        service = get_analysis_service()
+        models = service.get_available_models()
+        draft_models = service.get_available_draft_models()
+        return jsonify({"models": models, "draft_models": draft_models})
     except Exception as e:
         logger.error(f"Error listing models: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500

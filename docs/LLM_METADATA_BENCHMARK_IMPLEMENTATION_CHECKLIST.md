@@ -151,6 +151,14 @@ editing state.
 
 ## Required human validation
 
+- [ ] Select a compatible LM Studio draft for one vision model, leave paired
+      baseline comparison enabled, and verify baseline and speculative rows use
+      identical proxies while reporting separate timings and draft-token
+      acceptance statistics.
+- [ ] Confirm an incompatible draft fails during its excluded warm-up and its
+      measured photos are marked skipped without repeated inference attempts.
+- [ ] Confirm LM Studio saved speculative defaults are disabled and the report
+      does not identify a draft model as used for a baseline row.
 - [ ] From **Help > Plug-in Extras**, choose a mixed 24–32 photo set and verify the
       uniquely named collection contains exactly the frozen selection without
       becoming Lightroom's active source.

@@ -232,13 +232,16 @@ class LMStudioProvider(LLMProviderBase):
 
                 inference_started = time.perf_counter()
                 max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
+                prediction_config = {
+                    "temperature": request.temperature,
+                    "maxTokens": max_tokens,
+                }
+                if request.draft_model:
+                    prediction_config["draftModel"] = request.draft_model
                 response = model.respond(
                     chat,
                     response_format=response_schema,
-                    config={
-                        "temperature": request.temperature,
-                        "maxTokens": max_tokens,
-                    },
+                    config=prediction_config,
                 )
                 inference_seconds = time.perf_counter() - inference_started
 
@@ -359,6 +362,35 @@ class LMStudioProvider(LLMProviderBase):
             except Exception as usage_err:
                 logger.debug(f"Could not calculate LM Studio token usage: {usage_err}")
 
+            inference = {}
+            stats = getattr(response, "stats", None)
+            for output_key, attribute_name in (
+                ("used_draft_model", "used_draft_model_key"),
+                ("total_draft_tokens", "total_draft_tokens_count"),
+                ("accepted_draft_tokens", "accepted_draft_tokens_count"),
+                ("rejected_draft_tokens", "rejected_draft_tokens_count"),
+                ("ignored_draft_tokens", "ignored_draft_tokens_count"),
+            ):
+                value = getattr(stats, attribute_name, None) if stats else None
+                if value is not None:
+                    inference[output_key] = value
+            total_draft_tokens = inference.get("total_draft_tokens")
+            accepted_draft_tokens = inference.get("accepted_draft_tokens")
+            if isinstance(total_draft_tokens, int) and total_draft_tokens > 0:
+                inference["draft_acceptance_rate"] = round(
+                    int(accepted_draft_tokens or 0) / total_draft_tokens, 4
+                )
+            if request.draft_model:
+                inference["requested_draft_model"] = request.draft_model
+            warning = None
+            if request.benchmark_variant == "baseline" and inference.get(
+                "used_draft_model"
+            ):
+                warning = (
+                    "LM Studio applied a saved draft model to a baseline benchmark "
+                    "run; disable the model's speculative-decoding default and rerun"
+                )
+
             return MetadataGenerationResponse(
                 uuid=request.uuid,
                 success=True,
@@ -376,6 +408,8 @@ class LMStudioProvider(LLMProviderBase):
                     "time_to_first_token_ms": time_to_first_token * 1000.0,
                     "tokens_per_second": float(tokens_per_second),
                 },
+                inference=inference,
+                warning=warning,
             )
 
         except Exception as e:
@@ -467,6 +501,26 @@ class LMStudioProvider(LLMProviderBase):
         return normalized
 
     @staticmethod
+    def _is_draft_only_model(*identifiers: object) -> bool:
+        """Identify dedicated draft/speculator artifacts from stable model names.
+
+        LM Studio may report an MTP artifact as vision-capable when it lives in
+        the same repository as its multimodal target. The public discovery API
+        does not currently expose a draft-only capability flag, so use only
+        explicit filename/name tokens rather than parameter-size heuristics.
+        """
+        for identifier in identifiers:
+            if not isinstance(identifier, str):
+                continue
+            normalized = identifier.strip().lower().replace("\\", "/")
+            if re.search(
+                r"(?:^|[/_.@-])(?:mtp|draft|speculator)(?:$|[/_.@-])",
+                normalized,
+            ):
+                return True
+        return False
+
+    @staticmethod
     def _format_model_label(detail: dict) -> str:
         display_name = str(detail.get("display_name") or detail["key"])
         qualifiers: list[str] = []
@@ -491,8 +545,8 @@ class LMStudioProvider(LLMProviderBase):
             else display_name
         )
 
-    def list_available_model_details(self) -> list[dict]:
-        """List vision models with rich labels and stable SDK inference keys."""
+    def _list_available_model_details(self, *, vision_only: bool) -> list[dict]:
+        """List downloaded LLMs with rich labels and stable SDK inference keys."""
         try:
             effective_host = self._resolve_host()
             with lms.Client(effective_host) as client:
@@ -501,11 +555,19 @@ class LMStudioProvider(LLMProviderBase):
             details: list[dict] = []
             for model in models:
                 info = getattr(model, "info", None)
-                if not getattr(model, "vision", getattr(info, "vision", False)):
-                    continue
+                vision = bool(getattr(model, "vision", getattr(info, "vision", False)))
                 model_key = str(model.model_key)
                 native = self._match_native_model(model_key, native_models) or {}
                 path = getattr(model, "path", getattr(info, "path", None))
+                draft_only = self._is_draft_only_model(
+                    model_key,
+                    path,
+                    native.get("display_name"),
+                    native.get("selected_variant"),
+                    getattr(info, "display_name", None),
+                )
+                if vision_only and (not vision or draft_only):
+                    continue
                 quantization = native.get("quantization")
                 quantization_name = (
                     quantization.get("name") if isinstance(quantization, dict) else None
@@ -531,6 +593,7 @@ class LMStudioProvider(LLMProviderBase):
                     or self._fallback_variant(model_key, path),
                     "size_bytes": native.get("size_bytes")
                     or getattr(info, "size_bytes", None),
+                    "vision": vision,
                 }
                 detail["label"] = self._format_model_label(detail)
                 details.append(
@@ -544,6 +607,14 @@ class LMStudioProvider(LLMProviderBase):
                 exc_info=True,
             )
             return []
+
+    def list_available_model_details(self) -> list[dict]:
+        """List vision models with rich labels and stable SDK inference keys."""
+        return self._list_available_model_details(vision_only=True)
+
+    def list_available_draft_model_details(self) -> list[dict]:
+        """List all downloaded LM Studio LLMs as explicit draft candidates."""
+        return self._list_available_model_details(vision_only=False)
 
     def list_available_models(self) -> list[str]:
         """

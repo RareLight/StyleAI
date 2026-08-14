@@ -6,6 +6,7 @@ local SearchIndexAPI = require("APISearchIndex")
 local PhotoSelector = require("PhotoSelector")
 local Defaults = require("Defaults")
 local WorkCoordinator = require("WorkCoordinator")
+local ModelParameterSort = require("ModelParameterSort")
 local runSequence = 0
 local RECOMMENDED_MAX_PHOTOS = 32
 local MAX_PROGRESS_MODEL_CHARS = 48
@@ -15,7 +16,9 @@ local function roundMilliseconds(value)
 end
 
 local function availableModels()
-	return SearchIndexAPI.getModelChoices()
+	local response = SearchIndexAPI.getModels()
+	return ModelParameterSort.descending(SearchIndexAPI.getModelChoices(response)),
+		ModelParameterSort.descending(SearchIndexAPI.getDraftModelChoices(response))
 end
 
 local function utf8Characters(value)
@@ -72,6 +75,13 @@ local function progressModelTitle(model)
 
 	local title = (publisher ~= "" and (publisher .. ":") or "") .. modelName
 	if #qualifiers > 0 then title = title .. " [" .. table.concat(qualifiers, "/") .. "]" end
+	if model and model.benchmark_variant == "speculative" then
+		local draft = type(model.draft) == "table" and model.draft or {}
+		local draftName = tostring((draft.details or {}).display_name or draft.model or model.draft_model or "draft")
+		title = title .. " + " .. draftName
+	elseif model and model.benchmark_variant == "baseline" then
+		title = title .. " [baseline]"
+	end
 	local characters = utf8Characters(title)
 	if #characters <= MAX_PROGRESS_MODEL_CHARS then return title end
 	local suffixLength = 16
@@ -115,13 +125,20 @@ local function validateBenchmarkRuntime()
 	return true
 end
 
-local function showDialog(ctx, selectedCount, models)
+local function copyTable(value)
+	local copied = {}
+	for key, item in pairs(value or {}) do copied[key] = item end
+	return copied
+end
+
+local function showDialog(ctx, selectedCount, models, draftModels)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 	local props = LrBinding.makePropertyTable(ctx)
 	props.prompt = Defaults.defaultSystemInstruction
 	props.language = Defaults.defaultGenerateLanguage
 	props.temperature = Defaults.defaultTemperature
+	props.maxTokens = 2048
 	props.generateKeywords = true
 	props.generateTitle = true
 	props.generateCaption = true
@@ -132,12 +149,31 @@ local function showDialog(ctx, selectedCount, models)
 	props.submitPhotoContext = false
 	props.useKeywordHierarchy = prefs.useKeywordHierarchy == true
 	props.warmup = true
+	props.compareDraftBaseline = true
 
 	local modelControls = {}
 	for index, model in ipairs(models) do
 		local key = "benchmarkModel" .. tostring(index)
+		local draftKey = "benchmarkDraft" .. tostring(index)
 		props[key] = model.key == prefs.modelKey
+		props[draftKey] = ""
 		table.insert(modelControls, f:checkbox({ title = model.title, value = bind(key) }))
+		if model.provider == "lmstudio" and #draftModels > 0 then
+			local draftItems = {
+				{ title = LOC("$$$/StyleAI/MetadataBenchmark/NoDraft=No draft comparison"), value = "" },
+			}
+			for _, draft in ipairs(draftModels) do
+				if draft.provider == "lmstudio" and draft.model ~= model.model then
+					table.insert(draftItems, { title = draft.title, value = draft.key })
+				end
+			end
+			table.insert(modelControls, f:row({
+				spacing = f:control_spacing(),
+				f:spacer({ width = 22 }),
+				f:static_text({ title = LOC("$$$/StyleAI/MetadataBenchmark/DraftModel=Draft model:") }),
+				f:popup_menu({ value = bind(draftKey), items = draftItems, width = 520 }),
+			}))
+		end
 	end
 	if #models > 0 then
 		local anySelected = false
@@ -146,23 +182,34 @@ local function showDialog(ctx, selectedCount, models)
 	end
 
 	local function updateRequestEstimate()
-		local selectedModelCount = 0
+		local selectedRunCount = 0
 		for index = 1, #models do
-			if props["benchmarkModel" .. tostring(index)] then selectedModelCount = selectedModelCount + 1 end
+			if props["benchmarkModel" .. tostring(index)] then
+				local hasDraft = tostring(props["benchmarkDraft" .. tostring(index)] or "") ~= ""
+				if hasDraft then
+					selectedRunCount = selectedRunCount + (props.compareDraftBaseline and 2 or 1)
+				else
+					selectedRunCount = selectedRunCount + 1
+				end
+			end
 		end
-		local measuredRequests = selectedCount * selectedModelCount
-		local warmupRequests = props.warmup and selectedModelCount or 0
+		local measuredRequests = selectedCount * selectedRunCount
+		local warmupRequests = props.warmup and selectedRunCount or 0
 		props.requestEstimate = LOC(
-			"$$$/StyleAI/MetadataBenchmark/RequestEstimate=Measured requests: ^1 photos × ^2 models = ^3. Excluded warm-ups: ^4. Total model calls: ^5.",
+			"$$$/StyleAI/MetadataBenchmark/RequestEstimate=Measured requests: ^1 photos × ^2 model configurations = ^3. Excluded warm-ups: ^4. Total model calls: ^5.",
 			tostring(selectedCount),
-			tostring(selectedModelCount),
+			tostring(selectedRunCount),
 			tostring(measuredRequests),
 			tostring(warmupRequests),
 			tostring(measuredRequests + warmupRequests)
 		)
 	end
-	for index = 1, #models do props:addObserver("benchmarkModel" .. tostring(index), updateRequestEstimate) end
+	for index = 1, #models do
+		props:addObserver("benchmarkModel" .. tostring(index), updateRequestEstimate)
+		props:addObserver("benchmarkDraft" .. tostring(index), updateRequestEstimate)
+	end
 	props:addObserver("warmup", updateRequestEstimate)
+	props:addObserver("compareDraftBaseline", updateRequestEstimate)
 	updateRequestEstimate()
 
 	local modelColumn = { spacing = f:control_spacing(), fill_horizontal = 1 }
@@ -184,9 +231,17 @@ local function showDialog(ctx, selectedCount, models)
 			title = LOC("$$$/StyleAI/MetadataBenchmark/Models=Local Vision Models"),
 			f:scrolled_view({
 				width = 680,
-				height = math.min(220, math.max(80, #models * 26)),
+				height = math.min(260, math.max(80, #modelControls * 26)),
 				fill_horizontal = 1,
 				f:column(modelColumn),
+			}),
+			f:checkbox({
+				title = LOC("$$$/StyleAI/MetadataBenchmark/CompareDraftBaseline=Also run a baseline without the selected draft model"),
+				value = bind("compareDraftBaseline"),
+			}),
+			UIFactory.HelpText(f, {
+				title = LOC("$$$/StyleAI/MetadataBenchmark/DraftHelp=Draft-only models are hidden from the main list.\nUse only vocabulary-compatible model pairs.\nDisable saved speculative decoding in LM Studio for a clean baseline."),
+				width = 650,
 			}),
 			f:checkbox({
 				title = LOC("$$$/StyleAI/MetadataBenchmark/Warmup=Run one excluded warm-up photo per model"),
@@ -219,6 +274,10 @@ local function showDialog(ctx, selectedCount, models)
 				label = LOC("$$$/StyleAI/PluginInfoDialogSections/temperature=Temperature:"),
 				f:edit_field({ value = bind("temperature"), width_in_digits = 6, precision = 2, min = 0, max = 2 }),
 			}),
+			UIFactory.FormRow(f, {
+				label = LOC("$$$/StyleAI/MetadataBenchmark/MaxTokens=Maximum output tokens:"),
+				f:edit_field({ value = bind("maxTokens"), width_in_digits = 6, precision = 0, min = 256, max = 8192 }),
+			}),
 			f:checkbox({ title = LOC("$$$/StyleAI/UI/EnableHierarchy=Organize generated keywords in a hierarchy"), value = bind("useKeywordHierarchy") }),
 		}),
 		UIFactory.SettingsGroup(f, {
@@ -248,7 +307,31 @@ local function showDialog(ctx, selectedCount, models)
 
 	local selectedModels = {}
 	for index, model in ipairs(models) do
-		if props["benchmarkModel" .. tostring(index)] then table.insert(selectedModels, model) end
+		if props["benchmarkModel" .. tostring(index)] then
+			local selectedDraftKey = tostring(props["benchmarkDraft" .. tostring(index)] or "")
+			local selectedDraft = nil
+			for _, draft in ipairs(draftModels) do
+				if draft.key == selectedDraftKey then selectedDraft = draft; break end
+			end
+			if not selectedDraft or props.compareDraftBaseline then
+				local baseline = copyTable(model)
+				baseline.base_model_key = model.key
+				baseline.key = model.key .. "::baseline"
+				baseline.benchmark_variant = "baseline"
+				baseline.title = model.title .. " — " .. LOC("$$$/StyleAI/MetadataBenchmark/Baseline=Baseline")
+				table.insert(selectedModels, baseline)
+			end
+			if selectedDraft then
+				local speculative = copyTable(model)
+				speculative.base_model_key = model.key
+				speculative.key = model.key .. "::draft::" .. selectedDraft.key
+				speculative.benchmark_variant = "speculative"
+				speculative.draft_model = selectedDraft.model
+				speculative.draft = selectedDraft
+				speculative.title = model.title .. " — " .. LOC("$$$/StyleAI/MetadataBenchmark/WithDraft=Draft: ^1", selectedDraft.title)
+				table.insert(selectedModels, speculative)
+			end
+		end
 	end
 	if #selectedModels == 0 then
 		LrDialogs.message(
@@ -271,6 +354,7 @@ local function showDialog(ctx, selectedCount, models)
 		prompt = props.prompt,
 		language = props.language,
 		temperature = tonumber(props.temperature) or Defaults.defaultTemperature,
+		maxTokens = math.floor(tonumber(props.maxTokens) or 2048),
 		generateKeywords = props.generateKeywords,
 		generateTitle = props.generateTitle,
 		generateCaption = props.generateCaption,
@@ -281,6 +365,7 @@ local function showDialog(ctx, selectedCount, models)
 		submitPhotoContext = props.submitPhotoContext,
 		useKeywordHierarchy = props.useKeywordHierarchy,
 		warmup = props.warmup,
+		compareDraftBaseline = props.compareDraftBaseline,
 	}
 end
 
@@ -398,6 +483,7 @@ local function requestOptions(options, model, operationId)
 		model = model.model,
 		language = options.language,
 		temperature = tostring(options.temperature),
+		max_tokens = tostring(options.maxTokens),
 		generate_keywords = tostring(options.generateKeywords),
 		generate_title = tostring(options.generateTitle),
 		generate_caption = tostring(options.generateCaption),
@@ -407,6 +493,8 @@ local function requestOptions(options, model, operationId)
 		prompt = options.prompt,
 		keyword_categories = options.useKeywordHierarchy and KeywordConfigProvider.getKeywordCategories() or {},
 		operation_id = operationId,
+		benchmark_variant = model.benchmark_variant or "baseline",
+		draft_model = model.draft_model,
 	}
 end
 
@@ -422,6 +510,16 @@ local function appendResponse(report, response, warmup)
 	end
 end
 
+local function warmupFailure(response)
+	if type(response) ~= "table" or type(response.items) ~= "table" or #response.items == 0 then
+		return "The benchmark warm-up returned no result"
+	end
+	local result = response.items[1]
+	if type(result) ~= "table" then return "The benchmark warm-up returned an invalid result" end
+	if result.status == "succeeded" then return nil end
+	return tostring(result.error or "The benchmark configuration failed its warm-up")
+end
+
 function MetadataBenchmark.run(ctx)
 	local selectedPhotos = PhotoSelector.snapshotSelectedPhotos()
 	if #selectedPhotos == 0 then
@@ -433,7 +531,7 @@ function MetadataBenchmark.run(ctx)
 		return
 	end
 	if not Util.waitForServerDialog({ suppressProgressDialog = false }) then return end
-	local models = availableModels()
+	local models, draftModels = availableModels()
 	if #models == 0 then
 		LrDialogs.message(
 			LOC("$$$/StyleAI/MetadataBenchmark/NoModelsTitle=No Models Selected"),
@@ -442,7 +540,7 @@ function MetadataBenchmark.run(ctx)
 		)
 		return
 	end
-	local options = showDialog(ctx, #selectedPhotos, models)
+	local options = showDialog(ctx, #selectedPhotos, models, draftModels)
 	if not options then return end
 	local runtimeOk, runtimeError = validateBenchmarkRuntime()
 	if not runtimeOk then
@@ -517,6 +615,9 @@ function MetadataBenchmark.run(ctx)
 			use_keyword_hierarchy = options.useKeywordHierarchy,
 			context = { gps = options.submitGPS, existing_keywords = options.submitKeywords, folder_name = options.submitFolderName, photo_context = options.submitPhotoContext },
 			warmup = options.warmup,
+			draft_comparison = options.compareDraftBaseline,
+			sampling_overrides = { temperature = options.temperature, max_tokens = options.maxTokens },
+			inherited_sampling_parameters = { "top_k", "top_p", "min_p", "repeat_penalty" },
 			concurrency = 1,
 			proxy_max_dimension = 1024,
 			keyword_categories = options.useKeywordHierarchy and KeywordConfigProvider.getKeywordCategories() or {},
@@ -592,6 +693,7 @@ function MetadataBenchmark.run(ctx)
 			progressState.modelTitle = modelTitle
 			progressState.showPhotoProgress = false
 			local modelOptions = requestOptions(options, model, nil)
+			local preflightError = nil
 			if options.warmup then
 				progressScope:setCaption(LOC("$$$/StyleAI/MetadataBenchmark/WarmupProgress=^1 (warm-up)", modelTitle))
 				local warmupItem = {
@@ -604,17 +706,40 @@ function MetadataBenchmark.run(ctx)
 				local warmupOk, warmupResponse = SearchIndexAPI.runMetadataBenchmarkBatch({ warmupItem }, modelOptions)
 				if warmupOk then
 					appendResponse(report, warmupResponse, true)
+					preflightError = warmupFailure(warmupResponse)
 				else
+					preflightError = tostring(warmupResponse)
 					local appended, appendError = Report.append(report, {
 						photo_id = warmupItem.photo_id, source_photo_id = warmupItem.source_photo_id,
 						filename = warmupItem.filename, provider = model.provider, model = model.model,
-						status = "failed", warmup = true, error = tostring(warmupResponse), timing = {},
+						benchmark_variant = model.benchmark_variant, draft_model_requested = model.draft_model,
+						status = "failed", warmup = true, error = tostring(warmupResponse), timing = {}, inference = {},
 					})
 					if not appended then error("Could not append benchmark report: " .. tostring(appendError)) end
 				end
 			end
-			progressState.showPhotoProgress = true
-			setModelProgressCaption(progressScope, modelTitle, 1, #prepared)
+			if preflightError then
+				local skippedError = "Skipped after benchmark warm-up failure: " .. preflightError
+				local failedUpdates = {}
+				for photoIndex, item in ipairs(prepared) do
+					local appended, appendError = Report.append(report, {
+						photo_id = item.photo_id, source_photo_id = item.source_photo_id,
+						filename = item.filename, provider = model.provider, model = model.model,
+						benchmark_variant = model.benchmark_variant, draft_model_requested = model.draft_model,
+						status = "failed", warmup = false, error = skippedError, timing = {}, inference = {},
+					})
+					if not appended then error("Could not append benchmark report: " .. tostring(appendError)) end
+					table.insert(failedUpdates, {
+						item_id = runId .. ":model:" .. tostring(modelIndex) .. ":photo:" .. tostring(photoIndex),
+						state = "failed", error = skippedError,
+					})
+				end
+				local updateOk, updateError = SearchIndexAPI.updateOperationItems(operationId, failedUpdates)
+				if not updateOk then error("Warm-up failed and operation bookkeeping also failed: " .. tostring(updateError)) end
+				completed = completed + #prepared
+			else
+				progressState.showPhotoProgress = true
+				setModelProgressCaption(progressScope, modelTitle, 1, #prepared)
 
 			for batchStart = 1, #prepared, 12 do
 				if progressScope:isCanceled() then break end
@@ -642,7 +767,8 @@ function MetadataBenchmark.run(ctx)
 						local appended, appendError = Report.append(report, {
 							photo_id = item.photo_id, source_photo_id = item.source_photo_id,
 							filename = item.filename, provider = model.provider, model = model.model,
-							status = "failed", warmup = false, error = tostring(response), timing = {},
+							benchmark_variant = model.benchmark_variant, draft_model_requested = model.draft_model,
+							status = "failed", warmup = false, error = tostring(response), timing = {}, inference = {},
 						})
 						if not appended then error("Could not append benchmark report: " .. tostring(appendError)) end
 						table.insert(failedUpdates, { item_id = item.operation_item_id, state = "failed", error = tostring(response) })
@@ -657,7 +783,14 @@ function MetadataBenchmark.run(ctx)
 				manifestOk, manifestError = Report.updateManifest(report, {})
 				if not manifestOk then error("Could not update benchmark manifest: " .. tostring(manifestError)) end
 			end
-			table.insert(manifest.model_runs, { provider = model.provider, model = model.model, elapsed_ms = roundMilliseconds((LrDate.currentTime() - modelStarted) * 1000) })
+			end
+			progressScope:setPortionComplete(#prepared + completed, #prepared * (#options.models + 1))
+			table.insert(manifest.model_runs, {
+				provider = model.provider, model = model.model,
+				benchmark_variant = model.benchmark_variant, draft_model = model.draft_model,
+				preflight_error = preflightError,
+				elapsed_ms = roundMilliseconds((LrDate.currentTime() - modelStarted) * 1000),
+			})
 		end
 
 		if progressScope:isCanceled() then
