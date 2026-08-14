@@ -180,7 +180,7 @@
 "$$$/StyleAI/MetadataBenchmark/CompleteTitle" = "Benchmark Report Ready"
 "$$$/StyleAI/MetadataBenchmark/Continue" = "Continue"
 "$$$/StyleAI/MetadataBenchmark/CreateCollection" = "Create metadata benchmark collection"
-"$$$/StyleAI/MetadataBenchmark/DraftHelp" = "Los modelos exclusivamente borradores se ocultan de la lista principal.\nUse únicamente pares con vocabularios compatibles.\nDesactive la decodificación especulativa guardada en LM Studio para obtener una referencia limpia."
+"$$$/StyleAI/MetadataBenchmark/DraftHelp" = "Los modelos exclusivamente borradores se ocultan de la lista principal.\nUse únicamente pares con vocabularios compatibles.\nLos pares MTP/de carga usan los ajustes guardados de LM Studio.\nMida su referencia por separado con la especulación desactivada."
 "$$$/StyleAI/MetadataBenchmark/DraftModel" = "Modelo borrador:"
 "$$$/StyleAI/MetadataBenchmark/Failed" = "The benchmark did not complete: ^1\n\nPartial results were saved to ^2"
 "$$$/StyleAI/MetadataBenchmark/FailedTitle" = "Benchmark Incomplete"

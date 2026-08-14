@@ -331,6 +331,97 @@ def test_lmstudio_passes_draft_model_and_reports_speculative_stats(lmstudio_prov
     }
 
 
+def test_lmstudio_retries_load_time_speculation_and_caches_pair(lmstudio_provider):
+    provider, fake_response = lmstudio_provider
+    fake_response.parsed = {"keywords": [], "caption": "x"}
+    fake_response.stats = SimpleNamespace(
+        used_draft_model_key="publisher/mtp-draft@q8",
+        total_draft_tokens_count=20,
+        accepted_draft_tokens_count=18,
+        rejected_draft_tokens_count=2,
+        ignored_draft_tokens_count=0,
+    )
+    from providers import lmstudio as lmstudio_module
+
+    fake_model = lmstudio_module.lms.Client.return_value.__enter__.return_value.llm.model.return_value
+    fake_model.respond.side_effect = [
+        RuntimeError(
+            "Engine protocol speculativeDecoding capability gap: Engine protocol "
+            "speculative decoding must be configured at load time, not prediction time."
+        ),
+        fake_response,
+        fake_response,
+    ]
+    request = _request(
+        model="publisher/main@q4",
+        draft_model="publisher/mtp-draft@q8",
+        benchmark_variant="speculative",
+    )
+
+    first = provider.generate_metadata(request)
+    second = provider.generate_metadata(request)
+
+    assert first.success is True
+    assert second.success is True
+    assert first.inference["speculation_configuration"] == "saved_load_time"
+    assert first.inference["draft_acceptance_rate"] == 0.9
+    configs = [call.kwargs["config"] for call in fake_model.respond.call_args_list]
+    assert configs[0]["draftModel"] == "publisher/mtp-draft@q8"
+    assert "draftModel" not in configs[1]
+    assert "draftModel" not in configs[2]
+
+
+def test_lmstudio_load_time_retry_fails_without_draft_activity(lmstudio_provider):
+    provider, fake_response = lmstudio_provider
+    fake_response.parsed = {"keywords": [], "caption": "x"}
+    fake_response.stats = SimpleNamespace(
+        used_draft_model_key=None,
+        total_draft_tokens_count=0,
+        accepted_draft_tokens_count=0,
+        rejected_draft_tokens_count=0,
+        ignored_draft_tokens_count=0,
+    )
+    from providers import lmstudio as lmstudio_module
+
+    fake_model = lmstudio_module.lms.Client.return_value.__enter__.return_value.llm.model.return_value
+    fake_model.respond.side_effect = [
+        RuntimeError(
+            "Engine protocol speculativeDecoding capability gap: Engine protocol "
+            "speculative decoding must be configured at load time, not prediction time."
+        ),
+        fake_response,
+    ]
+
+    response = provider.generate_metadata(
+        _request(
+            model="publisher/main@q4",
+            draft_model="publisher/mtp-draft@q8",
+            benchmark_variant="speculative",
+        )
+    )
+
+    assert response.success is False
+    assert "retry reported no draft-token activity" in response.error
+    assert response.inference["speculation_configuration"] == "saved_load_time"
+
+
+def test_lmstudio_baseline_warns_on_mtp_activity_without_draft_key(lmstudio_provider):
+    provider, fake_response = lmstudio_provider
+    fake_response.parsed = {"keywords": [], "caption": "x"}
+    fake_response.stats = SimpleNamespace(
+        used_draft_model_key=None,
+        total_draft_tokens_count=10,
+        accepted_draft_tokens_count=9,
+        rejected_draft_tokens_count=1,
+        ignored_draft_tokens_count=0,
+    )
+
+    response = provider.generate_metadata(_request(benchmark_variant="baseline"))
+
+    assert response.success is True
+    assert "saved draft model" in response.warning
+
+
 def test_lmstudio_zero_tokens_when_no_stats_no_tokenize(lmstudio_provider):
     provider, fake_response = lmstudio_provider
     fake_response.parsed = {"keywords": [], "caption": "x"}

@@ -49,6 +49,10 @@ class LMStudioProvider(LLMProviderBase):
         super().__init__()
         self.host = self._normalize_host(LMSTUDIO_HOST)
         self._logged_load_configs: set[str] = set()
+        # Warm-up discovers engine-protocol pairs whose speculative context is
+        # supplied by LM Studio's saved load configuration. Measured requests
+        # can then avoid repeating a known-invalid prediction-time override.
+        self._load_time_draft_pairs: set[tuple[str, str]] = set()
         self.timeout = 720
         # lmstudio-python's synchronous API defaults to timing out after ~60s of
         # inactivity when waiting for a response/stream event. Wire our configured
@@ -86,6 +90,14 @@ class LMStudioProvider(LLMProviderBase):
         hostname = urlsplit(f"//{host}").hostname
         return hostname == "localhost" or bool(
             hostname and (hostname == "::1" or hostname.startswith("127."))
+        )
+
+    @staticmethod
+    def _requires_load_time_speculation(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return (
+            "speculativedecoding capability gap" in message
+            and "must be configured at load time" in message
         )
 
     def _resolve_host(self) -> str:
@@ -236,13 +248,47 @@ class LMStudioProvider(LLMProviderBase):
                     "temperature": request.temperature,
                     "maxTokens": max_tokens,
                 }
-                if request.draft_model:
-                    prediction_config["draftModel"] = request.draft_model
-                response = model.respond(
-                    chat,
-                    response_format=response_schema,
-                    config=prediction_config,
+                draft_pair = (
+                    (request.model, request.draft_model)
+                    if request.draft_model
+                    else None
                 )
+                use_saved_load_time_draft = bool(
+                    draft_pair and draft_pair in self._load_time_draft_pairs
+                )
+                if request.draft_model and not use_saved_load_time_draft:
+                    prediction_config["draftModel"] = request.draft_model
+                load_time_fallback = use_saved_load_time_draft
+                try:
+                    response = model.respond(
+                        chat,
+                        response_format=response_schema,
+                        config=prediction_config,
+                    )
+                except Exception as exc:
+                    if (
+                        not request.draft_model
+                        or not self._requires_load_time_speculation(exc)
+                    ):
+                        raise
+                    # The public SDK does not expose LM Studio's engine-protocol
+                    # load fields. Retry without the prediction override so the
+                    # saved per-model load configuration can take effect. Draft
+                    # activity is verified from response statistics below.
+                    logger.info(
+                        "LM Studio requires load-time speculative decoding for "
+                        "main=%s draft=%s; retrying with saved model load settings",
+                        request.model,
+                        request.draft_model,
+                    )
+                    fallback_config = dict(prediction_config)
+                    fallback_config.pop("draftModel", None)
+                    response = model.respond(
+                        chat,
+                        response_format=response_schema,
+                        config=fallback_config,
+                    )
+                    load_time_fallback = True
                 inference_seconds = time.perf_counter() - inference_started
 
             # Extract message content
@@ -382,9 +428,39 @@ class LMStudioProvider(LLMProviderBase):
                 )
             if request.draft_model:
                 inference["requested_draft_model"] = request.draft_model
+            if load_time_fallback:
+                inference["speculation_configuration"] = "saved_load_time"
+                used_draft_model = inference.get("used_draft_model")
+                has_draft_activity = bool(used_draft_model) or (
+                    isinstance(total_draft_tokens, int) and total_draft_tokens > 0
+                )
+                if not has_draft_activity:
+                    return MetadataGenerationResponse(
+                        uuid=request.uuid,
+                        success=False,
+                        error=(
+                            "LM Studio requires speculative decoding to be configured "
+                            "when the main model is loaded, but the retry reported no "
+                            "draft-token activity. Configure the draft/MTP model in "
+                            "LM Studio's saved settings for the main model, unload and "
+                            "reload the main model, then rerun this benchmark."
+                        ),
+                        timing={
+                            "provider_total_ms": total_seconds * 1000.0,
+                            "image_upload_ms": upload_seconds * 1000.0,
+                            "model_load_ms": model_seconds * 1000.0,
+                            "inference_ms": inference_seconds * 1000.0,
+                            "time_to_first_token_ms": time_to_first_token * 1000.0,
+                            "tokens_per_second": float(tokens_per_second),
+                        },
+                        inference=inference,
+                    )
+                if draft_pair:
+                    self._load_time_draft_pairs.add(draft_pair)
             warning = None
-            if request.benchmark_variant == "baseline" and inference.get(
-                "used_draft_model"
+            if request.benchmark_variant == "baseline" and (
+                inference.get("used_draft_model")
+                or (isinstance(total_draft_tokens, int) and total_draft_tokens > 0)
             ):
                 warning = (
                     "LM Studio applied a saved draft model to a baseline benchmark "
@@ -521,6 +597,16 @@ class LMStudioProvider(LLMProviderBase):
         return False
 
     @staticmethod
+    def _is_mtp_model(*identifiers: object) -> bool:
+        for identifier in identifiers:
+            if not isinstance(identifier, str):
+                continue
+            normalized = identifier.strip().lower().replace("\\", "/")
+            if re.search(r"(?:^|[/_.@-])mtp(?:$|[/_.@-])", normalized):
+                return True
+        return False
+
+    @staticmethod
     def _format_model_label(detail: dict) -> str:
         display_name = str(detail.get("display_name") or detail["key"])
         qualifiers: list[str] = []
@@ -566,6 +652,13 @@ class LMStudioProvider(LLMProviderBase):
                     native.get("selected_variant"),
                     getattr(info, "display_name", None),
                 )
+                mtp_model = self._is_mtp_model(
+                    model_key,
+                    path,
+                    native.get("display_name"),
+                    native.get("selected_variant"),
+                    getattr(info, "display_name", None),
+                )
                 if vision_only and (not vision or draft_only):
                     continue
                 quantization = native.get("quantization")
@@ -595,6 +688,8 @@ class LMStudioProvider(LLMProviderBase):
                     or getattr(info, "size_bytes", None),
                     "vision": vision,
                 }
+                if mtp_model:
+                    detail["speculation_configuration"] = "saved_load_time"
                 detail["label"] = self._format_model_label(detail)
                 details.append(
                     {key: value for key, value in detail.items() if value is not None}

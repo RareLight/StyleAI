@@ -166,6 +166,7 @@ def test_lmstudio_hides_dedicated_mtp_artifacts_only_from_main_list(mocker):
         "google/model@q4_k_m",
         "google/model-GGUF/mtp-model-Q8_0.gguf",
     ]
+    assert draft_models[1]["speculation_configuration"] == "saved_load_time"
 
 
 def test_lmstudio_draft_token_matching_does_not_hide_unrelated_names(mocker):

@@ -55,14 +55,21 @@ operation for cancellation. It does not write generated titles, captions, alt
 text, or keywords to Lightroom or either Chroma collection.
 
 For LM Studio models, the checklist can optionally pair each selected vision
-model with any downloaded local LLM as a speculative draft candidate. Keep LM
-Studio's saved speculative-decoding default disabled so the baseline is clean.
-With paired comparison enabled, StyleAI runs the baseline and speculative
-configuration over the same proxies. A failed warm-up skips that configuration
-instead of repeating a deterministic compatibility failure for every photo.
-The report records the requested and actually used draft model, draft-token
-acceptance statistics, and separate performance summaries for both variants.
-Draft candidates remain excluded from the normal vision-model selector.
+model with any downloaded local LLM as a speculative draft candidate.
+Prediction-time drafts can use the paired comparison: StyleAI runs the baseline
+and speculative configuration over the same proxies. Some engine-protocol and
+MTP drafts must instead be configured in the main model's saved LM Studio load
+settings. The excluded warm-up detects that capability gap, retries using the
+saved load configuration, verifies reported draft-token activity, and reuses
+that path for measured requests. Because a load-time speculative context cannot
+also provide a clean baseline in the same loaded instance, StyleAI omits the
+paired baseline for recognized MTP artifacts. Run their baseline separately
+after disabling speculation and reloading the main model. A failed warm-up skips
+that configuration instead of repeating a deterministic compatibility failure
+for every photo. The report records prediction-time versus saved-load-time
+configuration, the requested and actually used draft model, draft-token
+acceptance statistics, and separate performance summaries. Draft candidates
+remain excluded from the normal vision-model selector.
 
 Reports are revealed from:
 

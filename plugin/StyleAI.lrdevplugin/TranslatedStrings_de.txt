@@ -180,7 +180,7 @@
 "$$$/StyleAI/MetadataBenchmark/CompleteTitle" = "Benchmark Report Ready"
 "$$$/StyleAI/MetadataBenchmark/Continue" = "Continue"
 "$$$/StyleAI/MetadataBenchmark/CreateCollection" = "Create metadata benchmark collection"
-"$$$/StyleAI/MetadataBenchmark/DraftHelp" = "Reine Entwurfsmodelle sind in der Hauptliste ausgeblendet.\nKoppeln Sie nur Modelle mit kompatiblem Vokabular.\nDeaktivieren Sie gespeichertes spekulatives Decoding in LM Studio für saubere Ausgangsläufe."
+"$$$/StyleAI/MetadataBenchmark/DraftHelp" = "Reine Entwurfsmodelle sind in der Hauptliste ausgeblendet.\nKoppeln Sie nur Modelle mit kompatiblem Vokabular.\nLadezeit-/MTP-Paare verwenden die gespeicherten LM Studio-Einstellungen.\nMessen Sie den Ausgangslauf separat mit deaktivierter Spekulation."
 "$$$/StyleAI/MetadataBenchmark/DraftModel" = "Entwurfsmodell:"
 "$$$/StyleAI/MetadataBenchmark/Failed" = "The benchmark did not complete: ^1\n\nPartial results were saved to ^2"
 "$$$/StyleAI/MetadataBenchmark/FailedTitle" = "Benchmark Incomplete"

@@ -136,7 +136,7 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
     assert "proxy_consistency" in report_source
     assert "proxy_mismatches" in report_source
     assert "os.rename" not in report_source
-    assert "Report.IMPLEMENTATION_VERSION = 4" in report_source
+    assert "Report.IMPLEMENTATION_VERSION = 5" in report_source
     assert "draft_model_requested" in report_source
     assert "draft_acceptance_rate" in report_source
     assert "roundTimingValues" in report_source
