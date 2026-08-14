@@ -2,9 +2,23 @@ import io
 import logging
 import subprocess
 import os
+import shutil
+from functools import lru_cache
 from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _resolve_exiftool_path() -> str | None:
+    """Find ExifTool even when launchd supplies a restricted PATH."""
+    discovered = shutil.which("exiftool")
+    if discovered:
+        return discovered
+    for candidate in ("/opt/homebrew/bin/exiftool", "/usr/local/bin/exiftool"):
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
 
 
 def extract_exiftool_preview(filepath: str) -> bytes | None:
@@ -21,11 +35,16 @@ def extract_exiftool_preview(filepath: str) -> bytes | None:
         logger.warning(msg)
         raise PermissionError(msg)
 
+    exiftool_path = _resolve_exiftool_path()
+    if exiftool_path is None:
+        logger.error("Exiftool is not installed or not in PATH.")
+        return None
+
     try:
         # Exiftool -b -PreviewImage outputs binary jpeg to stdout
         # Timeout helps with spinning rust NAS or macOS permission prompt hangs
         result = subprocess.run(
-            ["exiftool", "-b", "-PreviewImage", filepath],
+            [exiftool_path, "-b", "-PreviewImage", filepath],
             capture_output=True,
             timeout=10,
         )
@@ -50,7 +69,9 @@ def extract_exiftool_preview(filepath: str) -> bytes | None:
         logger.warning(msg)
         raise TimeoutError(msg) from e
     except FileNotFoundError:
-        logger.error("Exiftool is not installed or not in PATH.")
+        logger.error(
+            "Resolved Exiftool executable is no longer available: %s", exiftool_path
+        )
     except Exception as e:
         logger.warning(f"Failed to extract exiftool preview for {filepath}: {e}")
     return None

@@ -28,12 +28,24 @@ python scripts/package_lrc_plugin.py release
 
 ### Local metadata model benchmark
 
-**Help → Plug-in Extras → Developer: Compare Local Metadata Models...** is a non-persisting
-evaluation harness. Select a representative photo set before opening it, choose
+**Help → Plug-in Extras → Developer: Benchmark Local LLM Tagging &
+Metadata...** is a non-persisting evaluation harness. Select a representative
+photo set before opening it, choose
 one or more locally available Ollama or LM Studio vision models, and hold the
 prompt and generation settings constant across the run. StyleAI creates a
 uniquely named collection under **StyleAI → Benchmarks** so the evaluated set
 can be revisited without changing Lightroom's active source.
+
+Use 24–32 varied photos for a normal comparison; eight is adequate for a smoke
+test, while larger sets are better reserved for final long-run validation. The
+dialog shows measured requests, excluded warm-ups, and total model calls, and
+asks for confirmation above 32 photos. It never truncates or samples the frozen
+Lightroom selection silently.
+
+Do not confuse this with **Developer: Benchmark Indexing Throughput (256+
+Photos)...**. That older utility deliberately needs a much larger set to
+saturate Lightroom preview, embedding, worker, and batch pipelines; it does not
+call a local LLM.
 
 The workflow prepares each 1024-pixel Lightroom proxy once and reuses those
 exact bytes for every model. It performs an optional excluded warm-up request,

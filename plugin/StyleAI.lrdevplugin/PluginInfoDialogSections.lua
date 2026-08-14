@@ -27,7 +27,13 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 
 	local function refreshCaptureInfo()
 		LrTasks.startAsyncTask(function()
-			local info = SearchIndexAPI.getDiagnosticCaptureInfo(propertyTable.captureLlmInputsPath)
+			local callOk, info = LrTasks.pcall(function()
+				return SearchIndexAPI.getDiagnosticCaptureInfo(propertyTable.captureLlmInputsPath)
+			end)
+			if not callOk then
+				log:error("Could not refresh diagnostic capture information: " .. tostring(info))
+				return
+			end
 			if type(info) ~= "table" then return end
 			if propertyTable.captureLlmInputsPath == "" and info.path then
 				propertyTable.captureLlmInputsPath = tostring(info.path)

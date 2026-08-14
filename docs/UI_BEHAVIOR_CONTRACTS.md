@@ -24,7 +24,7 @@ as Plug-in Manager buttons. Developer tools remain separate from the six normal
 photography workflows under **File > Plug-in Extras**. There is one canonical
 build and no Developer Options or Debug Options wrapper preference.
 
-**Compare Local Metadata Models...**
+**Benchmark Local LLM Tagging & Metadata...**
 snapshots the current photo selection before opening its dialog, creates a
 uniquely named collection under **StyleAI → Benchmarks**, prepares each proxy
 once, and runs the same bytes successively through every selected local vision
@@ -33,6 +33,10 @@ editing state. Incremental JSONL plus comparison CSV, summary CSV, manifest, and
 HTML reports are written beneath the catalog-local
 `styleai.db/evaluation_reports` directory and revealed when the run finishes or
 stops with partial results.
+
+The separate **Benchmark Indexing Throughput (256+ Photos)...** command is a
+pipeline-saturation tool for preview, embedding, worker, and batch-size
+permutations. Its 256-photo minimum does not apply to the local LLM benchmark.
 
 ## Control-to-behavior mapping
 

@@ -151,7 +151,7 @@ editing state.
 
 ## Required human validation
 
-- [ ] From **Help > Plug-in Extras**, choose a mixed 10–20 photo set and verify the
+- [ ] From **Help > Plug-in Extras**, choose a mixed 24–32 photo set and verify the
       uniquely named collection contains exactly the frozen selection without
       becoming Lightroom's active source.
 - [ ] Run at least two vision-capable local model variants and confirm identical

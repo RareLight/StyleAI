@@ -11,6 +11,15 @@ local function getBaseUrl()
     return "http://127.0.0.1:19819"
 end
 
+local function encodeQueryValue(value)
+    -- Lightroom's LrHttp module does not provide a URL-encoding helper.
+    -- Encode the UTF-8 bytes directly and leave only RFC 3986 unreserved
+    -- characters unchanged so paths are safe as query-string values.
+    return (tostring(value or ""):gsub("([^%w%-_%.~])", function(character)
+        return string.format("%%%02X", string.byte(character))
+    end))
+end
+
 function SearchIndexAPI.isLocalBackend()
     return true
 end
@@ -3234,9 +3243,11 @@ function SearchIndexAPI.startServer(opts)
                 local launchLabel = "com.styleai.server.dev." .. tostring(os.time())
                 local venvPython = LrPathUtils.child(LrPathUtils.child(devServerDir, ".venv"), "bin/python")
                 if LrFileUtils.exists(venvPython) then
-                    -- Let launchd supervise Python itself. An intermediate `uv run`
-                    -- process can obscure signal ownership and clean exit status.
-                    startServerCmd = string.format("launchctl submit -l '%s' -o '%s' -e '%s' -- '%s' '%s' --db-path '%s'",
+                    -- Restore the executable search path that Lightroom does not
+                    -- inherit from the user's interactive shell. `exec` replaces
+                    -- bash with Python, so launchd still supervises the service
+                    -- process directly and receives its true exit status.
+                    startServerCmd = string.format("launchctl submit -l '%s' -o '%s' -e '%s' -- /bin/bash -c 'PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" exec \"%s\" \"%s\" --db-path \"%s\"'",
                         launchLabel, launchLogPath, launchLogPath, venvPython, devServerScript, dbPath)
                 else
                     startServerCmd = string.format("launchctl submit -l '%s' -o '%s' -e '%s' -- /bin/bash -c 'cd \"%s\" && PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" exec uv run python src/styleai_server.py --db-path \"%s\"'",
@@ -3613,7 +3624,7 @@ end
 function SearchIndexAPI.getDiagnosticCaptureInfo(path)
     local url = getBaseUrl() .. ENDPOINTS.DEBUG_CAPTURES
     if path and path ~= "" then
-        url = url .. "?path=" .. LrHttp.encodeForUrl(path)
+        url = url .. "?path=" .. encodeQueryValue(path)
     end
     local result, err = _request('GET', url, nil, 15)
     return result, err

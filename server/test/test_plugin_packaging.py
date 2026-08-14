@@ -69,4 +69,9 @@ def test_macos_development_backend_is_detached_from_lightroom():
     assert "launchctl submit -l" in api_source
     assert "com.styleai.server.dev." in api_source
     assert 'LrPathUtils.child(devServerDir, ".venv")' in api_source
+    assert (
+        'PATH=\\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\\"'
+        in api_source
+    )
+    assert 'exec \\"%s\\" \\"%s\\" --db-path \\"%s\\"' in api_source
     assert "venvPython, devServerScript, dbPath" in api_source
