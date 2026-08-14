@@ -119,7 +119,7 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
     assert "applyMetadata" not in source
     assert "local RECOMMENDED_MAX_PHOTOS = 32" in source
     assert "selectedPhotos > RECOMMENDED_MAX_PHOTOS" in source
-    assert "Measured requests: ^1 photos × ^2 models = ^3" in source
+    assert "Measured requests: ^1 photos × ^2 model configurations = ^3" in source
     assert 'props:addObserver("warmup", updateRequestEstimate)' in source
     assert "A representative set of 24–32 photos is recommended" in source
     assert 'METADATA_BENCHMARK = "/metadata_benchmark/run_batch"' in api_source
@@ -136,7 +136,9 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
     assert "proxy_consistency" in report_source
     assert "proxy_mismatches" in report_source
     assert "os.rename" not in report_source
-    assert "Report.IMPLEMENTATION_VERSION = 3" in report_source
+    assert "Report.IMPLEMENTATION_VERSION = 4" in report_source
+    assert "draft_model_requested" in report_source
+    assert "draft_acceptance_rate" in report_source
     assert "roundTimingValues" in report_source
     assert "photos_per_minute = total > 0 and roundTo" in report_source
     assert "elapsed_ms = roundMilliseconds" in source
@@ -152,13 +154,17 @@ def test_model_selectors_use_enriched_labels_and_stable_keys():
     prepare_source = _source("TaskAnalyzeAndIndex.lua")
     benchmark_source = _source("MetadataBenchmark.lua")
 
-    assert "function SearchIndexAPI.getModelChoices()" in api_source
-    assert "response.models" in api_source
+    assert "function SearchIndexAPI.getModelChoices(response)" in api_source
+    assert "function SearchIndexAPI.getDraftModelChoices(response)" in api_source
+    assert "response[responseKey]" in api_source
     assert 'title = tostring(provider) .. ": " .. label' in api_source
     assert 'key = tostring(provider) .. "::" .. model' in api_source
     assert "SearchIndexAPI.getModelChoices()" in prepare_source
     assert "width = 540" in prepare_source
-    assert "return SearchIndexAPI.getModelChoices()" in benchmark_source
+    assert (
+        "ModelParameterSort.descending(SearchIndexAPI.getModelChoices(response))"
+        in benchmark_source
+    )
 
 
 def test_metadata_benchmark_contains_controlled_runtime_error_boundaries():
@@ -264,7 +270,7 @@ def test_plugin_manager_processing_load_menu_has_bounded_width():
     source = _source("PluginInfoDialogSections.lua")
     menu = source[
         source.index('value = bind("processingLoadMode")') : source.index(
-            'LoadAutomatic=Automatic (recommended)'
+            "LoadAutomatic=Automatic (recommended)"
         )
     ]
 

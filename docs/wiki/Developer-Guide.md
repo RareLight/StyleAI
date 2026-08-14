@@ -54,6 +54,16 @@ metadata and timing per photo, and uses a catalog-local `metadata_benchmark`
 operation for cancellation. It does not write generated titles, captions, alt
 text, or keywords to Lightroom or either Chroma collection.
 
+For LM Studio models, the checklist can optionally pair each selected vision
+model with any downloaded local LLM as a speculative draft candidate. Keep LM
+Studio's saved speculative-decoding default disabled so the baseline is clean.
+With paired comparison enabled, StyleAI runs the baseline and speculative
+configuration over the same proxies. A failed warm-up skips that configuration
+instead of repeating a deterministic compatibility failure for every photo.
+The report records the requested and actually used draft model, draft-token
+acceptance statistics, and separate performance summaries for both variants.
+Draft candidates remain excluded from the normal vision-model selector.
+
 Reports are revealed from:
 
 ```text

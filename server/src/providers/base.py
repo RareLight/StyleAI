@@ -75,6 +75,10 @@ class MetadataGenerationRequest:
     keyword_secondary_language: str | None = None
     generate_aliases: bool = False
     catalog_keywords: list[str] | None = None
+    # Benchmark-only LM Studio controls. Normal metadata requests leave these
+    # unset and continue to use the provider's ordinary inference path.
+    draft_model: str | None = None
+    benchmark_variant: str | None = None
 
 
 @dataclass
@@ -97,6 +101,7 @@ class MetadataGenerationResponse:
     # Optional provider/service timings used by the developer benchmark. Normal
     # metadata callers may ignore these fields.
     timing: dict[str, float] | None = None
+    inference: dict[str, Any] | None = None
     retry_count: int = 0
 
     # Error information
@@ -148,6 +153,10 @@ class LLMProviderBase(ABC):
             {"key": model_key, "label": model_key}
             for model_key in self.list_available_models()
         ]
+
+    def list_available_draft_model_details(self) -> list[dict[str, Any]]:
+        """Return locally available speculative-draft candidates, if supported."""
+        return []
 
     def _prepare_system_prompt(self, request: MetadataGenerationRequest) -> str:
         """

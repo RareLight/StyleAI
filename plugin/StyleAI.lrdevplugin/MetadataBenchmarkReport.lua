@@ -1,5 +1,5 @@
 local Report = {}
-Report.IMPLEMENTATION_VERSION = 3
+Report.IMPLEMENTATION_VERSION = 4
 
 local function roundTo(value, decimalPlaces)
 	local factor = 10 ^ (decimalPlaces or 0)
@@ -174,7 +174,11 @@ local function percentile(values, fraction)
 end
 
 local function modelKey(result)
-	return tostring(result.provider or "") .. "::" .. tostring(result.model or "")
+	local key = tostring(result.provider or "") .. "::" .. tostring(result.model or "")
+	if result.benchmark_variant == "speculative" then
+		return key .. "::draft::" .. tostring(result.draft_model_requested or (result.inference or {}).used_draft_model or "unknown")
+	end
+	return key .. "::baseline"
 end
 
 function Report.new(reportDirectory, manifest)
@@ -276,22 +280,27 @@ end
 local function writeComparison(self)
 	local rows = {
 		table.concat({
-			"photo_id", "source_photo_id", "filename", "provider", "model", "status", "warmup",
+			"photo_id", "source_photo_id", "filename", "provider", "model", "benchmark_variant", "draft_model_requested", "draft_model_used", "status", "warmup",
 			"keywords", "title", "caption", "alt_text", "error", "warning",
 			"retry_count", "input_tokens", "output_tokens", "total_ms",
-			"inference_ms", "tokens_per_second", "proxy_sha256", "proxy_bytes",
+			"inference_ms", "tokens_per_second", "total_draft_tokens", "accepted_draft_tokens", "rejected_draft_tokens", "ignored_draft_tokens", "draft_acceptance_rate", "proxy_sha256", "proxy_bytes",
 		}, ","),
 	}
 	for _, result in ipairs(self.results) do
 		local timing = result.timing or {}
 		local proxy = result.proxy or {}
+		local inference = result.inference or {}
 		local keywords = table.concat(flattenKeywords(result.keywords), "; ")
 		local values = {
-			result.photo_id, result.source_photo_id, result.filename, result.provider, result.model, result.status,
+			result.photo_id, result.source_photo_id, result.filename, result.provider, result.model,
+			result.benchmark_variant, result.draft_model_requested, inference.used_draft_model, result.status,
 			result.warmup == true, keywords, result.title, result.caption, result.alt_text,
 			result.error, result.warning, result.retry_count, result.input_tokens,
 			result.output_tokens, timing.benchmark_item_total_ms,
-			timing.inference_ms, timing.tokens_per_second, proxy.sha256, proxy.byte_count,
+			timing.inference_ms, timing.tokens_per_second, inference.total_draft_tokens,
+			inference.accepted_draft_tokens, inference.rejected_draft_tokens,
+			inference.ignored_draft_tokens, inference.draft_acceptance_rate,
+			proxy.sha256, proxy.byte_count,
 		}
 		local encoded = {}
 		for i, value in ipairs(values) do encoded[i] = csvCell(value) end
@@ -307,12 +316,16 @@ local function summarize(self)
 		groups[key] = groups[key] or {
 			provider = result.provider,
 			model = result.model,
+			benchmark_variant = result.benchmark_variant or "baseline",
+			draft_model = result.draft_model_requested,
 			success = 0,
 			failed = 0,
 			latencies = {},
 			tokensPerSecond = {},
 			inputTokens = 0,
 			outputTokens = 0,
+			totalDraftTokens = 0,
+			acceptedDraftTokens = 0,
 			warmup_ms = nil,
 			warmup_status = nil,
 		}
@@ -329,6 +342,9 @@ local function summarize(self)
 			end
 			group.inputTokens = group.inputTokens + (tonumber(result.input_tokens) or 0)
 			group.outputTokens = group.outputTokens + (tonumber(result.output_tokens) or 0)
+			local inference = result.inference or {}
+			group.totalDraftTokens = group.totalDraftTokens + (tonumber(inference.total_draft_tokens) or 0)
+			group.acceptedDraftTokens = group.acceptedDraftTokens + (tonumber(inference.accepted_draft_tokens) or 0)
 		end
 	end
 	local summaries = {}
@@ -340,6 +356,8 @@ local function summarize(self)
 			model_key = key,
 			provider = group.provider,
 			model = group.model,
+			benchmark_variant = group.benchmark_variant,
+			draft_model = group.draft_model,
 			success_count = group.success,
 			failure_count = group.failed,
 			total_ms = roundTo(total, 0),
@@ -351,6 +369,9 @@ local function summarize(self)
 			median_tokens_per_second = #group.tokensPerSecond > 0 and roundTo(percentile(group.tokensPerSecond, 0.5), 1) or nil,
 			input_tokens = group.inputTokens,
 			output_tokens = group.outputTokens,
+			draft_acceptance_rate = group.totalDraftTokens > 0 and roundTo(group.acceptedDraftTokens / group.totalDraftTokens, 3) or nil,
+			total_draft_tokens = group.totalDraftTokens,
+			accepted_draft_tokens = group.acceptedDraftTokens,
 			warmup_ms = group.warmup_ms and roundTo(group.warmup_ms, 0) or nil,
 			warmup_status = group.warmup_status,
 		})
@@ -361,9 +382,10 @@ end
 
 local function writeSummary(self, summaries)
 	local headers = {
-		"provider", "model", "success_count", "failure_count", "total_ms",
+		"provider", "model", "benchmark_variant", "draft_model", "success_count", "failure_count", "total_ms",
 		"mean_ms", "median_ms", "p90_ms", "p95_ms", "photos_per_minute",
-		"median_tokens_per_second", "input_tokens", "output_tokens", "warmup_ms", "warmup_status",
+		"median_tokens_per_second", "input_tokens", "output_tokens", "draft_acceptance_rate",
+		"total_draft_tokens", "accepted_draft_tokens", "warmup_ms", "warmup_status",
 	}
 	local rows = { table.concat(headers, ",") }
 	for _, summary in ipairs(summaries) do
@@ -391,10 +413,10 @@ local function writeHtml(self, summaries)
 		"<style>body{font:15px system-ui;margin:2rem;color:#222}table{border-collapse:collapse;width:100%;margin:1rem 0}th,td{border:1px solid #bbb;padding:.5rem;text-align:left;vertical-align:top}th{background:#eee}.photo{margin-top:2.5rem}.error{color:#a00}code{white-space:pre-wrap}</style></head><body>",
 		"<h1>StyleAI LLM Metadata Benchmark</h1>",
 		"<p>Run state: <strong>" .. html(self.manifest.state) .. "</strong>; collection: " .. html(self.manifest.collection_name) .. ".</p>",
-		"<h2>Performance summary</h2><table><tr><th>Model</th><th>Success</th><th>Failed</th><th>Median ms</th><th>P95 ms</th><th>Photos/min</th></tr>",
+		"<h2>Performance summary</h2><table><tr><th>Model configuration</th><th>Success</th><th>Failed</th><th>Median ms</th><th>P95 ms</th><th>Photos/min</th><th>Draft acceptance</th></tr>",
 	}
 	for _, summary in ipairs(summaries) do
-		table.insert(parts, "<tr><td>" .. html(summary.model_key) .. "</td><td>" .. html(summary.success_count) .. "</td><td>" .. html(summary.failure_count) .. "</td><td>" .. html(summary.median_ms) .. "</td><td>" .. html(summary.p95_ms) .. "</td><td>" .. html(summary.photos_per_minute) .. "</td></tr>")
+		table.insert(parts, "<tr><td>" .. html(summary.model_key) .. "</td><td>" .. html(summary.success_count) .. "</td><td>" .. html(summary.failure_count) .. "</td><td>" .. html(summary.median_ms) .. "</td><td>" .. html(summary.p95_ms) .. "</td><td>" .. html(summary.photos_per_minute) .. "</td><td>" .. html(summary.draft_acceptance_rate) .. "</td></tr>")
 	end
 	table.insert(parts, "</table><h2>Outputs by photo</h2>")
 	for _, photoId in ipairs(photoOrder) do

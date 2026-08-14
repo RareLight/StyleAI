@@ -62,6 +62,11 @@ def test_benchmark_service_returns_outputs_without_index_service(mocker):
         output_tokens=30,
         retry_count=1,
         timing={"inference_ms": 250.0},
+        inference={
+            "used_draft_model": "draft:test",
+            "total_draft_tokens": 20,
+            "accepted_draft_tokens": 15,
+        },
     )
 
     results = run_benchmark_batch(
@@ -86,6 +91,8 @@ def test_benchmark_service_returns_outputs_without_index_service(mocker):
     assert results[0]["timing"]["proxy_inspection_ms"] >= 0
     assert results[0]["timing"]["benchmark_item_total_ms"] >= 0
     assert results[0]["source_photo_id"] == "stable-photo-1"
+    assert results[0]["benchmark_variant"] == "baseline"
+    assert results[0]["inference"]["accepted_draft_tokens"] == 15
     assert results[0]["proxy"]["width"] == 12
     analysis.generate_metadata_single.assert_called_once()
 
@@ -340,3 +347,38 @@ def test_benchmark_route_rejects_duplicate_photos_and_oversized_batches(mocker):
     assert "duplicate" in duplicate.get_json()["error"]
     assert oversized.status_code == 413
     assert "limited to 12" in oversized.get_json()["error"]
+
+
+def test_benchmark_route_validates_speculative_pairing():
+    app.config["TESTING"] = True
+    payload = base64.b64encode(_jpeg_bytes()).decode("ascii")
+    task = {"photo_id": "photo-1", "image": payload}
+
+    with app.test_client() as client:
+        unsupported_provider = client.post(
+            "/metadata_benchmark/run_batch",
+            json={
+                "tasks": [task],
+                "options": {
+                    **_options(),
+                    "draft_model": "draft:test",
+                    "benchmark_variant": "speculative",
+                },
+            },
+        )
+        missing_draft = client.post(
+            "/metadata_benchmark/run_batch",
+            json={
+                "tasks": [task],
+                "options": {
+                    **_options(),
+                    "provider": "lmstudio",
+                    "benchmark_variant": "speculative",
+                },
+            },
+        )
+
+    assert unsupported_provider.status_code == 400
+    assert "only for LM Studio" in unsupported_provider.get_json()["error"]
+    assert missing_draft.status_code == 400
+    assert "require draft_model" in missing_draft.get_json()["error"]

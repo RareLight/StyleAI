@@ -48,6 +48,16 @@ def run_metadata_benchmark_batch():
     model = str(options.get("model") or "").strip()
     if not provider or not model:
         return _error("provider and model are required", 400)
+    draft_model = str(options.get("draft_model") or "").strip() or None
+    benchmark_variant = str(options.get("benchmark_variant") or "baseline").strip()
+    if draft_model and provider != "lmstudio":
+        return _error("draft_model is supported only for LM Studio benchmarks", 400)
+    if benchmark_variant not in {"baseline", "speculative"}:
+        return _error("benchmark_variant must be baseline or speculative", 400)
+    if benchmark_variant == "speculative" and not draft_model:
+        return _error("speculative benchmark variants require draft_model", 400)
+    if benchmark_variant == "baseline" and draft_model:
+        return _error("baseline benchmark variants cannot specify draft_model", 400)
     if not any(
         options.get(field)
         for field in (

@@ -3627,11 +3627,10 @@ end
 -- Normalizes enriched model discovery descriptors into UI choices.
 -- The title is display-only; model always retains the exact provider API key.
 -- @return table Array of { provider, model, key, title, details } choices.
-function SearchIndexAPI.getModelChoices()
-    local response = SearchIndexAPI.getModels()
+local function normalizeModelChoices(response, responseKey)
     local choices = {}
     if type(response) ~= "table" then return choices end
-    local modelsByProvider = response.models
+    local modelsByProvider = response[responseKey]
     if type(modelsByProvider) ~= "table" then return choices end
     for provider, details in pairs(modelsByProvider) do
         if type(details) == "table" then
@@ -3651,6 +3650,17 @@ function SearchIndexAPI.getModelChoices()
     end
     table.sort(choices, function(a, b) return a.title < b.title end)
     return choices
+end
+
+function SearchIndexAPI.getModelChoices(response)
+    return normalizeModelChoices(response or SearchIndexAPI.getModels(), "models")
+end
+
+---
+-- Returns downloaded local LLMs that can be explicitly selected as speculative
+-- draft candidates. These are intentionally separate from vision-model choices.
+function SearchIndexAPI.getDraftModelChoices(response)
+    return normalizeModelChoices(response or SearchIndexAPI.getModels(), "draft_models")
 end
 
 function SearchIndexAPI.getDiagnosticCaptureInfo(path)

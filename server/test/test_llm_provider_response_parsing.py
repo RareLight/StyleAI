@@ -298,6 +298,39 @@ def test_lmstudio_passes_configured_max_tokens(lmstudio_provider):
     )
 
 
+def test_lmstudio_passes_draft_model_and_reports_speculative_stats(lmstudio_provider):
+    provider, fake_response = lmstudio_provider
+    fake_response.parsed = {"keywords": [], "caption": "x"}
+    fake_response.stats = SimpleNamespace(
+        used_draft_model_key="publisher/draft@q4",
+        total_draft_tokens_count=20,
+        accepted_draft_tokens_count=15,
+        rejected_draft_tokens_count=4,
+        ignored_draft_tokens_count=1,
+    )
+
+    response = provider.generate_metadata(
+        _request(draft_model="publisher/draft@q4", benchmark_variant="speculative")
+    )
+
+    assert response.success is True
+    from providers import lmstudio as lmstudio_module
+
+    fake_model = lmstudio_module.lms.Client.return_value.__enter__.return_value.llm.model.return_value
+    assert fake_model.respond.call_args.kwargs["config"]["draftModel"] == (
+        "publisher/draft@q4"
+    )
+    assert response.inference == {
+        "used_draft_model": "publisher/draft@q4",
+        "total_draft_tokens": 20,
+        "accepted_draft_tokens": 15,
+        "rejected_draft_tokens": 4,
+        "ignored_draft_tokens": 1,
+        "draft_acceptance_rate": 0.75,
+        "requested_draft_model": "publisher/draft@q4",
+    }
+
+
 def test_lmstudio_zero_tokens_when_no_stats_no_tokenize(lmstudio_provider):
     provider, fake_response = lmstudio_provider
     fake_response.parsed = {"keywords": [], "caption": "x"}

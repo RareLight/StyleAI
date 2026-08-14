@@ -102,6 +102,10 @@ def run_benchmark_batch(
             "status": "succeeded" if response.success else "failed",
             "provider": str(item_options.get("provider") or ""),
             "model": str(item_options.get("model") or ""),
+            "benchmark_variant": str(
+                item_options.get("benchmark_variant") or "baseline"
+            ),
+            "draft_model_requested": item_options.get("draft_model"),
             "proxy": proxy,
             "keywords": response.keywords if response.success else None,
             "title": response.title if response.success else None,
@@ -111,6 +115,7 @@ def run_benchmark_batch(
             "output_tokens": int(response.output_tokens or 0),
             "retry_count": int(response.retry_count or 0),
             "timing": timing,
+            "inference": dict(response.inference or {}),
         }
         if response.error:
             result["error"] = str(response.error)

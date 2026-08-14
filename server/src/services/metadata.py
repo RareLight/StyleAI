@@ -399,6 +399,8 @@ class AnalysisService:
             catalog_keywords=options.get("catalog_keywords"),
             system_prompt=options.get("prompt"),
             date_time=options.get("date_time"),
+            draft_model=options.get("draft_model"),
+            benchmark_variant=options.get("benchmark_variant"),
         )
 
         # Diagnostic logging for prompt context
@@ -500,6 +502,37 @@ class AnalysisService:
             except Exception as e:
                 logger.error(
                     f"Error listing models for provider {provider_name}: {e}",
+                    exc_info=True,
+                )
+                result[provider_name] = []
+        return result
+
+    def get_available_draft_models(self) -> dict[str, list[dict[str, Any]]]:
+        """Return downloaded models that providers can use as draft candidates."""
+        result: dict[str, list[dict[str, Any]]] = {}
+        for provider_name, provider_instance in self.providers.items():
+            try:
+                if not provider_instance.is_available():
+                    result[provider_name] = []
+                    continue
+                details = provider_instance.list_available_draft_model_details()
+                normalized_details = []
+                for detail in details if isinstance(details, list) else []:
+                    if not isinstance(detail, dict):
+                        continue
+                    key = str(detail.get("key") or "").strip()
+                    if not key:
+                        continue
+                    normalized = dict(detail)
+                    normalized["key"] = key
+                    normalized["label"] = str(detail.get("label") or key)
+                    normalized_details.append(normalized)
+                result[provider_name] = normalized_details
+            except Exception as exc:
+                logger.error(
+                    "Error listing draft models for provider %s: %s",
+                    provider_name,
+                    exc,
                     exc_info=True,
                 )
                 result[provider_name] = []

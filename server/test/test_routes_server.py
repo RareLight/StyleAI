@@ -69,6 +69,9 @@ def test_models_returns_enriched_descriptors(client, mocker):
             }
         ]
     }
+    analysis.get_available_draft_models.return_value = {
+        "lmstudio": [{"key": "publisher/draft@q4", "label": "Draft — Q4 · publisher"}]
+    }
     mocker.patch("routes.server.get_analysis_service", return_value=analysis)
 
     response = client.get("/models")
@@ -82,7 +85,12 @@ def test_models_returns_enriched_descriptors(client, mocker):
                     "label": "Model — Q4_K_M · GGUF · publisher",
                 }
             ]
-        }
+        },
+        "draft_models": {
+            "lmstudio": [
+                {"key": "publisher/draft@q4", "label": "Draft — Q4 · publisher"}
+            ]
+        },
     }
 
 
