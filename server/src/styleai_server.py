@@ -1,6 +1,6 @@
 import sys
 import threading
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from waitress import serve
 from werkzeug.exceptions import HTTPException
 
@@ -31,14 +31,34 @@ app = Flask(__name__)
 logger.info("Flask app created")
 
 
+def _tracks_client_activity(path: str) -> bool:
+    return path not in ("/ping", "/health") and not path.startswith("/status")
+
+
 @app.before_request
 def _touch_activity():
-    """Record that the server received an HTTP request so idle-shutdown knows we're alive.
-    Ignore health/ping/status polls so idle models can unload cleanly after indexing."""
+    """Protect substantive requests from idle shutdown while they are running."""
     path = request.path or ""
-    if path in ("/ping", "/health") or path.startswith("/status"):
-        return
-    server_lifecycle.note_request()
+    if _tracks_client_activity(path):
+        server_lifecycle.begin_client_request()
+        g.styleai_client_activity_active = True
+
+
+@app.after_request
+def _touch_activity_after(response):
+    """Give completed long requests a fresh idle window before the next request."""
+    if getattr(g, "styleai_client_activity_active", False):
+        server_lifecycle.end_client_request()
+        g.styleai_client_activity_active = False
+    return response
+
+
+@app.teardown_request
+def _release_activity_after_error(_error):
+    """Release activity if request processing ended before after_request ran."""
+    if getattr(g, "styleai_client_activity_active", False):
+        server_lifecycle.end_client_request()
+        g.styleai_client_activity_active = False
 
 
 # Register blueprints — core style-learning endpoints only

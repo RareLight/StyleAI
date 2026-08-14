@@ -570,7 +570,9 @@ function MetadataBenchmark.run(ctx)
 						table.insert(failedUpdates, { item_id = item.operation_item_id, state = "failed", error = tostring(response) })
 					end
 					local updateOk, updateError = SearchIndexAPI.updateOperationItems(operationId, failedUpdates)
-					if not updateOk then error(tostring(updateError)) end
+					if not updateOk then
+						error(tostring(response) .. "; operation bookkeeping also failed: " .. tostring(updateError))
+					end
 				end
 				completed = completed + #batch
 				progressScope:setPortionComplete(#prepared + completed, #prepared * (#options.models + 1))

@@ -144,6 +144,8 @@ def test_metadata_benchmark_contains_controlled_runtime_error_boundaries():
     assert "local ok, err = LrTasks.pcall" in task_source
     assert "Metadata benchmark failed unexpectedly" in task_source
     assert "No metadata was written to Lightroom" in task_source
+    assert "operation bookkeeping also failed" in source
+    assert "error(tostring(updateError))" not in source
 
 
 def test_help_menu_distinguishes_llm_and_indexing_benchmarks():

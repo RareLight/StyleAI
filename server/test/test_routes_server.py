@@ -19,6 +19,34 @@ def test_ping_returns_pong(client):
     assert response.get_data(as_text=True) == "pong"
 
 
+def test_substantive_request_refreshes_idle_window_at_start_and_completion(
+    client, mocker
+):
+    begin_request = mocker.patch("styleai_server.server_lifecycle.begin_client_request")
+    end_request = mocker.patch("styleai_server.server_lifecycle.end_client_request")
+    mocker.patch(
+        "routes.server.service_version.get_backend_version_info",
+        return_value={"backend_version": "0.8.1-test", "hardware_profile": {}},
+    )
+
+    response = client.get("/version")
+
+    assert response.status_code == 200
+    begin_request.assert_called_once_with()
+    end_request.assert_called_once_with()
+
+
+def test_liveness_request_does_not_extend_idle_window(client, mocker):
+    begin_request = mocker.patch("styleai_server.server_lifecycle.begin_client_request")
+    end_request = mocker.patch("styleai_server.server_lifecycle.end_client_request")
+
+    response = client.get("/ping")
+
+    assert response.status_code == 200
+    begin_request.assert_not_called()
+    end_request.assert_not_called()
+
+
 def test_version_returns_backend_version(client, mocker):
     mocker.patch(
         "routes.server.service_version.get_backend_version_info",
