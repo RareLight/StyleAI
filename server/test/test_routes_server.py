@@ -59,6 +59,33 @@ def test_version_returns_backend_version(client, mocker):
     assert "backend_version" in payload
 
 
+def test_models_returns_enriched_descriptors(client, mocker):
+    analysis = MagicMock()
+    analysis.get_available_models.return_value = {
+        "lmstudio": [
+            {
+                "key": "publisher/model@q4_k_m",
+                "label": "Model — Q4_K_M · GGUF · publisher",
+            }
+        ]
+    }
+    mocker.patch("routes.server.get_analysis_service", return_value=analysis)
+
+    response = client.get("/models")
+
+    assert response.status_code == 200
+    assert response.get_json()["results"] == {
+        "models": {
+            "lmstudio": [
+                {
+                    "key": "publisher/model@q4_k_m",
+                    "label": "Model — Q4_K_M · GGUF · publisher",
+                }
+            ]
+        }
+    }
+
+
 def test_health_reports_clip_error_when_set(client, mocker):
     """Regression for B1: when load_model fails, _model_load_error must be exposed via /health."""
     import server_lifecycle

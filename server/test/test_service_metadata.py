@@ -25,6 +25,7 @@ def stub_providers(mocker):
         mock_instance = mock_cls.return_value
         mock_instance.is_available.return_value = True
         mock_instance.list_available_models.return_value = []
+        mock_instance.list_available_model_details.return_value = []
         mock_instance.generate_metadata.return_value = MetadataGenerationResponse(
             uuid="stub", success=True, keywords={}, caption=None
         )
@@ -44,6 +45,26 @@ def test_constructor_registers_all_providers(service):
     assert set(service.providers.keys()) == {"ollama", "lmstudio"}
     for name in ("ollama", "lmstudio"):
         assert service.provider_status[name] == "available"
+
+
+def test_available_models_returns_normalized_descriptors(service):
+    service.providers["lmstudio"].list_available_model_details.return_value = [
+        {
+            "key": "publisher/model@q4_k_m",
+            "label": "Model — Q4_K_M · GGUF · publisher",
+            "quantization": "Q4_K_M",
+        }
+    ]
+
+    models = service.get_available_models()
+
+    assert models["lmstudio"] == [
+        {
+            "key": "publisher/model@q4_k_m",
+            "label": "Model — Q4_K_M · GGUF · publisher",
+            "quantization": "Q4_K_M",
+        }
+    ]
 
 
 def test_constructor_marks_failing_provider_as_failed(mocker):

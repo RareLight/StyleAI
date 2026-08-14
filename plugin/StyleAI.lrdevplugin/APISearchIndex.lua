@@ -3614,11 +3614,41 @@ end
 -- Retrieves all available multimodal models from all providers.
 -- Always filters to vision-capable models only.
 -- Dynamically checks Ollama and LM Studio availability on each call.
--- @return table|nil Response from server with format: { models = { qwen = {...}, ollama = {...}, ... } }
+-- @return table|nil Response with provider arrays of { key, label, ... } descriptors.
 function SearchIndexAPI.getModels()
     local url = getBaseUrl() .. ENDPOINTS.MODELS
     local result = _request('GET', url)
     return result
+end
+
+---
+-- Normalizes enriched model discovery descriptors into UI choices.
+-- The title is display-only; model always retains the exact provider API key.
+-- @return table Array of { provider, model, key, title, details } choices.
+function SearchIndexAPI.getModelChoices()
+    local response = SearchIndexAPI.getModels()
+    local choices = {}
+    if type(response) ~= "table" then return choices end
+    local modelsByProvider = response.models
+    if type(modelsByProvider) ~= "table" then return choices end
+    for provider, details in pairs(modelsByProvider) do
+        if type(details) == "table" then
+            for _, descriptor in ipairs(details) do
+                if type(descriptor) == "table" and descriptor.key and tostring(descriptor.key) ~= "" then
+                    local model = tostring(descriptor.key)
+                    local label = tostring(descriptor.label or model)
+                    table.insert(choices, {
+                        provider = tostring(provider), model = model,
+                        key = tostring(provider) .. "::" .. model,
+                        title = tostring(provider) .. ": " .. label,
+                        details = descriptor,
+                    })
+                end
+            end
+        end
+    end
+    table.sort(choices, function(a, b) return a.title < b.title end)
+    return choices
 end
 
 function SearchIndexAPI.getDiagnosticCaptureInfo(path)

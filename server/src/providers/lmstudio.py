@@ -3,10 +3,13 @@ LM Studio Provider for metadata generation using the lmstudio-python library
 """
 
 import json
+import os
 import re
 import time
 from urllib.parse import urlsplit
+
 import lmstudio as lms
+import requests
 from .base import (
     LLMProviderBase,
     MetadataGenerationRequest,
@@ -383,34 +386,159 @@ class LMStudioProvider(LLMProviderBase):
                 uuid=request.uuid, success=False, error=str(e)
             )
 
-    def list_available_models(self) -> list:
+    @staticmethod
+    def _native_model_lookup(payload: object) -> dict[str, dict]:
+        """Index native v1 model records by base, variant, and selected keys."""
+        if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
+            return {}
+        lookup: dict[str, dict] = {}
+        for record in payload["models"]:
+            if not isinstance(record, dict) or record.get("type") != "llm":
+                continue
+            keys = [record.get("key"), record.get("selected_variant")]
+            variants = record.get("variants")
+            if isinstance(variants, list):
+                keys.extend(variants)
+            for key in keys:
+                if isinstance(key, str) and key.strip():
+                    lookup[key.strip()] = record
+        return lookup
+
+    def _list_native_models(self, effective_host: str) -> dict[str, dict]:
+        """Fetch optional rich metadata without proxies, redirects, or egress."""
+        if not effective_host or not self._is_loopback_host(effective_host):
+            return {}
+        session = requests.Session()
+        session.trust_env = False
+        try:
+            response = session.get(
+                f"http://{effective_host}/api/v1/models",
+                headers={"Accept": "application/json"},
+                timeout=2.0,
+                allow_redirects=False,
+            )
+            response.raise_for_status()
+            return self._native_model_lookup(response.json())
+        except Exception as exc:
+            logger.debug("LM Studio native model metadata unavailable: %s", exc)
+            return {}
+        finally:
+            session.close()
+
+    @staticmethod
+    def _match_native_model(
+        model_key: str, native_models: dict[str, dict]
+    ) -> dict | None:
+        exact = native_models.get(model_key)
+        if exact is not None:
+            return exact
+        base_key = model_key.split("@", 1)[0]
+        return native_models.get(base_key)
+
+    @staticmethod
+    def _publisher_from_path(path: object) -> str | None:
+        if not isinstance(path, str):
+            return None
+        normalized = path.replace("\\", "/").strip("/")
+        if "/" not in normalized:
+            return None
+        publisher = normalized.split("/", 1)[0].strip()
+        return publisher or None
+
+    @staticmethod
+    def _fallback_variant(model_key: str, path: object) -> str | None:
+        if "@" in model_key:
+            variant = model_key.rsplit("@", 1)[1].strip()
+            return variant or None
+        if not isinstance(path, str):
+            return None
+        filename = os.path.basename(path.replace("\\", "/"))
+        stem, _ = os.path.splitext(filename)
+        return stem if stem and stem != model_key else None
+
+    @staticmethod
+    def _format_model_label(detail: dict) -> str:
+        display_name = str(detail.get("display_name") or detail["key"])
+        qualifiers: list[str] = []
+        params = detail.get("params_string")
+        if params and str(params).lower() not in display_name.lower():
+            qualifiers.append(str(params))
+        quantization = detail.get("quantization")
+        if quantization:
+            qualifiers.append(str(quantization))
+        model_format = detail.get("format")
+        if model_format:
+            qualifiers.append(str(model_format).upper())
+        publisher = detail.get("publisher")
+        if publisher:
+            qualifiers.append(str(publisher))
+        variant = detail.get("selected_variant")
+        if not quantization and variant:
+            qualifiers.append(str(variant))
+        return (
+            f"{display_name} — {' · '.join(dict.fromkeys(qualifiers))}"
+            if qualifiers
+            else display_name
+        )
+
+    def list_available_model_details(self) -> list[dict]:
+        """List vision models with rich labels and stable SDK inference keys."""
+        try:
+            effective_host = self._resolve_host()
+            with lms.Client(effective_host) as client:
+                models = client.llm.list_downloaded()
+            native_models = self._list_native_models(effective_host)
+            details: list[dict] = []
+            for model in models:
+                info = getattr(model, "info", None)
+                if not getattr(model, "vision", getattr(info, "vision", False)):
+                    continue
+                model_key = str(model.model_key)
+                native = self._match_native_model(model_key, native_models) or {}
+                path = getattr(model, "path", getattr(info, "path", None))
+                quantization = native.get("quantization")
+                quantization_name = (
+                    quantization.get("name") if isinstance(quantization, dict) else None
+                )
+                detail = {
+                    "key": model_key,
+                    "display_name": native.get("display_name")
+                    or getattr(info, "display_name", None)
+                    or model_key,
+                    "publisher": native.get("publisher")
+                    or self._publisher_from_path(path),
+                    "params_string": native.get("params_string")
+                    or getattr(info, "params_string", None),
+                    "format": native.get("format") or getattr(info, "format", None),
+                    "quantization": quantization_name,
+                    "bits_per_weight": (
+                        quantization.get("bits_per_weight")
+                        if isinstance(quantization, dict)
+                        else None
+                    ),
+                    "selected_variant": native.get("selected_variant")
+                    or self._fallback_variant(model_key, path),
+                    "size_bytes": native.get("size_bytes")
+                    or getattr(info, "size_bytes", None),
+                }
+                detail["label"] = self._format_model_label(detail)
+                details.append(
+                    {key: value for key, value in detail.items() if value is not None}
+                )
+            return details
+        except Exception as exc:
+            logger.error(
+                "An unexpected error occurred while listing LM Studio models: %s",
+                exc,
+                exc_info=True,
+            )
+            return []
+
+    def list_available_models(self) -> list[str]:
         """
         List available LM Studio models using the lmstudio-python library.
 
         Returns:
             List of model identifiers for vision-capable models.
         """
-        try:
-            effective_host = self._resolve_host()
-            # Use a scoped client so we respect the resolved active host and
-            # avoid relying on a hardcoded default API port.
-            with lms.Client(effective_host) as client:
-                models = client.llm.list_downloaded()
-                # Only populate the dropdown with vision-capable models
-                vision_models = [
-                    model.model_key
-                    for model in models
-                    if getattr(
-                        model,
-                        "vision",
-                        getattr(getattr(model, "info", None), "vision", False),
-                    )
-                ]
-                return vision_models
-
-        except Exception as e:
-            logger.error(
-                f"An unexpected error occurred while listing LM Studio models: {e}",
-                exc_info=True,
-            )
-            return []
+        return [detail["key"] for detail in self.list_available_model_details()]

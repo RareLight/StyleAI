@@ -4,6 +4,12 @@ The model selector in **Prepare Photos → Metadata Settings** lists models from
 Ollama and LM Studio running on the same computer. These models generate text
 metadata only; they do not train or apply learned edits.
 
+LM Studio entries include provider-reported parameter size, quantization,
+runtime format, and publisher when its native local model API exposes them. The
+exact model key remains the value sent to LM Studio. If the richer native API
+is unavailable, StyleAI falls back to the SDK catalog and displays the identity
+details available there; this does not affect inference.
+
 Choose a vision-capable, instruction-following model that fits comfortably in
 available VRAM or unified memory. A model that triggers swap usually has worse
 end-to-end throughput than a smaller model. Compare candidates on a fixed,

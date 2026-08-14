@@ -145,15 +145,8 @@ local function showAnalyzeAndIndexDialog(ctx)
     -- Build model list from server (local providers first)
     local modelItems = {}
 
-    local modelsResp = SearchIndexAPI.getModels()
-    if modelsResp and modelsResp.models then
-        for provider, list in pairs(modelsResp.models) do
-            for _, model in ipairs(list) do
-                local title = provider .. ": " .. model
-                local value = provider .. "::" .. model
-                table.insert(modelItems, { title = title, value = value })
-            end
-        end
+    for _, choice in ipairs(SearchIndexAPI.getModelChoices()) do
+        table.insert(modelItems, { title = choice.title, value = choice.key })
     end
 
     table.sort(modelItems, function(a, b) return a.title < b.title end)
@@ -362,7 +355,7 @@ local function showAnalyzeAndIndexDialog(ctx)
 							UIFactory.FormRow(f, {
 								label = LOC "$$$/StyleAI/PluginInfoDialogSections/aiModel=Model:",
 								labelWidth = share 'prepareMetadataLabel',
-								f:popup_menu { value = bind 'modelKey', items = modelItems, width = 360 },
+								f:popup_menu { value = bind 'modelKey', items = modelItems, width = 540 },
 							}),
 							UIFactory.FormRow(f, {
 								label = LOC "$$$/StyleAI/PluginInfoDialogSections/generateLanguage=Language:",

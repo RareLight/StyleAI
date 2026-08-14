@@ -10,24 +10,7 @@ local runSequence = 0
 local RECOMMENDED_MAX_PHOTOS = 32
 
 local function availableModels()
-	local response = SearchIndexAPI.getModels()
-	local models = {}
-	local providerModels = type(response) == "table" and response.models or nil
-	if type(providerModels) ~= "table" then return models end
-	for provider, names in pairs(providerModels) do
-		if type(names) == "table" then
-			for _, name in ipairs(names) do
-				table.insert(models, {
-					provider = tostring(provider),
-					model = tostring(name),
-					key = tostring(provider) .. "::" .. tostring(name),
-					title = tostring(provider) .. ": " .. tostring(name),
-				})
-			end
-		end
-	end
-	table.sort(models, function(a, b) return a.title < b.title end)
-	return models
+	return SearchIndexAPI.getModelChoices()
 end
 
 local function optionalRuntimeValue(owner, methodName, fallback)
