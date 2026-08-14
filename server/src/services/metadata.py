@@ -470,11 +470,11 @@ class AnalysisService:
             uuid=uuid, success=False, error="Unknown error"
         )
 
-    def get_available_models(self) -> dict[str, list[str]]:
+    def get_available_models(self) -> dict[str, list[dict[str, Any]]]:
         """
-        Return all available multimodal (vision-capable) models from all providers.
+        Return display descriptors for vision-capable models from all providers.
         """
-        result: dict[str, list[str]] = {}
+        result: dict[str, list[dict[str, Any]]] = {}
         for provider_name, provider_instance in self.providers.items():
             try:
                 if not provider_instance.is_available():
@@ -482,8 +482,21 @@ class AnalysisService:
                     continue
 
                 self.provider_status[provider_name] = "available"
-                models = provider_instance.list_available_models()
-                result[provider_name] = models
+                details = provider_instance.list_available_model_details()
+                if not isinstance(details, list):
+                    details = []
+                normalized_details = []
+                for detail in details:
+                    if not isinstance(detail, dict):
+                        continue
+                    key = str(detail.get("key") or "").strip()
+                    if not key:
+                        continue
+                    normalized = dict(detail)
+                    normalized["key"] = key
+                    normalized["label"] = str(detail.get("label") or key)
+                    normalized_details.append(normalized)
+                result[provider_name] = normalized_details
             except Exception as e:
                 logger.error(
                     f"Error listing models for provider {provider_name}: {e}",

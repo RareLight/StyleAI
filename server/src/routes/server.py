@@ -201,9 +201,11 @@ def list_models():
 
     Returns: {
         "models": {
-            "qwen": ["model1", "model2"],
-            "ollama": [...],
-            "lmstudio": [...]
+            "ollama": [{"key": "model1", "label": "model1"}],
+            "lmstudio": [{
+                "key": "publisher/model@q4_k_m",
+                "label": "Model - Q4_K_M / GGUF / publisher"
+            }]
         }
     }
     """

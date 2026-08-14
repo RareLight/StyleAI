@@ -133,6 +133,20 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
     assert "protectedCall" in report_source
 
 
+def test_model_selectors_use_enriched_labels_and_stable_keys():
+    api_source = _source("APISearchIndex.lua")
+    prepare_source = _source("TaskAnalyzeAndIndex.lua")
+    benchmark_source = _source("MetadataBenchmark.lua")
+
+    assert "function SearchIndexAPI.getModelChoices()" in api_source
+    assert "response.models" in api_source
+    assert 'title = tostring(provider) .. ": " .. label' in api_source
+    assert 'key = tostring(provider) .. "::" .. model' in api_source
+    assert "SearchIndexAPI.getModelChoices()" in prepare_source
+    assert "width = 540" in prepare_source
+    assert "return SearchIndexAPI.getModelChoices()" in benchmark_source
+
+
 def test_metadata_benchmark_contains_controlled_runtime_error_boundaries():
     source = _source("MetadataBenchmark.lua")
     task_source = _source("TaskMetadataBenchmark.lua")

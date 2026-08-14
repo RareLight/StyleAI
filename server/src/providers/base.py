@@ -124,6 +124,13 @@ class LLMProviderBase(ABC):
         """
         pass
 
+    def list_available_model_details(self) -> list[dict[str, Any]]:
+        """Return display descriptors while preserving callable model keys."""
+        return [
+            {"key": model_key, "label": model_key}
+            for model_key in self.list_available_models()
+        ]
+
     def _prepare_system_prompt(self, request: MetadataGenerationRequest) -> str:
         """
         Prepare system instruction based on request options.
