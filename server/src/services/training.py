@@ -970,6 +970,49 @@ def get_existing_training_ids(photo_ids: list[str]) -> set[str]:
     return existing
 
 
+def get_training_source_records(photo_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Return bounded existing RAW-source records for strict evidence reuse.
+
+    Callers must still validate the complete contract stamp and current source
+    fingerprint before reusing a vector. This helper only avoids per-photo
+    Chroma reads and does not treat record presence as compatibility.
+    """
+    _ensure_initialized()
+    if _training_collection is None:
+        return {}
+    normalized = list(
+        dict.fromkeys(str(photo_id or "").strip() for photo_id in photo_ids)
+    )
+    normalized = [photo_id for photo_id in normalized if photo_id]
+    records: dict[str, dict[str, Any]] = {}
+    for offset in range(0, len(normalized), 500):
+        try:
+            result = _training_collection.get(
+                ids=normalized[offset : offset + 500],
+                include=["metadatas", "embeddings"],
+            )
+        except _ChromaInternalError:
+            continue
+        result_ids = result.get("ids") or []
+        metadatas = result.get("metadatas") or []
+        embeddings = result.get("embeddings")
+        if embeddings is None:
+            embeddings = []
+        for index, photo_id in enumerate(result_ids):
+            metadata = (
+                metadatas[index]
+                if index < len(metadatas) and isinstance(metadatas[index], dict)
+                else None
+            )
+            embedding = embeddings[index] if index < len(embeddings) else None
+            records[str(photo_id)] = {
+                "ids": [str(photo_id)],
+                "metadatas": [metadata] if metadata is not None else [],
+                "embeddings": [embedding] if embedding is not None else [],
+            }
+    return records
+
+
 def get_training_stats() -> dict[str, Any]:
     """Return policy-eligible readiness plus aggregate explanatory statistics."""
     from services.photo_constraints import is_stitched_panorama

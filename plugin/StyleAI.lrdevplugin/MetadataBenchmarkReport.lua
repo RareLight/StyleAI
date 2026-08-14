@@ -12,17 +12,29 @@ local function writeJsonAtomic(path, value)
 	local temporary = path .. ".tmp"
 	local ok, err = writeAll(temporary, JSON:encode_pretty(value), "w")
 	if not ok then return false, err end
-	local renamed, renameErr = os.rename(temporary, path)
-	if not renamed and LrFileUtils.exists(path) then
-		-- Windows does not replace an existing destination with os.rename. The
+	local callOk, moved, moveErr = LrTasks.pcall(function()
+		return LrFileUtils.move(temporary, path)
+	end)
+	if not callOk then
+		moveErr = moved
+		moved = false
+	end
+	if not moved and LrFileUtils.exists(path) then
+		-- Windows does not replace an existing destination with LrFileUtils.move. The
 		-- fallback has a short replacement window but retains the completed temp
 		-- file until the old manifest has been removed.
 		LrFileUtils.delete(path)
-		renamed, renameErr = os.rename(temporary, path)
+		callOk, moved, moveErr = LrTasks.pcall(function()
+			return LrFileUtils.move(temporary, path)
+		end)
+		if not callOk then
+			moveErr = moved
+			moved = false
+		end
 	end
-	if not renamed then
+	if not moved then
 		LrFileUtils.delete(temporary)
-		return false, renameErr
+		return false, moveErr
 	end
 	return true
 end

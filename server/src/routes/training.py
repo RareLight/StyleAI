@@ -127,6 +127,8 @@ def _resolve_training_sources_batch(
     ] = {}
     misses: list[tuple[str, source_embeddings.NeutralSource]] = []
     cache_hit_count = 0
+    canonical_cache_hit_count = 0
+    training_cache_hit_count = 0
     canonical_by_id: dict[str, dict[str, Any]] = {}
     try:
         canonical = chroma.get_images([photo_id for photo_id, _, _ in items])
@@ -150,6 +152,13 @@ def _resolve_training_sources_batch(
             }
     except Exception as exc:
         logger.debug("Canonical training evidence batch lookup failed: %s", exc)
+    try:
+        training_by_id = training_service.get_training_source_records(
+            [photo_id for photo_id, _, _ in items]
+        )
+    except Exception as exc:
+        logger.debug("Existing training evidence batch lookup failed: %s", exc)
+        training_by_id = {}
 
     for photo_id, rendered_image_bytes, raw_filepath in items:
         # Prepare Photos stores the canonical RAW-preview vector and its source
@@ -157,45 +166,57 @@ def _resolve_training_sources_batch(
         # the complete evidence tuple before launching ExifTool again. The
         # compatibility check includes the current source-file fingerprint, so
         # any changed or stale source still falls through to recomputation.
-        try:
-            existing = canonical_by_id.get(photo_id, {})
-            metadatas = existing.get("metadatas") or []
-            metadata = dict(metadatas[0]) if metadatas else {}
-            embedding = source_embeddings.compatible_embedding(
-                existing,
-                raw_filepath=raw_filepath,
-                rendered_image_bytes=rendered_image_bytes,
-            )
-            metrics = source_embeddings.cached_source_metrics(metadata)
-            provenance = metadata.get("source_embedding_provenance")
-            fingerprint = metadata.get("source_embedding_fingerprint")
-            if (
-                embedding is not None
-                and metrics is not None
-                and provenance == source_embeddings.RAW_PREVIEW_PROVENANCE
-                and fingerprint
-            ):
-                cached_source = source_embeddings.NeutralSource(
-                    image_bytes=b"",
-                    provenance=provenance,
-                    fingerprint=str(fingerprint),
+        reused = False
+        for cache_name, existing in (
+            ("canonical", canonical_by_id.get(photo_id, {})),
+            ("training", training_by_id.get(photo_id, {})),
+        ):
+            try:
+                metadatas = existing.get("metadatas") or []
+                metadata = dict(metadatas[0]) if metadatas else {}
+                embedding = source_embeddings.compatible_embedding(
+                    existing,
+                    raw_filepath=raw_filepath,
+                    rendered_image_bytes=rendered_image_bytes,
                 )
-                resolved[photo_id] = (
-                    embedding,
-                    b"",
-                    provenance,
-                    source_embeddings.stamp_metadata(
-                        {}, cached_source, source_metrics=metrics
-                    ),
+                metrics = source_embeddings.cached_source_metrics(metadata)
+                provenance = metadata.get("source_embedding_provenance")
+                fingerprint = metadata.get("source_embedding_fingerprint")
+                if (
+                    embedding is not None
+                    and metrics is not None
+                    and provenance == source_embeddings.RAW_PREVIEW_PROVENANCE
+                    and fingerprint
+                ):
+                    cached_source = source_embeddings.NeutralSource(
+                        image_bytes=b"",
+                        provenance=provenance,
+                        fingerprint=str(fingerprint),
+                    )
+                    resolved[photo_id] = (
+                        embedding,
+                        b"",
+                        provenance,
+                        source_embeddings.stamp_metadata(
+                            {}, cached_source, source_metrics=metrics
+                        ),
+                    )
+                    cache_hit_count += 1
+                    if cache_name == "canonical":
+                        canonical_cache_hit_count += 1
+                    else:
+                        training_cache_hit_count += 1
+                    reused = True
+                    break
+            except Exception as exc:
+                logger.debug(
+                    "Compatible %s training evidence lookup failed for photo_id=%s: %s",
+                    cache_name,
+                    photo_id,
+                    exc,
                 )
-                cache_hit_count += 1
-                continue
-        except Exception as exc:
-            logger.debug(
-                "Compatible cached training evidence lookup failed for photo_id=%s: %s",
-                photo_id,
-                exc,
-            )
+        if reused:
+            continue
 
         try:
             source = source_embeddings.resolve_neutral_source(
@@ -307,9 +328,12 @@ def _resolve_training_sources_batch(
                     source_embeddings.stamp_metadata({}, source),
                 )
     logger.info(
-        "Prepared training source batch (items=%d, complete_cache_hits=%d, recomputed=%d)",
+        "Prepared training source batch (items=%d, complete_cache_hits=%d, "
+        "canonical_cache_hits=%d, training_cache_hits=%d, recomputed=%d)",
         len(items),
         cache_hit_count,
+        canonical_cache_hit_count,
+        training_cache_hit_count,
         len(misses),
     )
     return resolved
