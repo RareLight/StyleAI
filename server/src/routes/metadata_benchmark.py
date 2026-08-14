@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, request
 import config
 from config import STYLEAI_METADATA_CACHE_BYTES, logger
 from services import operations
-from services.metadata_benchmark import run_benchmark_batch
+from services.metadata_benchmark import round_benchmark_timings, run_benchmark_batch
 from utils.request_parsing import _extract_options
 
 
@@ -119,6 +119,16 @@ def run_metadata_benchmark_batch():
         raw_task_options = task.get("options") or {}
         if not isinstance(raw_task_options, dict):
             return _error(f"benchmark options must be an object for {photo_id}", 400)
+        try:
+            model_index = int(task.get("model_index") or 0)
+            photo_index = int(task.get("photo_index") or 0)
+        except (TypeError, ValueError):
+            return _error("benchmark progress indexes must be integers", 400)
+        if job_id and (model_index < 1 or photo_index < 1):
+            return _error(
+                "model_index and photo_index are required for operation-backed benchmarks",
+                400,
+            )
         task_options = _extract_options({**raw_options, **raw_task_options})
         # Per-photo context may vary, but the compared provider/model must stay
         # fixed for every item in this batch.
@@ -137,6 +147,8 @@ def run_metadata_benchmark_batch():
                 "source_photo_id": str(task.get("source_photo_id") or photo_id),
                 "filename": str(task.get("filename") or "photo.jpg"),
                 "operation_item_id": str(task.get("operation_item_id") or ""),
+                "model_index": model_index,
+                "photo_index": photo_index,
                 "image_data": image_data,
                 "decode_ms": round((time.perf_counter() - decode_started) * 1000.0, 3),
                 "options": task_options,
@@ -162,21 +174,33 @@ def run_metadata_benchmark_batch():
             )
             if job_id:
                 operations.set_job_state(config.DB_PATH, job_id, "running")
-                operations.set_item_states(
+
+            def publish_item_progress(
+                item: dict, _batch_index: int, _batch_total: int
+            ) -> None:
+                if not job_id:
+                    return
+                operations.set_job_state(
                     config.DB_PATH,
                     job_id,
-                    [
-                        {
-                            "item_id": item["operation_item_id"],
-                            "state": "running",
-                        }
-                        for item in decoded_items
-                    ],
+                    "running",
+                    details={
+                        "current_model_index": item["model_index"],
+                        "current_photo_index": item["photo_index"],
+                    },
                 )
+                operations.set_item_state(
+                    config.DB_PATH,
+                    job_id,
+                    item["operation_item_id"],
+                    "running",
+                )
+
             results = run_benchmark_batch(
                 decoded_items,
                 options,
                 cancel_signal=cancel_signal,
+                on_item_started=publish_item_progress,
             )
     except InterruptedError:
         return _error("metadata benchmark operation has been canceled", 409)
@@ -186,6 +210,7 @@ def run_metadata_benchmark_batch():
 
     for result in results:
         result["timing"]["admission_wait_ms"] = admission_wait_ms
+        result["timing"] = round_benchmark_timings(result["timing"])
 
     if job_id:
         by_photo_id = {result["photo_id"]: result for result in results}

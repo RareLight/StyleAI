@@ -10,11 +10,37 @@ from __future__ import annotations
 from hashlib import sha256
 import io
 import time
+from collections.abc import Callable
 from typing import Any
+import math
 
 from PIL import Image
 
 from services.metadata import AnalysisService, get_analysis_service
+
+
+def round_benchmark_timings(timing: dict[str, Any]) -> dict[str, Any]:
+    """Return report-ready timings with consistent, human-readable precision."""
+
+    def round_half_up(value: int | float, decimal_places: int) -> int | float:
+        factor = 10**decimal_places
+        scaled = float(value) * factor
+        rounded_value = (
+            math.floor(scaled + 0.5) if scaled >= 0 else math.ceil(scaled - 0.5)
+        )
+        return rounded_value if decimal_places == 0 else rounded_value / factor
+
+    rounded: dict[str, Any] = {}
+    for key, value in timing.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            rounded[key] = value
+        elif key.endswith("_ms"):
+            rounded[key] = round_half_up(value, 0)
+        elif key.endswith(("_seconds", "_minutes", "_per_second", "_per_minute")):
+            rounded[key] = round_half_up(value, 1)
+        else:
+            rounded[key] = value
+    return rounded
 
 
 def inspect_proxy(image_data: bytes) -> dict[str, Any]:
@@ -37,6 +63,7 @@ def run_benchmark_batch(
     *,
     analysis_service: AnalysisService | None = None,
     cancel_signal: Any | None = None,
+    on_item_started: Callable[[dict[str, Any], int, int], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Generate normalized metadata for each item without persistence."""
     service = analysis_service or get_analysis_service()
@@ -45,9 +72,11 @@ def run_benchmark_batch(
         raise ValueError(f"benchmark provider is unavailable: {provider}")
     results: list[dict[str, Any]] = []
 
-    for item in items:
+    for item_index, item in enumerate(items, start=1):
         if cancel_signal is not None and cancel_signal.is_set():
             raise InterruptedError("metadata benchmark operation has been canceled")
+        if on_item_started is not None:
+            on_item_started(item, item_index, len(items))
 
         photo_id = str(item["photo_id"])
         filename = str(item.get("filename") or "photo.jpg")
@@ -64,6 +93,7 @@ def run_benchmark_batch(
         timing["base64_decode_ms"] = float(item.get("decode_ms") or 0.0)
         timing["proxy_inspection_ms"] = proxy_inspection_ms
         timing["benchmark_item_total_ms"] = elapsed_ms
+        timing = round_benchmark_timings(timing)
 
         result: dict[str, Any] = {
             "photo_id": photo_id,

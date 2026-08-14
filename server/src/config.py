@@ -200,6 +200,7 @@ For text fields:
 
 Rules:
 - Do not pad the keyword list with minor objects or generic terms.
+- Omit inapplicable keyword categories. Never output placeholders such as None, N/A, Unknown, or Not Applicable.
 - Do not guess species, breeds, locations, seasons, identities, relationships, occupations, emotions, or events.
 - Use supplied context as factual context, but do not present it as visually observed.
 - Avoid synonyms and redundant phrases, while allowing a useful broader classification alongside a specific identification.

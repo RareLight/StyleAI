@@ -10,6 +10,24 @@ import io
 from config import METADATA_GENERATION_SYSTEM_PROMPT
 
 
+_KEYWORD_PLACEHOLDERS = frozenset(
+    {
+        "none",
+        "n/a",
+        "na",
+        "null",
+        "unknown",
+        "unspecified",
+        "not applicable",
+        "not available",
+        "not present",
+        "not visible",
+        "no keyword",
+        "no keywords",
+    }
+)
+
+
 @dataclass
 class MetadataGenerationRequest:
     """Request structure for metadata generation"""
@@ -451,7 +469,7 @@ class LLMProviderBase(ABC):
         if not isinstance(value, list):
             return []
         cleaned: list[str] = []
-        seen = set(reserved_lower)
+        seen = set(reserved_lower) | set(_KEYWORD_PLACEHOLDERS)
         for item in value:
             if not isinstance(item, str):
                 continue
@@ -468,15 +486,19 @@ class LLMProviderBase(ABC):
     @final
     def _normalize_keyword_leaf(self, value: Any) -> str | dict[str, Any] | None:
         if isinstance(value, str):
-            keyword = value.strip().title()
+            keyword = value.strip()
+            if keyword.lower() in _KEYWORD_PLACEHOLDERS:
+                return None
+            keyword = keyword.title()
             return keyword or None
         if isinstance(value, dict):
             keyword_name = value.get("name")
             if not isinstance(keyword_name, str):
                 return None
-            keyword_name = keyword_name.strip().title()
-            if not keyword_name:
+            keyword_name = keyword_name.strip()
+            if not keyword_name or keyword_name.lower() in _KEYWORD_PLACEHOLDERS:
                 return None
+            keyword_name = keyword_name.title()
             normalized: dict[str, Any] = {"name": keyword_name}
             name_lower = keyword_name.lower()
 
@@ -527,7 +549,7 @@ class LLMProviderBase(ABC):
                 normalized_dict[key] = normalized_item
             return normalized_dict
 
-        return normalized_leaf
+        return None
 
     @final
     def _image_to_base64(self, image_data: bytes) -> str:

@@ -8,9 +8,55 @@ local Defaults = require("Defaults")
 local WorkCoordinator = require("WorkCoordinator")
 local runSequence = 0
 local RECOMMENDED_MAX_PHOTOS = 32
+local MAX_PROGRESS_MODEL_CHARS = 72
+
+local function roundMilliseconds(value)
+	return math.floor((tonumber(value) or 0) + 0.5)
+end
 
 local function availableModels()
 	return SearchIndexAPI.getModelChoices()
+end
+
+local function utf8Characters(value)
+	local characters = {}
+	local index = 1
+	while index <= #value do
+		local lead = string.byte(value, index)
+		local length = 1
+		if lead and lead >= 240 then
+			length = 4
+		elseif lead and lead >= 224 then
+			length = 3
+		elseif lead and lead >= 192 then
+			length = 2
+		end
+		table.insert(characters, string.sub(value, index, index + length - 1))
+		index = index + length
+	end
+	return characters
+end
+
+local function progressModelTitle(model)
+	local title = model and model.details and model.details.label
+	if title == nil or tostring(title) == "" then title = model and (model.model or model.title) or "" end
+	title = tostring(title)
+	local characters = utf8Characters(title)
+	if #characters <= MAX_PROGRESS_MODEL_CHARS then return title end
+	local suffixLength = 28
+	local prefixLength = MAX_PROGRESS_MODEL_CHARS - suffixLength - 3
+	return table.concat(characters, "", 1, prefixLength)
+		.. "..."
+		.. table.concat(characters, "", #characters - suffixLength + 1, #characters)
+end
+
+local function setModelProgressCaption(progressScope, modelTitle, photoIndex, photoCount)
+	progressScope:setCaption(LOC(
+		"$$$/StyleAI/MetadataBenchmark/Model=^1 (^2/^3)",
+		modelTitle,
+		tostring(photoIndex),
+		tostring(photoCount)
+	))
 end
 
 local function optionalRuntimeValue(owner, methodName, fallback)
@@ -462,6 +508,7 @@ function MetadataBenchmark.run(ctx)
 	local finalState = "failed"
 	local operationId
 	local keepWatching = true
+	local progressState = { modelIndex = nil, modelTitle = nil, showPhotoProgress = false }
 	local ok, runError = LrTasks.pcall(function()
 		createBenchmarkCollection(catalog, selectedPhotos, collectionName)
 		local prepared = preparePhotos(selectedPhotos, options, progressScope, runId)
@@ -492,6 +539,15 @@ function MetadataBenchmark.run(ctx)
 			while keepWatching do
 				local cancelOk, canceled = LrTasks.pcall(function() return progressScope:isCanceled() end)
 				if cancelOk and canceled and operationId then SearchIndexAPI.cancelOperation(operationId); break end
+				if operationId and progressState.showPhotoProgress then
+					local statusOk, operation = SearchIndexAPI.getOperation(operationId, false)
+					local details = statusOk and type(operation) == "table" and operation.details or nil
+					local currentModel = type(details) == "table" and tonumber(details.current_model_index) or nil
+					local currentPhoto = type(details) == "table" and tonumber(details.current_photo_index) or nil
+					if currentModel == progressState.modelIndex and currentPhoto and currentPhoto >= 1 and currentPhoto <= #prepared then
+						setModelProgressCaption(progressScope, progressState.modelTitle, currentPhoto, #prepared)
+					end
+				end
 				LrTasks.sleep(0.25)
 			end
 		end)
@@ -500,9 +556,13 @@ function MetadataBenchmark.run(ctx)
 		for modelIndex, model in ipairs(options.models) do
 			if progressScope:isCanceled() then break end
 			local modelStarted = LrDate.currentTime()
-			progressScope:setCaption(LOC("$$$/StyleAI/MetadataBenchmark/Model=Benchmarking ^1 (^2 of ^3)...", model.title, tostring(modelIndex), tostring(#options.models)))
+			local modelTitle = progressModelTitle(model)
+			progressState.modelIndex = modelIndex
+			progressState.modelTitle = modelTitle
+			progressState.showPhotoProgress = false
 			local modelOptions = requestOptions(options, model, nil)
 			if options.warmup then
+				progressScope:setCaption(LOC("$$$/StyleAI/MetadataBenchmark/WarmupProgress=^1 (warm-up)", modelTitle))
 				local warmupItem = {
 					photo_id = prepared[1].photo_id .. ":warmup:" .. tostring(modelIndex),
 					source_photo_id = prepared[1].source_photo_id,
@@ -522,6 +582,8 @@ function MetadataBenchmark.run(ctx)
 					if not appended then error("Could not append benchmark report: " .. tostring(appendError)) end
 				end
 			end
+			progressState.showPhotoProgress = true
+			setModelProgressCaption(progressScope, modelTitle, 1, #prepared)
 
 			for batchStart = 1, #prepared, 12 do
 				if progressScope:isCanceled() then break end
@@ -535,6 +597,8 @@ function MetadataBenchmark.run(ctx)
 						image = item.image,
 						options = item.options,
 						operation_item_id = runId .. ":model:" .. tostring(modelIndex) .. ":photo:" .. tostring(photoIndex),
+						model_index = modelIndex,
+						photo_index = photoIndex,
 					})
 				end
 				local batchOptions = requestOptions(options, model, operationId)
@@ -562,7 +626,7 @@ function MetadataBenchmark.run(ctx)
 				manifestOk, manifestError = Report.updateManifest(report, {})
 				if not manifestOk then error("Could not update benchmark manifest: " .. tostring(manifestError)) end
 			end
-			table.insert(manifest.model_runs, { provider = model.provider, model = model.model, elapsed_ms = (LrDate.currentTime() - modelStarted) * 1000 })
+			table.insert(manifest.model_runs, { provider = model.provider, model = model.model, elapsed_ms = roundMilliseconds((LrDate.currentTime() - modelStarted) * 1000) })
 		end
 
 		if progressScope:isCanceled() then
@@ -581,7 +645,7 @@ function MetadataBenchmark.run(ctx)
 		finalState = progressScope:isCanceled() and "canceled" or "failed"
 	end
 	local finalizeOk, finalizeError = Report.finalize(report, finalState, {
-		elapsed_ms = (LrDate.currentTime() - startedAt) * 1000,
+		elapsed_ms = roundMilliseconds((LrDate.currentTime() - startedAt) * 1000),
 		model_runs = manifest.model_runs,
 		run_error = manifest.run_error,
 	})
