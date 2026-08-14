@@ -12,18 +12,47 @@ local RECOMMENDED_MAX_PHOTOS = 32
 local function availableModels()
 	local response = SearchIndexAPI.getModels()
 	local models = {}
-	for provider, names in pairs((response and response.models) or {}) do
-		for _, name in ipairs(names or {}) do
-			table.insert(models, {
-				provider = tostring(provider),
-				model = tostring(name),
-				key = tostring(provider) .. "::" .. tostring(name),
-				title = tostring(provider) .. ": " .. tostring(name),
-			})
+	local providerModels = type(response) == "table" and response.models or nil
+	if type(providerModels) ~= "table" then return models end
+	for provider, names in pairs(providerModels) do
+		if type(names) == "table" then
+			for _, name in ipairs(names) do
+				table.insert(models, {
+					provider = tostring(provider),
+					model = tostring(name),
+					key = tostring(provider) .. "::" .. tostring(name),
+					title = tostring(provider) .. ": " .. tostring(name),
+				})
+			end
 		end
 	end
 	table.sort(models, function(a, b) return a.title < b.title end)
 	return models
+end
+
+local function optionalRuntimeValue(owner, methodName, fallback)
+	if type(owner) ~= "table" or type(owner[methodName]) ~= "function" then return fallback end
+	local ok, value = LrTasks.pcall(function() return owner[methodName]() end)
+	if not ok or value == nil then return fallback end
+	return value
+end
+
+local function validateBenchmarkRuntime()
+	local ok, err = Report.validateRuntime()
+	if not ok then return false, err end
+	local requirements = {
+		{ LrApplication, "LrApplication", "activeCatalog" },
+		{ LrDate, "LrDate", "timeToW3CDate" },
+		{ LrPathUtils, "LrPathUtils", "parent" },
+		{ LrPathUtils, "LrPathUtils", "leafName" },
+		{ LrStringUtils, "LrStringUtils", "encodeBase64" },
+	}
+	for _, requirement in ipairs(requirements) do
+		if type(requirement[1]) ~= "table" or type(requirement[1][requirement[3]]) ~= "function" then
+			return false, requirement[2] .. "." .. requirement[3] .. " is unavailable in this Lightroom runtime"
+		end
+	end
+	return true
 end
 
 local function showDialog(ctx, selectedCount, models)
@@ -322,7 +351,11 @@ local function requestOptions(options, model, operationId)
 end
 
 local function appendResponse(report, response, warmup)
-	for _, result in ipairs((response and response.items) or {}) do
+	if type(response) ~= "table" or type(response.items) ~= "table" then
+		error("The local metadata service returned an invalid benchmark response")
+	end
+	for _, result in ipairs(response.items) do
+		if type(result) ~= "table" then error("The local metadata service returned an invalid benchmark result") end
 		result.warmup = warmup == true
 		local ok, err = Report.append(report, result)
 		if not ok then error("Could not append benchmark report: " .. tostring(err)) end
@@ -330,7 +363,6 @@ local function appendResponse(report, response, warmup)
 end
 
 function MetadataBenchmark.run(ctx)
-	LrDialogs.attachErrorDialogToFunctionContext(ctx)
 	local selectedPhotos = PhotoSelector.snapshotSelectedPhotos()
 	if #selectedPhotos == 0 then
 		LrDialogs.message(
@@ -352,6 +384,15 @@ function MetadataBenchmark.run(ctx)
 	end
 	local options = showDialog(ctx, #selectedPhotos, models)
 	if not options then return end
+	local runtimeOk, runtimeError = validateBenchmarkRuntime()
+	if not runtimeOk then
+		LrDialogs.message(
+			LOC("$$$/StyleAI/MetadataBenchmark/UnavailableTitle=Benchmark Runtime Unavailable"),
+			LOC("$$$/StyleAI/MetadataBenchmark/RuntimeError=The benchmark cannot start because a required Lightroom capability is unavailable: ^1", tostring(runtimeError)),
+			"critical"
+		)
+		return
+	end
 	if #selectedPhotos > RECOMMENDED_MAX_PHOTOS then
 		local measuredRequests = #selectedPhotos * #options.models
 		local warmupRequests = options.warmup and #options.models or 0
@@ -381,6 +422,7 @@ function MetadataBenchmark.run(ctx)
 	local backendVersion = SearchIndexAPI.getBackendVersion() or {}
 	local manifest = {
 		schema_version = "styleai_llm_metadata_benchmark_v1",
+		report_writer_version = Report.IMPLEMENTATION_VERSION,
 		run_id = runId,
 		state = "preparing",
 		started_at = startedAt,
@@ -422,8 +464,8 @@ function MetadataBenchmark.run(ctx)
 		backend_version = backendVersion,
 		plugin_version = tostring(Info.MAJOR) .. "." .. tostring(Info.MINOR) .. "." .. tostring(Info.REVISION),
 		plugin_build = Info.BUILD,
-		lightroom_version = LrApplication.versionString(),
-		operating_system = LrSystemInfo.osVersion(),
+		lightroom_version = optionalRuntimeValue(LrApplication, "versionString", "unknown"),
+		operating_system = optionalRuntimeValue(LrSystemInfo, "osVersion", "unknown"),
 		model_runs = {},
 	}
 	local report, reportError = Report.new(reportDirectory, manifest)
@@ -560,7 +602,12 @@ function MetadataBenchmark.run(ctx)
 	})
 	progressScope:done()
 	if not finalizeOk then error("Could not finalize benchmark report: " .. tostring(finalizeError)) end
-	LrShell.revealInShell(reportDirectory)
+	if type(LrShell) == "table" and type(LrShell.revealInShell) == "function" then
+		local revealOk, revealError = LrTasks.pcall(function() LrShell.revealInShell(reportDirectory) end)
+		if not revealOk then log:error("Could not reveal benchmark report directory: " .. tostring(revealError)) end
+	else
+		log:error("Could not reveal benchmark report directory because LrShell.revealInShell is unavailable")
+	end
 	if not ok then
 		LrDialogs.message(
 			LOC("$$$/StyleAI/MetadataBenchmark/FailedTitle=Benchmark Incomplete"),

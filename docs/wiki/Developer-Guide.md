@@ -70,7 +70,11 @@ proxy dimensions, and runtime versions without absolute source paths or image
 bytes. `results.jsonl` is flushed incrementally, so canceled and partially
 failed runs remain inspectable. Human verification should compare the proxy
 hash repeated for a photo across models and confirm catalog/Chroma metadata is
-unchanged.
+unchanged. The report writer validates its Lightroom SDK dependencies before
+processing, uses `LrFileUtils` rather than restricted standard-Lua filesystem
+calls, and records its implementation version in the manifest. Malformed model
+responses and unexpected Lua errors fail with an actionable benchmark dialog;
+they do not write generated metadata to Lightroom.
 
 On macOS, `scripts/styleai-installer.sh redeploy` is a source-development tool.
 Lightroom must be stopped. The command stops the recognized StyleAI process on
@@ -78,6 +82,12 @@ port 19819, stages and verifies a complete `StyleAI.lrdevplugin` copy, then
 atomically replaces the Modules copy. On next launch, that development plug-in
 resolves the current checkout's `server/src/styleai_server.py` and starts it
 through `uv`. A packaged release instead launches its bundled backend binary.
+Run `scripts/styleai-installer.sh verify` to compare the installed tree with the
+canonical source without changing either copy. Install and redeploy also print
+one deterministic SHA-256 fingerprint covering every relative path, file
+content, symlink target, and empty directory in the complete plug-in tree. The
+same fingerprint validation protects disposable packages, so stale files,
+missing files, extra files, and mixed-version builds are visible immediately.
 
 ## Component boundaries
 

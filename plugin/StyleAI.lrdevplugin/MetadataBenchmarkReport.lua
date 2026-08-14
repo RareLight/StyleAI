@@ -1,42 +1,105 @@
 local Report = {}
+Report.IMPLEMENTATION_VERSION = 2
+
+local function sdkFunction(owner, ownerName, methodName)
+	if type(owner) ~= "table" or type(owner[methodName]) ~= "function" then
+		return nil, ownerName .. "." .. methodName .. " is unavailable in this Lightroom runtime"
+	end
+	return owner[methodName]
+end
+
+local function protectedCall(fn, ...)
+	if type(LrTasks) ~= "table" or type(LrTasks.pcall) ~= "function" then
+		return false, "LrTasks.pcall is unavailable in this Lightroom runtime"
+	end
+	local argumentCount = select("#", ...)
+	local first, second = ...
+	return LrTasks.pcall(function()
+		if argumentCount == 0 then return fn() end
+		if argumentCount == 1 then return fn(first) end
+		return fn(first, second)
+	end)
+end
+
+local function fileExists(path)
+	local exists, err = sdkFunction(LrFileUtils, "LrFileUtils", "exists")
+	if not exists then return false, err end
+	local callOk, result = protectedCall(exists, path)
+	if not callOk then return false, tostring(result) end
+	return result ~= nil and result ~= false
+end
 
 local function writeAll(path, data, mode)
 	local file, err = io.open(path, mode or "w")
 	if not file then return false, err end
-	file:write(data)
-	file:close()
+	local callOk, writeError = protectedCall(function()
+		file:write(data)
+		file:flush()
+		file:close()
+	end)
+	if not callOk then
+		protectedCall(function() file:close() end)
+		return false, tostring(writeError)
+	end
+	return true
+end
+
+local function encodePretty(value)
+	if type(JSON) ~= "table" or type(JSON.encode_pretty) ~= "function" then
+		return nil, "JSON.encode_pretty is unavailable"
+	end
+	local callOk, encoded = protectedCall(function() return JSON:encode_pretty(value) end)
+	if not callOk then return nil, tostring(encoded) end
+	if type(encoded) ~= "string" then return nil, "JSON.encode_pretty returned no data" end
+	return encoded
+end
+
+local function replaceFile(temporary, path)
+	local move = type(LrFileUtils) == "table" and LrFileUtils.move or nil
+	if type(move) == "function" then
+		local callOk, moveResult = protectedCall(move, temporary, path)
+		local destinationExists = fileExists(path)
+		local temporaryExists = fileExists(temporary)
+		if destinationExists and not temporaryExists then return true end
+
+		if destinationExists then
+			local delete = type(LrFileUtils.delete) == "function" and LrFileUtils.delete or nil
+			if delete then protectedCall(delete, path) end
+			callOk, moveResult = protectedCall(move, temporary, path)
+			destinationExists = fileExists(path)
+			temporaryExists = fileExists(temporary)
+			if destinationExists and not temporaryExists then return true end
+		end
+		if not callOk then log:error("Benchmark manifest move failed; using copy fallback: " .. tostring(moveResult)) end
+	end
+
+	-- Some Lightroom/Lua combinations omit LrFileUtils.move. Copying the completed
+	-- temporary file and then deleting it is a safe compatibility fallback.
+	local copy, copyError = sdkFunction(LrFileUtils, "LrFileUtils", "copy")
+	local delete, deleteError = sdkFunction(LrFileUtils, "LrFileUtils", "delete")
+	if not copy then return false, copyError end
+	if not delete then return false, deleteError end
+	if fileExists(path) then
+		local deleteOk, result = protectedCall(delete, path)
+		if not deleteOk then return false, tostring(result) end
+		if fileExists(path) then return false, "Could not replace the existing benchmark manifest" end
+	end
+	local copyOk, result = protectedCall(copy, temporary, path)
+	if not copyOk then return false, tostring(result) end
+	if not fileExists(path) then return false, "Benchmark manifest copy did not create its destination" end
+	local deleteOk, result = protectedCall(delete, temporary)
+	if not deleteOk then return false, tostring(result) end
+	if fileExists(temporary) then return false, "Could not remove the temporary benchmark manifest" end
 	return true
 end
 
 local function writeJsonAtomic(path, value)
 	local temporary = path .. ".tmp"
-	local ok, err = writeAll(temporary, JSON:encode_pretty(value), "w")
+	local encoded, encodeError = encodePretty(value)
+	if not encoded then return false, encodeError end
+	local ok, err = writeAll(temporary, encoded, "w")
 	if not ok then return false, err end
-	local callOk, moved, moveErr = LrTasks.pcall(function()
-		return LrFileUtils.move(temporary, path)
-	end)
-	if not callOk then
-		moveErr = moved
-		moved = false
-	end
-	if not moved and LrFileUtils.exists(path) then
-		-- Windows does not replace an existing destination with LrFileUtils.move. The
-		-- fallback has a short replacement window but retains the completed temp
-		-- file until the old manifest has been removed.
-		LrFileUtils.delete(path)
-		callOk, moved, moveErr = LrTasks.pcall(function()
-			return LrFileUtils.move(temporary, path)
-		end)
-		if not callOk then
-			moveErr = moved
-			moved = false
-		end
-	end
-	if not moved then
-		LrFileUtils.delete(temporary)
-		return false, moveErr
-	end
-	return true
+	return replaceFile(temporary, path)
 end
 
 local function csvCell(value)
@@ -90,9 +153,16 @@ local function modelKey(result)
 end
 
 function Report.new(reportDirectory, manifest)
-	if not LrFileUtils.exists(reportDirectory) then
-		local created = LrFileUtils.createAllDirectories(reportDirectory)
-		if created == false then return nil, "Could not create benchmark report directory" end
+	local runtimeOk, runtimeError = Report.validateRuntime()
+	if not runtimeOk then return nil, runtimeError end
+	if type(reportDirectory) ~= "string" or reportDirectory == "" then return nil, "Benchmark report directory is missing" end
+	if type(manifest) ~= "table" then return nil, "Benchmark report manifest is missing" end
+	if not fileExists(reportDirectory) then
+		local createDirectories = LrFileUtils.createAllDirectories
+		local callOk, created = protectedCall(createDirectories, reportDirectory)
+		if not callOk or created == false or not fileExists(reportDirectory) then
+			return nil, "Could not create benchmark report directory: " .. tostring(created)
+		end
 	end
 	local self = {
 		directory = reportDirectory,
@@ -113,6 +183,27 @@ function Report.new(reportDirectory, manifest)
 	return self
 end
 
+function Report.validateRuntime()
+	local requirements = {
+		{ LrTasks, "LrTasks", "pcall" },
+		{ LrFileUtils, "LrFileUtils", "exists" },
+		{ LrFileUtils, "LrFileUtils", "createAllDirectories" },
+		{ LrFileUtils, "LrFileUtils", "copy" },
+		{ LrFileUtils, "LrFileUtils", "delete" },
+		{ LrPathUtils, "LrPathUtils", "child" },
+		{ LrDate, "LrDate", "currentTime" },
+	}
+	for _, requirement in ipairs(requirements) do
+		local _, err = sdkFunction(requirement[1], requirement[2], requirement[3])
+		if err then return false, err end
+	end
+	if type(io) ~= "table" or type(io.open) ~= "function" then return false, "io.open is unavailable in this Lightroom runtime" end
+	if type(JSON) ~= "table" or type(JSON.encode) ~= "function" or type(JSON.encode_pretty) ~= "function" then
+		return false, "The benchmark JSON encoder is unavailable"
+	end
+	return true
+end
+
 function Report.updateManifest(self, updates)
 	for key, value in pairs(updates or {}) do self.manifest[key] = value end
 	self.manifest.completed_results = #self.results
@@ -120,12 +211,38 @@ function Report.updateManifest(self, updates)
 end
 
 function Report.append(self, result)
+	if type(self) ~= "table" or type(self.results) ~= "table" then return false, "Benchmark report is not initialized" end
+	if type(result) ~= "table" then return false, "Benchmark result is not an object" end
+	self.appendSequence = (self.appendSequence or 0) + 1
+	if result.photo_id == nil or tostring(result.photo_id) == "" then
+		result.photo_id = "missing-photo-id-" .. tostring(self.appendSequence)
+		result.warning = result.warning or "The local model response omitted the benchmark photo ID"
+	end
+	if type(result.timing) ~= "table" then result.timing = {} end
+	if result.proxy ~= nil and type(result.proxy) ~= "table" then result.proxy = nil end
+	if result.status == nil then result.status = result.error and "failed" or "succeeded" end
 	table.insert(self.results, result)
 	local file, err = io.open(self.jsonlPath, "a")
-	if not file then return false, err end
-	file:write(JSON:encode(result), "\n")
-	file:flush()
-	file:close()
+	if not file then
+		table.remove(self.results)
+		return false, err
+	end
+	local callOk, encoded = protectedCall(function() return JSON:encode(result) end)
+	if not callOk or type(encoded) ~= "string" then
+		file:close()
+		table.remove(self.results)
+		return false, "Could not encode benchmark result: " .. tostring(encoded)
+	end
+	local writeOk, writeError = protectedCall(function()
+		file:write(encoded, "\n")
+		file:flush()
+		file:close()
+	end)
+	if not writeOk then
+		protectedCall(function() file:close() end)
+		table.remove(self.results)
+		return false, tostring(writeError)
+	end
 	self.manifest.completed_results = #self.results
 	return true
 end
