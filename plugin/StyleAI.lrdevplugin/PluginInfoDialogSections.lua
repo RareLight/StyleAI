@@ -458,7 +458,10 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						labelWidth = share("debugLabelWidth"),
 						f:popup_menu({
 							value = bind("processingLoadMode"),
-							fill_horizontal = 1,
+							-- Keep the menu compact in Plug-In Manager. Allowing it to
+							-- fill the row makes Lightroom expand the popup list to the
+							-- full pane width, which separates choices from their text.
+							width = 220,
 							items = {
 								{ title = LOC("$$$/StyleAI/PluginInfo/LoadAutomatic=Automatic (recommended)"), value = "automatic" },
 								{ title = LOC("$$$/StyleAI/PluginInfo/LoadLower=Lower Resource Use"), value = "lower" },

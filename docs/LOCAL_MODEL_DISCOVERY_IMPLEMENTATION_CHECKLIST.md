@@ -32,6 +32,8 @@ routing or saved preferences.
 
 - [x] Format concise labels such as
       `Qwen2.5-VL 7B — Q4_K_M · GGUF · lmstudio-community`.
+- [x] Present LM Studio safetensors-backed models using the conventional `MLX`
+      distribution label rather than the underlying container-file format.
 - [x] Use the same normalized choices in Prepare Photos and the developer LLM
       benchmark.
 - [x] Preserve the exact provider/model key in benchmark manifests and calls.

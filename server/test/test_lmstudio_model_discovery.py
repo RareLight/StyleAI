@@ -106,6 +106,24 @@ def test_lmstudio_uses_sdk_identity_when_native_metadata_is_unavailable(mocker):
     session.close.assert_called_once_with()
 
 
+def test_lmstudio_displays_safetensors_models_as_mlx(mocker):
+    model = _downloaded_model(
+        key="mlx-community/model@4bit",
+        path="mlx-community/model-MLX/model-4bit.safetensors",
+    )
+    model.info.format = "safetensors"
+    provider, _ = _provider_with_client(mocker, [model])
+    session = MagicMock()
+    session.get.side_effect = RuntimeError("native endpoint unavailable")
+    mocker.patch("providers.lmstudio.requests.Session", return_value=session)
+
+    details = provider.list_available_model_details()
+
+    assert details[0]["format"] == "mlx"
+    assert details[0]["label"] == "Model 7B Vision — MLX · mlx-community · 4bit"
+    assert "SAFETENSORS" not in details[0]["label"]
+
+
 def test_lmstudio_native_metadata_request_refuses_non_loopback_host(mocker):
     provider, _ = _provider_with_client(mocker, [])
     session_factory = mocker.patch("providers.lmstudio.requests.Session")

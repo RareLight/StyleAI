@@ -246,6 +246,18 @@ def test_plugin_manager_capture_status_uses_local_query_encoding_and_safe_task_b
     assert "SearchIndexAPI.getDiagnosticCaptureInfo" in refresh
 
 
+def test_plugin_manager_processing_load_menu_has_bounded_width():
+    source = _source("PluginInfoDialogSections.lua")
+    menu = source[
+        source.index('value = bind("processingLoadMode")') : source.index(
+            'LoadAutomatic=Automatic (recommended)'
+        )
+    ]
+
+    assert "width = 220" in menu
+    assert "fill_horizontal" not in menu
+
+
 def test_training_uses_raw_source_contract_without_rendered_preview_payloads():
     task_source = _source("TaskTrainFromEdits.lua")
 

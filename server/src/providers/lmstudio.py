@@ -457,6 +457,16 @@ class LMStudioProvider(LLMProviderBase):
         return stem if stem and stem != model_key else None
 
     @staticmethod
+    def _normalize_distribution_format(model_format: object) -> str | None:
+        """Use LM Studio's familiar GGUF/MLX distribution labels in the UI."""
+        if not isinstance(model_format, str) or not model_format.strip():
+            return None
+        normalized = model_format.strip().lower()
+        if normalized == "safetensors":
+            return "mlx"
+        return normalized
+
+    @staticmethod
     def _format_model_label(detail: dict) -> str:
         display_name = str(detail.get("display_name") or detail["key"])
         qualifiers: list[str] = []
@@ -500,6 +510,7 @@ class LMStudioProvider(LLMProviderBase):
                 quantization_name = (
                     quantization.get("name") if isinstance(quantization, dict) else None
                 )
+                model_format = native.get("format") or getattr(info, "format", None)
                 detail = {
                     "key": model_key,
                     "display_name": native.get("display_name")
@@ -509,7 +520,7 @@ class LMStudioProvider(LLMProviderBase):
                     or self._publisher_from_path(path),
                     "params_string": native.get("params_string")
                     or getattr(info, "params_string", None),
-                    "format": native.get("format") or getattr(info, "format", None),
+                    "format": self._normalize_distribution_format(model_format),
                     "quantization": quantization_name,
                     "bits_per_weight": (
                         quantization.get("bits_per_weight")

@@ -8,7 +8,9 @@ LM Studio entries include provider-reported parameter size, quantization,
 runtime format, and publisher when its native local model API exposes them. The
 exact model key remains the value sent to LM Studio. If the richer native API
 is unavailable, StyleAI falls back to the SDK catalog and displays the identity
-details available there; this does not affect inference.
+details available there; this does not affect inference. Safetensors-backed LM
+Studio models are labeled **MLX**, matching LM Studio's common GGUF/MLX
+distribution terminology.
 
 Choose a vision-capable, instruction-following model that fits comfortably in
 available VRAM or unified memory. A model that triggers swap usually has worse
