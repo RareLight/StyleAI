@@ -180,7 +180,7 @@
 "$$$/StyleAI/MetadataBenchmark/CompleteTitle" = "Benchmark Report Ready"
 "$$$/StyleAI/MetadataBenchmark/Continue" = "Continue"
 "$$$/StyleAI/MetadataBenchmark/CreateCollection" = "Create metadata benchmark collection"
-"$$$/StyleAI/MetadataBenchmark/DraftHelp" = "Draft-only models are hidden from the main list.\nUse only vocabulary-compatible model pairs.\nDisable saved speculative decoding in LM Studio for a clean baseline."
+"$$$/StyleAI/MetadataBenchmark/DraftHelp" = "Draft-only models are hidden from the main list.\nUse only vocabulary-compatible pairs.\nLoad-time/MTP pairs use LM Studio's saved model settings.\nBenchmark their baseline separately with speculation disabled."
 "$$$/StyleAI/MetadataBenchmark/DraftModel" = "Draft model:"
 "$$$/StyleAI/MetadataBenchmark/Failed" = "The benchmark did not complete: ^1\n\nPartial results were saved to ^2"
 "$$$/StyleAI/MetadataBenchmark/FailedTitle" = "Benchmark Incomplete"

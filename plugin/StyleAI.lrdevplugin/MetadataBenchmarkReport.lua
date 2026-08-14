@@ -1,5 +1,5 @@
 local Report = {}
-Report.IMPLEMENTATION_VERSION = 4
+Report.IMPLEMENTATION_VERSION = 5
 
 local function roundTo(value, decimalPlaces)
 	local factor = 10 ^ (decimalPlaces or 0)
@@ -280,7 +280,7 @@ end
 local function writeComparison(self)
 	local rows = {
 		table.concat({
-			"photo_id", "source_photo_id", "filename", "provider", "model", "benchmark_variant", "draft_model_requested", "draft_model_used", "status", "warmup",
+			"photo_id", "source_photo_id", "filename", "provider", "model", "benchmark_variant", "draft_model_requested", "draft_model_used", "speculation_configuration", "status", "warmup",
 			"keywords", "title", "caption", "alt_text", "error", "warning",
 			"retry_count", "input_tokens", "output_tokens", "total_ms",
 			"inference_ms", "tokens_per_second", "total_draft_tokens", "accepted_draft_tokens", "rejected_draft_tokens", "ignored_draft_tokens", "draft_acceptance_rate", "proxy_sha256", "proxy_bytes",
@@ -293,7 +293,7 @@ local function writeComparison(self)
 		local keywords = table.concat(flattenKeywords(result.keywords), "; ")
 		local values = {
 			result.photo_id, result.source_photo_id, result.filename, result.provider, result.model,
-			result.benchmark_variant, result.draft_model_requested, inference.used_draft_model, result.status,
+			result.benchmark_variant, result.draft_model_requested, inference.used_draft_model, inference.speculation_configuration, result.status,
 			result.warmup == true, keywords, result.title, result.caption, result.alt_text,
 			result.error, result.warning, result.retry_count, result.input_tokens,
 			result.output_tokens, timing.benchmark_item_total_ms,
@@ -326,6 +326,7 @@ local function summarize(self)
 			outputTokens = 0,
 			totalDraftTokens = 0,
 			acceptedDraftTokens = 0,
+			speculationConfiguration = nil,
 			warmup_ms = nil,
 			warmup_status = nil,
 		}
@@ -343,6 +344,7 @@ local function summarize(self)
 			group.inputTokens = group.inputTokens + (tonumber(result.input_tokens) or 0)
 			group.outputTokens = group.outputTokens + (tonumber(result.output_tokens) or 0)
 			local inference = result.inference or {}
+			group.speculationConfiguration = group.speculationConfiguration or inference.speculation_configuration
 			group.totalDraftTokens = group.totalDraftTokens + (tonumber(inference.total_draft_tokens) or 0)
 			group.acceptedDraftTokens = group.acceptedDraftTokens + (tonumber(inference.accepted_draft_tokens) or 0)
 		end
@@ -358,6 +360,7 @@ local function summarize(self)
 			model = group.model,
 			benchmark_variant = group.benchmark_variant,
 			draft_model = group.draft_model,
+			speculation_configuration = group.speculationConfiguration,
 			success_count = group.success,
 			failure_count = group.failed,
 			total_ms = roundTo(total, 0),
@@ -382,7 +385,7 @@ end
 
 local function writeSummary(self, summaries)
 	local headers = {
-		"provider", "model", "benchmark_variant", "draft_model", "success_count", "failure_count", "total_ms",
+		"provider", "model", "benchmark_variant", "draft_model", "speculation_configuration", "success_count", "failure_count", "total_ms",
 		"mean_ms", "median_ms", "p90_ms", "p95_ms", "photos_per_minute",
 		"median_tokens_per_second", "input_tokens", "output_tokens", "draft_acceptance_rate",
 		"total_draft_tokens", "accepted_draft_tokens", "warmup_ms", "warmup_status",

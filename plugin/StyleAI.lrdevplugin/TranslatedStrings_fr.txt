@@ -180,7 +180,7 @@
 "$$$/StyleAI/MetadataBenchmark/CompleteTitle" = "Benchmark Report Ready"
 "$$$/StyleAI/MetadataBenchmark/Continue" = "Continue"
 "$$$/StyleAI/MetadataBenchmark/CreateCollection" = "Create metadata benchmark collection"
-"$$$/StyleAI/MetadataBenchmark/DraftHelp" = "Les modèles réservés au brouillon sont masqués dans la liste principale.\nUtilisez uniquement des paires aux vocabulaires compatibles.\nDésactivez le décodage spéculatif enregistré dans LM Studio pour une référence propre."
+"$$$/StyleAI/MetadataBenchmark/DraftHelp" = "Les modèles réservés au brouillon sont masqués dans la liste principale.\nUtilisez uniquement des paires aux vocabulaires compatibles.\nLes paires MTP/au chargement utilisent les réglages LM Studio enregistrés.\nMesurez leur référence séparément, avec la spéculation désactivée."
 "$$$/StyleAI/MetadataBenchmark/DraftModel" = "Modèle brouillon :"
 "$$$/StyleAI/MetadataBenchmark/Failed" = "The benchmark did not complete: ^1\n\nPartial results were saved to ^2"
 "$$$/StyleAI/MetadataBenchmark/FailedTitle" = "Benchmark Incomplete"

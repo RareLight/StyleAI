@@ -150,6 +150,8 @@ local function showDialog(ctx, selectedCount, models, draftModels)
 	props.useKeywordHierarchy = prefs.useKeywordHierarchy == true
 	props.warmup = true
 	props.compareDraftBaseline = true
+	local draftByKey = {}
+	for _, draft in ipairs(draftModels) do draftByKey[draft.key] = draft end
 
 	local modelControls = {}
 	for index, model in ipairs(models) do
@@ -185,9 +187,12 @@ local function showDialog(ctx, selectedCount, models, draftModels)
 		local selectedRunCount = 0
 		for index = 1, #models do
 			if props["benchmarkModel" .. tostring(index)] then
-				local hasDraft = tostring(props["benchmarkDraft" .. tostring(index)] or "") ~= ""
+				local draftKey = tostring(props["benchmarkDraft" .. tostring(index)] or "")
+				local selectedDraft = draftByKey[draftKey]
+				local hasDraft = selectedDraft ~= nil
+				local loadTimeDraft = hasDraft and (selectedDraft.details or {}).speculation_configuration == "saved_load_time"
 				if hasDraft then
-					selectedRunCount = selectedRunCount + (props.compareDraftBaseline and 2 or 1)
+					selectedRunCount = selectedRunCount + (props.compareDraftBaseline and not loadTimeDraft and 2 or 1)
 				else
 					selectedRunCount = selectedRunCount + 1
 				end
@@ -240,7 +245,7 @@ local function showDialog(ctx, selectedCount, models, draftModels)
 				value = bind("compareDraftBaseline"),
 			}),
 			UIFactory.HelpText(f, {
-				title = LOC("$$$/StyleAI/MetadataBenchmark/DraftHelp=Draft-only models are hidden from the main list.\nUse only vocabulary-compatible model pairs.\nDisable saved speculative decoding in LM Studio for a clean baseline."),
+				title = LOC("$$$/StyleAI/MetadataBenchmark/DraftHelp=Draft-only models are hidden from the main list.\nUse only vocabulary-compatible pairs.\nLoad-time/MTP pairs use LM Studio's saved model settings.\nBenchmark their baseline separately with speculation disabled."),
 				width = 650,
 			}),
 			f:checkbox({
@@ -309,11 +314,9 @@ local function showDialog(ctx, selectedCount, models, draftModels)
 	for index, model in ipairs(models) do
 		if props["benchmarkModel" .. tostring(index)] then
 			local selectedDraftKey = tostring(props["benchmarkDraft" .. tostring(index)] or "")
-			local selectedDraft = nil
-			for _, draft in ipairs(draftModels) do
-				if draft.key == selectedDraftKey then selectedDraft = draft; break end
-			end
-			if not selectedDraft or props.compareDraftBaseline then
+			local selectedDraft = draftByKey[selectedDraftKey]
+			local loadTimeDraft = selectedDraft and (selectedDraft.details or {}).speculation_configuration == "saved_load_time"
+			if not selectedDraft or (props.compareDraftBaseline and not loadTimeDraft) then
 				local baseline = copyTable(model)
 				baseline.base_model_key = model.key
 				baseline.key = model.key .. "::baseline"

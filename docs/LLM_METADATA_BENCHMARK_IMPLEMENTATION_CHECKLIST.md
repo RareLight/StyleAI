@@ -159,6 +159,11 @@ editing state.
       measured photos are marked skipped without repeated inference attempts.
 - [ ] Confirm LM Studio saved speculative defaults are disabled and the report
       does not identify a draft model as used for a baseline row.
+- [ ] For an engine-protocol/MTP pair, save the draft in the main model's LM
+      Studio load settings, reload the main model, and confirm warm-up switches
+      to `saved_load_time`, reports draft-token activity, and does not schedule
+      a misleading paired baseline. Run the clean baseline separately with the
+      saved speculation setting disabled and the main model reloaded.
 - [ ] From **Help > Plug-in Extras**, choose a mixed 24–32 photo set and verify the
       uniquely named collection contains exactly the frozen selection without
       becoming Lightroom's active source.

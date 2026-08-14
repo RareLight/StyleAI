@@ -180,7 +180,7 @@
 "$$$/StyleAI/MetadataBenchmark/CompleteTitle" = "Informe de rendiment preparat"
 "$$$/StyleAI/MetadataBenchmark/Continue" = "Continua"
 "$$$/StyleAI/MetadataBenchmark/CreateCollection" = "Crea una col·lecció per a la prova de rendiment de metadades"
-"$$$/StyleAI/MetadataBenchmark/DraftHelp" = "Els models exclusivament esborranys s’amaguen de la llista principal.\nUseu només parelles amb vocabularis compatibles.\nDesactiveu la descodificació especulativa desada a LM Studio per obtenir una referència neta."
+"$$$/StyleAI/MetadataBenchmark/DraftHelp" = "Els models exclusivament esborranys s’amaguen de la llista principal.\nUseu només parelles amb vocabularis compatibles.\nLes parelles MTP/de càrrega usen els ajustos desats de LM Studio.\nMesureu-ne la referència per separat amb l’especulació desactivada."
 "$$$/StyleAI/MetadataBenchmark/DraftModel" = "Model esborrany:"
 "$$$/StyleAI/MetadataBenchmark/Failed" = "La prova de rendiment no s’ha completat: ^1\n\nEls resultats parcials s’han desat a ^2"
 "$$$/StyleAI/MetadataBenchmark/FailedTitle" = "Prova de rendiment incompleta"
