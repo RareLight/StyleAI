@@ -261,7 +261,9 @@ def test_batch_embedding_recomputes_after_canonical_cache_error(mocker):
     image.close.assert_called_once()
 
 
-def test_batch_reuses_complete_cached_training_evidence_without_raw_extraction(mocker):
+def test_batch_reuses_complete_cached_canonical_evidence_without_raw_extraction(
+    mocker,
+):
     mocker.stopall()
     from routes.training import _resolve_training_sources_batch
     from services.policy_features import SOURCE_METRIC_KEYS
@@ -296,6 +298,51 @@ def test_batch_reuses_complete_cached_training_evidence_without_raw_extraction(m
     assert image_bytes == b""
     assert provenance == "raw_preview"
     assert source_embeddings.cached_source_metrics(source_stamp) == metrics
+    extract.assert_not_called()
+
+
+def test_batch_reuses_complete_existing_training_evidence_without_raw_extraction(
+    mocker,
+):
+    mocker.stopall()
+    from routes.training import _resolve_training_sources_batch
+    from services import source_embeddings
+    from services.policy_features import SOURCE_METRIC_KEYS
+
+    metrics = {key: float(index) for index, key in enumerate(SOURCE_METRIC_KEYS)}
+    metadata = {
+        "source_embedding_provenance": "raw_preview",
+        "source_embedding_fingerprint": "current-fingerprint",
+        "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+        "source_embedding_model": source_embeddings.SOURCE_EMBEDDING_MODEL_ID,
+        "source_embedding_preprocess": source_embeddings.SOURCE_EMBEDDING_PREPROCESS_VERSION,
+        **metrics,
+    }
+    mocker.patch("services.chroma.get_images", return_value={})
+    training_records = mocker.patch(
+        "routes.training.training_service.get_training_source_records",
+        return_value={
+            "photo-1": {
+                "ids": ["photo-1"],
+                "metadatas": [metadata],
+                "embeddings": [[1.0, 0.0]],
+            }
+        },
+    )
+    mocker.patch(
+        "routes.training.source_embeddings.compatible_embedding",
+        side_effect=[None, [1.0, 0.0]],
+    )
+    extract = mocker.patch("routes.training.source_embeddings.resolve_neutral_source")
+
+    resolved = _resolve_training_sources_batch([("photo-1", b"", "/photos/one.raw")])
+
+    embedding, image_bytes, provenance, source_stamp = resolved["photo-1"]
+    assert embedding == [1.0, 0.0]
+    assert image_bytes == b""
+    assert provenance == "raw_preview"
+    assert source_embeddings.cached_source_metrics(source_stamp) == metrics
+    training_records.assert_called_once_with(["photo-1"])
     extract.assert_not_called()
 
 

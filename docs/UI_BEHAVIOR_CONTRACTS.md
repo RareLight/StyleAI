@@ -80,6 +80,12 @@ Selection snapshots, bounded preflight/upload chunks, stable-source
 deduplication, durable operation items, cancellation, and the single final
 rebuild/activation sequence are unchanged.
 
+When updating an existing example, training reuses its stored RAW-preview
+vector and complete source metrics only if the full schema/model/preprocessing
+stamp and current RAW-file fingerprint still match. Changed, stale, incomplete,
+or non-RAW evidence is recomputed. This avoids repeated RAW extraction and
+SigLIP inference without weakening the neutral-source contract.
+
 ### Apply My Style
 
 | UI choice | Effective behavior |

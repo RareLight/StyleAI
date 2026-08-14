@@ -124,6 +124,9 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
         assert filename in report_source
     assert "proxy_consistency" in report_source
     assert "proxy_mismatches" in report_source
+    assert "os.rename" not in report_source
+    assert "LrFileUtils.move(temporary, path)" in report_source
+    assert "LrTasks.pcall" in report_source
 
 
 def test_help_menu_distinguishes_llm_and_indexing_benchmarks():

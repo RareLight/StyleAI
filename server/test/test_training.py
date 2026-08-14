@@ -407,6 +407,33 @@ class TestTrainingEvidenceFeatures(unittest.TestCase):
             include=["metadatas"],
         )
 
+    def test_training_source_records_are_fetched_in_one_bounded_batch(self):
+        from unittest.mock import MagicMock, patch
+        from services import training
+
+        collection = MagicMock()
+        collection.get.return_value = {
+            "ids": ["photo-1"],
+            "metadatas": [{"source_embedding_fingerprint": "fingerprint"}],
+            "embeddings": np.asarray([[1.0, 0.0]], dtype=np.float32),
+        }
+        with (
+            patch.object(training, "_training_collection", collection),
+            patch.object(training, "_ensure_initialized"),
+        ):
+            records = training.get_training_source_records(["photo-1", "photo-1", ""])
+
+        self.assertEqual(records["photo-1"]["ids"], ["photo-1"])
+        self.assertEqual(
+            records["photo-1"]["metadatas"][0]["source_embedding_fingerprint"],
+            "fingerprint",
+        )
+        np.testing.assert_allclose(records["photo-1"]["embeddings"][0], [1.0, 0.0])
+        collection.get.assert_called_once_with(
+            ids=["photo-1"],
+            include=["metadatas", "embeddings"],
+        )
+
     def test_list_training_examples_preserves_metadata(self):
         from unittest.mock import MagicMock, patch
         from services.training import list_training_examples

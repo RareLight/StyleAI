@@ -227,8 +227,11 @@ bounded chunks and performs one rebuild only after the complete upload. A
 stable-ID preflight prevents exporting examples already stored unless the user
 requested an update. Lightroom deduplicates source IDs and sends preflight in
 bounded pages, so the endpoint's per-request limit is not a catalog ceiling.
-Compatible canonical vectors are reused; remaining neutral RAW previews use
-pressure-aware batched SigLIP2 inference.
+Compatible canonical vectors are reused. An explicit update may also reuse the
+existing `edit_training` RAW-preview vector and source metrics when its complete
+contract stamp and current RAW-file fingerprint match. This is a bounded batch
+lookup, not trust-by-photo-ID; changed or incomplete evidence falls back to RAW
+extraction and pressure-aware batched SigLIP2 inference.
 
 Within compatible HDR/profile partitions, burst groups preserve validation
 boundaries. Production chooses among the stable baseline, reduced-rank ridge,

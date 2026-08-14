@@ -229,6 +229,18 @@ def scan_files(plugin_dir):
                                     f'[Unlocalized String] {file}:{line_num} -> Found {match.group(1)}="{val}" without LOC wrapper.'
                                 )
 
+                # Check 4: Lightroom omits these familiar-looking APIs. They fail
+                # only at runtime, so reject them during plug-in validation.
+                for unsupported, replacement in (
+                    ("os.rename", "LrFileUtils.move"),
+                    ("LrHttp.encodeForUrl", "a local percent-encoding helper"),
+                ):
+                    if unsupported in line:
+                        errors.append(
+                            f"[Unsupported Lightroom API] {file}:{line_num} -> "
+                            f"'{unsupported}' is unavailable; use {replacement}."
+                        )
+
     return errors
 
 
