@@ -125,8 +125,25 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
     assert "proxy_consistency" in report_source
     assert "proxy_mismatches" in report_source
     assert "os.rename" not in report_source
-    assert "LrFileUtils.move(temporary, path)" in report_source
-    assert "LrTasks.pcall" in report_source
+    assert "Report.IMPLEMENTATION_VERSION = 2" in report_source
+    assert 'sdkFunction(LrFileUtils, "LrFileUtils", "copy")' in report_source
+    assert 'sdkFunction(LrFileUtils, "LrFileUtils", "delete")' in report_source
+    assert "function Report.validateRuntime()" in report_source
+    assert 'result.photo_id = "missing-photo-id-"' in report_source
+    assert "protectedCall" in report_source
+
+
+def test_metadata_benchmark_contains_controlled_runtime_error_boundaries():
+    source = _source("MetadataBenchmark.lua")
+    task_source = _source("TaskMetadataBenchmark.lua")
+
+    assert "local function validateBenchmarkRuntime()" in source
+    assert 'type(response.items) ~= "table"' in source
+    assert 'optionalRuntimeValue(LrApplication, "versionString", "unknown")' in source
+    assert 'type(LrShell.revealInShell) == "function"' in source
+    assert "local ok, err = LrTasks.pcall" in task_source
+    assert "Metadata benchmark failed unexpectedly" in task_source
+    assert "No metadata was written to Lightroom" in task_source
 
 
 def test_help_menu_distinguishes_llm_and_indexing_benchmarks():

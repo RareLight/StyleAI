@@ -4,10 +4,21 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPOSITORY_ROOT / "scripts" / "package_lrc_plugin.py"
+FINGERPRINT_SCRIPT_PATH = REPOSITORY_ROOT / "scripts" / "plugin_tree_fingerprint.py"
 
 
 def _load_packager():
     spec = spec_from_file_location("styleai_plugin_packager", SCRIPT_PATH)
+    assert spec is not None and spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_fingerprinter():
+    spec = spec_from_file_location(
+        "styleai_plugin_tree_fingerprint", FINGERPRINT_SCRIPT_PATH
+    )
     assert spec is not None and spec.loader is not None
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -53,12 +64,39 @@ def test_legacy_package_modes_copy_the_same_canonical_manifest(tmp_path):
         assert "DeveloperOptions" not in task_source
         assert "LrTasks.startAsyncTask" in task_source
     assert release_manifest == developer_manifest == source_manifest
+    source_fingerprint = packager.plugin_tree_fingerprint(packager.SOURCE_PLUGIN)
+    assert packager.plugin_tree_fingerprint(release) == source_fingerprint
+    assert packager.plugin_tree_fingerprint(developer) == source_fingerprint
     assert not (release / "BuildConfig.lua").exists()
     assert not (developer / "BuildConfig.lua").exists()
     assert not (release / "DeveloperOptions.lua").exists()
     assert (packager.SOURCE_PLUGIN / "Info.lua").read_text(
         encoding="utf-8"
     ) == source_manifest
+
+
+def test_plugin_tree_fingerprint_covers_paths_contents_and_empty_directories(tmp_path):
+    fingerprinter = _load_fingerprinter()
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / "empty").mkdir()
+    (second / "empty").mkdir()
+    (first / "Info.lua").write_bytes(b"return { VERSION = 1 }")
+    (second / "Info.lua").write_bytes(b"return { VERSION = 1 }")
+
+    original = fingerprinter.plugin_tree_fingerprint(first)
+    assert fingerprinter.plugin_tree_fingerprint(second) == original
+
+    (second / "Info.lua").write_bytes(b"return { VERSION = 2 }")
+    assert fingerprinter.plugin_tree_fingerprint(second) != original
+    (second / "Info.lua").write_bytes(b"return { VERSION = 1 }")
+    (second / "empty").rmdir()
+    assert fingerprinter.plugin_tree_fingerprint(second) != original
+    (second / "empty").mkdir()
+    (second / "Info.lua").rename(second / "Manifest.lua")
+    assert fingerprinter.plugin_tree_fingerprint(second) != original
 
 
 def test_macos_development_backend_is_detached_from_lightroom():

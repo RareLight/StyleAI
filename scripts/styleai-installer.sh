@@ -10,6 +10,7 @@ PLUGIN_NAME="StyleAI.lrdevplugin"
 PLUGIN_SRC_DIR="${PROJECT_ROOT}/plugin/${PLUGIN_NAME}"
 PLUGIN_DEST_DIR="${HOME}/Library/Application Support/Adobe/Lightroom/Modules"
 PLUGIN_DEST="${PLUGIN_DEST_DIR}/${PLUGIN_NAME}"
+FINGERPRINT_SCRIPT="${SCRIPT_DIR}/plugin_tree_fingerprint.py"
 
 echo "========================================"
 echo "  StyleAI Installer & Manager"
@@ -35,10 +36,23 @@ verify_plugin_tree() {
         echo "ERROR: Plugin verification failed: required entry files are missing from $candidate"
         return 1
     fi
-    if ! diff -qr "$PLUGIN_SRC_DIR" "$candidate" >/dev/null; then
+    local source_hash candidate_hash
+    source_hash=$(python3 "$FINGERPRINT_SCRIPT" --digest-only "$PLUGIN_SRC_DIR")
+    candidate_hash=$(python3 "$FINGERPRINT_SCRIPT" --digest-only "$candidate")
+    if [ "$source_hash" != "$candidate_hash" ]; then
         echo "ERROR: Plugin verification failed: deployed files differ from the source tree."
+        echo "  Source plug-in tree SHA-256:    $source_hash"
+        echo "  Candidate plug-in tree SHA-256: $candidate_hash"
+        diff -qr "$PLUGIN_SRC_DIR" "$candidate" || true
         return 1
     fi
+}
+
+print_plugin_tree_fingerprint() {
+    local plugin_tree="$1"
+    local tree_hash
+    tree_hash=$(python3 "$FINGERPRINT_SCRIPT" --digest-only "$plugin_tree")
+    echo "Complete plug-in tree SHA-256: $tree_hash"
 }
 
 deploy_plugin_tree() {
@@ -83,6 +97,7 @@ print_usage() {
     echo "Usage:"
     echo "  $(basename "$0") install   — Install plugin to Lightroom"
     echo "  $(basename "$0") redeploy  — Stop backend and atomically replace the dev plugin (Lightroom must be closed)"
+    echo "  $(basename "$0") verify    — Compare the installed plugin with the current source tree"
     echo ""
 }
 
@@ -110,6 +125,7 @@ cmd_install() {
     echo "Installing plugin from the current source tree..."
     bash "${SCRIPT_DIR}/server.sh" stop
     deploy_plugin_tree
+    print_plugin_tree_fingerprint "$PLUGIN_DEST"
 
     echo "Plugin installed ✓"
     echo "  Location: $PLUGIN_DEST"
@@ -146,10 +162,22 @@ cmd_redeploy() {
     # 2. Stage, verify, and atomically activate the complete source tree.
     echo "Staging and verifying updated plugin files from source..."
     deploy_plugin_tree
+    print_plugin_tree_fingerprint "$PLUGIN_DEST"
     echo "Plugin successfully installed to:"
     echo "  $PLUGIN_DEST"
     echo "Start Lightroom Classic to load the new plugin and launch the current backend source."
     echo ""
+}
+
+cmd_verify() {
+    echo "=== Verifying Installed StyleAI Plugin ==="
+    if [ ! -d "$PLUGIN_DEST" ]; then
+        echo "ERROR: StyleAI is not installed at $PLUGIN_DEST"
+        return 1
+    fi
+    verify_plugin_tree "$PLUGIN_DEST"
+    print_plugin_tree_fingerprint "$PLUGIN_DEST"
+    echo "Installed plugin exactly matches the current source tree."
 }
 # ── Main ────────────────────────────────────────────────────────────────────
 
@@ -167,6 +195,9 @@ case "$COMMAND" in
         ;;
     redeploy|r)
         cmd_redeploy
+        ;;
+    verify|v)
+        cmd_verify
         ;;
     *)
         echo "Unknown command: $COMMAND"
