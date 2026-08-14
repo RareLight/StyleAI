@@ -69,6 +69,33 @@ def test_ollama_dict_response_parsed_through(ollama_provider):
     assert resp.caption == "scene"
 
 
+def test_keyword_normalization_removes_placeholder_values(ollama_provider):
+    provider, fake_client = ollama_provider
+    fake_client.chat.return_value = {
+        "message": {
+            "content": """{
+                "keywords": {
+                    "Animals": ["None", "Dog", "N/A"],
+                    "Weather": ["Not Applicable"],
+                    "Objects": [
+                        {"name": "Null"},
+                        {"name": "Car", "aliases": ["None", "Automobile"]}
+                    ]
+                },
+                "caption": "scene"
+            }"""
+        }
+    }
+
+    response = provider.generate_metadata(_request())
+
+    assert response.success is True
+    assert response.keywords == {
+        "Animals": ["Dog"],
+        "Objects": [{"name": "Car", "aliases": ["Automobile"]}],
+    }
+
+
 def test_ollama_typed_object_response_parsed(ollama_provider):
     provider, fake_client = ollama_provider
     typed = MagicMock()
@@ -153,6 +180,7 @@ def test_default_metadata_prompts_request_specific_searchable_details(ollama_pro
     assert "important actions, interactions, behavior, or events" in system_prompt
     assert "clearly supported season, weather, time of day" in system_prompt
     assert "supplied context as factual context" in system_prompt
+    assert "Never output placeholders such as None, N/A, Unknown" in system_prompt
     assert "for a screen-reader user" in system_prompt
     assert "Return up to 12 highly descriptive tags" in user_prompt
     assert "typically 8-12" in user_prompt

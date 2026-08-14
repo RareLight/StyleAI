@@ -5,7 +5,11 @@ from types import SimpleNamespace
 from PIL import Image
 
 from providers.base import MetadataGenerationResponse
-from services.metadata_benchmark import inspect_proxy, run_benchmark_batch
+from services.metadata_benchmark import (
+    inspect_proxy,
+    round_benchmark_timings,
+    run_benchmark_batch,
+)
 from styleai_server import app
 
 
@@ -77,13 +81,55 @@ def test_benchmark_service_returns_outputs_without_index_service(mocker):
     assert results[0]["status"] == "succeeded"
     assert results[0]["keywords"] == ["Dog", "Golden Retriever"]
     assert results[0]["retry_count"] == 1
-    assert results[0]["timing"]["inference_ms"] == 250.0
-    assert results[0]["timing"]["base64_decode_ms"] == 1.25
+    assert results[0]["timing"]["inference_ms"] == 250
+    assert results[0]["timing"]["base64_decode_ms"] == 1
     assert results[0]["timing"]["proxy_inspection_ms"] >= 0
     assert results[0]["timing"]["benchmark_item_total_ms"] >= 0
     assert results[0]["source_photo_id"] == "stable-photo-1"
     assert results[0]["proxy"]["width"] == 12
     analysis.generate_metadata_single.assert_called_once()
+
+
+def test_benchmark_timing_precision_uses_units():
+    assert round_benchmark_timings(
+        {
+            "inference_ms": 123.6,
+            "provider_seconds": 12.25,
+            "tokens_per_second": 7.654,
+            "photos_per_minute": 3.456,
+            "input_tokens": 42,
+        }
+    ) == {
+        "inference_ms": 124,
+        "provider_seconds": 12.3,
+        "tokens_per_second": 7.7,
+        "photos_per_minute": 3.5,
+        "input_tokens": 42,
+    }
+
+
+def test_benchmark_service_publishes_each_item_before_inference(mocker):
+    analysis = mocker.Mock()
+    analysis.providers = {"ollama": object()}
+    analysis.generate_metadata_single.return_value = MetadataGenerationResponse(
+        uuid="photo", success=True
+    )
+    started = []
+    items = [
+        {"photo_id": "photo-1", "image_data": _jpeg_bytes()},
+        {"photo_id": "photo-2", "image_data": _jpeg_bytes()},
+    ]
+
+    run_benchmark_batch(
+        items,
+        _options(),
+        analysis_service=analysis,
+        on_item_started=lambda item, index, total: started.append(
+            (item["photo_id"], index, total)
+        ),
+    )
+
+    assert started == [("photo-1", 1, 2), ("photo-2", 2, 2)]
 
 
 def test_benchmark_service_honors_scoped_cancellation():
@@ -221,9 +267,17 @@ def test_operation_backed_route_persists_status_but_not_generated_metadata(mocke
         "routes.metadata_benchmark.operations.JobCancelSignal",
         return_value=SimpleNamespace(is_set=lambda: False),
     )
-    mocker.patch("routes.metadata_benchmark.operations.set_job_state")
+    set_job = mocker.patch("routes.metadata_benchmark.operations.set_job_state")
     set_items = mocker.patch("routes.metadata_benchmark.operations.set_item_states")
-    mocker.patch("routes.metadata_benchmark.run_benchmark_batch", return_value=[result])
+
+    def run_with_progress(items, options, **kwargs):
+        kwargs["on_item_started"](items[0], 1, 1)
+        return [result]
+
+    mocker.patch(
+        "routes.metadata_benchmark.run_benchmark_batch", side_effect=run_with_progress
+    )
+    set_item = mocker.patch("routes.metadata_benchmark.operations.set_item_state")
 
     with app.test_client() as client:
         response = client.post(
@@ -235,6 +289,8 @@ def test_operation_backed_route_persists_status_but_not_generated_metadata(mocke
                         "photo_id": "photo-1",
                         "source_photo_id": "stable-1",
                         "operation_item_id": "model::photo-1",
+                        "model_index": 2,
+                        "photo_index": 14,
                         "filename": "one.jpg",
                         "image": payload,
                     }
@@ -248,6 +304,13 @@ def test_operation_backed_route_persists_status_but_not_generated_metadata(mocke
     assert terminal_updates == [
         {"item_id": "model::photo-1", "state": "succeeded", "error": None}
     ]
+    set_item.assert_called_once_with(
+        "/catalog/styleai.db", "job-1", "model::photo-1", "running"
+    )
+    assert set_job.call_args_list[-1].kwargs["details"] == {
+        "current_model_index": 2,
+        "current_photo_index": 14,
+    }
     assert "Private Output" in response.get_data(as_text=True)
 
 

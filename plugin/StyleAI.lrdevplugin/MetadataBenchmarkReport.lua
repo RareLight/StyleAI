@@ -1,5 +1,30 @@
 local Report = {}
-Report.IMPLEMENTATION_VERSION = 2
+Report.IMPLEMENTATION_VERSION = 3
+
+local function roundTo(value, decimalPlaces)
+	local factor = 10 ^ (decimalPlaces or 0)
+	if value >= 0 then return math.floor(value * factor + 0.5) / factor end
+	return math.ceil(value * factor - 0.5) / factor
+end
+
+local function roundTimingValues(timing)
+	local rounded = {}
+	for key, value in pairs(timing or {}) do
+		if type(value) == "number" and string.match(tostring(key), "_ms$") then
+			rounded[key] = roundTo(value, 0)
+		elseif type(value) == "number" and (
+			string.match(tostring(key), "_seconds$")
+			or string.match(tostring(key), "_minutes$")
+			or string.match(tostring(key), "_per_second$")
+			or string.match(tostring(key), "_per_minute$")
+		) then
+			rounded[key] = roundTo(value, 1)
+		else
+			rounded[key] = value
+		end
+	end
+	return rounded
+end
 
 local function sdkFunction(owner, ownerName, methodName)
 	if type(owner) ~= "table" or type(owner[methodName]) ~= "function" then
@@ -219,6 +244,7 @@ function Report.append(self, result)
 		result.warning = result.warning or "The local model response omitted the benchmark photo ID"
 	end
 	if type(result.timing) ~= "table" then result.timing = {} end
+	result.timing = roundTimingValues(result.timing)
 	if result.proxy ~= nil and type(result.proxy) ~= "table" then result.proxy = nil end
 	if result.status == nil then result.status = result.error and "failed" or "succeeded" end
 	table.insert(self.results, result)
@@ -316,16 +342,16 @@ local function summarize(self)
 			model = group.model,
 			success_count = group.success,
 			failure_count = group.failed,
-			total_ms = total,
-			mean_ms = count > 0 and total / count or nil,
-			median_ms = percentile(group.latencies, 0.5),
-			p90_ms = percentile(group.latencies, 0.9),
-			p95_ms = percentile(group.latencies, 0.95),
-			photos_per_minute = total > 0 and count * 60000 / total or nil,
-			median_tokens_per_second = percentile(group.tokensPerSecond, 0.5),
+			total_ms = roundTo(total, 0),
+			mean_ms = count > 0 and roundTo(total / count, 0) or nil,
+			median_ms = count > 0 and roundTo(percentile(group.latencies, 0.5), 0) or nil,
+			p90_ms = count > 0 and roundTo(percentile(group.latencies, 0.9), 0) or nil,
+			p95_ms = count > 0 and roundTo(percentile(group.latencies, 0.95), 0) or nil,
+			photos_per_minute = total > 0 and roundTo(count * 60000 / total, 1) or nil,
+			median_tokens_per_second = #group.tokensPerSecond > 0 and roundTo(percentile(group.tokensPerSecond, 0.5), 1) or nil,
 			input_tokens = group.inputTokens,
 			output_tokens = group.outputTokens,
-			warmup_ms = group.warmup_ms,
+			warmup_ms = group.warmup_ms and roundTo(group.warmup_ms, 0) or nil,
 			warmup_status = group.warmup_status,
 		})
 	end

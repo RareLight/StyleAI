@@ -76,6 +76,7 @@ def test_lightroom_default_metadata_prompt_is_specific_and_migrates_prior_defaul
 
     assert "Limit output to 5-10 highly relevant tags" in legacy_source
     assert "return 10-12 distinct, highly relevant tags" in legacy_source
+    assert "return up to 12 distinct, highly relevant terms" in legacy_source
     assert "return up to 12 distinct, highly relevant terms" in active_source
     assert "typically 8-12 total across all categories" in active_source
     assert "species, breed, plant type, landmark, vehicle type" in active_source
@@ -83,6 +84,7 @@ def test_lightroom_default_metadata_prompt_is_specific_and_migrates_prior_defaul
     assert "important actions, interactions, behavior, or events" in active_source
     assert "clearly supported season, weather, time of day" in active_source
     assert "supplied context as factual context" in active_source
+    assert "Never output placeholders such as None, N/A, Unknown" in active_source
     assert "for a screen-reader user" in active_source
     assert (
         "for _, legacy in ipairs(Defaults.legacySystemInstructions or {})"
@@ -104,6 +106,11 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
     assert "runMetadataBenchmarkBatch" in source
     assert 'WorkCoordinator.acquire("render", progressScope)' in source
     assert 'WorkCoordinator.acquire("catalog_write")' in source
+    assert "current_photo_index" in source
+    assert "progressModelTitle" in source
+    assert '"$$$/StyleAI/MetadataBenchmark/Model=^1 (^2/^3)"' in source
+    assert "model_index = modelIndex" in source
+    assert "photo_index = photoIndex" in source
     assert "analyzeAndIndexSelectedPhotos" not in source
     assert "applyMetadata" not in source
     assert "local RECOMMENDED_MAX_PHOTOS = 32" in source
@@ -125,7 +132,10 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
     assert "proxy_consistency" in report_source
     assert "proxy_mismatches" in report_source
     assert "os.rename" not in report_source
-    assert "Report.IMPLEMENTATION_VERSION = 2" in report_source
+    assert "Report.IMPLEMENTATION_VERSION = 3" in report_source
+    assert "roundTimingValues" in report_source
+    assert "photos_per_minute = total > 0 and roundTo" in report_source
+    assert "elapsed_ms = roundMilliseconds" in source
     assert 'sdkFunction(LrFileUtils, "LrFileUtils", "copy")' in report_source
     assert 'sdkFunction(LrFileUtils, "LrFileUtils", "delete")' in report_source
     assert "function Report.validateRuntime()" in report_source

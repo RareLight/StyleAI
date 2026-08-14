@@ -1275,6 +1275,8 @@ function SearchIndexAPI.runMetadataBenchmarkBatch(items, options)
             filename = item.filename or "photo.jpg",
             image = item.image,
             operation_item_id = item.operation_item_id,
+            model_index = item.model_index,
+            photo_index = item.photo_index,
             options = item.options or {},
         })
     end
