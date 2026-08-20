@@ -92,4 +92,34 @@ def test_generate_style_edit_requires_active_policy(_mock_active):
     result = generate_style_edit("target", b"preview")
 
     assert result.engine == "none"
+    assert result.abstention_reason == "model_unavailable"
     assert "No trained editing-policy generation" in result.warning
+
+
+@patch(
+    "services.style_engine.policy_runtime.has_compatible_policy_partition",
+    return_value=False,
+)
+@patch("services.style_engine.policy_runtime.predict_absolute_edit", return_value=None)
+@patch("services.style_engine.policy_runtime.has_active_generation", return_value=True)
+@patch("services.style_engine.training_service.compute_exposure_metrics")
+def test_generate_style_edit_explains_unsupported_rendering_partition(
+    mock_exposure,
+    _mock_active,
+    _mock_predict,
+    _mock_partition,
+):
+    mock_exposure.return_value = {}
+
+    result = generate_style_edit(
+        "target",
+        b"preview",
+        clip_embedding=[1.0, 0.0],
+        camera_profile="Nikon Z7 AgX (Contrast)",
+        is_hdr=True,
+    )
+
+    assert result.engine == "none"
+    assert result.abstention_reason == "unsupported_rendering_partition"
+    assert "HDR photos using Nikon Z7 AgX (Contrast)" in result.warning
+    assert "Learn From My Edits" in result.warning

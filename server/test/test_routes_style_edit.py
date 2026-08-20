@@ -138,10 +138,10 @@ def test_versioned_batch_preserves_per_photo_contracts(client, mocker, tmp_path)
                     "confidence": 0.9,
                 },
                 {
-                    "status": "error",
+                    "status": "skipped",
                     "photo_id": "photo-2",
                     "engine": "none",
-                    "error": "low_confidence",
+                    "skip_reason": "low_confidence",
                 },
             ],
             {"tier_counts": {"independent": 2}},
@@ -197,7 +197,12 @@ def test_versioned_batch_preserves_per_photo_contracts(client, mocker, tmp_path)
     assert structured[1]["options"]["generation_id"] == "generation-test"
     stored = operations.get_job(db_path, job["job_id"])
     assert stored["details"]["generation_id"] == "generation-test"
-    assert [item["state"] for item in stored["items"]] == ["committing", "failed"]
+    assert [item["state"] for item in stored["items"]] == [
+        "committing",
+        "committing",
+    ]
+    assert stored["items"][1]["result"]["outcome"] == "skipped"
+    assert stored["items"][1]["result"]["skip_reason"] == "low_confidence"
 
 
 def test_versioned_batch_rejects_mismatched_item_order(client, tmp_path, mocker):
@@ -420,9 +425,83 @@ def test_low_confidence_policy_abstains_without_generative_fallback(mocker):
     )
 
     assert result["engine"] == "none"
-    assert result["error"] == "low_confidence"
+    assert result["status"] == "skipped"
+    assert result["skip_reason"] == "low_confidence"
+    assert "error" not in result
     assert result["source_embedding_cache_hit"] is True
     metadata_service.assert_not_called()
+
+
+def test_policy_abstention_is_a_safe_skip(mocker):
+    source_metrics = {key: 0.0 for key in SOURCE_METRIC_KEYS}
+    mocker.patch(
+        "routes.style_edit._get_canonical_source_embedding",
+        return_value=(
+            [1.0, 0.0],
+            {"source_embedding_provenance": "raw_preview"},
+            source_metrics,
+        ),
+    )
+    mocker.patch(
+        "routes.style_edit.style_engine.generate_style_edit",
+        return_value=StyleEngineResult(
+            recipe={},
+            confidence=0.0,
+            matched_count=0,
+            engine="none",
+            warning=(
+                "No learned editing policy is available for HDR photos using "
+                "Nikon Z7 AgX (Contrast)."
+            ),
+            abstention_reason="unsupported_rendering_partition",
+        ),
+    )
+
+    from routes.style_edit import _run_single_style_edit
+
+    result = _run_single_style_edit(
+        "photo-1",
+        b"jpeg",
+        "photo.jpg",
+        {},
+        camera_profile="Nikon Z7 AgX (Contrast)",
+        is_hdr=True,
+    )
+
+    assert result["status"] == "skipped"
+    assert result["skip_reason"] == "unsupported_rendering_partition"
+    assert "HDR photos using Nikon Z7 AgX (Contrast)" in result["message"]
+    assert "error" not in result
+
+
+def test_policy_setup_failure_remains_an_error(mocker):
+    source_metrics = {key: 0.0 for key in SOURCE_METRIC_KEYS}
+    mocker.patch(
+        "routes.style_edit._get_canonical_source_embedding",
+        return_value=(
+            [1.0, 0.0],
+            {"source_embedding_provenance": "raw_preview"},
+            source_metrics,
+        ),
+    )
+    mocker.patch(
+        "routes.style_edit.style_engine.generate_style_edit",
+        return_value=StyleEngineResult(
+            recipe={},
+            confidence=0.0,
+            matched_count=0,
+            engine="none",
+            warning="No trained editing-policy generation is active.",
+            abstention_reason="model_unavailable",
+        ),
+    )
+
+    from routes.style_edit import _run_single_style_edit
+
+    result = _run_single_style_edit("photo-1", b"jpeg", "photo.jpg", {})
+
+    assert result["status"] == "error"
+    assert result["error"] == "model_unavailable"
 
 
 def test_cache_miss_computes_once_and_cache_failure_does_not_fail_edit(mocker):
@@ -479,7 +558,8 @@ def test_cache_miss_computes_once_and_cache_failure_does_not_fail_edit(mocker):
         camera_profile="Adobe Color",
     )
 
-    assert result["error"] == "low_confidence"
+    assert result["status"] == "skipped"
+    assert result["skip_reason"] == "low_confidence"
     assert result["source_embedding_cache_hit"] is False
     assert "embedding_inference" in result["timings_ms"]
     assert "embedding_cache_write" in result["timings_ms"]

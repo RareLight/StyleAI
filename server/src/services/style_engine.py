@@ -35,6 +35,7 @@ class StyleEngineResult:
         entropy: float | None = None,
         rendering_intent: dict[str, Any] | None = None,
         absolute_target: dict[str, Any] | None = None,
+        abstention_reason: str | None = None,
     ) -> None:
         self.recipe = recipe
         self.confidence = confidence
@@ -49,6 +50,7 @@ class StyleEngineResult:
         self.entropy = entropy
         self.rendering_intent = rendering_intent
         self.absolute_target = dict(absolute_target or {})
+        self.abstention_reason = abstention_reason
 
 
 def _canonical_to_edit_recipe(
@@ -74,13 +76,14 @@ def _canonical_to_edit_recipe(
     }
 
 
-def _no_result(message: str) -> StyleEngineResult:
+def _no_result(message: str, *, reason: str) -> StyleEngineResult:
     return StyleEngineResult(
         recipe={},
         confidence=0.0,
         matched_count=0,
         engine="none",
         warning=message,
+        abstention_reason=reason,
     )
 
 
@@ -116,11 +119,13 @@ def generate_style_edit(
         return _no_result(
             "No trained editing-policy generation is active. "
             "Run Learn From My Edits or Styles & Training → Rebuild after saving at least "
-            f"{policy_runtime.MIN_PARTITION_EXAMPLES} compatible examples."
+            f"{policy_runtime.MIN_PARTITION_EXAMPLES} compatible examples.",
+            reason="model_unavailable",
         )
     if clip_embedding is None:
         return _no_result(
-            "The active editing policy requires a valid source-image embedding."
+            "The active editing policy requires a valid source-image embedding.",
+            reason="source_embedding_unavailable",
         )
 
     try:
@@ -172,9 +177,23 @@ def generate_style_edit(
         )
 
     if prediction is None:
+        if not policy_runtime.has_compatible_policy_partition(
+            query_metadata,
+            generation_id=generation_id,
+        ):
+            rendering_label = "HDR" if bool(is_hdr) else "SDR"
+            profile_label = str(camera_profile or "the current profile").strip()
+            return _no_result(
+                f"No learned editing policy is available for {rendering_label} photos "
+                f"using {profile_label}. Save at least "
+                f"{policy_runtime.MIN_PARTITION_EXAMPLES} compatible examples with "
+                "Learn From My Edits, then use Styles & Training → Rebuild.",
+                reason="unsupported_rendering_partition",
+            )
         return _no_result(
             "No high-confidence editing policy matched this photo and "
-            "camera-profile/HDR partition."
+            "camera-profile/HDR partition.",
+            reason="ambiguous_policy_match",
         )
     summary = (
         f"Editing Policy: {prediction.policy_name} "
