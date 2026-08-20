@@ -524,8 +524,26 @@ def _run_single_style_edit_core(
             }
         )
 
-    # The policy runtime could not produce a compatible result.
+    # Deliberate policy abstentions are safe skips. Setup/evidence failures remain
+    # errors because retrying after repair can produce an edit.
     if result.engine == "none":
+        abstention_reason = getattr(result, "abstention_reason", None)
+        if abstention_reason in {
+            "unsupported_rendering_partition",
+            "ambiguous_policy_match",
+        }:
+            return finish(
+                {
+                    "status": "skipped",
+                    "engine": "none",
+                    "photo_id": photo_id,
+                    "confidence": 0.0,
+                    "matched_examples": 0,
+                    "skip_reason": abstention_reason,
+                    "message": result.warning or "Editing policy safely abstained.",
+                    "source_embedding_cache_hit": cache_hit,
+                }
+            )
         return finish(
             {
                 "status": "error",
@@ -533,7 +551,7 @@ def _run_single_style_edit_core(
                 "photo_id": photo_id,
                 "confidence": 0.0,
                 "matched_examples": 0,
-                "error": "profile_mismatch",
+                "error": abstention_reason or "policy_unavailable",
                 "message": result.warning or "Style engine could not produce a result.",
                 "source_embedding_cache_hit": cache_hit,
             }
@@ -543,12 +561,12 @@ def _run_single_style_edit_core(
     if result.confidence < CONFIDENCE_LOW:
         return finish(
             {
-                "status": "error",
+                "status": "skipped",
                 "engine": "none",
                 "photo_id": photo_id,
                 "confidence": round(result.confidence, 3),
                 "matched_examples": result.matched_count,
-                "error": "low_confidence",
+                "skip_reason": "low_confidence",
                 "message": "Confidence is too low to apply edit safely.",
                 "source_embedding_cache_hit": cache_hit,
             }
@@ -1307,23 +1325,26 @@ def style_edit():
             photo_id = str(result.get("photo_id") or "")
             canceled = result.get("error") == "canceled"
             succeeded = result.get("status") == "success"
+            skipped = result.get("status") == "skipped"
             item_updates.append(
                 {
                     "item_id": photo_id,
                     "state": (
                         "canceled"
                         if canceled
-                        else ("committing" if succeeded else "failed")
+                        else ("committing" if succeeded or skipped else "failed")
                     ),
                     "error": (
                         None
-                        if succeeded or canceled
+                        if succeeded or skipped or canceled
                         else str(result.get("error") or "Edit failed")
                     ),
                     "result": {
                         "engine": result.get("engine"),
                         "confidence": result.get("confidence"),
                         "burst_coherence": result.get("burst_coherence"),
+                        "outcome": "skipped" if skipped else result.get("status"),
+                        "skip_reason": result.get("skip_reason"),
                     },
                 }
             )
@@ -1454,17 +1475,22 @@ def style_edit():
         if job_id:
             canceled = result.get("error") == "canceled"
             succeeded = result.get("status") == "success"
+            skipped = result.get("status") == "skipped"
             operations.set_item_state(
                 config.DB_PATH,
                 job_id,
                 photo_id,
-                "canceled" if canceled else ("committing" if succeeded else "failed"),
+                "canceled"
+                if canceled
+                else ("committing" if succeeded or skipped else "failed"),
                 error=None
-                if succeeded or canceled
+                if succeeded or skipped or canceled
                 else str(result.get("error") or "Edit failed"),
                 result={
                     "engine": result.get("engine"),
                     "confidence": result.get("confidence"),
+                    "outcome": "skipped" if skipped else result.get("status"),
+                    "skip_reason": result.get("skip_reason"),
                 },
             )
         results.append(result)

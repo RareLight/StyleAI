@@ -133,11 +133,49 @@ local function createEditCollection(catalog)
 	return collection, collectionName
 end
 
+local function appendRemovableCollections(photo, collections, seenCollections)
+	local function appendCollection(collection)
+		local okSmart, isSmart = LrTasks.pcall(function()
+			return collection:isSmartCollection()
+		end)
+		if okSmart and isSmart then return end
+		local okType, collectionType = LrTasks.pcall(function()
+			return collection:type()
+		end)
+		local key = tostring(okType and collectionType or "collection")
+			.. ":"
+			.. tostring(collection.localIdentifier or collection)
+		if not seenCollections[key] then
+			seenCollections[key] = true
+			table.insert(collections, collection)
+		end
+	end
+
+	local okCollections, collections = LrTasks.pcall(function()
+		return photo:getContainedCollections()
+	end)
+	if okCollections then
+		for _, collection in ipairs(collections or {}) do appendCollection(collection) end
+	else
+		log:warn("Could not inspect photo collection membership: " .. tostring(collections))
+	end
+	local okPublished, publishedCollections = LrTasks.pcall(function()
+		return photo:getContainedPublishedCollections()
+	end)
+	if okPublished then
+		for _, collection in ipairs(publishedCollections or {}) do appendCollection(collection) end
+	else
+		log:warn("Could not inspect photo published membership: " .. tostring(publishedCollections))
+	end
+end
+
 local function createVirtualCopy(catalog, photo)
-	-- Lightroom creates virtual copies from the current selection and selects the
-	-- resulting copies. It can also inherit membership in the currently viewed
-	-- standard or published collection, so capture that membership for removal
-	-- after the copy is added to StyleAI's destination collection.
+	-- Capture the source memberships before creation. Lightroom guarantees that
+	-- createVirtualCopies returns and selects the copies, but its membership
+	-- indexes can still lag the immediate read from the new copy.
+	local inheritedCollections = {}
+	local seenCollections = {}
+	appendRemovableCollections(photo, inheritedCollections, seenCollections)
 	catalog:setSelectedPhotos(photo, {})
 	local copies = catalog:createVirtualCopies(
 		LOC("$$$/StyleAI/TaskAiEditPhotos/VirtualCopyName=StyleAI Edit")
@@ -146,28 +184,10 @@ local function createVirtualCopy(catalog, photo)
 	if not editPhoto then
 		error("Lightroom did not return the requested virtual copy")
 	end
-	local inheritedCollections = {}
-	local okCollections, collections = LrTasks.pcall(function()
-		return editPhoto:getContainedCollections()
-	end)
-	if okCollections then
-		for _, collection in ipairs(collections or {}) do
-			table.insert(inheritedCollections, collection)
-		end
-	else
-		log:warn("Could not inspect virtual-copy collection membership: " .. tostring(collections))
-	end
-	local okPublished, publishedCollections = LrTasks.pcall(function()
-		return editPhoto:getContainedPublishedCollections()
-	end)
-	if okPublished then
-		for _, collection in ipairs(publishedCollections or {}) do
-			table.insert(inheritedCollections, collection)
-		end
-	else
-		log:warn("Could not inspect virtual-copy published membership: " .. tostring(publishedCollections))
-	end
-	return editPhoto, inheritedCollections
+	-- Preserve any membership already visible on the copy as well. A settled read
+	-- is merged again immediately before the final catalog cleanup.
+	appendRemovableCollections(editPhoto, inheritedCollections, seenCollections)
+	return editPhoto, inheritedCollections, seenCollections
 end
 
 local function getAiEditOptions(ctx, selectedPhotosSnapshot)
@@ -450,12 +470,14 @@ function AiEditAction.run()
 		local skippedCount = 0
 		local errorCount = 0
 		local errorMessages = {}
+		local skipMessages = {}
 		local backendWarnings = {}
 		local runLog = {}
 		local editCollection = nil
 		local editCollectionName = nil
 		local editCopies = {}
 		local inheritedCollectionsByCopy = {}
+		local seenInheritedCollectionsByCopy = {}
 
 		-- Queue state
 		local results = {}
@@ -640,7 +662,14 @@ function AiEditAction.run()
 			if apiResponse and apiResponse.warning then
 				resultObj.warning = resultObj.fileName .. ": " .. tostring(apiResponse.warning)
 			end
-			if not apiOk or not apiResponse or type(apiResponse) ~= "table" or apiResponse.status ~= "success" then
+			if apiOk and type(apiResponse) == "table" and apiResponse.status == "skipped" then
+				resultObj.skipped = true
+				resultObj.skipMessage = tostring(
+					apiResponse.message
+						or LOC("$$$/StyleAI/TaskAiEditPhotos/SafelySkipped=Editing policy safely skipped this photo.")
+				)
+				resultObj.continueProcessing = false
+			elseif not apiOk or not apiResponse or type(apiResponse) ~= "table" or apiResponse.status ~= "success" then
 				local errMsg = "Unknown error"
 				if not apiOk then errMsg = tostring(apiResponse)
 				elseif type(apiResponse) == "string" then errMsg = apiResponse
@@ -831,7 +860,15 @@ function AiEditAction.run()
 				table.insert(backendWarnings, res.warning)
 			end
 
-			if not res.continueProcessing then
+			if res.skipped then
+				skippedCount = skippedCount + 1
+				if res.skipMessage then table.insert(skipMessages, res.skipMessage) end
+				table.insert(
+					runLog,
+					string.format("- %s: SKIPPED: %s", fileName, res.skipMessage or "Policy abstained")
+				)
+				finishOperationItem(photoIdsByIndex[index], "succeeded", nil)
+			elseif not res.continueProcessing then
 				if res.errorMsg then
 					table.insert(errorMessages, res.errorMsg)
 					table.insert(runLog, string.format("- %s: ERROR: %s", fileName, res.errorMsg))
@@ -910,8 +947,8 @@ function AiEditAction.run()
 								if not editCollection then
 									editCollection, editCollectionName = createEditCollection(catalog)
 								end
-								local inheritedCollections
-								editPhoto, inheritedCollections = createVirtualCopy(catalog, photo)
+								local inheritedCollections, seenInheritedCollections
+								editPhoto, inheritedCollections, seenInheritedCollections = createVirtualCopy(catalog, photo)
 								applyOptions.appliedToVirtualCopy = true
 								local okCopyName, copyName = LrTasks.pcall(function()
 									return editPhoto:getFormattedMetadata("copyName")
@@ -919,6 +956,7 @@ function AiEditAction.run()
 								if okCopyName then applyOptions.appliedCopyName = copyName end
 								table.insert(editCopies, editPhoto)
 								inheritedCollectionsByCopy[editPhoto] = inheritedCollections or {}
+								seenInheritedCollectionsByCopy[editPhoto] = seenInheritedCollections or {}
 							end
 							return DevelopEditManager.applyRecipe(editPhoto, response, applyOptions)
 						end)
@@ -1040,6 +1078,15 @@ function AiEditAction.run()
 		if editCollection and #editCopies > 0 then
 			-- Finish grouping any copies already created even when the user canceled
 			-- the remaining run, so the catalog is not left with uncollected edits.
+			-- Merge a settled post-creation membership read before entering the write
+			-- transaction; Lightroom can populate collection membership asynchronously.
+			for _, editCopy in ipairs(editCopies) do
+				appendRemovableCollections(
+					editCopy,
+					inheritedCollectionsByCopy[editCopy],
+					seenInheritedCollectionsByCopy[editCopy]
+				)
+			end
 			local collectionLease, collectionLeaseError = WorkCoordinator.acquire("catalog_write", nil)
 			local collectionOk, collectionError = LrTasks.pcall(function()
 				if not collectionLease then
@@ -1082,6 +1129,34 @@ function AiEditAction.run()
 
 		progressScope:done()
 
+		local function appendSkipDetails(report)
+			if #skipMessages == 0 then return report end
+			local uniqueMessages = {}
+			local details = {}
+			local distinctCount = 0
+			for _, message in ipairs(skipMessages) do
+				if not uniqueMessages[message] then
+					uniqueMessages[message] = true
+					distinctCount = distinctCount + 1
+					if #details < 5 then table.insert(details, "- " .. message) end
+				end
+			end
+			local result = report
+				.. "\n\n"
+				.. LOC("$$$/StyleAI/TaskAiEditPhotos/SkipDetails=Skipped details:")
+				.. "\n"
+				.. table.concat(details, "\n")
+			if distinctCount > #details then
+				result = result
+					.. "\n"
+					.. LOC(
+						"$$$/StyleAI/TaskAiEditPhotos/MoreSkipReasons=... and ^1 more skip reason(s)",
+						tostring(distinctCount - #details)
+					)
+			end
+			return result
+		end
+
 		if errorCount > 0 or #backendWarnings > 0 then
 			local uniqueErrors = {}
 			local errorList = {}
@@ -1110,6 +1185,7 @@ function AiEditAction.run()
 					.. "\n"
 					.. LOC("$$$/StyleAI/common/Skipped=Skipped: ^1", tostring(skippedCount))
 			end
+			combinedReport = appendSkipDetails(combinedReport)
 			if errorCount > 0 then
 				combinedReport = combinedReport
 					.. "\n"
@@ -1172,6 +1248,7 @@ function AiEditAction.run()
 						editCollectionName
 					)
 			end
+			successSummary = appendSkipDetails(successSummary)
 			if #runLog > 0 then
 				local f = LrView.osFactory()
 				local dialogContent = f:column({

@@ -111,10 +111,23 @@ def test_ai_edit_workflow_keeps_operation_alive_and_isolates_virtual_copies():
     assert "elseif ok and apiOk then" in source
     assert "Do not multiply it into one doomed single-photo retry per image" in source
     # Lightroom can automatically add a new copy to the viewed collection. The
-    # workflow records and removes that inherited standard/published membership.
-    assert "editPhoto:getContainedCollections()" in source
-    assert "editPhoto:getContainedPublishedCollections()" in source
+    # workflow records source membership before creation, merges the settled
+    # copy membership later, and removes inherited standard/published membership.
+    assert "local function appendRemovableCollections" in source
+    capture_position = source.index(
+        "appendRemovableCollections(photo, inheritedCollections, seenCollections)"
+    )
+    create_position = source.index("catalog:createVirtualCopies(", capture_position)
+    assert capture_position < create_position
+    assert "settled post-creation membership read" in source
+    assert "photo:getContainedCollections()" in source
+    assert "photo:getContainedPublishedCollections()" in source
     assert "inheritedCollection:removePhotos({ editCopy })" in source
+    # A deliberate backend abstention is acknowledged as a successful skip, so
+    # unsupported rendering partitions do not fail the entire edit operation.
+    assert 'apiResponse.status == "skipped"' in source
+    assert 'finishOperationItem(photoIdsByIndex[index], "succeeded", nil)' in source
+    assert "SkipDetails=Skipped details:" in source
 
 
 def test_macos_development_backend_is_detached_from_lightroom():

@@ -1987,6 +1987,20 @@ def predict_absolute_edit(
     )
 
 
+def has_compatible_policy_partition(
+    metadata: dict[str, Any],
+    *,
+    generation_id: str | None = None,
+) -> bool:
+    """Return whether the exact current profile/HDR state has a policy artifact."""
+    artifacts = (
+        _load_generation_artifacts(generation_id)
+        if generation_id
+        else _load_active_artifacts()
+    )
+    return hard_partition_key(metadata) in artifacts
+
+
 def predict_partition_artifact(
     artifact: PartitionPolicyArtifact,
     *,
