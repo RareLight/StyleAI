@@ -12,6 +12,7 @@ from providers.base import (
 )
 from providers.ollama import OllamaProvider
 from providers.lmstudio import LMStudioProvider
+from providers.axengine import AXEngineProvider
 from config import logger, DEFAULT_METADATA_PROVIDER
 from PIL import Image
 import io
@@ -20,6 +21,8 @@ import io
 import threading
 
 _inference_lock = threading.Lock()
+
+SUPPORTED_METADATA_PROVIDERS = frozenset({"disabled", "ollama", "lmstudio", "axengine"})
 
 
 class AnalysisService:
@@ -40,6 +43,8 @@ class AnalysisService:
         self.provider_status: dict[str, str] = {}
         self.provider_errors: dict[str, str] = {}
         self.lazy_load = lazy_load
+        self._provider_state_lock = threading.RLock()
+        self._active_provider = DEFAULT_METADATA_PROVIDER
         self._initialize_providers()
 
     def _initialize_providers(self):
@@ -86,6 +91,21 @@ class AnalysisService:
             self.provider_errors["lmstudio"] = str(e)
             logger.error(f"[FAIL] Failed to initialize LM Studio provider: {e}")
 
+        # AX Engine (local) - Always register, availability checked dynamically
+        try:
+            axengine = AXEngineProvider()
+            self.providers["axengine"] = axengine
+            if axengine.is_available():
+                self.provider_status["axengine"] = "available"
+                logger.info("[OK] AX Engine provider available")
+            else:
+                self.provider_status["axengine"] = "registered"
+                logger.info("[INFO] AX Engine provider registered (server not running)")
+        except Exception as e:
+            self.provider_status["axengine"] = "failed"
+            self.provider_errors["axengine"] = str(e)
+            logger.error("[FAIL] Failed to initialize AX Engine provider: %s", e)
+
         if not self.providers:
             logger.error(
                 "[WARN] No LLM providers available! Metadata generation will not work."
@@ -98,6 +118,48 @@ class AnalysisService:
     def get_available_providers(self) -> list[str]:
         """Get list of available provider names"""
         return list(self.providers.keys())
+
+    def set_active_provider(
+        self, provider: str, *, ax_model_root: str | None = None
+    ) -> str:
+        """Set the one provider permitted for model discovery and inference."""
+        normalized = str(provider or "").strip().lower()
+        if normalized not in SUPPORTED_METADATA_PROVIDERS:
+            raise ValueError(
+                f"unsupported metadata provider: {normalized or '(empty)'}"
+            )
+        if normalized == "axengine":
+            ax_provider = self.providers.get("axengine")
+            configure = getattr(ax_provider, "configure_model_root", None)
+            if callable(configure):
+                configure(ax_model_root)
+        with self._provider_state_lock:
+            previous = self._active_provider
+            self._active_provider = normalized
+        if previous == "axengine" and normalized != "axengine":
+            try:
+                from services.axengine_runtime import get_axengine_runtime
+
+                get_axengine_runtime().stop()
+            except Exception as exc:
+                logger.error(
+                    "Could not stop managed AX Engine while switching providers: %s",
+                    exc,
+                    exc_info=True,
+                )
+        logger.info("Active local metadata provider set to %s", normalized)
+        return normalized
+
+    def get_active_provider(self) -> str:
+        with self._provider_state_lock:
+            return self._active_provider
+
+    def _selected_provider_items(self):
+        active = self.get_active_provider()
+        if active == "disabled":
+            return []
+        provider = self.providers.get(active)
+        return [(active, provider)] if provider is not None else []
 
     def analyze_batch(
         self,
@@ -357,18 +419,29 @@ class AnalysisService:
                 error="Image bytes are required for vision metadata generation",
             )
 
-        provider = options.get("provider") or DEFAULT_METADATA_PROVIDER
-
+        active_provider = self.get_active_provider()
+        provider = str(options.get("provider") or active_provider).strip().lower()
+        if active_provider == "disabled":
+            return MetadataGenerationResponse(
+                uuid=uuid,
+                success=False,
+                error="Local metadata generation is disabled",
+            )
+        if provider != active_provider:
+            return MetadataGenerationResponse(
+                uuid=uuid,
+                success=False,
+                error=(
+                    f"Metadata provider mismatch: active provider is "
+                    f"{active_provider}, request specified {provider or '(empty)'}"
+                ),
+            )
         if provider not in self.providers:
             if not self.providers:
-                return MetadataGenerationResponse(
-                    uuid=uuid, success=False, error="No LLM providers available"
-                )
-            provider = list(self.providers.keys())[0]
-            warning_msg = (
-                f"Requested provider not available, using fallback: {provider}"
-            )
-            logger.warning(warning_msg)
+                error = "No LLM providers available"
+            else:
+                error = f"Active metadata provider is unavailable: {provider}"
+            return MetadataGenerationResponse(uuid=uuid, success=False, error=error)
 
         selected_provider = self.providers[provider]
         logger.info("Generating metadata using %s", provider)
@@ -401,6 +474,7 @@ class AnalysisService:
             date_time=options.get("date_time"),
             draft_model=options.get("draft_model"),
             benchmark_variant=options.get("benchmark_variant"),
+            speculation_mode=options.get("speculation_mode"),
         )
 
         # Diagnostic logging for prompt context
@@ -431,8 +505,6 @@ class AnalysisService:
                     (time.perf_counter() - generation_started) * 1000.0, 3
                 )
                 if response.success:
-                    if "warning_msg" in locals():
-                        response.warning = warning_msg
                     return response
                 logger.warning(
                     f"[Attempt {attempt + 1}/2] Failed to generate metadata for {uuid}: {response.error}"
@@ -461,8 +533,6 @@ class AnalysisService:
 
         # If we exhausted attempts and have a response object with an error
         if response:
-            if "warning_msg" in locals():
-                response.warning = warning_msg
             logger.error(
                 f"[FAIL] Failed to generate metadata for {uuid}: {response.error}"
             )
@@ -474,10 +544,10 @@ class AnalysisService:
 
     def get_available_models(self) -> dict[str, list[dict[str, Any]]]:
         """
-        Return display descriptors for vision-capable models from all providers.
+        Return vision-capable models from the one active provider.
         """
         result: dict[str, list[dict[str, Any]]] = {}
-        for provider_name, provider_instance in self.providers.items():
+        for provider_name, provider_instance in self._selected_provider_items():
             try:
                 if not provider_instance.is_available():
                     result[provider_name] = []
@@ -510,7 +580,7 @@ class AnalysisService:
     def get_available_draft_models(self) -> dict[str, list[dict[str, Any]]]:
         """Return downloaded models that providers can use as draft candidates."""
         result: dict[str, list[dict[str, Any]]] = {}
-        for provider_name, provider_instance in self.providers.items():
+        for provider_name, provider_instance in self._selected_provider_items():
             try:
                 if not provider_instance.is_available():
                     result[provider_name] = []
@@ -538,9 +608,31 @@ class AnalysisService:
                 result[provider_name] = []
         return result
 
+    def get_unavailable_speculation_models(self) -> dict[str, list[dict[str, Any]]]:
+        """Return detected artifacts hidden from selectors with reasons."""
+        result: dict[str, list[dict[str, Any]]] = {}
+        for provider_name, provider_instance in self._selected_provider_items():
+            try:
+                details = provider_instance.list_unavailable_speculation_details()
+                result[provider_name] = [
+                    dict(detail)
+                    for detail in details
+                    if isinstance(detail, dict) and detail.get("key")
+                ]
+            except Exception as exc:
+                logger.error(
+                    "Error listing unavailable speculation artifacts for %s: %s",
+                    provider_name,
+                    exc,
+                    exc_info=True,
+                )
+                result[provider_name] = []
+        return result
+
     def get_health_status(self) -> dict[str, Any]:
         """Return health status of LLM providers."""
         return {
+            "active_metadata_provider": self.get_active_provider(),
             "llm_providers": self.provider_status,
             "llm_errors": self.provider_errors,
         }

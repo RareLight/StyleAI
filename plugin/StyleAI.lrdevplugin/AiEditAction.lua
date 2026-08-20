@@ -135,7 +135,9 @@ end
 
 local function createVirtualCopy(catalog, photo)
 	-- Lightroom creates virtual copies from the current selection and selects the
-	-- resulting copies. This does not change the active source to the collection.
+	-- resulting copies. It can also inherit membership in the currently viewed
+	-- standard or published collection, so capture that membership for removal
+	-- after the copy is added to StyleAI's destination collection.
 	catalog:setSelectedPhotos(photo, {})
 	local copies = catalog:createVirtualCopies(
 		LOC("$$$/StyleAI/TaskAiEditPhotos/VirtualCopyName=StyleAI Edit")
@@ -144,7 +146,28 @@ local function createVirtualCopy(catalog, photo)
 	if not editPhoto then
 		error("Lightroom did not return the requested virtual copy")
 	end
-	return editPhoto
+	local inheritedCollections = {}
+	local okCollections, collections = LrTasks.pcall(function()
+		return editPhoto:getContainedCollections()
+	end)
+	if okCollections then
+		for _, collection in ipairs(collections or {}) do
+			table.insert(inheritedCollections, collection)
+		end
+	else
+		log:warn("Could not inspect virtual-copy collection membership: " .. tostring(collections))
+	end
+	local okPublished, publishedCollections = LrTasks.pcall(function()
+		return editPhoto:getContainedPublishedCollections()
+	end)
+	if okPublished then
+		for _, collection in ipairs(publishedCollections or {}) do
+			table.insert(inheritedCollections, collection)
+		end
+	else
+		log:warn("Could not inspect virtual-copy published membership: " .. tostring(publishedCollections))
+	end
+	return editPhoto, inheritedCollections
 end
 
 local function getAiEditOptions(ctx, selectedPhotosSnapshot)
@@ -432,6 +455,7 @@ function AiEditAction.run()
 		local editCollection = nil
 		local editCollectionName = nil
 		local editCopies = {}
+		local inheritedCollectionsByCopy = {}
 
 		-- Queue state
 		local results = {}
@@ -461,6 +485,46 @@ function AiEditAction.run()
 			return
 		end
 		local operationId = operation.job_id
+		local heartbeatStop = false
+		local operationInterrupted = false
+		local operationInterruptReason = nil
+		local operationInterruptedMessage = LOC(
+			"$$$/StyleAI/TaskAiEditPhotos/OperationInterrupted=The backend edit operation ended before Lightroom completed the run. Please run AI Style Edits again for the photos that were not edited."
+		)
+		ctx:addCleanupHandler(function()
+			heartbeatStop = true
+		end)
+		-- Durable jobs waiting for Lightroom handoff do not keep an orphaned backend
+		-- alive forever. While this Lightroom task is live, periodically touch the
+		-- operation so long exports or review dialogs cannot cross the backend's
+		-- ten-minute idle-shutdown window.
+		LrTasks.startAsyncTask(function()
+			while not heartbeatStop and not stopRequested do
+				for _ = 1, 30 do
+					if heartbeatStop or stopRequested then return end
+					LrTasks.sleep(1)
+				end
+				if heartbeatStop or stopRequested then return end
+				local statusOk, job = SearchIndexAPI.getOperation(operationId, false)
+				if statusOk and type(job) == "table" then
+					local state = tostring(job.state or "")
+					if state == "succeeded" or state == "failed" or state == "canceled" or state == "interrupted" then
+						operationInterrupted = true
+						operationInterruptReason = operationInterruptedMessage
+						log:warn("Edit operation heartbeat found terminal state: " .. state)
+						stopRequested = true
+						return
+					end
+				end
+			end
+		end)
+
+		local function isTerminalOperationError(value)
+			local message = string.lower(tostring(value or ""))
+			return string.find(message, "operation is already complete", 1, true) ~= nil
+				or string.find(message, "terminal operation job", 1, true) ~= nil
+				or string.find(message, "operation was interrupted", 1, true) ~= nil
+		end
 		local function finishOperationItem(photoId, state, operationError)
 			if not photoId then return false, "Missing operation photo ID" end
 			local updated, updateError = SearchIndexAPI.updateOperationItems(operationId, {
@@ -690,7 +754,7 @@ function AiEditAction.run()
 							local itemResponse = responseByPhotoId[tostring(requestItem.photo_id)]
 							if itemResponse then
 								attachApiResult(resultObj, true, itemResponse)
-							else
+							elseif ok and apiOk then
 								-- Compatibility fallback for an unavailable versioned batch endpoint.
 								local singleOk, singleResponse = SearchIndexAPI.styleEdit(
 									requestItem.photo_id,
@@ -698,6 +762,18 @@ function AiEditAction.run()
 									requestItem.options
 								)
 								attachApiResult(resultObj, singleOk, singleResponse or batchResponse or apiOk)
+							else
+								-- A batch-level transport or operation failure applies to every item.
+								-- Do not multiply it into one doomed single-photo retry per image.
+								local batchError = batchResponse or apiOk or LOC(
+									"$$$/StyleAI/TaskAiEditPhotos/BatchRequestFailed=Edit batch request failed"
+								)
+								attachApiResult(resultObj, false, batchError)
+								if isTerminalOperationError(batchError) then
+									operationInterrupted = true
+									operationInterruptReason = operationInterruptedMessage
+									stopRequested = true
+								end
 							end
 							SearchIndexAPI.cleanupExportedPhoto(requestItem.filepath)
 							results[resultObj.index] = resultObj
@@ -729,7 +805,7 @@ function AiEditAction.run()
 		end
 
 		for index, photo in ipairs(photos) do
-			if progressScope:isCanceled() then break end
+			if progressScope:isCanceled() or operationInterrupted then break end
 
 			consumerIndex = index
 			local fileName = photo:getFormattedMetadata("fileName") or "Photo"
@@ -737,11 +813,15 @@ function AiEditAction.run()
 			progressScope:setPortionComplete(index - 1, #photos)
 
 			-- Wait for producer to finish this photo
-			while results[index] == nil and not producerDone and not progressScope:isCanceled() do
+			while results[index] == nil
+				and not producerDone
+				and not progressScope:isCanceled()
+				and not operationInterrupted
+			do
 				LrTasks.sleep(0.1)
 			end
 
-			if progressScope:isCanceled() then break end
+			if progressScope:isCanceled() or operationInterrupted then break end
 
 			local res = results[index]
 			if not res then break end
@@ -830,13 +910,15 @@ function AiEditAction.run()
 								if not editCollection then
 									editCollection, editCollectionName = createEditCollection(catalog)
 								end
-								editPhoto = createVirtualCopy(catalog, photo)
+								local inheritedCollections
+								editPhoto, inheritedCollections = createVirtualCopy(catalog, photo)
 								applyOptions.appliedToVirtualCopy = true
 								local okCopyName, copyName = LrTasks.pcall(function()
 									return editPhoto:getFormattedMetadata("copyName")
 								end)
 								if okCopyName then applyOptions.appliedCopyName = copyName end
 								table.insert(editCopies, editPhoto)
+								inheritedCollectionsByCopy[editPhoto] = inheritedCollections or {}
 							end
 							return DevelopEditManager.applyRecipe(editPhoto, response, applyOptions)
 						end)
@@ -940,12 +1022,20 @@ function AiEditAction.run()
 			LrTasks.yield()
 			LrTasks.sleep(0.05)
 		end
-		if producerFailed then
+		if producerFailed or operationInterrupted then
 			-- A producer exception can stop the consumer before any photo result is
 			-- available. Account for every photo that never reached a terminal UI
-			-- outcome so a pipeline crash cannot be reported as a successful 0-edit run.
+			-- outcome so an interrupted pipeline cannot be reported as successful.
 			local unaccounted = #photos - successCount - skippedCount - errorCount
 			if unaccounted > 0 then errorCount = errorCount + unaccounted end
+		end
+		if operationInterrupted then
+			table.insert(
+				errorMessages,
+				1,
+				operationInterruptReason
+					or operationInterruptedMessage
+			)
 		end
 		if editCollection and #editCopies > 0 then
 			-- Finish grouping any copies already created even when the user canceled
@@ -959,6 +1049,15 @@ function AiEditAction.run()
 					LOC("$$$/StyleAI/TaskAiEditPhotos/AddEditsToCollection=Add StyleAI edits to collection"),
 					function()
 						editCollection:addPhotos(editCopies)
+						for _, editCopy in ipairs(editCopies) do
+							for _, inheritedCollection in ipairs(inheritedCollectionsByCopy[editCopy] or {}) do
+								local sameAsDestination = inheritedCollection:type() == "LrCollection"
+									and inheritedCollection.localIdentifier == editCollection.localIdentifier
+								if not sameAsDestination then
+									inheritedCollection:removePhotos({ editCopy })
+								end
+							end
+						end
 					end,
 					Defaults.catalogWriteAccessOptions
 				)
@@ -978,6 +1077,7 @@ function AiEditAction.run()
 			-- request but before their Lightroom handoff could run.
 			SearchIndexAPI.cancelOperation(operationId)
 		end
+		heartbeatStop = true
 		SearchIndexAPI.completeOperation(operationId)
 
 		progressScope:done()

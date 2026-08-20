@@ -20,6 +20,9 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.keepChecksRunning = true
 	propertyTable.periodicalUpdateCheck = prefs.periodicalUpdateCheck == true
 	propertyTable.processingLoadMode = processingLoadMode(prefs.indexingPerformanceProfile)
+	propertyTable.activeMetadataProvider = prefs.activeMetadataProvider or Defaults.defaultMetadataProvider
+	propertyTable.axEngineModelRoot = prefs.axEngineModelRoot or "/Volumes/Thunderbolt/Models"
+	propertyTable.metadataProviderStatus = LOC("$$$/StyleAI/common/Checking=Checking...")
 
 	propertyTable.captureLlmInputs = prefs.captureLlmInputs == true
 	propertyTable.captureLlmInputsPath = prefs.captureLlmInputsPath or ""
@@ -133,6 +136,32 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.serviceRepairing = false
 	propertyTable.serviceRepairStatus = ""
 
+	local function providerDisplayName(provider)
+		if provider == "disabled" then return LOC("$$$/StyleAI/PluginInfo/ProviderDisabled=Disabled") end
+		if provider == "ollama" then return LOC("$$$/StyleAI/PluginInfo/ProviderOllama=Ollama") end
+		if provider == "lmstudio" then return LOC("$$$/StyleAI/PluginInfo/ProviderLmStudio=LM Studio") end
+		if provider == "axengine" then return LOC("$$$/StyleAI/PluginInfo/ProviderAxEngine=AX Engine") end
+		return tostring(provider or "")
+	end
+
+	local function syncMetadataProvider(provider)
+		propertyTable.metadataProviderStatus = LOC("$$$/StyleAI/PluginInfo/ProviderApplying=Applying provider selection...")
+		LrTasks.startAsyncTask(function()
+			local ok, result = SearchIndexAPI.setActiveMetadataProvider(provider)
+			if ok then
+				propertyTable.metadataProviderStatus = provider == "disabled"
+					and LOC("$$$/StyleAI/PluginInfo/ProviderOff=Local metadata generation is disabled.")
+					or LOC("$$$/StyleAI/PluginInfo/ProviderSelected=^1 is the active metadata API.", providerDisplayName(provider))
+			else
+				propertyTable.metadataProviderStatus = LOC("$$$/StyleAI/PluginInfo/ProviderApplyFailed=Could not activate ^1: ^2", providerDisplayName(provider), tostring(result))
+			end
+		end)
+	end
+	propertyTable:addObserver("activeMetadataProvider", function(_, _, provider)
+		if provider then syncMetadataProvider(provider) end
+	end)
+	syncMetadataProvider(propertyTable.activeMetadataProvider)
+
 	local function updateHealth()
 		LrTasks.startAsyncTask(function()
 			local health = SearchIndexAPI.getDetailedHealth() or {}
@@ -147,9 +176,13 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 			propertyTable.visionStatusText = health.clip
 				and LOC("$$$/StyleAI/Health/VisionReady=Ready — vision model is installed.")
 				or LOC("$$$/StyleAI/Health/VisionUnavailable=Unavailable — vision model setup is required.")
-			propertyTable.metadataStatusText = (health.ollama or health.lmstudio)
-				and LOC("$$$/StyleAI/Health/MetadataReady=Ready — a local metadata model provider is available.")
-				or LOC("$$$/StyleAI/Health/MetadataOptional=Optional — no local metadata model provider is configured.")
+			local activeProvider = propertyTable.activeMetadataProvider
+			local providerReady = activeProvider ~= "disabled" and health[activeProvider] == true
+			propertyTable.metadataStatusText = activeProvider == "disabled"
+				and LOC("$$$/StyleAI/Health/MetadataDisabled=Disabled — local metadata generation is off.")
+				or (providerReady
+					and LOC("$$$/StyleAI/Health/MetadataProviderReady=Ready — ^1 is available.", providerDisplayName(activeProvider))
+					or LOC("$$$/StyleAI/Health/MetadataProviderUnavailable=Unavailable — ^1 is not ready.", providerDisplayName(activeProvider)))
 
 			if not health.backend then
 				status = "critical"
@@ -161,7 +194,7 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 				color = { 0.8, 0, 0 }
 				table.insert(issues, LOC("$$$/StyleAI/Health/ClipMissing=Vision model is not ready."))
 			end
-			if not health.ollama and not health.lmstudio then
+			if activeProvider ~= "disabled" and not providerReady then
 				if status ~= "critical" then
 					status = "warning"
 					color = { 0.1, 0.5, 0.8 }
@@ -255,6 +288,32 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					label = LOC("$$$/StyleAI/Health/ServiceLabel=Background service:"),
 					labelWidth = share("healthLabelWidth"),
 					title = bind("backendStatusText"),
+				}),
+				UIFactory.FormRow(f, {
+					label = LOC("$$$/StyleAI/PluginInfo/LocalMetadataApi=Local metadata API:"),
+					labelWidth = share("healthLabelWidth"),
+					f:popup_menu({
+						value = bind("activeMetadataProvider"),
+						items = Defaults.metadataProviderItems,
+						width = 220,
+					}),
+				}),
+				UIFactory.HelpText(f, {
+					title = LOC("$$$/StyleAI/PluginInfo/LocalMetadataApiHelp=Choose one local API provider. Tagging and benchmark model lists will show models from this provider only."),
+				}),
+				UIFactory.HelpText(f, { title = bind("metadataProviderStatus") }),
+				UIFactory.FormRow(f, {
+					visible = bind({ key = "activeMetadataProvider", transform = function(value) return value == "axengine" end }),
+					label = LOC("$$$/StyleAI/PluginInfo/AxModelRoot=AX model folder:"),
+					labelWidth = share("healthLabelWidth"),
+					f:edit_field({
+						value = bind("axEngineModelRoot"),
+						width = 520,
+					}),
+				}),
+				UIFactory.HelpText(f, {
+					visible = bind({ key = "activeMetadataProvider", transform = function(value) return value == "axengine" end }),
+					title = LOC("$$$/StyleAI/PluginInfo/AxModelRootHelp=StyleAI discovers AX-native MLX vision models in this folder and launches AX Engine only when a selected model is needed."),
 				}),
 				UIFactory.StatusRow(f, {
 					label = LOC("$$$/StyleAI/Health/VisionLabel=Vision model:"),
@@ -612,6 +671,8 @@ function PluginInfoDialogSections.endDialog(propertyTable)
 	prefs.periodicalUpdateCheck = propertyTable.periodicalUpdateCheck == true
 	prefs.captureLlmInputs = propertyTable.captureLlmInputs == true
 	prefs.captureLlmInputsPath = propertyTable.captureLlmInputsPath
+	prefs.activeMetadataProvider = propertyTable.activeMetadataProvider or Defaults.defaultMetadataProvider
+	prefs.axEngineModelRoot = propertyTable.axEngineModelRoot
 	propertyTable.keepChecksRunning = false
 end
 

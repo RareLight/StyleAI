@@ -238,6 +238,10 @@ LMSTUDIO_HOST = "localhost:1234"
 LMSTUDIO_CONTEXT_LENGTH = _positive_env_int("STYLEAI_LMSTUDIO_CONTEXT_LENGTH", 8192)
 LMSTUDIO_IDLE_TTL_SECONDS = _positive_env_int("STYLEAI_LMSTUDIO_IDLE_TTL", 600)
 OLLAMA_BASE_URL = "http://localhost:11434"
+AX_ENGINE_BASE_URL = "http://127.0.0.1:31418"
+AX_ENGINE_MODEL_ROOT = os.environ.get(
+    "STYLEAI_AX_ENGINE_MODEL_ROOT", "/Volumes/Thunderbolt/Models"
+)
 
 
 # --- Logger Setup ---

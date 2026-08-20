@@ -149,6 +149,170 @@ editing state.
 - [x] Run `python sync_translations.py` and confirm no unsynchronized resources.
 - [x] Build both disposable packages and inspect their manifests.
 
+## Planned MTP-aware speculative benchmarking
+
+### Discovery and capability model
+
+- [x] Replace the single undifferentiated draft-candidate list with explicit
+      `full_draft`, `mtp_integrated`, and `mtp_sidecar` kinds plus an explicit
+      `unknown` capability state. Treat filename matching only as a conservative
+      classification hint, never as proof of compatibility.
+- [x] Preserve LM Studio's stable model key, runtime/engine, distribution
+      format, architecture, vocabulary/tokenizer identity, repository,
+      revision, quantization, and any native speculative-decoding capability
+      fields returned by the installed LM Studio SDK or native API.
+- [x] Prefer a live LM Studio compatibility/capability result over StyleAI's
+      heuristics. Do not maintain a hard-coded model-family allowlist as the
+      source of truth.
+- [x] Represent capability as `supported`, `unsupported`, or `unknown`, with a
+      short machine-readable reason and user-facing explanation. Fail closed
+      when a pairing is known to be invalid; permit an explicit warm-up probe
+      only when capability is unknown.
+- [x] Never present a standalone `mtp-*` sidecar as an ordinary full drafting
+      model. Recognize an integrated MTP GGUF as one target model with embedded
+      NextN/MTP tensors rather than as a target-plus-draft pairing.
+- [x] Keep MLX and GGUF candidates separate. Reject cross-runtime and
+      cross-format pairings before a benchmark starts.
+
+### Benchmark user interface
+
+- [x] Keep explicit **Full draft model** selection separate from automatic
+      integrated MTP. An integrated-MTP GGUF runs as one target configuration;
+      it is not a selectable draft mode and receives no prediction override.
+- [x] Do not offer a synthetic MTP-off comparison unless LM Studio exposes a
+      reliable disable control. Never ask the user to select a separate MTP file
+      for a self-contained integrated GGUF.
+- [x] Keep sidecar MTP artifacts unavailable unless LM Studio reports that the
+      exact target/runtime can load them through its MTP path. The current SDK
+      exposes no such pairing, so report their hidden count and concise reason
+      instead of silently omitting or enabling them.
+- [x] Include format, quantization, publisher/repository, and architecture in
+      pairing labels while keeping the image counter visible in progress text.
+- [x] Apply **Also run a baseline** only to explicit full-draft comparisons.
+      Do not label an automatically accelerated integrated target as baseline.
+- [x] Add preflight errors for cross-format pairs, target=self draft selection,
+      MTP sidecars selected as full drafts, incompatible vocabulary, and absent
+      draft-token activity for explicit full drafts.
+
+### Runtime execution and verification
+
+- [x] Add a provider preflight operation that loads or inspects the exact model
+      configuration without processing the benchmark photo set, then reports
+      the effective speculation mode and compatibility evidence.
+- [x] For integrated MTP, issue ordinary inference and let LM Studio activate
+      the embedded head automatically at model load. Do not require or mutate a
+      saved speculative setting.
+- [x] Remove the current behavior that first submits an MTP sidecar through the
+      prediction-time `draftModel` setting merely to discover a capability-gap
+      error.
+- [x] Treat missing draft-token activity as an error only for an explicitly
+      selected full draft. For automatic integrated MTP, record
+      `runtime_managed_unreported`, retain the successful metadata result, and
+      leave effective mode/request activity `unknown` rather than claiming MTP.
+- [x] Record requested mode, effective mode, target identity, draft/sidecar
+      identity when applicable, runtime version, load parameters, draft depth,
+      proposed/accepted/rejected token counts, acceptance rate, and fallback
+      reason in the manifest and per-result records.
+- [x] Keep baseline and speculative image bytes, prompt, sampling parameters,
+      context, output schema, and model quantization identical. Record SDK model
+      lookup/load time separately; user-performed unload/reload happens before
+      the run and is explicitly outside benchmark inference timing.
+- [x] Begin MTP validation with conservative runtime defaults. Benchmark draft
+      depth and probability thresholds only as separately labelled performance
+      experiments, not as hidden defaults.
+
+### Tests and documentation
+
+- [x] Add discovery fixtures for an ordinary full draft, integrated MTP GGUF,
+      matching MTP sidecar, misleading `mtp` name, MLX model, and incompatible
+      cross-format pair.
+- [x] Add provider tests for capability-supported, unsupported, unknown,
+      load-time-only, no-draft-activity, and speculative-batch-failure results.
+- [x] Add Lua UI contract tests proving MTP artifacts cannot appear in the full
+      draft selector and incompatible choices cannot be submitted.
+- [x] Add report-schema tests for the effective speculation mode and runtime
+      evidence while preserving old non-speculative report readability.
+- [x] Classify vision-sidecar load failures, rejected integrated-MTP tensors,
+      speculative-batch failures, and generic runtime load failures in CSV and
+      JSONL output.
+- [x] Document the distinction between full-model drafting, integrated MTP, and
+      MTP sidecars in the developer guide, including LM Studio/runtime version
+      dependence and the text-first then vision warm-up procedure.
+- [ ] Validate with a runtime-confirmed Qwen 3.5/3.6 MTP model, a Gemma 4 model
+      only after its installed LM Studio runtime advertises compatibility, and
+      one deliberately unsupported MTP artifact.
+
+## August 2026 external benchmark-review backlog
+
+The external review was prepared without repository access. The items below
+reconcile its useful recommendations with the implementation above; they are a
+backlog, not instructions to bypass StyleAI's local-only/provider boundaries.
+
+### Completed or already covered
+
+- [x] Keep requested speculation, effective speculation, request-level vision
+      presence, and request-level verified/unknown speculation activity distinct.
+      Automatic MTP without telemetry is successful but never reported as active.
+- [x] Persist requested/used draft identity, configuration, load context,
+      accepted/rejected/ignored draft counters, acceptance rate, SDK version,
+      verification status, fallback reason, and classified failures where LM
+      Studio exposes them.
+- [x] Preserve identical prepared proxy bytes per photo/model within a run and
+      record hashes, dimensions, byte counts, deterministic order, prompt,
+      output contract, sampling overrides, concurrency, and warm-up policy.
+- [x] Report photo-level throughput with explicit units: photos/minute,
+      images/second, seconds/image, photos/hour, and projected hours for 1,000
+      and 10,000 photos. Keep tokens/second labelled as backend-specific.
+- [x] Report mean, median, p90, p95, standard deviation, coefficient of
+      variation, completion rate, warm-up timing, and total item timing.
+- [x] Add per-result and aggregate automated contract metrics for structured
+      response success, requested-field presence, the 12-keyword limit, exact
+      normalized duplicates, forbidden placeholders, caption/alt-text word
+      counts, and excessive lexical overlap. Keep these separate from human
+      visual-quality judgments.
+- [x] Record proxy mismatches instead of silently treating changed inputs as
+      comparable.
+
+### Next coherent implementation slices
+
+- [ ] Add a durable, privacy-preserving `reviews.jsonl` (or equivalent) plus a
+      report review UI for per-photo/model correctness, specificity, search
+      usefulness, alt-text quality, hallucination severity, optional preference,
+      and notes. Preserve blinded labels and never mix human scores with contract
+      metrics. The current manifest only reserves this schema; no score-writing
+      path exists.
+- [ ] Add repeat-trial definitions, deterministic alternating/randomized model
+      order with a recorded seed, and warnings for small samples, reloads,
+      incomplete warm-up, background concurrency, and possible thermal drift.
+- [ ] Add a cross-report comparator that admits rows only when model artifact,
+      prompt/settings/output contract, source photo ID, proxy hash, and proxy
+      dimensions match. Report exact match, normalized keyword-set overlap,
+      lexical field stability, output-length variation, and latency variation as
+      consistency—not semantic correctness.
+- [ ] Add paired baseline-versus-full-draft deltas only for configurations with
+      the same base artifact and comparable inputs/settings. Do not synthesize an
+      MTP-off trial for integrated GGUFs until LM Studio exposes a reliable disable
+      control, and do not claim speedup without a valid paired baseline.
+- [ ] Preserve more provider-supplied identity fields when reliable: exact local
+      artifact/revision, dense versus MoE, total/active parameters, projector or
+      vision-sidecar identity, backend/runtime version, flash-attention state,
+      package size, and expert settings. Mark unavailable fields unknown; do not
+      infer them from marketing names.
+- [ ] Add an explainable Pareto comparison using completion, photo throughput,
+      latency distribution, human quality, consistency, contract compliance, and
+      model size. Do not collapse these into an opaque universal score.
+- [ ] Add optional user-specified library-size projections without changing the
+      fixed benchmark workload.
+
+### Explicitly deferred or constrained
+
+- [ ] Record additional phase timings only when Ollama or LM Studio supplies
+      reliable measurements. Never manufacture vision-prefill, queue, upload,
+      prefill, or decode phases by subtraction without an `estimated` label.
+- [ ] Treat the suggested model matrix as a manual experiment proposal. StyleAI
+      will not download models, alter LM Studio, or start long benchmarks without
+      explicit user action.
+
 ## Required human validation
 
 - [ ] Select a compatible LM Studio draft for one vision model, leave paired
@@ -159,11 +323,25 @@ editing state.
       measured photos are marked skipped without repeated inference attempts.
 - [ ] Confirm LM Studio saved speculative defaults are disabled and the report
       does not identify a draft model as used for a baseline row.
-- [ ] For an engine-protocol/MTP pair, save the draft in the main model's LM
-      Studio load settings, reload the main model, and confirm warm-up switches
-      to `saved_load_time`, reports draft-token activity, and does not schedule
-      a misleading paired baseline. Run the clean baseline separately with the
-      saved speculation setting disabled and the main model reloaded.
+- [ ] Select a self-contained integrated-MTP GGUF and confirm the report records
+      `automatic_model_load` without sending a draft override or requiring draft
+      counters. Confirm no misleading paired baseline is scheduled.
+
+## Optional direct MLX fallback
+
+- [x] Assess the public `mlx-vlm` Python API for local model loading, images,
+      prompt templates, generation, and speculative drafters.
+- [x] Reject imports from LM Studio's private versioned backend directories;
+      they are not a stable StyleAI dependency surface.
+- [ ] Add `mlx-vlm` as a macOS/Apple-Silicon-only managed dependency after the
+      release packaging and lockfile are restored and validated.
+- [ ] Implement it as an explicitly selected local provider in a terminable
+      worker process with one-model caching, bounded local paths, cancellation,
+      memory cleanup, structured-output normalization, and the existing global
+      accelerator/local-LLM admission claim.
+- [ ] Add compatibility probes and end-to-end tests before offering an explicit
+      “Retry with MLX-VLM” action. Never fail over automatically after LM Studio
+      has partially loaded a model, because that can double accelerator memory.
 - [ ] From **Help > Plug-in Extras**, choose a mixed 24–32 photo set and verify the
       uniquely named collection contains exactly the frozen selection without
       becoming Lightroom's active source.

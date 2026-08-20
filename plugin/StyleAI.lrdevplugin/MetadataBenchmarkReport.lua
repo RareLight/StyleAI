@@ -1,5 +1,5 @@
 local Report = {}
-Report.IMPLEMENTATION_VERSION = 5
+Report.IMPLEMENTATION_VERSION = 8
 
 local function roundTo(value, decimalPlaces)
 	local factor = 10 ^ (decimalPlaces or 0)
@@ -173,10 +173,18 @@ local function percentile(values, fraction)
 	return sorted[index]
 end
 
+local function mergeEvidence(current, value)
+	if value == nil then return current end
+	if current == nil then return value end
+	if current == value then return current end
+	return "mixed"
+end
+
 local function modelKey(result)
 	local key = tostring(result.provider or "") .. "::" .. tostring(result.model or "")
 	if result.benchmark_variant == "speculative" then
-		return key .. "::draft::" .. tostring(result.draft_model_requested or (result.inference or {}).used_draft_model or "unknown")
+		return key .. "::" .. tostring(result.speculation_mode or "full_draft") .. "::"
+			.. tostring(result.draft_model_requested or (result.inference or {}).used_draft_model or "integrated")
 	end
 	return key .. "::baseline"
 end
@@ -280,20 +288,28 @@ end
 local function writeComparison(self)
 	local rows = {
 		table.concat({
-			"photo_id", "source_photo_id", "filename", "provider", "model", "benchmark_variant", "draft_model_requested", "draft_model_used", "speculation_configuration", "status", "warmup",
+			"photo_id", "source_photo_id", "filename", "provider", "model", "benchmark_variant", "requested_speculation_mode", "effective_speculation_mode", "vision_input_present", "speculation_active_for_vision_request", "verification_status", "fallback_reason", "failure_stage", "failure_category", "failure_reason", "draft_depth", "lmstudio_sdk_version", "load_context_length", "draft_model_requested", "draft_model_used", "speculation_configuration", "status", "warmup",
 			"keywords", "title", "caption", "alt_text", "error", "warning",
 			"retry_count", "input_tokens", "output_tokens", "total_ms",
 			"inference_ms", "tokens_per_second", "total_draft_tokens", "accepted_draft_tokens", "rejected_draft_tokens", "ignored_draft_tokens", "draft_acceptance_rate", "proxy_sha256", "proxy_bytes",
+			"structured_output_valid", "all_requested_fields_present", "keyword_count", "distinct_keyword_count", "keyword_limit_compliant", "duplicate_keyword_count", "forbidden_placeholder_count", "caption_word_count", "alt_text_word_count", "caption_alt_text_lexical_overlap", "caption_alt_text_excessive_overlap",
 		}, ","),
 	}
 	for _, result in ipairs(self.results) do
 		local timing = result.timing or {}
 		local proxy = result.proxy or {}
 		local inference = result.inference or {}
+		local contract = result.contract_metrics or {}
 		local keywords = table.concat(flattenKeywords(result.keywords), "; ")
 		local values = {
 			result.photo_id, result.source_photo_id, result.filename, result.provider, result.model,
-			result.benchmark_variant, result.draft_model_requested, inference.used_draft_model, inference.speculation_configuration, result.status,
+			result.benchmark_variant, inference.requested_speculation_mode or result.speculation_mode,
+			inference.effective_speculation_mode, inference.vision_input_present,
+			inference.speculation_active_for_vision_request, inference.verification_status,
+			inference.fallback_reason, inference.failure_stage,
+			inference.failure_category, inference.failure_reason, inference.draft_depth,
+			inference.lmstudio_sdk_version, (inference.load_config or {}).context_length,
+			result.draft_model_requested, inference.used_draft_model, inference.speculation_configuration, result.status,
 			result.warmup == true, keywords, result.title, result.caption, result.alt_text,
 			result.error, result.warning, result.retry_count, result.input_tokens,
 			result.output_tokens, timing.benchmark_item_total_ms,
@@ -301,6 +317,12 @@ local function writeComparison(self)
 			inference.accepted_draft_tokens, inference.rejected_draft_tokens,
 			inference.ignored_draft_tokens, inference.draft_acceptance_rate,
 			proxy.sha256, proxy.byte_count,
+			contract.structured_output_valid, contract.all_requested_fields_present,
+			contract.keyword_count, contract.distinct_keyword_count,
+			contract.keyword_limit_compliant, contract.duplicate_keyword_count,
+			contract.forbidden_placeholder_count, contract.caption_word_count,
+			contract.alt_text_word_count, contract.caption_alt_text_lexical_overlap,
+			contract.caption_alt_text_excessive_overlap,
 		}
 		local encoded = {}
 		for i, value in ipairs(values) do encoded[i] = csvCell(value) end
@@ -317,6 +339,7 @@ local function summarize(self)
 			provider = result.provider,
 			model = result.model,
 			benchmark_variant = result.benchmark_variant or "baseline",
+			speculation_mode = result.speculation_mode or "baseline",
 			draft_model = result.draft_model_requested,
 			success = 0,
 			failed = 0,
@@ -327,14 +350,46 @@ local function summarize(self)
 			totalDraftTokens = 0,
 			acceptedDraftTokens = 0,
 			speculationConfiguration = nil,
+			verificationStatus = nil,
+			effectiveSpeculationMode = nil,
+			visionInputPresent = nil,
+			speculationActiveForVisionRequest = nil,
+			fallbackReason = nil,
+			failureStage = nil,
+			failureCategory = nil,
+			failureReason = nil,
+			lmstudioSdkVersion = nil,
 			warmup_ms = nil,
 			warmup_status = nil,
+			contractCount = 0,
+			structuredOutputValid = 0,
+			allRequestedFieldsPresent = 0,
+			keywordLimitCompliant = 0,
+			keywordTotal = 0,
+			duplicateKeywordCount = 0,
+			forbiddenPlaceholderCount = 0,
+			excessiveOverlapCount = 0,
 		}
 		local group = groups[key]
+		local inference = result.inference or {}
+		group.failureStage = group.failureStage or inference.failure_stage
+		group.failureCategory = group.failureCategory or inference.failure_category
+		group.failureReason = group.failureReason or inference.failure_reason
 		if result.warmup == true then
 			group.warmup_status = result.status
 			group.warmup_ms = tonumber((result.timing or {}).benchmark_item_total_ms)
 		else
+			local contract = result.contract_metrics or {}
+			if next(contract) ~= nil then
+				group.contractCount = group.contractCount + 1
+				if contract.structured_output_valid == true then group.structuredOutputValid = group.structuredOutputValid + 1 end
+				if contract.all_requested_fields_present == true then group.allRequestedFieldsPresent = group.allRequestedFieldsPresent + 1 end
+				if contract.keyword_limit_compliant == true then group.keywordLimitCompliant = group.keywordLimitCompliant + 1 end
+				if contract.caption_alt_text_excessive_overlap == true then group.excessiveOverlapCount = group.excessiveOverlapCount + 1 end
+				group.keywordTotal = group.keywordTotal + (tonumber(contract.keyword_count) or 0)
+				group.duplicateKeywordCount = group.duplicateKeywordCount + (tonumber(contract.duplicate_keyword_count) or 0)
+				group.forbiddenPlaceholderCount = group.forbiddenPlaceholderCount + (tonumber(contract.forbidden_placeholder_count) or 0)
+			end
 			if result.status == "succeeded" then group.success = group.success + 1 else group.failed = group.failed + 1 end
 			local timing = result.timing or {}
 			if tonumber(timing.benchmark_item_total_ms) then table.insert(group.latencies, tonumber(timing.benchmark_item_total_ms)) end
@@ -343,8 +398,13 @@ local function summarize(self)
 			end
 			group.inputTokens = group.inputTokens + (tonumber(result.input_tokens) or 0)
 			group.outputTokens = group.outputTokens + (tonumber(result.output_tokens) or 0)
-			local inference = result.inference or {}
 			group.speculationConfiguration = group.speculationConfiguration or inference.speculation_configuration
+			group.verificationStatus = mergeEvidence(group.verificationStatus, inference.verification_status)
+			group.effectiveSpeculationMode = mergeEvidence(group.effectiveSpeculationMode, inference.effective_speculation_mode)
+			group.visionInputPresent = mergeEvidence(group.visionInputPresent, inference.vision_input_present)
+			group.speculationActiveForVisionRequest = mergeEvidence(group.speculationActiveForVisionRequest, inference.speculation_active_for_vision_request)
+			group.fallbackReason = group.fallbackReason or inference.fallback_reason
+			group.lmstudioSdkVersion = group.lmstudioSdkVersion or inference.lmstudio_sdk_version
 			group.totalDraftTokens = group.totalDraftTokens + (tonumber(inference.total_draft_tokens) or 0)
 			group.acceptedDraftTokens = group.acceptedDraftTokens + (tonumber(inference.accepted_draft_tokens) or 0)
 		end
@@ -354,21 +414,56 @@ local function summarize(self)
 		local total = 0
 		for _, value in ipairs(group.latencies) do total = total + value end
 		local count = #group.latencies
+		local mean = count > 0 and total / count or nil
+		local variance = 0
+		if mean then
+			for _, value in ipairs(group.latencies) do variance = variance + ((value - mean) ^ 2) end
+			variance = variance / count
+		end
+		local standardDeviation = mean and math.sqrt(variance) or nil
+		local photosPerMinute = total > 0 and count * 60000 / total or nil
+		local photosPerHour = photosPerMinute and photosPerMinute * 60 or nil
 		table.insert(summaries, {
 			model_key = key,
 			provider = group.provider,
 			model = group.model,
 			benchmark_variant = group.benchmark_variant,
 			draft_model = group.draft_model,
+			speculation_mode = group.speculation_mode,
 			speculation_configuration = group.speculationConfiguration,
+			verification_status = group.verificationStatus,
+			effective_speculation_mode = group.effectiveSpeculationMode,
+			vision_input_present = group.visionInputPresent,
+			speculation_active_for_vision_request = group.speculationActiveForVisionRequest,
+			fallback_reason = group.fallbackReason,
+			failure_stage = group.failureStage,
+			failure_category = group.failureCategory,
+			failure_reason = group.failureReason,
+			lmstudio_sdk_version = group.lmstudioSdkVersion,
 			success_count = group.success,
 			failure_count = group.failed,
+			attempted_count = group.success + group.failed,
+			success_rate = (group.success + group.failed) > 0 and roundTo(group.success / (group.success + group.failed), 3) or nil,
 			total_ms = roundTo(total, 0),
-			mean_ms = count > 0 and roundTo(total / count, 0) or nil,
+			mean_ms = mean and roundTo(mean, 0) or nil,
 			median_ms = count > 0 and roundTo(percentile(group.latencies, 0.5), 0) or nil,
 			p90_ms = count > 0 and roundTo(percentile(group.latencies, 0.9), 0) or nil,
 			p95_ms = count > 0 and roundTo(percentile(group.latencies, 0.95), 0) or nil,
-			photos_per_minute = total > 0 and roundTo(count * 60000 / total, 1) or nil,
+			standard_deviation_ms = standardDeviation and roundTo(standardDeviation, 0) or nil,
+			coefficient_of_variation = standardDeviation and mean > 0 and roundTo(standardDeviation / mean, 3) or nil,
+			photos_per_minute = photosPerMinute and roundTo(photosPerMinute, 1) or nil,
+			images_per_second = photosPerMinute and roundTo(photosPerMinute / 60, 1) or nil,
+			seconds_per_image = mean and roundTo(mean / 1000, 1) or nil,
+			photos_per_hour = photosPerHour and roundTo(photosPerHour, 1) or nil,
+			projected_1000_photos_hours = photosPerHour and roundTo(1000 / photosPerHour, 1) or nil,
+			projected_10000_photos_hours = photosPerHour and roundTo(10000 / photosPerHour, 1) or nil,
+			structured_output_valid_rate = group.contractCount > 0 and roundTo(group.structuredOutputValid / group.contractCount, 3) or nil,
+			all_requested_fields_present_rate = group.contractCount > 0 and roundTo(group.allRequestedFieldsPresent / group.contractCount, 3) or nil,
+			keyword_limit_compliance_rate = group.contractCount > 0 and roundTo(group.keywordLimitCompliant / group.contractCount, 3) or nil,
+			mean_keyword_count = group.contractCount > 0 and roundTo(group.keywordTotal / group.contractCount, 1) or nil,
+			duplicate_keyword_count = group.duplicateKeywordCount,
+			forbidden_placeholder_count = group.forbiddenPlaceholderCount,
+			caption_alt_text_excessive_overlap_count = group.excessiveOverlapCount,
 			median_tokens_per_second = #group.tokensPerSecond > 0 and roundTo(percentile(group.tokensPerSecond, 0.5), 1) or nil,
 			input_tokens = group.inputTokens,
 			output_tokens = group.outputTokens,
@@ -385,8 +480,9 @@ end
 
 local function writeSummary(self, summaries)
 	local headers = {
-		"provider", "model", "benchmark_variant", "draft_model", "speculation_configuration", "success_count", "failure_count", "total_ms",
-		"mean_ms", "median_ms", "p90_ms", "p95_ms", "photos_per_minute",
+		"provider", "model", "benchmark_variant", "speculation_mode", "effective_speculation_mode", "vision_input_present", "speculation_active_for_vision_request", "draft_model", "speculation_configuration", "verification_status", "fallback_reason", "failure_stage", "failure_category", "failure_reason", "lmstudio_sdk_version", "success_count", "failure_count", "attempted_count", "success_rate", "total_ms",
+		"mean_ms", "median_ms", "p90_ms", "p95_ms", "standard_deviation_ms", "coefficient_of_variation", "photos_per_minute", "images_per_second", "seconds_per_image", "photos_per_hour", "projected_1000_photos_hours", "projected_10000_photos_hours",
+		"structured_output_valid_rate", "all_requested_fields_present_rate", "keyword_limit_compliance_rate", "mean_keyword_count", "duplicate_keyword_count", "forbidden_placeholder_count", "caption_alt_text_excessive_overlap_count",
 		"median_tokens_per_second", "input_tokens", "output_tokens", "draft_acceptance_rate",
 		"total_draft_tokens", "accepted_draft_tokens", "warmup_ms", "warmup_status",
 	}
@@ -416,10 +512,10 @@ local function writeHtml(self, summaries)
 		"<style>body{font:15px system-ui;margin:2rem;color:#222}table{border-collapse:collapse;width:100%;margin:1rem 0}th,td{border:1px solid #bbb;padding:.5rem;text-align:left;vertical-align:top}th{background:#eee}.photo{margin-top:2.5rem}.error{color:#a00}code{white-space:pre-wrap}</style></head><body>",
 		"<h1>StyleAI LLM Metadata Benchmark</h1>",
 		"<p>Run state: <strong>" .. html(self.manifest.state) .. "</strong>; collection: " .. html(self.manifest.collection_name) .. ".</p>",
-		"<h2>Performance summary</h2><table><tr><th>Model configuration</th><th>Success</th><th>Failed</th><th>Median ms</th><th>P95 ms</th><th>Photos/min</th><th>Draft acceptance</th></tr>",
+		"<h2>Performance summary</h2><p>End-to-end photo rates are comparable across backends. Token throughput is backend-specific and is retained in the CSV. Contract checks measure format and output discipline, not visual correctness.</p><table><tr><th>Model configuration</th><th>Success</th><th>Failed</th><th>Median ms</th><th>P95 ms</th><th>Seconds/image</th><th>Photos/min</th><th>Photos/hour</th><th>Keyword limit compliance</th><th>MTP active on vision request</th><th>Draft acceptance</th></tr>",
 	}
 	for _, summary in ipairs(summaries) do
-		table.insert(parts, "<tr><td>" .. html(summary.model_key) .. "</td><td>" .. html(summary.success_count) .. "</td><td>" .. html(summary.failure_count) .. "</td><td>" .. html(summary.median_ms) .. "</td><td>" .. html(summary.p95_ms) .. "</td><td>" .. html(summary.photos_per_minute) .. "</td><td>" .. html(summary.draft_acceptance_rate) .. "</td></tr>")
+		table.insert(parts, "<tr><td>" .. html(summary.model_key) .. "</td><td>" .. html(summary.success_count) .. "</td><td>" .. html(summary.failure_count) .. "</td><td>" .. html(summary.median_ms) .. "</td><td>" .. html(summary.p95_ms) .. "</td><td>" .. html(summary.seconds_per_image) .. "</td><td>" .. html(summary.photos_per_minute) .. "</td><td>" .. html(summary.photos_per_hour) .. "</td><td>" .. html(summary.keyword_limit_compliance_rate) .. "</td><td>" .. html(summary.speculation_active_for_vision_request) .. "</td><td>" .. html(summary.draft_acceptance_rate) .. "</td></tr>")
 	end
 	table.insert(parts, "</table><h2>Outputs by photo</h2>")
 	for _, photoId in ipairs(photoOrder) do

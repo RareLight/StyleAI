@@ -123,6 +123,10 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
     assert 'props:addObserver("warmup", updateRequestEstimate)' in source
     assert "A representative set of 24–32 photos is recommended" in source
     assert 'METADATA_BENCHMARK = "/metadata_benchmark/run_batch"' in api_source
+    assert (
+        'METADATA_BENCHMARK_PREFLIGHT = "/metadata_benchmark/preflight"' in api_source
+    )
+    assert "function SearchIndexAPI.preflightMetadataBenchmark(model)" in api_source
     assert "source_photo_id = item.source_photo_id" in api_source
     assert 'WorkCoordinator.acquire("request")' in api_source
     for filename in (
@@ -136,11 +140,27 @@ def test_metadata_benchmark_freezes_selection_and_never_uses_indexing_path():
     assert "proxy_consistency" in report_source
     assert "proxy_mismatches" in report_source
     assert "os.rename" not in report_source
-    assert "Report.IMPLEMENTATION_VERSION = 5" in report_source
+    assert "Report.IMPLEMENTATION_VERSION = 8" in report_source
     assert "draft_model_requested" in report_source
     assert "draft_acceptance_rate" in report_source
+    assert "effective_speculation_mode" in report_source
+    assert "verification_status" in report_source
+    assert "lmstudio_sdk_version" in report_source
+    assert "failure_category" in report_source
+    assert 'speculative.speculation_mode = "automatic_mtp"' in source
+    assert 'local MTP_SELECTION = "__styleai_integrated_mtp__"' not in source
+    assert 'modelDetails.speculation_kind == "mtp_integrated"' in source
+    assert 'speculative.speculation_mode = "full_draft"' in source
+    assert 'draftDetails.speculation_kind ~= "mtp_sidecar"' in source
+    assert "SearchIndexAPI.preflightMetadataBenchmark(model)" in source
     assert "roundTimingValues" in report_source
-    assert "photos_per_minute = total > 0 and roundTo" in report_source
+    assert "photos_per_minute = photosPerMinute and roundTo" in report_source
+    assert '"images_per_second"' in report_source
+    assert '"seconds_per_image"' in report_source
+    assert '"photos_per_hour"' in report_source
+    assert '"projected_1000_photos_hours"' in report_source
+    assert '"keyword_limit_compliance_rate"' in report_source
+    assert '"speculation_active_for_vision_request"' in report_source
     assert "elapsed_ms = roundMilliseconds" in source
     assert 'sdkFunction(LrFileUtils, "LrFileUtils", "copy")' in report_source
     assert 'sdkFunction(LrFileUtils, "LrFileUtils", "delete")' in report_source

@@ -10,6 +10,7 @@ from flask import Blueprint, jsonify, request
 import config
 from config import STYLEAI_METADATA_CACHE_BYTES, logger
 from services import operations
+from services.metadata import get_analysis_service
 from services.metadata_benchmark import round_benchmark_timings, run_benchmark_batch
 from utils.request_parsing import _extract_options
 
@@ -20,6 +21,31 @@ MAX_BENCHMARK_BATCH = 12
 
 def _error(message: str, status: int):
     return jsonify({"results": None, "error": message, "warning": None}), status
+
+
+@metadata_benchmark_bp.route("/metadata_benchmark/preflight", methods=["POST"])
+def preflight_metadata_benchmark():
+    """Validate known speculation constraints without processing an image."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _error("request body must be a JSON object", 400)
+    provider_name = str(data.get("provider") or "").strip()
+    model = str(data.get("model") or "").strip()
+    mode = str(data.get("speculation_mode") or "baseline").strip().lower()
+    draft_model = str(data.get("draft_model") or "").strip() or None
+    if not provider_name or not model:
+        return _error("provider and model are required", 400)
+    service = get_analysis_service()
+    if provider_name != service.get_active_provider():
+        return _error(
+            f"benchmark provider does not match active provider: {service.get_active_provider()}",
+            409,
+        )
+    provider = service.providers.get(provider_name)
+    if provider is None or not provider.is_available():
+        return _error(f"benchmark provider is unavailable: {provider_name}", 400)
+    result = provider.preflight_speculation(model, mode, draft_model)
+    return jsonify(result)
 
 
 @metadata_benchmark_bp.route("/metadata_benchmark/run_batch", methods=["POST"])
@@ -50,14 +76,48 @@ def run_metadata_benchmark_batch():
         return _error("provider and model are required", 400)
     draft_model = str(options.get("draft_model") or "").strip() or None
     benchmark_variant = str(options.get("benchmark_variant") or "baseline").strip()
+    speculation_mode = (
+        str(
+            options.get("speculation_mode")
+            or ("full_draft" if benchmark_variant == "speculative" else "baseline")
+        )
+        .strip()
+        .lower()
+    )
+    options["speculation_mode"] = speculation_mode
     if draft_model and provider != "lmstudio":
         return _error("draft_model is supported only for LM Studio benchmarks", 400)
-    if benchmark_variant not in {"baseline", "speculative"}:
-        return _error("benchmark_variant must be baseline or speculative", 400)
-    if benchmark_variant == "speculative" and not draft_model:
-        return _error("speculative benchmark variants require draft_model", 400)
+    if benchmark_variant not in {"baseline", "speculative", "runtime_managed"}:
+        return _error(
+            "benchmark_variant must be baseline, speculative, or runtime_managed",
+            400,
+        )
+    if speculation_mode not in {
+        "baseline",
+        "full_draft",
+        "automatic_mtp",
+        "runtime_managed",
+    }:
+        return _error(
+            "speculation_mode must be baseline, full_draft, automatic_mtp, or runtime_managed",
+            400,
+        )
+    if benchmark_variant == "speculative" and speculation_mode == "baseline":
+        return _error("speculative benchmark variants require a speculation mode", 400)
     if benchmark_variant == "baseline" and draft_model:
         return _error("baseline benchmark variants cannot specify draft_model", 400)
+    if speculation_mode == "full_draft" and not draft_model:
+        return _error("speculative full_draft benchmarks require draft_model", 400)
+    if speculation_mode == "automatic_mtp" and draft_model:
+        return _error("automatic_mtp cannot specify draft_model", 400)
+    if benchmark_variant == "baseline" and speculation_mode != "baseline":
+        return _error("baseline benchmark variants cannot enable speculation", 400)
+    if benchmark_variant == "runtime_managed" and (
+        provider != "axengine" or speculation_mode != "runtime_managed" or draft_model
+    ):
+        return _error(
+            "runtime_managed benchmarks require AX Engine without a draft model", 400
+        )
     if not any(
         options.get(field)
         for field in (
@@ -68,6 +128,12 @@ def run_metadata_benchmark_batch():
         )
     ):
         return _error("at least one metadata output must be selected", 400)
+    service = get_analysis_service()
+    if provider != service.get_active_provider():
+        return _error(
+            f"benchmark provider does not match active provider: {service.get_active_provider()}",
+            409,
+        )
 
     job_id = str(data.get("job_id") or "").strip() or None
     cancel_signal = None

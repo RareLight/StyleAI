@@ -20,6 +20,7 @@ def stub_providers(mocker):
     for name in (
         "OllamaProvider",
         "LMStudioProvider",
+        "AXEngineProvider",
     ):
         mock_cls = mocker.MagicMock(name=name)
         mock_instance = mock_cls.return_value
@@ -27,6 +28,7 @@ def stub_providers(mocker):
         mock_instance.list_available_models.return_value = []
         mock_instance.list_available_model_details.return_value = []
         mock_instance.list_available_draft_model_details.return_value = []
+        mock_instance.list_unavailable_speculation_details.return_value = []
         mock_instance.generate_metadata.return_value = MetadataGenerationResponse(
             uuid="stub", success=True, keywords={}, caption=None
         )
@@ -43,12 +45,13 @@ def service(stub_providers):
 
 
 def test_constructor_registers_all_providers(service):
-    assert set(service.providers.keys()) == {"ollama", "lmstudio"}
-    for name in ("ollama", "lmstudio"):
+    assert set(service.providers.keys()) == {"ollama", "lmstudio", "axengine"}
+    for name in ("ollama", "lmstudio", "axengine"):
         assert service.provider_status[name] == "available"
 
 
 def test_available_models_returns_normalized_descriptors(service):
+    service.set_active_provider("lmstudio")
     service.providers["lmstudio"].list_available_model_details.return_value = [
         {
             "key": "publisher/model@q4_k_m",
@@ -69,6 +72,7 @@ def test_available_models_returns_normalized_descriptors(service):
 
 
 def test_available_draft_models_are_separate_from_vision_choices(service):
+    service.set_active_provider("lmstudio")
     service.providers["lmstudio"].list_available_draft_model_details.return_value = [
         {"key": "publisher/model-draft@q4", "vision": False}
     ]
@@ -84,11 +88,26 @@ def test_available_draft_models_are_separate_from_vision_choices(service):
     ]
 
 
+def test_unavailable_speculation_artifacts_preserve_reason(service):
+    service.set_active_provider("lmstudio")
+    service.providers["lmstudio"].list_unavailable_speculation_details.return_value = [
+        {
+            "key": "publisher/model/mtp-model.gguf",
+            "speculation_kind": "mtp_sidecar",
+            "speculation_reason": "sidecar_pairing_not_exposed_by_lmstudio_sdk",
+        }
+    ]
+
+    unavailable = service.get_unavailable_speculation_models()
+
+    assert unavailable["lmstudio"][0]["speculation_kind"] == "mtp_sidecar"
+
+
 def test_constructor_marks_failing_provider_as_failed(mocker):
     mocker.patch(
         "services.metadata.OllamaProvider", side_effect=RuntimeError("ollama dead")
     )
-    for name in ("LMStudioProvider",):
+    for name in ("LMStudioProvider", "AXEngineProvider"):
         mock_cls = mocker.MagicMock()
         mock_cls.return_value.is_available.return_value = True
         mocker.patch(f"services.metadata.{name}", mock_cls)
@@ -100,7 +119,7 @@ def test_constructor_marks_failing_provider_as_failed(mocker):
     assert svc.provider_status["ollama"] == "failed"
     assert "ollama dead" in svc.provider_errors["ollama"]
     # Other providers still register
-    assert {"lmstudio"}.issubset(svc.providers.keys())
+    assert {"lmstudio", "axengine"}.issubset(svc.providers.keys())
 
 
 def test_analyze_batch_no_op_returns_none_pair(service):
@@ -165,8 +184,7 @@ def test_analyze_batch_default_compute_embeddings_true(service):
     assert metadata is None
 
 
-def test_generate_metadata_single_falls_back_to_first_provider(service):
-    # Request a provider that isn't registered → falls back to the first one.
+def test_generate_metadata_single_rejects_provider_mismatch(service):
     response = service.generate_metadata_single(
         "uuid-x",
         _jpeg_bytes(),
@@ -183,10 +201,60 @@ def test_generate_metadata_single_falls_back_to_first_provider(service):
             "submit_folder_names": False,
         },
     )
-    assert response.success is True
-    # warning_msg about fallback should be set
-    assert response.warning is not None
-    assert "fallback" in response.warning.lower()
+    assert response.success is False
+    assert "provider mismatch" in response.error.lower()
+
+
+def test_generate_metadata_single_does_not_fallback_when_active_unavailable(service):
+    service.set_active_provider("axengine")
+    del service.providers["axengine"]
+    response = service.generate_metadata_single(
+        "uuid-x",
+        _jpeg_bytes(),
+        {
+            "provider": "axengine",
+            "model": "any",
+            "generate_keywords": True,
+            "generate_caption": False,
+            "generate_title": False,
+            "generate_alt_text": False,
+            "language": "en",
+            "temperature": 0.2,
+            "submit_keywords": False,
+            "submit_folder_names": False,
+        },
+    )
+    assert response.success is False
+    assert "active metadata provider is unavailable: axengine" in response.error.lower()
+
+
+def test_disabled_provider_returns_no_models_and_rejects_inference(service):
+    service.set_active_provider("disabled")
+    assert service.get_available_models() == {}
+    response = service.generate_metadata_single(
+        "uuid-x",
+        _jpeg_bytes(),
+        {
+            "model": "any",
+            "generate_keywords": True,
+            "generate_caption": False,
+            "generate_title": False,
+            "generate_alt_text": False,
+            "language": "en",
+            "temperature": 0.2,
+            "submit_keywords": False,
+            "submit_folder_names": False,
+        },
+    )
+    assert response.success is False
+    assert "disabled" in response.error.lower()
+
+
+def test_model_discovery_only_queries_active_provider(service):
+    service.set_active_provider("lmstudio")
+    service.get_available_models()
+    service.providers["lmstudio"].list_available_model_details.assert_called_once()
+    service.providers["ollama"].list_available_model_details.assert_not_called()
 
 
 def test_generate_metadata_single_no_providers_available(mocker):
@@ -194,12 +262,14 @@ def test_generate_metadata_single_no_providers_available(mocker):
     for name in (
         "OllamaProvider",
         "LMStudioProvider",
+        "AXEngineProvider",
     ):
         mocker.patch(f"services.metadata.{name}", side_effect=RuntimeError("nope"))
 
     from services.metadata import AnalysisService
 
     svc = AnalysisService(lazy_load=True)
+    svc.set_active_provider("ollama")
     assert svc.providers == {}
 
     resp = svc.generate_metadata_single(

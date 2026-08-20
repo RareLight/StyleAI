@@ -81,6 +81,9 @@ def _extract_options(data) -> dict[str, Any]:
     options["benchmark_variant"] = (
         str(data.get("benchmark_variant") or "").strip() or None
     )
+    options["speculation_mode"] = (
+        str(data.get("speculation_mode") or "").strip() or None
+    )
 
     # Temperature
     try:

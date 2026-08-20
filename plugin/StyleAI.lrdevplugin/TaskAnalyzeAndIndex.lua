@@ -137,7 +137,8 @@ local function showAnalyzeAndIndexDialog(ctx)
     props.keywordSecondaryLanguage = prefs.keywordSecondaryLanguage or Defaults.defaultKeywordSecondaryLanguage
 
     -- AI Model selection (unified across providers)
-    props.modelKey = prefs.modelKey -- format: "provider::model"
+    local activeProvider = prefs.activeMetadataProvider or Defaults.defaultMetadataProvider
+    props.modelKey = prefs[activeProvider .. "ModelKey"] or prefs.modelKey -- format: "provider::model"
     props.language = prefs.generateLanguage or "English"
     props.temperature = prefs.temperature or 0.1
     props.replaceSS = prefs.replaceSS or false
@@ -154,7 +155,9 @@ local function showAnalyzeAndIndexDialog(ctx)
         -- Fallback option if no models detected from backend
         table.insert(modelItems, { title = LOC("$$$/StyleAI/TaskAiEditPhotos/NoModels=No AI models available"), value = "none" })
     end
-    if not props.modelKey or props.modelKey == '' then
+    local validModelKeys = {}
+    for _, item in ipairs(modelItems) do validModelKeys[item.value] = true end
+    if not props.modelKey or props.modelKey == '' or not validModelKeys[props.modelKey] then
         props.modelKey = modelItems[1].value
     end
 
@@ -605,6 +608,7 @@ local function showAnalyzeAndIndexDialog(ctx)
             if sep then
                 local prov = string.sub(props.modelKey, 1, sep - 1)
                 prefs.ai = prov
+                prefs[prov .. "ModelKey"] = props.modelKey
             end
         end
         prefs.generateLanguage = props.language

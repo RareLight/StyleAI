@@ -31,6 +31,8 @@ local ENDPOINTS = {
     INDEX_BASE64_BATCH = "/index_base64_batch",
     METADATA_GENERATE = "/metadata/generate",
     METADATA_BENCHMARK = "/metadata_benchmark/run_batch",
+    METADATA_BENCHMARK_PREFLIGHT = "/metadata_benchmark/preflight",
+    METADATA_PROVIDER = "/metadata/provider",
     STATS = "/db/stats",
     MODELS = "/models",
     GET_IDS = "/get/ids",
@@ -1299,6 +1301,23 @@ function SearchIndexAPI.runMetadataBenchmarkBatch(items, options)
     if not response then
         return false, err or "Metadata benchmark request failed"
     end
+    return true, response
+end
+
+function SearchIndexAPI.preflightMetadataBenchmark(model)
+    if type(model) ~= "table" then return false, "Invalid benchmark model configuration" end
+    local response, err = _request(
+        "POST",
+        getBaseUrl() .. ENDPOINTS.METADATA_BENCHMARK_PREFLIGHT,
+        {
+            provider = model.provider,
+            model = model.model,
+            speculation_mode = model.speculation_mode or "baseline",
+            draft_model = model.draft_model,
+        },
+        30
+    )
+    if not response then return false, err or "Benchmark preflight failed" end
     return true, response
 end
 
@@ -3619,8 +3638,24 @@ end
 -- @return table|nil Response with provider arrays of { key, label, ... } descriptors.
 function SearchIndexAPI.getModels()
     local url = getBaseUrl() .. ENDPOINTS.MODELS
-    local result = _request('GET', url)
+    local result = _request('POST', url, {
+        provider = (prefs and prefs.activeMetadataProvider) or "ollama",
+        ax_model_root = prefs and prefs.axEngineModelRoot or nil,
+    })
     return result
+end
+
+function SearchIndexAPI.setActiveMetadataProvider(provider)
+    local result, err = _request('POST', getBaseUrl() .. ENDPOINTS.METADATA_PROVIDER, {
+        provider = provider,
+        ax_model_root = prefs and prefs.axEngineModelRoot or nil,
+    }, 15)
+    if err then return false, err end
+    return true, result
+end
+
+function SearchIndexAPI.getActiveMetadataProvider()
+    return _request('GET', getBaseUrl() .. ENDPOINTS.METADATA_PROVIDER, nil, 15)
 end
 
 ---
@@ -3661,6 +3696,10 @@ end
 -- draft candidates. These are intentionally separate from vision-model choices.
 function SearchIndexAPI.getDraftModelChoices(response)
     return normalizeModelChoices(response or SearchIndexAPI.getModels(), "draft_models")
+end
+
+function SearchIndexAPI.getUnavailableSpeculationChoices(response)
+    return normalizeModelChoices(response or SearchIndexAPI.getModels(), "unavailable_speculation")
 end
 
 function SearchIndexAPI.getDiagnosticCaptureInfo(path)
@@ -4013,6 +4052,8 @@ function SearchIndexAPI.getDetailedHealth()
         clip = SearchIndexAPI.isClipReady() == true,
         ollama = false,
         lmstudio = false,
+        axengine = false,
+        activeMetadataProvider = (prefs and prefs.activeMetadataProvider) or "ollama",
     }
 
     local _, ollamaHeaders = LrHttp.get("http://127.0.0.1:11434/api/tags", nil, 0.5)
@@ -4020,11 +4061,16 @@ function SearchIndexAPI.getDetailedHealth()
         or (type(ollamaHeaders) == "table" and ollamaHeaders.status)
     if ollamaStatus == 200 then health.ollama = true end
 
-    -- Fall back to backend provider health check for dynamic LM Studio port discovery
-    if not health.lmstudio and health.backend then
+    -- Use backend provider health for dynamic local-provider discovery.
+    if health.backend then
         local bHealth = SearchIndexAPI.getBackendHealth()
-        if bHealth and bHealth.llm_providers and bHealth.llm_providers.lmstudio == "available" then
-            health.lmstudio = true
+        if bHealth and bHealth.llm_providers then
+            if bHealth.llm_providers.lmstudio == "available" then health.lmstudio = true end
+            if bHealth.llm_providers.ollama == "available" then health.ollama = true end
+            if bHealth.llm_providers.axengine == "available" then health.axengine = true end
+        end
+        if bHealth and bHealth.active_metadata_provider then
+            health.activeMetadataProvider = bHealth.active_metadata_provider
         end
     end
 

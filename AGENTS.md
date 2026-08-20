@@ -17,7 +17,7 @@ Python 3.12+ Flask/Waitress service.
 - Bind REST only to `127.0.0.1:19819`. Do not add remote service URLs, cloud AI
   providers, API keys, telemetry, or network egress for photos or metadata.
 - Generative metadata uses only open-weights models running locally through
-  Ollama or LM Studio. Learned editing never depends on an LLM.
+  Ollama, LM Studio, or AX Engine. Learned editing never depends on an LLM.
 - One active Lightroom catalog owns one adjacent `styleai.db`. Because the path
   is `<catalog directory>/styleai.db`, each catalog must live in its own folder.
   A service process may bind to only that path, and backup database-marker
@@ -36,7 +36,7 @@ plugin/StyleAI.lrdevplugin/   Lightroom SDK UI, catalog and Develop operations
 server/                       uv-managed Python backend
   src/routes/                 HTTP boundary only
   src/services/               indexing, jobs, training, policies, history
-  src/providers/              Ollama and LM Studio adapters only
+  src/providers/              Ollama, LM Studio, and AX Engine adapters only
   src/migrations/versions/    ordered styles.sqlite migrations
   test/                       isolated pytest suite
 docs/wiki/                    published user and developer documentation
