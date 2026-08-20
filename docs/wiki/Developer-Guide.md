@@ -54,22 +54,44 @@ metadata and timing per photo, and uses a catalog-local `metadata_benchmark`
 operation for cancellation. It does not write generated titles, captions, alt
 text, or keywords to Lightroom or either Chroma collection.
 
-For LM Studio models, the checklist can optionally pair each selected vision
-model with any downloaded local LLM as a speculative draft candidate.
-Prediction-time drafts can use the paired comparison: StyleAI runs the baseline
-and speculative configuration over the same proxies. Some engine-protocol and
-MTP drafts must instead be configured in the main model's saved LM Studio load
-settings. The excluded warm-up detects that capability gap, retries using the
-saved load configuration, verifies reported draft-token activity, and reuses
-that path for measured requests. Because a load-time speculative context cannot
-also provide a clean baseline in the same loaded instance, StyleAI omits the
-paired baseline for recognized MTP artifacts. Run their baseline separately
-after disabling speculation and reloading the main model. A failed warm-up skips
-that configuration instead of repeating a deterministic compatibility failure
-for every photo. The report records prediction-time versus saved-load-time
-configuration, the requested and actually used draft model, draft-token
-acceptance statistics, and separate performance summaries. Draft candidates
-remain excluded from the normal vision-model selector.
+LM Studio speculative benchmarking separates three package types. A **full
+draft model** is a complete smaller model passed through LM Studio's ordinary
+draft API; StyleAI filters known format mismatches and asks LM Studio to make the
+final vocabulary compatibility check. An **integrated-MTP GGUF** owns its
+NextN/MTP tensors and LM Studio activates them automatically while loading the
+target, so StyleAI sends an ordinary inference request without a `draftModel`
+override. Standalone `mtp-*` sidecars are not exposed as ordinary drafts because
+the public LM Studio SDK cannot verify or configure their target-specific load
+relationship safely. An MLX package merely containing `MTP` in its name is
+labelled unverified rather than being assumed compatible.
+
+Before exporting proxies, the benchmark performs a non-inference preflight and
+rejects known-invalid modes, missing models, target=self pairs, cross-format
+pairs, reported vocabulary mismatches, and automatic MTP on targets not
+identified as integrated-MTP GGUFs. Unknown full-draft compatibility may proceed
+to an excluded warm-up, and measured full-draft requests run only when LM Studio
+reports actual draft-token activity. Integrated MTP does not require those
+statistics because LM Studio may not expose counters for runtime-managed MTP.
+When counters exist, the report records the effective mode as `automatic_mtp`
+and marks activity on that vision request as observed. Without counters, the
+metadata result remains valid, but the effective mode and request-level activity
+are `unknown` with verification status `runtime_managed_unreported`; the report
+does not claim that MTP ran.
+
+StyleAI never sends an integrated head or MTP sidecar through prediction-time
+`draftModel`. It also does not claim an MTP-off comparison when LM Studio exposes
+no reliable disable control for an integrated GGUF. Reports record requested and
+effective speculation modes, automatic versus explicit-draft configuration,
+requested/used draft identity, token statistics when exposed, classified model
+load failures, and preflight evidence. Draft-only artifacts remain excluded from
+the normal vision-model selector.
+
+Direct `mlx-vlm` fallback is intentionally not automatic. A future opt-in
+provider must be installed in StyleAI's managed environment rather than imported
+from LM Studio's private runtime, run under the same process-wide local-LLM and
+accelerator admission claim, use local model paths only, and isolate blocking
+generation in a terminable worker process. This avoids silently loading a second
+copy of a large model after LM Studio has already consumed accelerator memory.
 
 Reports are revealed from:
 
@@ -92,6 +114,16 @@ processing, uses `LrFileUtils` rather than restricted standard-Lua filesystem
 calls, and records its implementation version in the manifest. Malformed model
 responses and unexpected Lua errors fail with an actionable benchmark dialog;
 they do not write generated metadata to Lightroom.
+
+`summary.csv` uses explicit units for end-to-end throughput and latency:
+photos/minute, images/second, seconds/image, photos/hour, projected hours for
+1,000 and 10,000 photos, mean/median/p90/p95, standard deviation, and coefficient
+of variation. These photo-level rates are the primary cross-backend comparison.
+Token throughput remains available but is backend-specific. Each JSONL and CSV
+result also contains deterministic contract checks for requested-field presence,
+the 12-keyword limit, exact normalized duplicates, forbidden placeholders, text
+length, and caption/alt-text lexical overlap. These checks describe output
+discipline only; they are not visual-correctness or semantic-quality scores.
 
 On macOS, `scripts/styleai-installer.sh redeploy` is a source-development tool.
 Lightroom must be stopped. The command stops the recognized StyleAI process on

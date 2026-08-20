@@ -6,6 +6,7 @@ from PIL import Image
 
 from providers.base import MetadataGenerationResponse
 from services.metadata_benchmark import (
+    calculate_contract_metrics,
     inspect_proxy,
     round_benchmark_timings,
     run_benchmark_batch,
@@ -51,6 +52,7 @@ def test_inspect_proxy_returns_reproducible_non_pixel_provenance():
 def test_benchmark_service_returns_outputs_without_index_service(mocker):
     analysis = mocker.Mock()
     analysis.providers = {"ollama": object()}
+    analysis.get_active_provider.return_value = "ollama"
     analysis.generate_metadata_single.return_value = MetadataGenerationResponse(
         uuid="photo-1",
         success=True,
@@ -94,6 +96,8 @@ def test_benchmark_service_returns_outputs_without_index_service(mocker):
     assert results[0]["benchmark_variant"] == "baseline"
     assert results[0]["inference"]["accepted_draft_tokens"] == 15
     assert results[0]["proxy"]["width"] == 12
+    assert results[0]["contract_metrics"]["all_requested_fields_present"] is True
+    assert results[0]["contract_metrics"]["keyword_count"] == 2
     analysis.generate_metadata_single.assert_called_once()
 
 
@@ -115,9 +119,37 @@ def test_benchmark_timing_precision_uses_units():
     }
 
 
+def test_contract_metrics_are_separate_deterministic_output_checks():
+    response = SimpleNamespace(
+        success=True,
+        keywords=["Dog", " dog ", "None"],
+        title="A dog running",
+        caption="A golden dog runs through the green park",
+        alt_text="A golden dog runs through the green park",
+    )
+
+    metrics = calculate_contract_metrics(response, _options())
+
+    assert metrics == {
+        "structured_output_valid": True,
+        "all_requested_fields_present": True,
+        "keyword_count": 3,
+        "distinct_keyword_count": 2,
+        "keyword_limit": 12,
+        "keyword_limit_compliant": True,
+        "duplicate_keyword_count": 1,
+        "forbidden_placeholder_count": 1,
+        "caption_word_count": 8,
+        "alt_text_word_count": 8,
+        "caption_alt_text_lexical_overlap": 1.0,
+        "caption_alt_text_excessive_overlap": True,
+    }
+
+
 def test_benchmark_service_publishes_each_item_before_inference(mocker):
     analysis = mocker.Mock()
     analysis.providers = {"ollama": object()}
+    analysis.get_active_provider.return_value = "ollama"
     analysis.generate_metadata_single.return_value = MetadataGenerationResponse(
         uuid="photo", success=True
     )
@@ -152,7 +184,10 @@ def test_benchmark_service_honors_scoped_cancellation():
                 }
             ],
             _options(),
-            analysis_service=SimpleNamespace(providers={"ollama": object()}),
+            analysis_service=SimpleNamespace(
+                providers={"ollama": object()},
+                get_active_provider=lambda: "ollama",
+            ),
             cancel_signal=cancel_signal,
         )
     except InterruptedError as exc:
@@ -382,3 +417,59 @@ def test_benchmark_route_validates_speculative_pairing():
     assert "only for LM Studio" in unsupported_provider.get_json()["error"]
     assert missing_draft.status_code == 400
     assert "require draft_model" in missing_draft.get_json()["error"]
+
+
+def test_benchmark_route_accepts_automatic_mtp_without_draft_model(mocker):
+    app.config["TESTING"] = True
+    run = mocker.patch("routes.metadata_benchmark.run_benchmark_batch", return_value=[])
+    service = mocker.MagicMock()
+    service.get_active_provider.return_value = "lmstudio"
+    mocker.patch("routes.metadata_benchmark.get_analysis_service", return_value=service)
+    payload = base64.b64encode(_jpeg_bytes()).decode("ascii")
+
+    with app.test_client() as client:
+        response = client.post(
+            "/metadata_benchmark/run_batch",
+            json={
+                "tasks": [{"photo_id": "photo-1", "image": payload}],
+                "options": {
+                    **_options(),
+                    "provider": "lmstudio",
+                    "benchmark_variant": "speculative",
+                    "speculation_mode": "automatic_mtp",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    assert run.call_args.args[1]["speculation_mode"] == "automatic_mtp"
+
+
+def test_benchmark_preflight_returns_provider_capability(mocker):
+    provider = mocker.MagicMock()
+    provider.is_available.return_value = True
+    provider.preflight_speculation.return_value = {
+        "capability": "unknown",
+        "reason": "runtime_probe_required",
+    }
+    service = SimpleNamespace(
+        providers={"lmstudio": provider},
+        get_active_provider=lambda: "lmstudio",
+    )
+    mocker.patch("routes.metadata_benchmark.get_analysis_service", return_value=service)
+
+    with app.test_client() as client:
+        response = client.post(
+            "/metadata_benchmark/preflight",
+            json={
+                "provider": "lmstudio",
+                "model": "unsloth/qwen-mtp@q4",
+                "speculation_mode": "automatic_mtp",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.get_json()["results"]["capability"] == "unknown"
+    provider.preflight_speculation.assert_called_once_with(
+        "unsloth/qwen-mtp@q4", "automatic_mtp", None
+    )

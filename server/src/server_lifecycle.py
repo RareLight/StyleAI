@@ -577,6 +577,12 @@ def request_shutdown():
     logger.info("Shutdown request received")
     GLOBAL_SHUTDOWN_EVENT.set()
     GLOBAL_CANCEL_EVENT.set()
+    try:
+        from services.axengine_runtime import get_axengine_runtime
+
+        get_axengine_runtime().request_owned_stop()
+    except Exception:
+        logger.exception("Unable to signal managed AX Engine during shutdown")
     active_work = False
     try:
         from services.index import active_embeddings_uuids, stop_index_queue

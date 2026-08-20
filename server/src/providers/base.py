@@ -79,6 +79,7 @@ class MetadataGenerationRequest:
     # unset and continue to use the provider's ordinary inference path.
     draft_model: str | None = None
     benchmark_variant: str | None = None
+    speculation_mode: str | None = None
 
 
 @dataclass
@@ -157,6 +158,26 @@ class LLMProviderBase(ABC):
     def list_available_draft_model_details(self) -> list[dict[str, Any]]:
         """Return locally available speculative-draft candidates, if supported."""
         return []
+
+    def list_unavailable_speculation_details(self) -> list[dict[str, Any]]:
+        """Return locally present speculation artifacts that cannot be selected."""
+        return []
+
+    def preflight_speculation(
+        self, model: str, speculation_mode: str, draft_model: str | None = None
+    ) -> dict[str, Any]:
+        """Validate a benchmark speculation configuration without inference."""
+        if speculation_mode == "baseline" and not draft_model:
+            return {
+                "capability": "supported",
+                "reason": "baseline",
+                "message": "Speculative decoding is disabled for this run.",
+            }
+        return {
+            "capability": "unsupported",
+            "reason": "provider_does_not_support_speculation",
+            "message": "This provider does not support speculative benchmarking.",
+        }
 
     def _prepare_system_prompt(self, request: MetadataGenerationRequest) -> str:
         """

@@ -7,6 +7,16 @@ local prefs = LrPrefs.prefsForPlugin()
 
 --- Initializes all preferences with defaults if they don't exist
 function SettingsManager.initializeDefaults()
+    if prefs.activeMetadataProvider == nil then
+        local provider = nil
+        if type(prefs.modelKey) == "string" then
+            provider = string.match(prefs.modelKey, "^([^:]+)::")
+        end
+        if provider ~= "ollama" and provider ~= "lmstudio" and provider ~= "axengine" then
+            provider = Defaults.defaultMetadataProvider
+        end
+        prefs.activeMetadataProvider = provider
+    end
     local defaultMap = {
         ai = "",
         generateLanguage = Defaults.defaultGenerateLanguage,
@@ -32,6 +42,7 @@ function SettingsManager.initializeDefaults()
         useGlobalPhotoId = true,
         topLevelKeyword = Defaults.defaultTopLevelKeyword,
         knownTopLevelKeywords = Defaults.defaultTopLevelKeywords,
+        axEngineModelRoot = "/Volumes/Thunderbolt/Models",
     }
 
     for key, defaultValue in pairs(defaultMap) do

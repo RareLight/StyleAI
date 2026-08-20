@@ -328,7 +328,70 @@ def test_lmstudio_passes_draft_model_and_reports_speculative_stats(lmstudio_prov
         "ignored_draft_tokens": 1,
         "draft_acceptance_rate": 0.75,
         "requested_draft_model": "publisher/draft@q4",
+        "requested_speculation_mode": "full_draft",
+        "effective_speculation_mode": "full_draft",
+        "lmstudio_sdk_version": "1.5.0",
+        "draft_depth": "lmstudio_default_not_exposed",
+        "verification_status": "verified",
+        "vision_input_present": True,
+        "speculation_active_for_vision_request": True,
     }
+
+
+def test_lmstudio_integrated_mtp_uses_ordinary_inference(lmstudio_provider):
+    provider, fake_response = lmstudio_provider
+    fake_response.parsed = {"keywords": [], "caption": "x"}
+    fake_response.stats = SimpleNamespace(
+        used_draft_model_key=None,
+        total_draft_tokens_count=12,
+        accepted_draft_tokens_count=10,
+        rejected_draft_tokens_count=2,
+        ignored_draft_tokens_count=0,
+    )
+
+    response = provider.generate_metadata(
+        _request(
+            model="unsloth/qwen3.6-27b-mtp@q4_k_m",
+            benchmark_variant="speculative",
+            speculation_mode="automatic_mtp",
+        )
+    )
+
+    assert response.success is True
+    from providers import lmstudio as lmstudio_module
+
+    config = lmstudio_module.lms.Client.return_value.__enter__.return_value.llm.model.return_value.respond.call_args.kwargs[
+        "config"
+    ]
+    assert "draftModel" not in config
+    assert response.inference["requested_speculation_mode"] == "automatic_mtp"
+    assert response.inference["effective_speculation_mode"] == "automatic_mtp"
+    assert response.inference["speculation_configuration"] == "automatic_model_load"
+    assert response.inference["verification_status"] == "observed"
+    assert response.inference["vision_input_present"] is True
+    assert response.inference["speculation_active_for_vision_request"] is True
+
+
+def test_lmstudio_integrated_mtp_does_not_require_reported_draft_tokens(
+    lmstudio_provider,
+):
+    provider, fake_response = lmstudio_provider
+    fake_response.parsed = {"keywords": [], "caption": "x"}
+    fake_response.stats = SimpleNamespace(
+        used_draft_model_key=None,
+        total_draft_tokens_count=0,
+        accepted_draft_tokens_count=0,
+    )
+
+    response = provider.generate_metadata(
+        _request(benchmark_variant="speculative", speculation_mode="automatic_mtp")
+    )
+
+    assert response.success is True
+    assert response.inference["effective_speculation_mode"] == "unknown"
+    assert response.inference["verification_status"] == "runtime_managed_unreported"
+    assert response.inference["vision_input_present"] is True
+    assert response.inference["speculation_active_for_vision_request"] == "unknown"
 
 
 def test_lmstudio_retries_load_time_speculation_and_caches_pair(lmstudio_provider):
@@ -419,7 +482,22 @@ def test_lmstudio_baseline_warns_on_mtp_activity_without_draft_key(lmstudio_prov
     response = provider.generate_metadata(_request(benchmark_variant="baseline"))
 
     assert response.success is True
-    assert "saved draft model" in response.warning
+    assert "reported speculative decoding" in response.warning
+
+
+def test_lmstudio_classifies_mtp_and_vision_load_failures():
+    from providers.lmstudio import LMStudioProvider
+
+    mtp = LMStudioProvider._classify_runtime_failure(
+        RuntimeError("Received 48 parameters not in model: language_model.model.mtp.x")
+    )
+    vision = LMStudioProvider._classify_runtime_failure(
+        RuntimeError("Missing 356 parameters: vision_tower.encoder.x")
+    )
+
+    assert mtp["failure_category"] == "integrated_mtp_runtime_unsupported"
+    assert mtp["failure_stage"] == "model_load"
+    assert vision["failure_category"] == "vision_weights_unavailable"
 
 
 def test_lmstudio_zero_tokens_when_no_stats_no_tokenize(lmstudio_provider):

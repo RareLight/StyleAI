@@ -21,6 +21,14 @@ Defaults.defaultKeywordAliases = false
 
 Defaults.defaultTemperature = 0.1
 
+Defaults.defaultMetadataProvider = "ollama"
+Defaults.metadataProviderItems = {
+	{ title = LOC("$$$/StyleAI/PluginInfo/ProviderDisabled=Disabled"), value = "disabled" },
+	{ title = LOC("$$$/StyleAI/PluginInfo/ProviderOllama=Ollama"), value = "ollama" },
+	{ title = LOC("$$$/StyleAI/PluginInfo/ProviderLmStudio=LM Studio"), value = "lmstudio" },
+	{ title = LOC("$$$/StyleAI/PluginInfo/ProviderAxEngine=AX Engine"), value = "axengine" },
+}
+
 Defaults.defaultKeywordCategories = {
 	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Activities=Activities"),
 	LOC("$$$/StyleAI/Defaults/ResponseStructure/keywords/Buildings=Buildings"),
@@ -114,6 +122,7 @@ Defaults.credits = {
 	{ name = "Transformers", author = "Hugging Face", url = "https://huggingface.co/transformers/" },
 	{ name = "Ollama SDK", author = "Ollama", url = "https://github.com/ollama/ollama-python" },
 	{ name = "LM Studio SDK", author = "LM Studio", url = "https://lmstudio.ai/" },
+	{ name = "AX Engine", author = "DEFAI Private Limited", url = "https://github.com/defai-digital/ax-engine" },
 	{ name = "Scikit-learn", author = "scikit-learn developers", url = "https://scikit-learn.org/" },
 	{ name = "Psutil", author = "Giampaolo Rodola", url = "https://github.com/giampaolo/psutil" },
 	{ name = "Requests", author = "Kenneth Reitz & Contributors", url = "https://requests.readthedocs.io/" },

@@ -72,6 +72,8 @@ def test_models_returns_enriched_descriptors(client, mocker):
     analysis.get_available_draft_models.return_value = {
         "lmstudio": [{"key": "publisher/draft@q4", "label": "Draft — Q4 · publisher"}]
     }
+    analysis.get_unavailable_speculation_models.return_value = {"lmstudio": []}
+    analysis.get_active_provider.return_value = "lmstudio"
     mocker.patch("routes.server.get_analysis_service", return_value=analysis)
 
     response = client.get("/models")
@@ -91,7 +93,49 @@ def test_models_returns_enriched_descriptors(client, mocker):
                 {"key": "publisher/draft@q4", "label": "Draft — Q4 · publisher"}
             ]
         },
+        "unavailable_speculation": {"lmstudio": []},
+        "active_provider": "lmstudio",
     }
+
+
+def test_models_post_sets_and_filters_to_requested_provider(client, mocker):
+    analysis = MagicMock()
+    analysis.get_available_models.return_value = {"ollama": []}
+    analysis.get_available_draft_models.return_value = {"ollama": []}
+    analysis.get_unavailable_speculation_models.return_value = {"ollama": []}
+    analysis.get_active_provider.return_value = "ollama"
+    mocker.patch("routes.server.get_analysis_service", return_value=analysis)
+
+    response = client.post("/models", json={"provider": "ollama"})
+
+    assert response.status_code == 200
+    analysis.set_active_provider.assert_called_once_with("ollama", ax_model_root=None)
+    assert response.get_json()["results"]["active_provider"] == "ollama"
+
+
+def test_metadata_provider_endpoint_sets_active_provider(client, mocker):
+    analysis = MagicMock()
+    analysis.get_active_provider.return_value = "axengine"
+    mocker.patch("routes.server.get_analysis_service", return_value=analysis)
+
+    response = client.post("/metadata/provider", json={"provider": "axengine"})
+
+    assert response.status_code == 200
+    analysis.set_active_provider.assert_called_once_with("axengine", ax_model_root=None)
+    assert response.get_json()["results"]["active_provider"] == "axengine"
+
+
+def test_metadata_provider_endpoint_rejects_invalid_provider(client, mocker):
+    analysis = MagicMock()
+    analysis.set_active_provider.side_effect = ValueError(
+        "unsupported metadata provider"
+    )
+    mocker.patch("routes.server.get_analysis_service", return_value=analysis)
+
+    response = client.post("/metadata/provider", json={"provider": "remote"})
+
+    assert response.status_code == 400
+    assert "unsupported" in response.get_json()["error"]
 
 
 def test_health_reports_clip_error_when_set(client, mocker):

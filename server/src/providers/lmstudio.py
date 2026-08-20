@@ -3,6 +3,7 @@ LM Studio Provider for metadata generation using the lmstudio-python library
 """
 
 import json
+from importlib.metadata import PackageNotFoundError, version
 import os
 import re
 import time
@@ -15,6 +16,11 @@ from .base import (
     MetadataGenerationRequest,
     MetadataGenerationResponse,
 )
+
+try:
+    LMSTUDIO_SDK_VERSION = version("lmstudio")
+except PackageNotFoundError:
+    LMSTUDIO_SDK_VERSION = "unknown"
 from config import (
     DEFAULT_MAX_TOKENS,
     LMSTUDIO_CONTEXT_LENGTH,
@@ -48,7 +54,7 @@ class LMStudioProvider(LLMProviderBase):
     def __init__(self):
         super().__init__()
         self.host = self._normalize_host(LMSTUDIO_HOST)
-        self._logged_load_configs: set[str] = set()
+        self._load_config_evidence_by_model: dict[str, dict[str, object]] = {}
         # Warm-up discovers engine-protocol pairs whose speculative context is
         # supplied by LM Studio's saved load configuration. Measured requests
         # can then avoid repeating a known-invalid prediction-time override.
@@ -166,6 +172,14 @@ class LMStudioProvider(LLMProviderBase):
         Returns:
             MetadataGenerationResponse with generated metadata
         """
+        speculation_mode = (
+            str(
+                request.speculation_mode
+                or ("full_draft" if request.draft_model else "baseline")
+            )
+            .strip()
+            .lower()
+        )
         try:
             request_started = time.perf_counter()
             effective_host = self._resolve_host()
@@ -196,9 +210,22 @@ class LMStudioProvider(LLMProviderBase):
                     },
                 )
                 model_seconds = time.perf_counter() - model_started
-                if request.model not in self._logged_load_configs:
+                load_config_evidence = dict(
+                    self._load_config_evidence_by_model.get(request.model, {})
+                )
+                if request.model not in self._load_config_evidence_by_model:
                     try:
                         load_config = model.get_load_config()
+                        for output_key, attribute_name in (
+                            ("context_length", "context_length"),
+                            ("flash_attention", "flash_attention"),
+                            ("offload_kv_cache_to_gpu", "offload_kv_cache_to_gpu"),
+                            ("use_fp16_for_kv_cache", "use_fp16_for_kv_cache"),
+                            ("num_experts", "num_experts"),
+                        ):
+                            value = getattr(load_config, attribute_name, None)
+                            if isinstance(value, (str, int, float, bool)):
+                                load_config_evidence[output_key] = value
                         logger.info(
                             "LM Studio model load config "
                             "(context_length=%s, flash_attention=%s, "
@@ -214,7 +241,9 @@ class LMStudioProvider(LLMProviderBase):
                             "Could not inspect LM Studio model load config",
                             exc_info=True,
                         )
-                    self._logged_load_configs.add(request.model)
+                    self._load_config_evidence_by_model[request.model] = dict(
+                        load_config_evidence
+                    )
 
                 # Prepare prompts
                 system_prompt = self._prepare_system_prompt(request)
@@ -250,14 +279,23 @@ class LMStudioProvider(LLMProviderBase):
                 }
                 draft_pair = (
                     (request.model, request.draft_model)
-                    if request.draft_model
+                    if speculation_mode == "full_draft" and request.draft_model
                     else None
                 )
                 use_saved_load_time_draft = bool(
                     draft_pair and draft_pair in self._load_time_draft_pairs
                 )
-                if request.draft_model and not use_saved_load_time_draft:
+                if (
+                    speculation_mode == "full_draft"
+                    and request.draft_model
+                    and not use_saved_load_time_draft
+                ):
                     prediction_config["draftModel"] = request.draft_model
+                # Integrated MTP belongs to the target artifact and is activated
+                # by LM Studio while loading that model. Never misroute its head
+                # through prediction-time ``draftModel``. ``load_time_fallback``
+                # is reserved for an explicitly selected full draft whose engine
+                # rejects prediction-time configuration.
                 load_time_fallback = use_saved_load_time_draft
                 try:
                     response = model.respond(
@@ -267,7 +305,8 @@ class LMStudioProvider(LLMProviderBase):
                     )
                 except Exception as exc:
                     if (
-                        not request.draft_model
+                        speculation_mode != "full_draft"
+                        or not request.draft_model
                         or not self._requires_load_time_speculation(exc)
                     ):
                         raise
@@ -409,6 +448,10 @@ class LMStudioProvider(LLMProviderBase):
                 logger.debug(f"Could not calculate LM Studio token usage: {usage_err}")
 
             inference = {}
+            inference["lmstudio_sdk_version"] = LMSTUDIO_SDK_VERSION
+            inference["vision_input_present"] = bool(request.image_data)
+            if load_config_evidence:
+                inference["load_config"] = load_config_evidence
             stats = getattr(response, "stats", None)
             for output_key, attribute_name in (
                 ("used_draft_model", "used_draft_model_key"),
@@ -428,22 +471,42 @@ class LMStudioProvider(LLMProviderBase):
                 )
             if request.draft_model:
                 inference["requested_draft_model"] = request.draft_model
-            if load_time_fallback:
+            inference["requested_speculation_mode"] = speculation_mode
+            if speculation_mode != "baseline":
+                inference["draft_depth"] = "lmstudio_default_not_exposed"
+            if speculation_mode == "automatic_mtp":
+                inference["speculation_configuration"] = "automatic_model_load"
+                has_draft_activity = bool(inference.get("used_draft_model")) or (
+                    isinstance(total_draft_tokens, int) and total_draft_tokens > 0
+                )
+                if has_draft_activity:
+                    inference["effective_speculation_mode"] = "automatic_mtp"
+                    inference["speculation_active_for_vision_request"] = True
+                    inference["verification_status"] = "observed"
+                else:
+                    # LM Studio can load an integrated head automatically without
+                    # exposing draft counters through the SDK. Preserve the valid
+                    # metadata response, but do not claim that MTP was active.
+                    inference["effective_speculation_mode"] = "unknown"
+                    inference["speculation_active_for_vision_request"] = "unknown"
+                    inference["verification_status"] = "runtime_managed_unreported"
+            elif load_time_fallback:
                 inference["speculation_configuration"] = "saved_load_time"
+                inference["fallback_reason"] = "engine_protocol_requires_load_time"
                 used_draft_model = inference.get("used_draft_model")
                 has_draft_activity = bool(used_draft_model) or (
                     isinstance(total_draft_tokens, int) and total_draft_tokens > 0
                 )
                 if not has_draft_activity:
+                    inference["verification_status"] = "speculation_not_verified"
                     return MetadataGenerationResponse(
                         uuid=request.uuid,
                         success=False,
                         error=(
-                            "LM Studio requires speculative decoding to be configured "
-                            "when the main model is loaded, but the retry reported no "
-                            "draft-token activity. Configure the draft/MTP model in "
-                            "LM Studio's saved settings for the main model, unload and "
-                            "reload the main model, then rerun this benchmark."
+                            "LM Studio full-draft speculative decoding is not active "
+                            "for the loaded main model: the retry reported no "
+                            "draft-token activity. Configure the model in LM Studio's "
+                            "load settings, unload and reload it, then rerun the benchmark."
                         ),
                         timing={
                             "provider_total_ms": total_seconds * 1000.0,
@@ -457,14 +520,37 @@ class LMStudioProvider(LLMProviderBase):
                     )
                 if draft_pair:
                     self._load_time_draft_pairs.add(draft_pair)
+                inference["effective_speculation_mode"] = speculation_mode
+                inference["speculation_active_for_vision_request"] = True
+                inference["verification_status"] = "verified"
+            elif inference.get("used_draft_model") or (
+                isinstance(total_draft_tokens, int) and total_draft_tokens > 0
+            ):
+                inference["effective_speculation_mode"] = "full_draft"
+                inference["speculation_active_for_vision_request"] = True
+                inference["verification_status"] = "verified"
+            else:
+                inference["effective_speculation_mode"] = "baseline"
+                inference["speculation_active_for_vision_request"] = False
+                inference["verification_status"] = "not_applicable"
             warning = None
-            if request.benchmark_variant == "baseline" and (
+            if (
+                speculation_mode == "automatic_mtp"
+                and inference["verification_status"] == "runtime_managed_unreported"
+            ):
+                warning = (
+                    "LM Studio returned the vision result but exposed no draft-token "
+                    "telemetry, so automatic MTP activity could not be verified for "
+                    "this request"
+                )
+            elif request.benchmark_variant == "baseline" and (
                 inference.get("used_draft_model")
                 or (isinstance(total_draft_tokens, int) and total_draft_tokens > 0)
             ):
                 warning = (
-                    "LM Studio applied a saved draft model to a baseline benchmark "
-                    "run; disable the model's speculative-decoding default and rerun"
+                    "LM Studio reported speculative decoding during a baseline "
+                    "benchmark run; rerun this model as automatic MTP or disable its "
+                    "saved full-draft configuration"
                 )
 
             return MetadataGenerationResponse(
@@ -493,8 +579,68 @@ class LMStudioProvider(LLMProviderBase):
                 f"Error generating metadata with LM Studio: {e}", exc_info=True
             )
             return MetadataGenerationResponse(
-                uuid=request.uuid, success=False, error=str(e)
+                uuid=request.uuid,
+                success=False,
+                error=str(e),
+                inference={
+                    "lmstudio_sdk_version": LMSTUDIO_SDK_VERSION,
+                    "vision_input_present": bool(request.image_data),
+                    "requested_speculation_mode": speculation_mode,
+                    "effective_speculation_mode": "unknown",
+                    "speculation_active_for_vision_request": "unknown",
+                    **self._classify_runtime_failure(e),
+                },
             )
+
+    @staticmethod
+    def _classify_runtime_failure(exc: Exception) -> dict[str, str]:
+        """Classify common LM Studio package/runtime failures for reports."""
+        normalized = str(exc).lower()
+        if (
+            "missing " in normalized
+            and " parameters" in normalized
+            and any(
+                marker in normalized
+                for marker in ("vision_tower", "embed_vision", "vision_model")
+            )
+        ):
+            return {
+                "failure_stage": "model_load",
+                "failure_category": "vision_weights_unavailable",
+                "failure_reason": "model_package_or_vision_sidecar_incompatible",
+            }
+        if "parameters not in model" in normalized and ".mtp." in normalized:
+            return {
+                "failure_stage": "model_load",
+                "failure_category": "integrated_mtp_runtime_unsupported",
+                "failure_reason": "runtime_rejected_integrated_mtp_tensors",
+            }
+        if "failed to process speculative batch" in normalized:
+            return {
+                "failure_stage": "generation",
+                "failure_category": "speculative_decode_runtime_failure",
+                "failure_reason": "runtime_failed_speculative_batch",
+            }
+        if LMStudioProvider._requires_load_time_speculation(exc):
+            return {
+                "failure_stage": "configuration",
+                "failure_category": "speculation_requires_load_time",
+                "failure_reason": "engine_protocol_rejected_prediction_override",
+            }
+        if (
+            "failed to load model" in normalized
+            or "error when loading model" in normalized
+        ):
+            return {
+                "failure_stage": "model_load",
+                "failure_category": "model_runtime_incompatible",
+                "failure_reason": "lmstudio_model_load_failed",
+            }
+        return {
+            "failure_stage": "generation",
+            "failure_category": "provider_error",
+            "failure_reason": "unclassified_lmstudio_error",
+        }
 
     @staticmethod
     def _native_model_lookup(payload: object) -> dict[str, dict]:
@@ -578,20 +724,20 @@ class LMStudioProvider(LLMProviderBase):
 
     @staticmethod
     def _is_draft_only_model(*identifiers: object) -> bool:
-        """Identify dedicated draft/speculator artifacts from stable model names.
+        """Identify standalone MTP sidecars, not complete MTP-enabled models.
 
         LM Studio may report an MTP artifact as vision-capable when it lives in
-        the same repository as its multimodal target. The public discovery API
-        does not currently expose a draft-only capability flag, so use only
-        explicit filename/name tokens rather than parameter-size heuristics.
+        the same repository as its multimodal target. Sidecars conventionally
+        begin with ``mtp-``; a complete model whose repository contains ``MTP``
+        must remain available as a main model.
         """
         for identifier in identifiers:
             if not isinstance(identifier, str):
                 continue
             normalized = identifier.strip().lower().replace("\\", "/")
-            if re.search(
-                r"(?:^|[/_.@-])(?:mtp|draft|speculator)(?:$|[/_.@-])",
-                normalized,
+            leaf = normalized.rsplit("/", 1)[-1]
+            if re.match(r"^mtp(?:$|[-_. ])", leaf) or re.match(
+                r"^mtp(?:$|[-_. ])", normalized
             ):
                 return True
         return False
@@ -607,12 +753,57 @@ class LMStudioProvider(LLMProviderBase):
         return False
 
     @staticmethod
+    def _native_text_values(value: object, prefix: str = "") -> list[tuple[str, str]]:
+        """Flatten bounded native metadata for capability evidence."""
+        values: list[tuple[str, str]] = []
+        if len(prefix) > 256:
+            return values
+        if isinstance(value, dict):
+            for key, item in value.items():
+                values.extend(
+                    LMStudioProvider._native_text_values(
+                        item, f"{prefix}.{key}" if prefix else str(key)
+                    )
+                )
+        elif isinstance(value, list):
+            for index, item in enumerate(value[:100]):
+                values.extend(
+                    LMStudioProvider._native_text_values(item, f"{prefix}[{index}]")
+                )
+        elif isinstance(value, (str, int, float, bool)):
+            values.append((prefix.lower(), str(value).strip().lower()))
+        return values
+
+    @classmethod
+    def _native_mtp_capability(cls, native: dict) -> tuple[str, str]:
+        """Return capability only when LM Studio explicitly reports MTP evidence."""
+        for key, value in cls._native_text_values(native):
+            if "mtp" not in key and "speculative" not in key:
+                continue
+            if value in {"true", "supported", "enabled", "mtp", "draft-mtp"}:
+                return "supported", "lmstudio_native_capability"
+            if value in {"false", "unsupported", "disabled"}:
+                return "unsupported", "lmstudio_native_capability"
+        return "unknown", "runtime_probe_required"
+
+    @staticmethod
+    def _native_identity(native: dict, *names: str) -> str | None:
+        wanted = {name.lower() for name in names}
+        for key, value in LMStudioProvider._native_text_values(native):
+            if key.rsplit(".", 1)[-1] in wanted and value:
+                return value
+        return None
+
+    @staticmethod
     def _format_model_label(detail: dict) -> str:
         display_name = str(detail.get("display_name") or detail["key"])
         qualifiers: list[str] = []
         params = detail.get("params_string")
         if params and str(params).lower() not in display_name.lower():
             qualifiers.append(str(params))
+        architecture = detail.get("architecture")
+        if architecture and str(architecture).lower() not in display_name.lower():
+            qualifiers.append(str(architecture))
         quantization = detail.get("quantization")
         if quantization:
             qualifiers.append(str(quantization))
@@ -625,13 +816,19 @@ class LMStudioProvider(LLMProviderBase):
         variant = detail.get("selected_variant")
         if not quantization and variant:
             qualifiers.append(str(variant))
+        if detail.get("speculation_kind") == "mtp_integrated":
+            qualifiers.append("MTP")
+        elif detail.get("speculation_kind") == "mtp_packaged_unverified":
+            qualifiers.append("MTP package")
         return (
             f"{display_name} — {' · '.join(dict.fromkeys(qualifiers))}"
             if qualifiers
             else display_name
         )
 
-    def _list_available_model_details(self, *, vision_only: bool) -> list[dict]:
+    def _list_available_model_details(
+        self, *, vision_only: bool, include_mtp_sidecars: bool = False
+    ) -> list[dict]:
         """List downloaded LLMs with rich labels and stable SDK inference keys."""
         try:
             effective_host = self._resolve_host()
@@ -659,7 +856,13 @@ class LMStudioProvider(LLMProviderBase):
                     native.get("selected_variant"),
                     getattr(info, "display_name", None),
                 )
-                if vision_only and (not vision or draft_only):
+                native_mtp_capability, native_mtp_reason = self._native_mtp_capability(
+                    native
+                )
+                mtp_model = mtp_model or native_mtp_capability == "supported"
+                if draft_only and not include_mtp_sidecars:
+                    continue
+                if vision_only and not vision:
                     continue
                 quantization = native.get("quantization")
                 quantization_name = (
@@ -688,8 +891,69 @@ class LMStudioProvider(LLMProviderBase):
                     or getattr(info, "size_bytes", None),
                     "vision": vision,
                 }
-                if mtp_model:
-                    detail["speculation_configuration"] = "saved_load_time"
+                architecture = self._native_identity(
+                    native, "architecture", "model_type", "modeltype"
+                )
+                vocabulary = self._native_identity(
+                    native, "vocabulary", "vocabulary_id", "tokenizer", "tokenizer_id"
+                )
+                if architecture:
+                    detail["architecture"] = architecture
+                if vocabulary:
+                    detail["vocabulary_identity"] = vocabulary
+                runtime = self._native_identity(
+                    native, "runtime", "runtime_name", "engine", "engine_name"
+                )
+                revision = self._native_identity(
+                    native, "revision", "commit", "model_revision"
+                )
+                repository = self._native_identity(
+                    native, "repository", "repo", "repository_id", "repo_id"
+                )
+                if runtime:
+                    detail["runtime"] = runtime
+                if revision:
+                    detail["revision"] = revision
+                if repository:
+                    detail["repository"] = repository
+                if draft_only:
+                    detail.update(
+                        {
+                            "speculation_kind": "mtp_sidecar",
+                            "speculation_capability": "unknown",
+                            "speculation_reason": "sidecar_requires_runtime_match",
+                            "speculation_configuration": "saved_load_time",
+                        }
+                    )
+                elif native_mtp_capability == "supported" or (
+                    mtp_model and detail.get("format") == "gguf"
+                ):
+                    capability, reason = native_mtp_capability, native_mtp_reason
+                    if capability == "unknown":
+                        reason = "integrated_mtp_name_hint"
+                    detail.update(
+                        {
+                            "speculation_kind": "mtp_integrated",
+                            "speculation_capability": capability,
+                            "speculation_reason": reason,
+                            "speculation_configuration": "automatic_model_load",
+                        }
+                    )
+                elif mtp_model:
+                    # A name alone cannot establish that an MLX/Safetensors
+                    # package contains a loadable MTP head. Keep it available as
+                    # a target, but do not present it as automatic MTP or as a
+                    # complete drafting model.
+                    detail.update(
+                        {
+                            "speculation_kind": "mtp_packaged_unverified",
+                            "speculation_capability": "unsupported",
+                            "speculation_reason": "mlx_mtp_runtime_unverified",
+                            "speculation_configuration": "model_package",
+                        }
+                    )
+                else:
+                    detail["speculation_kind"] = "complete_model"
                 detail["label"] = self._format_model_label(detail)
                 details.append(
                     {key: value for key, value in detail.items() if value is not None}
@@ -708,8 +972,165 @@ class LMStudioProvider(LLMProviderBase):
         return self._list_available_model_details(vision_only=True)
 
     def list_available_draft_model_details(self) -> list[dict]:
-        """List all downloaded LM Studio LLMs as explicit draft candidates."""
-        return self._list_available_model_details(vision_only=False)
+        """List complete models only; MTP sidecars are never ordinary drafts."""
+        details = []
+        for detail in self._list_available_model_details(vision_only=False):
+            if detail.get("speculation_kind") in {
+                "mtp_integrated",
+                "mtp_sidecar",
+                "mtp_packaged_unverified",
+            }:
+                continue
+            detail["speculation_kind"] = "full_draft"
+            detail["speculation_capability"] = "unknown"
+            detail["speculation_reason"] = "lmstudio_pair_check_required"
+            details.append(detail)
+        return details
+
+    def list_unavailable_speculation_details(self) -> list[dict]:
+        """Expose hidden MTP sidecars with an explicit reason for the UI."""
+        details = self._list_available_model_details(
+            vision_only=False, include_mtp_sidecars=True
+        )
+        unavailable = []
+        for detail in details:
+            if detail.get("speculation_kind") != "mtp_sidecar":
+                continue
+            item = dict(detail)
+            item["speculation_capability"] = "unsupported"
+            item["speculation_reason"] = "sidecar_pairing_not_exposed_by_lmstudio_sdk"
+            item["message"] = (
+                "Standalone MTP heads require an exact load-time target pairing that "
+                "the installed LM Studio SDK cannot configure or verify."
+            )
+            unavailable.append(item)
+        return unavailable
+
+    def preflight_speculation(
+        self, model: str, speculation_mode: str, draft_model: str | None = None
+    ) -> dict:
+        """Fail known-invalid pairs before exporting or submitting photos."""
+        mode = str(speculation_mode or "baseline").strip().lower()
+        all_details = self._list_available_model_details(
+            vision_only=False, include_mtp_sidecars=True
+        )
+        by_key = {str(detail.get("key")): detail for detail in all_details}
+        target = by_key.get(model)
+        base = {
+            "model": model,
+            "speculation_mode": mode,
+            "draft_model": draft_model,
+        }
+        if target is None:
+            return base | {
+                "capability": "unsupported",
+                "reason": "target_not_downloaded",
+                "message": "The selected LM Studio target model is not downloaded.",
+            }
+        if mode == "baseline":
+            return base | {
+                "capability": "supported",
+                "reason": "baseline",
+                "message": "Speculative decoding is disabled for this run.",
+            }
+        if mode == "automatic_mtp":
+            if draft_model:
+                return base | {
+                    "capability": "unsupported",
+                    "reason": "automatic_mtp_does_not_use_full_draft",
+                    "message": "Automatic MTP cannot use a separate draft-model selection.",
+                }
+            if target.get("speculation_kind") != "mtp_integrated":
+                return base | {
+                    "capability": "unsupported",
+                    "reason": "target_not_integrated_mtp",
+                    "message": (
+                        "The selected target is not a complete model with integrated "
+                        "MTP tensors. Standalone mtp-* files are not selectable as drafts."
+                    ),
+                }
+            capability = str(target.get("speculation_capability") or "unknown")
+            return base | {
+                "capability": capability,
+                "reason": str(
+                    target.get("speculation_reason") or "runtime_probe_required"
+                ),
+                "message": (
+                    "LM Studio reports integrated MTP support. The runtime will "
+                    "activate it automatically while loading the target model."
+                    if capability == "supported"
+                    else "This GGUF appears to contain integrated MTP. StyleAI will "
+                    "use ordinary inference and let LM Studio activate it automatically."
+                ),
+                "target": target,
+            }
+        if mode != "full_draft":
+            return base | {
+                "capability": "unsupported",
+                "reason": "unknown_speculation_mode",
+                "message": f"Unknown speculation mode: {mode}",
+            }
+        draft = by_key.get(str(draft_model or ""))
+        if draft is None:
+            return base | {
+                "capability": "unsupported",
+                "reason": "draft_not_downloaded",
+                "message": "The selected full draft model is not downloaded.",
+            }
+        if model == draft_model:
+            return base | {
+                "capability": "unsupported",
+                "reason": "target_equals_draft",
+                "message": "A model cannot draft for itself.",
+            }
+        if draft.get("speculation_kind") == "mtp_sidecar":
+            return base | {
+                "capability": "unsupported",
+                "reason": "mtp_sidecar_is_not_full_model",
+                "message": "An mtp-* sidecar is not a complete drafting model.",
+            }
+        if target.get("format") != draft.get("format"):
+            return base | {
+                "capability": "unsupported",
+                "reason": "format_mismatch",
+                "message": "Target and draft models must use the same LM Studio runtime format.",
+            }
+        if (
+            target.get("runtime")
+            and draft.get("runtime")
+            and target.get("runtime") != draft.get("runtime")
+        ):
+            return base | {
+                "capability": "unsupported",
+                "reason": "runtime_mismatch",
+                "message": "Target and draft models must use the same LM Studio runtime.",
+            }
+        target_vocab = target.get("vocabulary_identity")
+        draft_vocab = draft.get("vocabulary_identity")
+        if target_vocab and draft_vocab and target_vocab != draft_vocab:
+            return base | {
+                "capability": "unsupported",
+                "reason": "vocabulary_mismatch",
+                "message": "LM Studio reports different tokenizer/vocabulary identities.",
+            }
+        capability = (
+            "supported" if target_vocab and target_vocab == draft_vocab else "unknown"
+        )
+        return base | {
+            "capability": capability,
+            "reason": (
+                "matching_vocabulary_identity"
+                if capability == "supported"
+                else "lmstudio_pair_check_required"
+            ),
+            "message": (
+                "The models report a matching vocabulary identity."
+                if capability == "supported"
+                else "Format checks passed; LM Studio will make the final vocabulary compatibility check."
+            ),
+            "target": target,
+            "draft": draft,
+        }
 
     def list_available_models(self) -> list[str]:
         """

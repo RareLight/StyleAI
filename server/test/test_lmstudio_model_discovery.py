@@ -101,6 +101,7 @@ def test_lmstudio_uses_sdk_identity_when_native_metadata_is_unavailable(mocker):
             "selected_variant": "q4_k_m",
             "size_bytes": 4_000_000_000,
             "vision": True,
+            "speculation_kind": "complete_model",
             "label": "Model 7B Vision — GGUF · google · q4_k_m",
         }
     ]
@@ -146,7 +147,7 @@ def test_lmstudio_draft_candidates_include_downloaded_nonvision_models(mocker):
     assert [detail["vision"] for detail in details] == [True, False]
 
 
-def test_lmstudio_hides_dedicated_mtp_artifacts_only_from_main_list(mocker):
+def test_lmstudio_hides_dedicated_mtp_sidecars_from_main_and_draft_lists(mocker):
     vision_model = _downloaded_model()
     mtp_draft = _downloaded_model(
         key="google/model-GGUF/mtp-model-Q8_0.gguf",
@@ -160,13 +161,98 @@ def test_lmstudio_hides_dedicated_mtp_artifacts_only_from_main_list(mocker):
 
     main_models = provider.list_available_model_details()
     draft_models = provider.list_available_draft_model_details()
+    unavailable = provider.list_unavailable_speculation_details()
 
     assert [detail["key"] for detail in main_models] == ["google/model@q4_k_m"]
-    assert [detail["key"] for detail in draft_models] == [
-        "google/model@q4_k_m",
-        "google/model-GGUF/mtp-model-Q8_0.gguf",
-    ]
-    assert draft_models[1]["speculation_configuration"] == "saved_load_time"
+    assert [detail["key"] for detail in draft_models] == ["google/model@q4_k_m"]
+    assert draft_models[0]["speculation_kind"] == "full_draft"
+    assert [detail["key"] for detail in unavailable] == [mtp_draft.model_key]
+    assert unavailable[0]["speculation_capability"] == "unsupported"
+
+
+def test_lmstudio_keeps_integrated_mtp_model_in_main_list(mocker):
+    integrated = _downloaded_model(
+        key="unsloth/qwen3.6-27b-mtp@q4_k_m",
+        path="unsloth/Qwen3.6-27B-MTP-GGUF/Qwen3.6-27B-MTP-Q4_K_M.gguf",
+    )
+    provider, _ = _provider_with_client(mocker, [integrated])
+    session = MagicMock()
+    session.get.side_effect = RuntimeError("native endpoint unavailable")
+    mocker.patch("providers.lmstudio.requests.Session", return_value=session)
+
+    details = provider.list_available_model_details()
+
+    assert [detail["key"] for detail in details] == [integrated.model_key]
+    assert details[0]["speculation_kind"] == "mtp_integrated"
+    assert details[0]["speculation_capability"] == "unknown"
+    assert details[0]["speculation_configuration"] == "automatic_model_load"
+
+
+def test_lmstudio_does_not_treat_mlx_mtp_name_as_integrated_capability(mocker):
+    packaged = _downloaded_model(
+        key="mlx-works/gemma-4-mtp@4bit",
+        path="mlx-works/gemma-4-mtp/model.safetensors",
+    )
+    packaged.info.format = "safetensors"
+    provider, _ = _provider_with_client(mocker, [packaged])
+    session = MagicMock()
+    session.get.side_effect = RuntimeError("native endpoint unavailable")
+    mocker.patch("providers.lmstudio.requests.Session", return_value=session)
+
+    detail = provider.list_available_model_details()[0]
+
+    assert detail["speculation_kind"] == "mtp_packaged_unverified"
+    assert detail["speculation_capability"] == "unsupported"
+    assert provider.list_available_draft_model_details() == []
+
+
+def test_lmstudio_prefers_native_mtp_capability_over_filename(mocker):
+    model = _downloaded_model(key="qwen/model@q4", path="qwen/model/model-Q4.gguf")
+    provider, _ = _provider_with_client(mocker, [model])
+    response = MagicMock()
+    response.json.return_value = {
+        "models": [
+            {
+                "type": "llm",
+                "key": "qwen/model",
+                "variants": ["qwen/model@q4"],
+                "format": "gguf",
+                "capabilities": {"mtp": True},
+                "architecture": "qwen35",
+            }
+        ]
+    }
+    session = MagicMock()
+    session.get.return_value = response
+    mocker.patch("providers.lmstudio.requests.Session", return_value=session)
+
+    detail = provider.list_available_model_details()[0]
+
+    assert detail["speculation_kind"] == "mtp_integrated"
+    assert detail["speculation_capability"] == "supported"
+    assert detail["speculation_reason"] == "lmstudio_native_capability"
+    assert detail["architecture"] == "qwen35"
+
+
+def test_lmstudio_preflight_rejects_cross_format_full_draft(mocker):
+    target = _downloaded_model()
+    draft = _downloaded_model(
+        key="mlx-community/model-small@4bit",
+        vision=False,
+        path="mlx-community/model-small-MLX/model-small-4bit.safetensors",
+    )
+    draft.info.format = "safetensors"
+    provider, _ = _provider_with_client(mocker, [target, draft])
+    session = MagicMock()
+    session.get.side_effect = RuntimeError("native endpoint unavailable")
+    mocker.patch("providers.lmstudio.requests.Session", return_value=session)
+
+    result = provider.preflight_speculation(
+        target.model_key, "full_draft", draft.model_key
+    )
+
+    assert result["capability"] == "unsupported"
+    assert result["reason"] == "format_mismatch"
 
 
 def test_lmstudio_draft_token_matching_does_not_hide_unrelated_names(mocker):

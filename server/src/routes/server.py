@@ -209,18 +209,56 @@ def list_models():
         }
     }
     """
-    logger.info("Models request received - checking all providers")
+    data = request.get_json(silent=True) if request.method == "POST" else None
+    requested_provider = (data or {}).get("provider")
+    ax_model_root = (data or {}).get("ax_model_root")
+    logger.info("Models request received")
 
     try:
-        # Get all available multimodal models
-        # This will dynamically re-check Ollama and LM Studio availability
         service = get_analysis_service()
+        if requested_provider is not None:
+            service.set_active_provider(requested_provider, ax_model_root=ax_model_root)
         models = service.get_available_models()
         draft_models = service.get_available_draft_models()
-        return jsonify({"models": models, "draft_models": draft_models})
+        unavailable_speculation = service.get_unavailable_speculation_models()
+        return jsonify(
+            {
+                "models": models,
+                "draft_models": draft_models,
+                "unavailable_speculation": unavailable_speculation,
+                "active_provider": service.get_active_provider(),
+            }
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error(f"Error listing models: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@server_bp.route("/metadata/provider", methods=["GET", "POST"])
+def metadata_provider():
+    """Read or set the single active local metadata API provider."""
+    service = get_analysis_service()
+    if request.method == "POST":
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or "provider" not in data:
+            return jsonify({"error": "provider is required"}), 400
+        try:
+            service.set_active_provider(
+                data["provider"], ax_model_root=data.get("ax_model_root")
+            )
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+    return jsonify(
+        {
+            "active_provider": service.get_active_provider(),
+            "supported_providers": sorted(
+                configured
+                for configured in ("disabled", "ollama", "lmstudio", "axengine")
+            ),
+        }
+    )
 
 
 @server_bp.route("/version", methods=["GET"])

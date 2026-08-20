@@ -18,7 +18,8 @@ end
 local function availableModels()
 	local response = SearchIndexAPI.getModels()
 	return ModelParameterSort.descending(SearchIndexAPI.getModelChoices(response)),
-		ModelParameterSort.descending(SearchIndexAPI.getDraftModelChoices(response))
+		ModelParameterSort.descending(SearchIndexAPI.getDraftModelChoices(response)),
+		ModelParameterSort.descending(SearchIndexAPI.getUnavailableSpeculationChoices(response))
 end
 
 local function utf8Characters(value)
@@ -76,11 +77,17 @@ local function progressModelTitle(model)
 	local title = (publisher ~= "" and (publisher .. ":") or "") .. modelName
 	if #qualifiers > 0 then title = title .. " [" .. table.concat(qualifiers, "/") .. "]" end
 	if model and model.benchmark_variant == "speculative" then
-		local draft = type(model.draft) == "table" and model.draft or {}
-		local draftName = tostring((draft.details or {}).display_name or draft.model or model.draft_model or "draft")
-		title = title .. " + " .. draftName
+		if model.speculation_mode == "automatic_mtp" then
+			title = title .. " [MTP]"
+		else
+			local draft = type(model.draft) == "table" and model.draft or {}
+			local draftName = tostring((draft.details or {}).display_name or draft.model or model.draft_model or "draft")
+			title = title .. " + " .. draftName
+		end
 	elseif model and model.benchmark_variant == "baseline" then
 		title = title .. " [baseline]"
+	elseif model and model.benchmark_variant == "runtime_managed" then
+		title = title .. " [runtime]"
 	end
 	local characters = utf8Characters(title)
 	if #characters <= MAX_PROGRESS_MODEL_CHARS then return title end
@@ -131,7 +138,7 @@ local function copyTable(value)
 	return copied
 end
 
-local function showDialog(ctx, selectedCount, models, draftModels)
+local function showDialog(ctx, selectedCount, models, draftModels, unavailableSpeculators)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 	local props = LrBinding.makePropertyTable(ctx)
@@ -160,19 +167,28 @@ local function showDialog(ctx, selectedCount, models, draftModels)
 		props[key] = model.key == prefs.modelKey
 		props[draftKey] = ""
 		table.insert(modelControls, f:checkbox({ title = model.title, value = bind(key) }))
-		if model.provider == "lmstudio" and #draftModels > 0 then
+		local modelDetails = type(model.details) == "table" and model.details or {}
+		local allowsFullDraft = modelDetails.speculation_kind ~= "mtp_integrated"
+			and modelDetails.speculation_kind ~= "mtp_packaged_unverified"
+		if model.provider == "lmstudio" and #draftModels > 0 and allowsFullDraft then
 			local draftItems = {
-				{ title = LOC("$$$/StyleAI/MetadataBenchmark/NoDraft=No draft comparison"), value = "" },
+				{ title = LOC("$$$/StyleAI/MetadataBenchmark/NoDraft=No speculative decoding"), value = "" },
 			}
 			for _, draft in ipairs(draftModels) do
-				if draft.provider == "lmstudio" and draft.model ~= model.model then
-					table.insert(draftItems, { title = draft.title, value = draft.key })
+				local draftDetails = type(draft.details) == "table" and draft.details or {}
+				local sameFormat = not modelDetails.format or not draftDetails.format or modelDetails.format == draftDetails.format
+				if draft.provider == "lmstudio" and draft.model ~= model.model and sameFormat
+					and draftDetails.speculation_kind ~= "mtp_sidecar" then
+					table.insert(draftItems, {
+						title = LOC("$$$/StyleAI/MetadataBenchmark/FullDraftChoice=Full draft: ^1", draft.title),
+						value = draft.key,
+					})
 				end
 			end
 			table.insert(modelControls, f:row({
 				spacing = f:control_spacing(),
 				f:spacer({ width = 22 }),
-				f:static_text({ title = LOC("$$$/StyleAI/MetadataBenchmark/DraftModel=Draft model:") }),
+				f:static_text({ title = LOC("$$$/StyleAI/MetadataBenchmark/DraftModel=Speculation:") }),
 				f:popup_menu({ value = bind(draftKey), items = draftItems, width = 520 }),
 			}))
 		end
@@ -185,21 +201,21 @@ local function showDialog(ctx, selectedCount, models, draftModels)
 
 	local function updateRequestEstimate()
 		local selectedRunCount = 0
+		local requiredSpeculativeWarmups = 0
 		for index = 1, #models do
 			if props["benchmarkModel" .. tostring(index)] then
 				local draftKey = tostring(props["benchmarkDraft" .. tostring(index)] or "")
 				local selectedDraft = draftByKey[draftKey]
-				local hasDraft = selectedDraft ~= nil
-				local loadTimeDraft = hasDraft and (selectedDraft.details or {}).speculation_configuration == "saved_load_time"
-				if hasDraft then
-					selectedRunCount = selectedRunCount + (props.compareDraftBaseline and not loadTimeDraft and 2 or 1)
+				if selectedDraft then
+					selectedRunCount = selectedRunCount + (props.compareDraftBaseline and 2 or 1)
+					requiredSpeculativeWarmups = requiredSpeculativeWarmups + 1
 				else
 					selectedRunCount = selectedRunCount + 1
 				end
 			end
 		end
 		local measuredRequests = selectedCount * selectedRunCount
-		local warmupRequests = props.warmup and selectedRunCount or 0
+		local warmupRequests = props.warmup and selectedRunCount or requiredSpeculativeWarmups
 		props.requestEstimate = LOC(
 			"$$$/StyleAI/MetadataBenchmark/RequestEstimate=Measured requests: ^1 photos × ^2 model configurations = ^3. Excluded warm-ups: ^4. Total model calls: ^5.",
 			tostring(selectedCount),
@@ -245,9 +261,16 @@ local function showDialog(ctx, selectedCount, models, draftModels)
 				value = bind("compareDraftBaseline"),
 			}),
 			UIFactory.HelpText(f, {
-				title = LOC("$$$/StyleAI/MetadataBenchmark/DraftHelp=Draft-only models are hidden from the main list.\nUse only vocabulary-compatible pairs.\nLoad-time/MTP pairs use LM Studio's saved model settings.\nBenchmark their baseline separately with speculation disabled."),
+				title = LOC("$$$/StyleAI/MetadataBenchmark/DraftHelp=Integrated MTP GGUFs run automatically with ordinary inference.\nOnly complete models appear in the full-draft selector.\nStandalone MTP heads and unverified MLX MTP packages are not drafting models."),
 				width = 650,
 			}),
+			#unavailableSpeculators > 0 and UIFactory.HelpText(f, {
+				title = LOC(
+					"$$$/StyleAI/MetadataBenchmark/HiddenMtp=^1 standalone MTP head(s) are hidden because LM Studio cannot safely expose their exact load-time pairing to StyleAI.",
+					tostring(#unavailableSpeculators)
+				),
+				width = 650,
+			}) or f:spacer({ height = 0 }),
 			f:checkbox({
 				title = LOC("$$$/StyleAI/MetadataBenchmark/Warmup=Run one excluded warm-up photo per model"),
 				value = bind("warmup"),
@@ -315,20 +338,40 @@ local function showDialog(ctx, selectedCount, models, draftModels)
 		if props["benchmarkModel" .. tostring(index)] then
 			local selectedDraftKey = tostring(props["benchmarkDraft" .. tostring(index)] or "")
 			local selectedDraft = draftByKey[selectedDraftKey]
-			local loadTimeDraft = selectedDraft and (selectedDraft.details or {}).speculation_configuration == "saved_load_time"
-			if not selectedDraft or (props.compareDraftBaseline and not loadTimeDraft) then
+			local modelDetails = type(model.details) == "table" and model.details or {}
+			local automaticMtp = modelDetails.speculation_kind == "mtp_integrated"
+			local runtimeManaged = modelDetails.speculation_kind == "runtime_managed"
+			if runtimeManaged then
+				local runtimeModel = copyTable(model)
+				runtimeModel.base_model_key = model.key
+				runtimeModel.key = model.key .. "::runtime_managed"
+				runtimeModel.benchmark_variant = "runtime_managed"
+				runtimeModel.speculation_mode = "runtime_managed"
+				runtimeModel.title = model.title .. " — " .. LOC("$$$/StyleAI/MetadataBenchmark/RuntimeManaged=Runtime-managed acceleration")
+				table.insert(selectedModels, runtimeModel)
+			elseif automaticMtp then
+				local speculative = copyTable(model)
+				speculative.base_model_key = model.key
+				speculative.key = model.key .. "::automatic_mtp"
+				speculative.benchmark_variant = "speculative"
+				speculative.speculation_mode = "automatic_mtp"
+				speculative.title = model.title .. " — " .. LOC("$$$/StyleAI/MetadataBenchmark/IntegratedMtpShort=Automatic MTP")
+				table.insert(selectedModels, speculative)
+			elseif not selectedDraft or props.compareDraftBaseline then
 				local baseline = copyTable(model)
 				baseline.base_model_key = model.key
 				baseline.key = model.key .. "::baseline"
 				baseline.benchmark_variant = "baseline"
+				baseline.speculation_mode = "baseline"
 				baseline.title = model.title .. " — " .. LOC("$$$/StyleAI/MetadataBenchmark/Baseline=Baseline")
 				table.insert(selectedModels, baseline)
 			end
-			if selectedDraft then
+			if selectedDraft and not automaticMtp and not runtimeManaged then
 				local speculative = copyTable(model)
 				speculative.base_model_key = model.key
 				speculative.key = model.key .. "::draft::" .. selectedDraft.key
 				speculative.benchmark_variant = "speculative"
+				speculative.speculation_mode = "full_draft"
 				speculative.draft_model = selectedDraft.model
 				speculative.draft = selectedDraft
 				speculative.title = model.title .. " — " .. LOC("$$$/StyleAI/MetadataBenchmark/WithDraft=Draft: ^1", selectedDraft.title)
@@ -497,6 +540,7 @@ local function requestOptions(options, model, operationId)
 		keyword_categories = options.useKeywordHierarchy and KeywordConfigProvider.getKeywordCategories() or {},
 		operation_id = operationId,
 		benchmark_variant = model.benchmark_variant or "baseline",
+		speculation_mode = model.speculation_mode or "baseline",
 		draft_model = model.draft_model,
 	}
 end
@@ -523,6 +567,19 @@ local function warmupFailure(response)
 	return tostring(result.error or "The benchmark configuration failed its warm-up")
 end
 
+local function preflightModels(models)
+	for _, model in ipairs(models) do
+		local ok, result = SearchIndexAPI.preflightMetadataBenchmark(model)
+		if not ok then return false, tostring(result) end
+		if type(result) ~= "table" then return false, "The benchmark preflight returned an invalid response" end
+		model.preflight = result
+		if tostring(result.capability or "unknown") == "unsupported" then
+			return false, tostring(result.message or result.reason or "Unsupported speculative configuration")
+		end
+	end
+	return true
+end
+
 function MetadataBenchmark.run(ctx)
 	local selectedPhotos = PhotoSelector.snapshotSelectedPhotos()
 	if #selectedPhotos == 0 then
@@ -534,7 +591,7 @@ function MetadataBenchmark.run(ctx)
 		return
 	end
 	if not Util.waitForServerDialog({ suppressProgressDialog = false }) then return end
-	local models, draftModels = availableModels()
+	local models, draftModels, unavailableSpeculators = availableModels()
 	if #models == 0 then
 		LrDialogs.message(
 			LOC("$$$/StyleAI/MetadataBenchmark/NoModelsTitle=No Models Selected"),
@@ -543,7 +600,7 @@ function MetadataBenchmark.run(ctx)
 		)
 		return
 	end
-	local options = showDialog(ctx, #selectedPhotos, models, draftModels)
+	local options = showDialog(ctx, #selectedPhotos, models, draftModels, unavailableSpeculators)
 	if not options then return end
 	local runtimeOk, runtimeError = validateBenchmarkRuntime()
 	if not runtimeOk then
@@ -556,7 +613,12 @@ function MetadataBenchmark.run(ctx)
 	end
 	if #selectedPhotos > RECOMMENDED_MAX_PHOTOS then
 		local measuredRequests = #selectedPhotos * #options.models
-		local warmupRequests = options.warmup and #options.models or 0
+		local warmupRequests = 0
+		for _, model in ipairs(options.models) do
+			if options.warmup or model.speculation_mode == "full_draft" then
+				warmupRequests = warmupRequests + 1
+			end
+		end
 		local confirmation = LrDialogs.confirm(
 			LOC("$$$/StyleAI/MetadataBenchmark/LargeTitle=Large Benchmark Set"),
 			LOC(
@@ -570,6 +632,15 @@ function MetadataBenchmark.run(ctx)
 		)
 		if confirmation == "cancel" then return end
 	end
+	local preflightOk, preflightError = preflightModels(options.models)
+	if not preflightOk then
+		LrDialogs.message(
+			LOC("$$$/StyleAI/MetadataBenchmark/PreflightTitle=Benchmark Configuration Unsupported"),
+			LOC("$$$/StyleAI/MetadataBenchmark/PreflightError=The selected model configuration cannot be benchmarked: ^1", tostring(preflightError)),
+			"critical"
+		)
+		return
+	end
 
 	local catalog = LrApplication.activeCatalog()
 	local startedAt = LrDate.currentTime()
@@ -582,7 +653,7 @@ function MetadataBenchmark.run(ctx)
 	local reportDirectory = LrPathUtils.child(LrPathUtils.child(LrPathUtils.child(catalogDirectory, "styleai.db"), "evaluation_reports"), runId)
 	local backendVersion = SearchIndexAPI.getBackendVersion() or {}
 	local manifest = {
-		schema_version = "styleai_llm_metadata_benchmark_v1",
+		schema_version = "styleai_llm_metadata_benchmark_v2",
 		report_writer_version = Report.IMPLEMENTATION_VERSION,
 		run_id = runId,
 		state = "preparing",
@@ -697,7 +768,8 @@ function MetadataBenchmark.run(ctx)
 			progressState.showPhotoProgress = false
 			local modelOptions = requestOptions(options, model, nil)
 			local preflightError = nil
-			if options.warmup then
+			local preflightInference = {}
+			if options.warmup or model.speculation_mode == "full_draft" then
 				progressScope:setCaption(LOC("$$$/StyleAI/MetadataBenchmark/WarmupProgress=^1 (warm-up)", modelTitle))
 				local warmupItem = {
 					photo_id = prepared[1].photo_id .. ":warmup:" .. tostring(modelIndex),
@@ -710,12 +782,17 @@ function MetadataBenchmark.run(ctx)
 				if warmupOk then
 					appendResponse(report, warmupResponse, true)
 					preflightError = warmupFailure(warmupResponse)
+					local warmupResult = type(warmupResponse.items) == "table" and warmupResponse.items[1] or nil
+					if type(warmupResult) == "table" and type(warmupResult.inference) == "table" then
+						preflightInference = warmupResult.inference
+					end
 				else
 					preflightError = tostring(warmupResponse)
 					local appended, appendError = Report.append(report, {
 						photo_id = warmupItem.photo_id, source_photo_id = warmupItem.source_photo_id,
 						filename = warmupItem.filename, provider = model.provider, model = model.model,
-						benchmark_variant = model.benchmark_variant, draft_model_requested = model.draft_model,
+						benchmark_variant = model.benchmark_variant, speculation_mode = model.speculation_mode,
+						draft_model_requested = model.draft_model,
 						status = "failed", warmup = true, error = tostring(warmupResponse), timing = {}, inference = {},
 					})
 					if not appended then error("Could not append benchmark report: " .. tostring(appendError)) end
@@ -728,8 +805,9 @@ function MetadataBenchmark.run(ctx)
 					local appended, appendError = Report.append(report, {
 						photo_id = item.photo_id, source_photo_id = item.source_photo_id,
 						filename = item.filename, provider = model.provider, model = model.model,
-						benchmark_variant = model.benchmark_variant, draft_model_requested = model.draft_model,
-						status = "failed", warmup = false, error = skippedError, timing = {}, inference = {},
+						benchmark_variant = model.benchmark_variant, speculation_mode = model.speculation_mode,
+						draft_model_requested = model.draft_model,
+						status = "failed", warmup = false, error = skippedError, timing = {}, inference = preflightInference,
 					})
 					if not appended then error("Could not append benchmark report: " .. tostring(appendError)) end
 					table.insert(failedUpdates, {
@@ -770,7 +848,8 @@ function MetadataBenchmark.run(ctx)
 						local appended, appendError = Report.append(report, {
 							photo_id = item.photo_id, source_photo_id = item.source_photo_id,
 							filename = item.filename, provider = model.provider, model = model.model,
-							benchmark_variant = model.benchmark_variant, draft_model_requested = model.draft_model,
+							benchmark_variant = model.benchmark_variant, speculation_mode = model.speculation_mode,
+							draft_model_requested = model.draft_model,
 							status = "failed", warmup = false, error = tostring(response), timing = {}, inference = {},
 						})
 						if not appended then error("Could not append benchmark report: " .. tostring(appendError)) end
@@ -791,6 +870,8 @@ function MetadataBenchmark.run(ctx)
 			table.insert(manifest.model_runs, {
 				provider = model.provider, model = model.model,
 				benchmark_variant = model.benchmark_variant, draft_model = model.draft_model,
+				speculation_mode = model.speculation_mode,
+				preflight = model.preflight,
 				preflight_error = preflightError,
 				elapsed_ms = roundMilliseconds((LrDate.currentTime() - modelStarted) * 1000),
 			})

@@ -99,6 +99,24 @@ def test_plugin_tree_fingerprint_covers_paths_contents_and_empty_directories(tmp
     assert fingerprinter.plugin_tree_fingerprint(second) != original
 
 
+def test_ai_edit_workflow_keeps_operation_alive_and_isolates_virtual_copies():
+    source = (
+        REPOSITORY_ROOT / "plugin" / "StyleAI.lrdevplugin" / "AiEditAction.lua"
+    ).read_text(encoding="utf-8")
+
+    # A live Lightroom review/export pause must not look like an orphaned backend.
+    assert "SearchIndexAPI.getOperation(operationId, false)" in source
+    assert "for _ = 1, 30 do" in source
+    # A failed batch is terminal at the batch boundary, not retried once per photo.
+    assert "elseif ok and apiOk then" in source
+    assert "Do not multiply it into one doomed single-photo retry per image" in source
+    # Lightroom can automatically add a new copy to the viewed collection. The
+    # workflow records and removes that inherited standard/published membership.
+    assert "editPhoto:getContainedCollections()" in source
+    assert "editPhoto:getContainedPublishedCollections()" in source
+    assert "inheritedCollection:removePhotos({ editCopy })" in source
+
+
 def test_macos_development_backend_is_detached_from_lightroom():
     api_source = (
         REPOSITORY_ROOT / "plugin" / "StyleAI.lrdevplugin" / "APISearchIndex.lua"
