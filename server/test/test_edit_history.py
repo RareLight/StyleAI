@@ -361,6 +361,39 @@ def test_explicit_outcome_records_readback_and_is_idempotent(tmp_path):
     assert stored["events"][-1]["explicit_user_action"] is True
 
 
+def test_user_outcome_statuses_distinguish_applied_reviewed_and_missing(tmp_path):
+    db_path = str(tmp_path / "styleai.db")
+    inference_id = _create_applied_recipe(db_path)
+
+    before = edit_history.get_user_outcome_statuses(
+        db_path=db_path,
+        inference_ids=[inference_id, "missing-inference"],
+    )
+
+    assert before[0] == {
+        "inference_id": inference_id,
+        "photo_id": "photo-1",
+        "applied": True,
+        "reviewed": False,
+        "outcome": None,
+    }
+    assert before[1]["missing"] is True
+
+    edit_history.record_user_outcome(
+        db_path=db_path,
+        inference_id=inference_id,
+        outcome="accepted",
+        current_settings={"Exposure2012": 0.5, "Contrast2012": 10.0},
+    )
+    after = edit_history.get_user_outcome_statuses(
+        db_path=db_path,
+        inference_ids=[inference_id],
+    )
+
+    assert after[0]["reviewed"] is True
+    assert after[0]["outcome"] == "accepted"
+
+
 def test_accepted_rejects_modified_modeled_state(tmp_path):
     db_path = str(tmp_path / "styleai.db")
     inference_id = _create_applied_recipe(db_path)

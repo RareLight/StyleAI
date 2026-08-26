@@ -968,6 +968,18 @@ def test_reconciliation_rejects_unbounded_batch(client):
 
 
 def test_record_explicit_edit_outcomes(client, mocker):
+    mocker.patch(
+        "routes.style_edit.edit_history.get_user_outcome_statuses",
+        return_value=[
+            {
+                "inference_id": "inference-1",
+                "photo_id": "photo-1",
+                "applied": True,
+                "reviewed": False,
+                "outcome": None,
+            }
+        ],
+    )
     record = mocker.patch(
         "routes.style_edit.edit_history.record_user_outcome",
         return_value={
@@ -993,6 +1005,7 @@ def test_record_explicit_edit_outcomes(client, mocker):
 
     assert response.status_code == 200
     assert response.get_json()["results"]["stored"] == 1
+    assert response.get_json()["results"]["new_reviews"] == 1
     assert record.call_args.kwargs["outcome"] == "modified_and_kept"
 
 
@@ -1005,6 +1018,18 @@ def test_edit_outcomes_reject_unbounded_batch(client):
 
 
 def test_edit_outcomes_report_per_item_validation_failures(client, mocker):
+    mocker.patch(
+        "routes.style_edit.edit_history.get_user_outcome_statuses",
+        return_value=[
+            {
+                "inference_id": "inference-1",
+                "photo_id": "photo-1",
+                "applied": True,
+                "reviewed": False,
+                "outcome": None,
+            }
+        ],
+    )
     mocker.patch(
         "routes.style_edit.edit_history.record_user_outcome",
         side_effect=ValueError("use modified_and_kept"),
@@ -1027,3 +1052,107 @@ def test_edit_outcomes_report_per_item_validation_failures(client, mocker):
     assert payload["results"]["stored"] == 0
     assert payload["results"]["failed"] == 1
     assert payload["results"]["failures"][0]["error"] == "use modified_and_kept"
+
+
+def test_edit_outcomes_skip_previously_reviewed_by_default(client, mocker):
+    mocker.patch(
+        "routes.style_edit.edit_history.get_user_outcome_statuses",
+        return_value=[
+            {
+                "inference_id": "inference-1",
+                "photo_id": "photo-1",
+                "applied": True,
+                "reviewed": True,
+                "outcome": "accepted",
+            }
+        ],
+    )
+    record = mocker.patch("routes.style_edit.edit_history.record_user_outcome")
+
+    response = client.post(
+        "/style_edit/events/outcomes",
+        json={
+            "items": [
+                {
+                    "edit_inference_id": "inference-1",
+                    "outcome": "rejected",
+                    "current_settings": {"Exposure2012": 0.5},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.get_json()["results"]
+    assert result["stored"] == 0
+    assert result["skipped_reviewed"] == 1
+    assert result["photos"][0]["outcome"] == "accepted"
+    record.assert_not_called()
+
+
+def test_edit_outcomes_allow_explicit_review_correction(client, mocker):
+    mocker.patch(
+        "routes.style_edit.edit_history.get_user_outcome_statuses",
+        return_value=[
+            {
+                "inference_id": "inference-1",
+                "photo_id": "photo-1",
+                "applied": True,
+                "reviewed": True,
+                "outcome": "accepted",
+            }
+        ],
+    )
+    mocker.patch(
+        "routes.style_edit.edit_history.record_user_outcome",
+        return_value={
+            "photo_id": "photo-1",
+            "inference_id": "inference-1",
+            "outcome": "rejected",
+            "state": "apply_confirmed",
+            "recorded": True,
+        },
+    )
+
+    response = client.post(
+        "/style_edit/events/outcomes",
+        json={
+            "skip_existing": False,
+            "items": [
+                {
+                    "edit_inference_id": "inference-1",
+                    "outcome": "rejected",
+                    "current_settings": {"Exposure2012": 0.5},
+                }
+            ],
+        },
+    )
+
+    result = response.get_json()["results"]
+    assert result["stored"] == 1
+    assert result["corrected_reviews"] == 1
+    assert result["new_reviews"] == 0
+
+
+def test_edit_outcome_status_preflight(client, mocker):
+    query = mocker.patch(
+        "routes.style_edit.edit_history.get_user_outcome_statuses",
+        return_value=[
+            {
+                "inference_id": "inference-1",
+                "photo_id": "photo-1",
+                "applied": True,
+                "reviewed": True,
+                "outcome": "modified_and_kept",
+            }
+        ],
+    )
+
+    response = client.post(
+        "/style_edit/events/outcomes/status",
+        json={"edit_inference_ids": ["inference-1"]},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["results"]["photos"][0]["reviewed"] is True
+    assert query.call_args.kwargs["inference_ids"] == ["inference-1"]

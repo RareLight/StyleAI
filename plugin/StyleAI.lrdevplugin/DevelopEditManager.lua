@@ -648,6 +648,15 @@ function DevelopEditManager.persistEditRecipe(photo, response, warnings, status)
 			photo:setPropertyForPlugin(_PLUGIN, "aiEditWarnings", warningText)
 			photo:setPropertyForPlugin(_PLUGIN, "aiEditRecipe", tostring(recipeJson or ""))
 			photo:setPropertyForPlugin(_PLUGIN, "aiEditStatus", tostring(status or "generated"))
+			if status == "generated" then
+				photo:setPropertyForPlugin(_PLUGIN, "aiEditState", "Pending")
+				photo:setPropertyForPlugin(_PLUGIN, "aiEditReview", "Unreviewed")
+			elseif status == "applied" then
+				photo:setPropertyForPlugin(_PLUGIN, "aiEditApplied", "Yes")
+				photo:setPropertyForPlugin(_PLUGIN, "aiEditState", "Applied")
+			elseif status == "apply_failed" then
+				photo:setPropertyForPlugin(_PLUGIN, "aiEditState", "Application Failed")
+			end
 			if type(response) == "table" and response.edit_inference_id then
 				photo:setPropertyForPlugin(_PLUGIN, "aiEditInferenceId", tostring(response.edit_inference_id))
 			end

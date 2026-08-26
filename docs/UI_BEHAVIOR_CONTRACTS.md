@@ -13,7 +13,7 @@ The canonical cross-module entry point is **File > Plug-in Extras**.
 | Prepare Photos... | `TaskAnalyzeAndIndex.lua` | Visual analysis, local metadata generation, or both |
 | Learn From My Edits... | `TaskTrainFromEdits.lua` | Save eligible RAW/DNG edits as training examples and rebuild once after upload |
 | Apply My Style... | `TaskAiEditPredictive.lua` / `AiEditAction.lua` | Infer and optionally review/apply learned Develop edits |
-| Rate Selected AI Edits... | `TaskReviewAIEditOutcome.lua` | Persist explicit evaluation-only outcomes for at most 100 tracked photos |
+| Rate Selected AI Edits... | `TaskReviewAIEditOutcome.lua` | Persist explicit evaluation-only outcomes for at most 100 tracked photos; authoritative preflight skips reviewed edits by default and requires an explicit override to append a corrected review |
 | Styles & Training... | `TaskStyleCatalog.lua` | Browse, rename, reveal, and rebuild learned styles |
 | Find More Training Examples... | `TaskDiscoverUpgradeCandidates.lua` | Review policy-specific candidate photos and record evaluation-only feedback |
 

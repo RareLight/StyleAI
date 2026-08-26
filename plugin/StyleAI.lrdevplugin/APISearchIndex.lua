@@ -68,6 +68,7 @@ local ENDPOINTS = {
     STYLE_EDIT_APPLICATION_EVENTS = "/style_edit/events/application",
     STYLE_EDIT_RECONCILE_EVENTS = "/style_edit/events/reconcile",
     STYLE_EDIT_OUTCOMES = "/style_edit/events/outcomes",
+    STYLE_EDIT_OUTCOME_STATUSES = "/style_edit/events/outcomes/status",
     STYLE_LIST = "/styles",
     STYLE_DISCOVER = "/styles/discover",
     STYLE_DISCOVER_STATUS = "/styles/discover/status",
@@ -4519,12 +4520,30 @@ function SearchIndexAPI.reconcileStyleEditStates(items)
     return false, response.error or "Unexpected response"
 end
 
-function SearchIndexAPI.recordStyleEditOutcomes(items)
+function SearchIndexAPI.getStyleEditOutcomeStatuses(inferenceIds)
+    if type(inferenceIds) ~= "table" or #inferenceIds == 0 then
+        return true, { checked = 0, photos = {} }
+    end
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_EDIT_OUTCOME_STATUSES
+    local response, err = _request('POST', url, { edit_inference_ids = inferenceIds }, 30)
+    if not response then
+        return false, err or "Unknown error"
+    end
+    if response.checked ~= nil and type(response.photos) == "table" then
+        return true, response
+    end
+    return false, response.error or "Unexpected response"
+end
+
+function SearchIndexAPI.recordStyleEditOutcomes(items, skipExisting)
     if type(items) ~= "table" or #items == 0 then
         return true, { stored = 0, photos = {} }
     end
     local url = getBaseUrl() .. ENDPOINTS.STYLE_EDIT_OUTCOMES
-    local response, err = _request('POST', url, { items = items }, 30)
+    local response, err = _request('POST', url, {
+        items = items,
+        skip_existing = skipExisting ~= false,
+    }, 30)
     if not response then
         return false, err or "Unknown error"
     end

@@ -130,6 +130,37 @@ def test_ai_edit_workflow_keeps_operation_alive_and_isolates_virtual_copies():
     assert "SkipDetails=Skipped details:" in source
 
 
+def test_edit_metadata_and_review_workflow_expose_user_facing_statuses_only():
+    plugin = REPOSITORY_ROOT / "plugin" / "StyleAI.lrdevplugin"
+    provider = (plugin / "MetadataProvider.lua").read_text(encoding="utf-8")
+    review = (plugin / "TaskReviewAIEditOutcome.lua").read_text(encoding="utf-8")
+
+    for field_id, title in (
+        ("aiEditApplied", "StyleAI Edit Applied"),
+        ("aiEditState", "StyleAI Edit State"),
+        ("aiEditReview", "StyleAI Edit Review"),
+    ):
+        field_start = provider.index(f'id = "{field_id}"')
+        field_end = provider.index("\n\t\t},", field_start)
+        field = provider[field_start:field_end]
+        assert title in field
+        assert "searchable = true" in field
+        assert "browsable = true" in field
+
+    for field_id in ("aiEditStatus", "aiEditInferenceId", "keywords", "globalPhotoId"):
+        field_start = provider.index(f'id = "{field_id}"')
+        field_end = provider.index("\n\t\t},", field_start)
+        field = provider[field_start:field_end]
+        assert "searchable = false" in field
+        assert "browsable = false" in field
+
+    assert "getStyleEditOutcomeStatuses" in review
+    assert "includePreviouslyReviewed" in review
+    assert "Previously reviewed photos are skipped by default" in review
+    assert '"aiEditReview"' in review
+    assert "reviewDisplayValue(stored.outcome)" in review
+
+
 def test_macos_development_backend_is_detached_from_lightroom():
     api_source = (
         REPOSITORY_ROOT / "plugin" / "StyleAI.lrdevplugin" / "APISearchIndex.lua"

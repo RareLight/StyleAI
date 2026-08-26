@@ -680,6 +680,73 @@ def record_user_outcome(
     }
 
 
+def get_user_outcome_statuses(
+    *,
+    db_path: str,
+    inference_ids: list[str],
+) -> list[dict[str, Any]]:
+    """Return bounded authoritative application/review status for edit inferences."""
+    normalized = list(dict.fromkeys(str(value).strip() for value in inference_ids))
+    if not normalized or any(not value for value in normalized):
+        raise ValueError("inference_ids must contain non-empty identifiers")
+    if len(normalized) > 100:
+        raise ValueError("at most 100 inference_ids may be checked")
+    placeholders = ",".join("?" for _ in normalized)
+    terminal_placeholders = ",".join("?" for _ in TERMINAL_USER_OUTCOMES)
+    connection = connect_policy_store(db_path)
+    try:
+        rows = connection.execute(
+            f"""
+            SELECT
+                inference.inference_id,
+                inference.photo_id,
+                EXISTS (
+                    SELECT 1
+                    FROM policy_v2_edit_events AS application
+                    WHERE application.inference_id = inference.inference_id
+                      AND application.event_kind IN ('apply_confirmed', 'apply_unconfirmed')
+                ) AS applied,
+                (
+                    SELECT outcome.event_kind
+                    FROM policy_v2_edit_events AS outcome
+                    WHERE outcome.inference_id = inference.inference_id
+                      AND outcome.event_kind IN ({terminal_placeholders})
+                    ORDER BY outcome.event_sequence DESC
+                    LIMIT 1
+                ) AS outcome
+            FROM policy_v2_edit_inferences AS inference
+            WHERE inference.inference_id IN ({placeholders})
+            """,
+            (*sorted(TERMINAL_USER_OUTCOMES), *normalized),
+        ).fetchall()
+    finally:
+        connection.close()
+    by_id = {
+        str(row["inference_id"]): {
+            "inference_id": str(row["inference_id"]),
+            "photo_id": str(row["photo_id"]),
+            "applied": bool(row["applied"]),
+            "reviewed": row["outcome"] is not None,
+            "outcome": row["outcome"],
+        }
+        for row in rows
+    }
+    return [
+        by_id.get(
+            inference_id,
+            {
+                "inference_id": inference_id,
+                "photo_id": None,
+                "applied": False,
+                "reviewed": False,
+                "outcome": None,
+                "missing": True,
+            },
+        )
+        for inference_id in normalized
+    ]
+
+
 def iter_inference_history_batches(
     *,
     db_path: str,
