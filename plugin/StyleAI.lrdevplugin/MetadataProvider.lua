@@ -2,7 +2,7 @@ return {
 	metadataFieldsForPhotos = {
 		{
 			id = "aiLastRun",
-			title = LOC("$$$/StyleAI/AIMetadataProvider/aiLastRun=Last AI run"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/aiLastRun=StyleAI Metadata Date"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -10,7 +10,7 @@ return {
 		},
 		{
 			id = "aiModel",
-			title = LOC("$$$/StyleAI/AIMetadataProvider/aiModel=AI model"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/aiModel=StyleAI Metadata Model"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -18,7 +18,7 @@ return {
 		},
 		{
 			id = "aiEditLastRun",
-			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditLastRun=Last AI edit run"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditLastRun=StyleAI Edit Date"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -26,15 +26,39 @@ return {
 		},
 		{
 			id = "aiEditModel",
-			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditModel=AI edit model"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditModel=StyleAI Edit Model"),
+			dataType = "string",
+			readOnly = true,
+			searchable = false,
+			browsable = false,
+		},
+		{
+			id = "aiEditStatus",
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditStatus=Legacy StyleAI edit status"),
+			dataType = "string",
+			readOnly = true,
+			searchable = false,
+			browsable = false,
+		},
+		{
+			id = "aiEditApplied",
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditApplied=StyleAI Edit Applied"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
 			browsable = true,
 		},
 		{
-			id = "aiEditStatus",
-			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditStatus=AI edit status"),
+			id = "aiEditState",
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditState=StyleAI Edit State"),
+			dataType = "string",
+			readOnly = true,
+			searchable = true,
+			browsable = true,
+		},
+		{
+			id = "aiEditReview",
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditReview=StyleAI Edit Review"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -45,12 +69,12 @@ return {
 			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditInferenceId=AI edit inference ID"),
 			dataType = "string",
 			readOnly = true,
-			searchable = true,
+			searchable = false,
 			browsable = false,
 		},
 		{
 			id = "aiEditSummary",
-			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditSummary=AI edit summary"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditSummary=StyleAI Edit Summary"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -58,7 +82,7 @@ return {
 		},
 		{
 			id = "aiEditWarnings",
-			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditWarnings=AI edit warnings"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/AiEditWarnings=StyleAI Edit Warnings"),
 			dataType = "string",
 			readOnly = true,
 			searchable = true,
@@ -84,7 +108,7 @@ return {
 		},
 		{
 			id = "photoContext",
-			title = LOC("$$$/StyleAI/AIMetadataProvider/photoContext=Photo context"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/photoContext=StyleAI Photo Instructions"),
 			dataType = "string",
 			readOnly = false,
 			searchable = true,
@@ -93,18 +117,18 @@ return {
 
 		{
 			id = "keywords",
-			title = LOC("$$$/StyleAI/AIMetadataProvider/keywords=AI Keywords"),
+			title = LOC("$$$/StyleAI/AIMetadataProvider/keywords=Legacy StyleAI Keywords"),
 			dataType = "string",
 			readOnly = true,
-			searchable = true,
-			browsable = true,
+			searchable = false,
+			browsable = false,
 		},
 		{
 			id = "globalPhotoId",
 			title = LOC("$$$/StyleAI/AIMetadataProvider/GlobalPhotoId=Global Photo ID"),
 			dataType = "string",
 			readOnly = true,
-			searchable = true,
+			searchable = false,
 			browsable = false,
 			version = 2,
 		},
@@ -136,7 +160,7 @@ return {
 		},
 	},
 
-	schemaVersion = 33,
+	schemaVersion = 34,
 	updateFromEarlierSchemaVersion = function(catalog, previousSchemaVersion, progressScope)
 		catalog:assertHasPrivateWriteAccess("AIMetadataProvider.updateFromEarlierSchemaVersion")
 	end,

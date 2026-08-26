@@ -23,9 +23,10 @@ return {
 		"com.adobe.separator",
 		_PLUGIN.id .. ".aiModel",
 		_PLUGIN.id .. ".aiLastRun",
-		_PLUGIN.id .. ".aiEditModel",
+		_PLUGIN.id .. ".aiEditApplied",
+		_PLUGIN.id .. ".aiEditState",
+		_PLUGIN.id .. ".aiEditReview",
 		_PLUGIN.id .. ".aiEditLastRun",
-		_PLUGIN.id .. ".aiEditStatus",
 		{ _PLUGIN.id .. ".aiEditSummary", height_in_lines = 4 },
 		{ _PLUGIN.id .. ".aiEditWarnings", height_in_lines = 4 },
 

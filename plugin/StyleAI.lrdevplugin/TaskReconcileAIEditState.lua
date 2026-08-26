@@ -63,6 +63,12 @@ LrTasks.startAsyncTask(function()
 			catalog:withPrivateWriteAccessDo(function()
 				for _, update in ipairs(updates) do
 					update.photo:setPropertyForPlugin(_PLUGIN, "aiEditStatus", update.state)
+					update.photo:setPropertyForPlugin(_PLUGIN, "aiEditApplied", "Yes")
+					local displayState = update.state == "apply_confirmed" and "Applied"
+						or update.state == "reverted" and "Reverted"
+						or update.state == "diverged" and "Modified"
+						or "Tracked"
+					update.photo:setPropertyForPlugin(_PLUGIN, "aiEditState", displayState)
 				end
 			end, Defaults.catalogWriteAccessOptions)
 		end

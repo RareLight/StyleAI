@@ -58,6 +58,17 @@ profile, HDR, or sparse/structural families.
 Records Keep, Modified and Kept, or Reject for up to 100 tracked selected
 photos. This action reads current modeled sliders and appends evaluation
 history; it neither changes Develop settings nor automatically retrains.
+StyleAI checks authoritative review history before opening the batch, skips
+previously reviewed photos by default, and requires an explicit option to
+record a corrected review. The completion summary separates new, corrected,
+unchanged, skipped, and failed reviews.
+
+Lightroom Smart Collections expose photographer-facing **StyleAI Edit
+Applied**, **StyleAI Edit State**, and **StyleAI Edit Review** fields. Use
+**StyleAI Edit Applied is Yes** for a durable collection of photos that have
+received a StyleAI edit; modifying, reverting, or reviewing an edit does not
+clear that historical marker. Internal inference and stable-photo identifiers
+remain hidden from Smart Collection criteria.
 
 ## Styles & Training
 

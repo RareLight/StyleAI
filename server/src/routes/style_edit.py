@@ -1030,22 +1030,60 @@ def record_style_edit_outcomes():
             raise ValueError("items must be a non-empty list of at most 100 photos")
         if not config.DB_PATH:
             raise RuntimeError("StyleAI database path is not configured")
+        skip_existing = data.get("skip_existing", True)
+        if not isinstance(skip_existing, bool):
+            raise ValueError("skip_existing must be a boolean")
+        inference_ids = [
+            str(item.get("edit_inference_id") or "").strip()
+            for item in items
+            if isinstance(item, dict)
+        ]
+        existing_statuses = {
+            status["inference_id"]: status
+            for status in edit_history.get_user_outcome_statuses(
+                db_path=config.DB_PATH,
+                inference_ids=inference_ids,
+            )
+        }
         results = []
         failures = []
+        new_reviews = 0
+        corrected_reviews = 0
+        unchanged_reviews = 0
+        skipped_reviewed = 0
         with operations.admission.acquire({"catalog_write": 1}, priority=9):
             for item in items:
                 if not isinstance(item, dict):
                     raise ValueError("every outcome item must be an object")
                 inference_id = str(item.get("edit_inference_id") or "").strip()
                 try:
-                    results.append(
-                        edit_history.record_user_outcome(
-                            db_path=config.DB_PATH,
-                            inference_id=inference_id,
-                            outcome=str(item.get("outcome") or "").strip(),
-                            current_settings=item.get("current_settings"),
+                    prior = existing_statuses.get(inference_id) or {}
+                    if skip_existing and prior.get("reviewed"):
+                        results.append(
+                            {
+                                **prior,
+                                "recorded": False,
+                                "skipped_existing": True,
+                            }
                         )
+                        skipped_reviewed += 1
+                        continue
+                    stored = edit_history.record_user_outcome(
+                        db_path=config.DB_PATH,
+                        inference_id=inference_id,
+                        outcome=str(item.get("outcome") or "").strip(),
+                        current_settings=item.get("current_settings"),
                     )
+                    stored["prior_outcome"] = prior.get("outcome")
+                    stored["skipped_existing"] = False
+                    results.append(stored)
+                    if stored.get("recorded"):
+                        if prior.get("reviewed"):
+                            corrected_reviews += 1
+                        else:
+                            new_reviews += 1
+                    else:
+                        unchanged_reviews += 1
                 except (ValueError, LookupError) as exc:
                     failures.append(
                         {"edit_inference_id": inference_id, "error": str(exc)}
@@ -1053,7 +1091,11 @@ def record_style_edit_outcomes():
         return jsonify(
             {
                 "results": {
-                    "stored": len(results),
+                    "stored": new_reviews + corrected_reviews,
+                    "new_reviews": new_reviews,
+                    "corrected_reviews": corrected_reviews,
+                    "unchanged_reviews": unchanged_reviews,
+                    "skipped_reviewed": skipped_reviewed,
                     "failed": len(failures),
                     "photos": results,
                     "failures": failures,
@@ -1070,6 +1112,34 @@ def record_style_edit_outcomes():
         return jsonify({"results": None, "error": str(exc), "warning": None}), 400
     except Exception as exc:
         logger.error("Failed to record Lightroom edit outcomes: %s", exc, exc_info=True)
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 500
+
+
+@style_edit_bp.route("/style_edit/events/outcomes/status", methods=["POST"])
+def get_style_edit_outcome_statuses():
+    """Return authoritative review status before Lightroom builds a review batch."""
+    try:
+        data = request.get_json(silent=True) or {}
+        inference_ids = data.get("edit_inference_ids")
+        if not isinstance(inference_ids, list) or not inference_ids:
+            raise ValueError("edit_inference_ids must be a non-empty list")
+        if not config.DB_PATH:
+            raise RuntimeError("StyleAI database path is not configured")
+        statuses = edit_history.get_user_outcome_statuses(
+            db_path=config.DB_PATH,
+            inference_ids=inference_ids,
+        )
+        return jsonify(
+            {
+                "results": {"checked": len(statuses), "photos": statuses},
+                "error": None,
+                "warning": None,
+            }
+        ), 200
+    except (ValueError, LookupError) as exc:
+        return jsonify({"results": None, "error": str(exc), "warning": None}), 400
+    except Exception as exc:
+        logger.error("Failed to query Lightroom edit outcomes: %s", exc, exc_info=True)
         return jsonify({"results": None, "error": str(exc), "warning": None}), 500
 
 
