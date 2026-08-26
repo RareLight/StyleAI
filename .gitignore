@@ -16,7 +16,7 @@ model_scripts/**/*.bin
 **/.pytest_cache/
 **/.ruff_cache/
 **/.mypy_cache/
-**/.coverage
+**/.coverage*
 **/._.DS_Store
 **/.DS_Store
 **/.idea/
