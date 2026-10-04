@@ -6,6 +6,9 @@ production behavior. `global_target_reuse` is implemented behind the internal
 `STYLEAI_EDIT_BURST_EXACT_REUSE=1` evaluation gate and remains off by default
 until the unchecked held-out and human Lightroom gates pass. Current behavior
 remains defined by `UI_BEHAVIOR_CONTRACTS.md`, `AGENTS.md`, and production code.
+The proposed `STYLE_REFINEMENT_IMPLEMENTATION_CHECKLIST.md` owns preference
+variants and inactive refinement candidates; it must preserve the burst-safe
+identity, deduplication, inference-history, and evaluation contracts here.
 
 ## Goal and product boundaries
 
@@ -31,6 +34,16 @@ remains defined by `UI_BEHAVIOR_CONTRACTS.md`, `AGENTS.md`, and production code.
   cancellation, error accounting, and application receipts.
 - [x] Do not add a permanent user preference unless human testing demonstrates
   that an automatic conservative optimization is insufficiently transparent.
+
+Future Style Refinement coordination requirements are tracked in its own
+checklist and are not release gates for this burst-coherence work:
+
+- Burst-deduplicate refinement source photos and comparison evidence so one
+  capture sequence cannot multiply a preference signal.
+- Generate blinded refinement variants from independent per-photo predictions;
+  never use `global_target_reuse` to manufacture agreement between alternatives.
+- Report refinement candidate behavior by burst tier and retain the current
+  policy/partition leakage and geometry-disagreement gates before activation.
 
 ## Tier contract
 

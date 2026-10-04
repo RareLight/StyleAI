@@ -38,6 +38,19 @@ The separate **Benchmark Indexing Throughput (256+ Photos)...** command is a
 pipeline-saturation tool for preview, embedding, worker, and batch-size
 permutations. Its 256-photo minimum does not apply to the local LLM benchmark.
 
+**Developer: Evaluate Applied Edit Quality...** runs the same catalog-local,
+versioned evaluator as `server/scripts/evaluate_applied_edits.py`. It creates a
+durable cancellable job, shows a bounded plain-language summary, and can reveal
+the complete JSON beneath `styleai.db/evaluation_reports`. It is strictly
+evaluation-only and never retrains, activates, or calibrates a style.
+
+**Developer: Test Style Refinement...** is a pre-release QR-1/CV-1 rendering
+spike. It accepts exactly two selected disposable virtual copies for each
+tracked inference, applies blinded continuous-global variants, shows the two
+Lightroom previews side by side, and restores both copies after every choice.
+Choices are append-only catalog-local evidence. The workflow cannot build or
+activate a model and is not a production File-menu command.
+
 ## Control-to-behavior mapping
 
 ### Prepare Photos

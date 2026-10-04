@@ -3,24 +3,11 @@
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, datetime
-import json
 import os
 from pathlib import Path
-import platform
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-
-def _atomic_json(path: Path, value: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(value, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    os.replace(temporary, path)
 
 
 def main() -> int:
@@ -46,44 +33,22 @@ def main() -> int:
     original_argv = sys.argv
     try:
         sys.argv = [original_argv[0], "--db-path", str(database_path)]
-        from services.edit_history import iter_inference_history_batches
-        from services.edit_quality_evaluation import evaluate_applied_edit_histories
+        from services.applied_edit_reporting import generate_applied_edit_report
     finally:
         sys.argv = original_argv
 
-    histories = (
-        history
-        for batch in iter_inference_history_batches(
-            db_path=str(database_path),
-            created_after=args.created_after,
-        )
-        for history in batch
-    )
-    report = evaluate_applied_edit_histories(
-        histories,
+    result = generate_applied_edit_report(
+        db_path=str(database_path),
+        output=args.output,
+        created_after=args.created_after,
         confidence_bin_count=args.confidence_bins,
         minimum_reviewed_per_generation=args.minimum_reviewed_per_generation,
     )
-    report["generated_at_utc"] = datetime.now(UTC).isoformat()
-    report["system"] = {
-        "platform": platform.platform(),
-        "machine": platform.machine(),
-        "python": platform.python_version(),
-    }
-    output = args.output
-    if output is None:
-        output = (
-            database_path
-            / "evaluation_reports"
-            / f"applied-edits-{report['dataset_fingerprint'][:12]}.json"
-        )
-    else:
-        output = output.expanduser().resolve()
-    _atomic_json(output, report)
+    report = result["report"]
 
     dataset = report["dataset"]
     outcomes = report["user_outcomes"]
-    print(f"Evaluation report: {output}")
+    print(f"Evaluation report: {result['report_path']}")
     print(f"Dataset fingerprint: {report['dataset_fingerprint']}")
     print(
         "Review coverage: "

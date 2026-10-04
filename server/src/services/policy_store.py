@@ -26,6 +26,11 @@ V2_TABLES = (
     "policy_v2_recommendation_candidates",
     "policy_v2_edit_inferences",
     "policy_v2_edit_events",
+    "policy_v2_refinement_sessions",
+    "policy_v2_refinement_pairs",
+    "policy_v2_refinement_choices",
+    "policy_v2_refinement_candidates",
+    "policy_v2_refinement_activation_events",
 )
 
 

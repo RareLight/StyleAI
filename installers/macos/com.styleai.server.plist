@@ -7,11 +7,12 @@
     <key>ProgramArguments</key>
     <array>
         <string>/Applications/StyleAI/Server/styleai-server</string>
+        <string>--lightroom-managed</string>
     </array>
     <key>RunAtLoad</key>
-    <true/>
+    <false/>
     <key>KeepAlive</key>
-    <true/>
+    <false/>
     <key>StandardOutPath</key>
     <string>/Library/Logs/StyleAI/service.log</string>
     <key>StandardErrorPath</key>

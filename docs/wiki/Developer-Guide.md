@@ -206,17 +206,32 @@ clean frozen database unusable.
 
 StyleAI deliberately does not register `LrShutdownApp`. Lightroom 15.5 can
 deadlock while dispatching a shutdown callback's completion function, even when
-the callback performs no cleanup. The backend unloads idle SigLIP2 weights
-after 10 minutes and exits after 10 request-idle minutes when no live
-operation/admission/index work exists. Explicit developer redeploy uses
-`scripts/server.sh stop`, which cancels, requests shutdown, verifies the port,
-and escalates only against a recognized StyleAI PID.
+the callback performs no cleanup. A plug-in launched backend runs with
+`--lightroom-managed`: it verifies a Lightroom Classic owner process before
+binding catalog state, then an independent watcher rechecks that pinned owner
+every second and exits when it disappears — even while work is live. Shutdown
+is bounded: cancellation is set immediately, a cleanup worker makes a
+best-effort pass at interrupted session state and owned markers, and a deadline
+thread force-exits the process after five seconds plus a short response flush;
+a marker that outlives the deadline is retained for conservative recovery.
+Managed backends load SigLIP2 lazily on first use. Manually started backends
+keep the idle fallback: unload idle SigLIP2 weights after 10 minutes and exit
+after 10 request-idle minutes when no live operation/admission/index work
+exists.
+Explicit developer redeploy uses `scripts/server.sh stop`, which cancels,
+requests shutdown, verifies the port, and escalates only against a recognized
+StyleAI PID.
 
-On macOS, the copied development plug-in submits the virtualenv Python backend
-directly to `launchd` with a unique job label. This keeps the backend lifetime
-and signal ownership independent of Lightroom. The backend also converts
-`SIGTERM` into its bounded shutdown path so a process-manager stop records
-session state and removes only its owned lifecycle markers.
+On macOS, the plug-in writes a one-shot `launchd` job plist into the catalog
+folder and bootstraps it with a unique label (`RunAtLoad=true`,
+`KeepAlive=false`) for the development virtualenv, `uv run`, and
+packaged-binary variants alike. This
+keeps the backend lifetime and signal ownership independent of Lightroom while
+passing the exact catalog `--db-path` and `--lightroom-managed` on every
+launch; nothing restarts the service automatically, so **Repair** performs an
+explicit shutdown plus start. The backend also converts `SIGTERM` into its
+bounded shutdown path so a process-manager stop records session state and
+removes only its owned lifecycle markers.
 
 ## Durable operations and resource admission
 
@@ -393,6 +408,12 @@ are preference evidence, never numeric regression targets.
 
 ## Quality and performance evaluation
 
+The same applied-edit assessment is available inside Lightroom through
+**Help > Plug-in Extras > Developer: Evaluate Applied Edit Quality...**. The
+Lightroom command and CLI below share one evaluator and write reusable,
+versioned reports under `styleai.db/evaluation_reports`. Both paths are
+evaluation-only: they do not retrain, change thresholds, or activate a policy.
+
 ```sh
 cd server
 uv run python scripts/evaluate_editing_policies.py
@@ -410,6 +431,18 @@ the active generation. Recommendation and outcome calibration reports are
 versioned, local, and evaluation-only. Applied-edit quality schema v2 includes
 burst tier coverage, fallback reasons, policy/partition leakage, geometry
 disagreement, and per-tier delivered-target corrections.
+
+### Developer style-refinement spike
+
+**Developer: Test Style Refinement...** is currently limited to QR-1/CV-1
+evidence collection. Prepare two disposable virtual copies carrying the same
+tracked StyleAI inference ID for every comparison, select all prepared copies,
+and run the command from **Help > Plug-in Extras**. Quick Refinement compares
+two bounded strengths along the existing learned target direction. Correction
+Validation admits only a fresh readback matching an explicit Modified-and-Kept
+outcome. The command restores both copies after each modal comparison and saves
+choices locally; it does not build or activate a refined model yet. Do not use
+originals or retained working copies for this developer gate.
 
 Before handoff, run:
 

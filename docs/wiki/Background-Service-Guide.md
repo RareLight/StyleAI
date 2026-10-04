@@ -13,10 +13,23 @@ database paths, and backup marker checks prevent an archive from being restored
 into another StyleAI database. Keep each Lightroom catalog in its own folder.
 
 Lightroom exit does not send a shutdown request or wait on the service. The
-service unloads idle SigLIP2 weights after 10 minutes and exits after 10 idle
-minutes only when no job, resource lease, or index queue work is live. An
-explicit source redeploy uses `scripts/server.sh stop` to cancel work and verify
-port release before replacing the plug-in.
+plug-in launches the backend as a managed, one-shot background job that never
+restarts automatically. Before touching catalog state, a managed backend checks
+that a Lightroom Classic owner process exists; afterwards an independent watcher
+rechecks that owner every second. Confirmed loss triggers bounded shutdown:
+cancellation is set immediately, a cleanup worker makes a best-effort pass at
+session state and owned lifecycle markers within a five-second window, and the
+process then force-exits even if cleanup stalls — a marker that outlives the
+deadline is retained for conservative recovery. Managed launches load SigLIP2
+lazily on first use.
+
+A backend started by hand from the command line instead keeps the idle fallback:
+it unloads idle SigLIP2 weights after 10 minutes and exits after 10 idle minutes
+only when no job, resource lease, or index queue work is live. An explicit
+source redeploy uses `scripts/server.sh stop` to cancel work and verify port
+release before replacing the plug-in. Plug-in Manager **Repair** stops the
+current service and relaunches it explicitly rather than relying on the job to
+respawn.
 
 ## Work and resource coordination
 

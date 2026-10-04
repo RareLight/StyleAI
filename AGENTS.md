@@ -58,6 +58,9 @@ Catalog-local storage:
 Dependencies are managed exclusively by `server/pyproject.toml` and
 `server/uv.lock`. Never create or edit `requirements.txt`.
 
+Testing mode: `autonomous`. Run focused isolated checks; never use a live
+catalog/provider without explicit authorization.
+
 ```sh
 bash scripts/setup-local-uv-env.sh
 bash server/scripts/lint_format.sh
@@ -91,9 +94,9 @@ Keep English, Catalan, German, Spanish, and French synchronized.
 - Run long work in `LrTasks.startAsyncTask` and use `LrTasks.pcall` for normal
   asynchronous error boundaries.
 - Do not register `LrShutdownApp`. Lightroom 15.5 can deadlock while dispatching
-  even an otherwise empty shutdown callback's `doneFunc`. The service owns idle
-  shutdown and interrupted-job recovery, so application exit needs no plug-in
-  teardown hook.
+  even an otherwise empty shutdown callback's `doneFunc`. The service owns an
+  independent Lightroom-process watcher with an idle-shutdown fallback and
+  interrupted-job recovery, so application exit needs no plug-in teardown hook.
 - Never yield inside `withWriteAccessDo` or `withPrivateWriteAccessDo`. Batch
   mutations into one write transaction. Outside transactions, use
   `LrTasks.yield(); LrTasks.sleep(0.01)` during long macOS loops.

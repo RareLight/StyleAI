@@ -7,6 +7,7 @@ return {
 			readOnly = true,
 			searchable = true,
 			browsable = true,
+			version = 2,
 		},
 		{
 			id = "aiModel",
@@ -15,6 +16,7 @@ return {
 			readOnly = true,
 			searchable = true,
 			browsable = true,
+			version = 2,
 		},
 		{
 			id = "aiEditLastRun",
@@ -23,6 +25,7 @@ return {
 			readOnly = true,
 			searchable = true,
 			browsable = true,
+			version = 2,
 		},
 		{
 			id = "aiEditModel",
@@ -31,6 +34,7 @@ return {
 			readOnly = true,
 			searchable = false,
 			browsable = false,
+			version = 2,
 		},
 		{
 			id = "aiEditStatus",
@@ -39,6 +43,7 @@ return {
 			readOnly = true,
 			searchable = false,
 			browsable = false,
+			version = 2,
 		},
 		{
 			id = "aiEditApplied",
@@ -47,6 +52,7 @@ return {
 			readOnly = true,
 			searchable = true,
 			browsable = true,
+			version = 1,
 		},
 		{
 			id = "aiEditState",
@@ -55,6 +61,7 @@ return {
 			readOnly = true,
 			searchable = true,
 			browsable = true,
+			version = 1,
 		},
 		{
 			id = "aiEditReview",
@@ -63,6 +70,7 @@ return {
 			readOnly = true,
 			searchable = true,
 			browsable = true,
+			version = 1,
 		},
 		{
 			id = "aiEditInferenceId",
@@ -71,6 +79,7 @@ return {
 			readOnly = true,
 			searchable = false,
 			browsable = false,
+			version = 2,
 		},
 		{
 			id = "aiEditSummary",
@@ -79,6 +88,7 @@ return {
 			readOnly = true,
 			searchable = true,
 			browsable = true,
+			version = 2,
 		},
 		{
 			id = "aiEditWarnings",
@@ -87,6 +97,7 @@ return {
 			readOnly = true,
 			searchable = true,
 			browsable = true,
+			version = 2,
 		},
 		{
 			id = "aiEditRecipe",
@@ -95,6 +106,7 @@ return {
 			readOnly = true,
 			searchable = false,
 			browsable = false,
+			version = 1,
 		},
 		{
 			-- Durable Lightroom-side outbox used between Develop application and
@@ -105,6 +117,7 @@ return {
 			readOnly = true,
 			searchable = false,
 			browsable = false,
+			version = 1,
 		},
 		{
 			id = "photoContext",
@@ -113,6 +126,7 @@ return {
 			readOnly = false,
 			searchable = true,
 			browsable = true,
+			version = 2,
 		},
 
 		{
@@ -122,6 +136,7 @@ return {
 			readOnly = true,
 			searchable = false,
 			browsable = false,
+			version = 2,
 		},
 		{
 			id = "globalPhotoId",
@@ -130,7 +145,7 @@ return {
 			readOnly = true,
 			searchable = false,
 			browsable = false,
-			version = 2,
+			version = 3,
 		},
 		{
 			id = "globalPhotoIdFileSize",
@@ -139,6 +154,7 @@ return {
 			readOnly = true,
 			searchable = false,
 			browsable = false,
+			version = 1,
 		},
 		{
 			id = "globalPhotoIdFileModificationDate",
@@ -149,6 +165,7 @@ return {
 			readOnly = true,
 			searchable = false,
 			browsable = false,
+			version = 1,
 		},
 		{
 			id = "globalPhotoIdAlgorithm",
@@ -157,10 +174,11 @@ return {
 			readOnly = true,
 			searchable = false,
 			browsable = false,
+			version = 1,
 		},
 	},
 
-	schemaVersion = 34,
+	schemaVersion = 35,
 	updateFromEarlierSchemaVersion = function(catalog, previousSchemaVersion, progressScope)
 		catalog:assertHasPrivateWriteAccess("AIMetadataProvider.updateFromEarlierSchemaVersion")
 	end,

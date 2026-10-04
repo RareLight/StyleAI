@@ -252,3 +252,31 @@ def test_initialize_rejects_switching_to_a_second_catalog(client, mocker, tmp_pa
 
     assert response.status_code == 409
     assert "already bound" in response.get_json()["error"]
+
+
+def test_requests_are_rejected_while_shutdown_is_pending(client, mocker):
+    import server_lifecycle
+
+    version = mocker.patch("routes.server.service_version.get_backend_version_info")
+    discard = mocker.patch("services.index.discard_pending_index_queue")
+    server_lifecycle.GLOBAL_SHUTDOWN_EVENT.set()
+    server_lifecycle.GLOBAL_CANCEL_EVENT.set()
+
+    response = client.post("/clear_cancel_tasks")
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "Backend is shutting down"
+    assert server_lifecycle.GLOBAL_CANCEL_EVENT.is_set()
+    discard.assert_not_called()
+
+    response = client.get("/version")
+    assert response.status_code == 503
+    version.assert_not_called()
+
+    response = client.get("/ping")
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "pong"
+
+    shutdown = mocker.patch("routes.server.server_lifecycle.request_shutdown")
+    response = client.post("/shutdown")
+    assert response.status_code == 200
+    shutdown.assert_called_once()

@@ -69,6 +69,8 @@ local ENDPOINTS = {
     STYLE_EDIT_RECONCILE_EVENTS = "/style_edit/events/reconcile",
     STYLE_EDIT_OUTCOMES = "/style_edit/events/outcomes",
     STYLE_EDIT_OUTCOME_STATUSES = "/style_edit/events/outcomes/status",
+    STYLE_EDIT_EVALUATION = "/style_edit/evaluation",
+    STYLE_REFINEMENT = "/style_refinement",
     STYLE_LIST = "/styles",
     STYLE_DISCOVER = "/styles/discover",
     STYLE_DISCOVER_STATUS = "/styles/discover/status",
@@ -2982,6 +2984,96 @@ local function releaseStartLock()
     if LrFileUtils.exists(lockPath) then LrTasks.pcall(function() LrFileUtils.delete(lockPath) end) end
 end
 
+local function shellQuotePath(value)
+    return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
+end
+
+local function escapeXmlText(value)
+    return (tostring(value):gsub("[&<>'\"]", function(character)
+        if character == "&" then return "&amp;" end
+        if character == "<" then return "&lt;" end
+        if character == ">" then return "&gt;" end
+        if character == "'" then return "&apos;" end
+        return "&quot;"
+    end))
+end
+
+local function buildDevLaunchPath()
+    local segments = {}
+    local homeDir = LrPathUtils.getStandardFilePath("home")
+    if homeDir and homeDir ~= "" then
+        segments[#segments + 1] = homeDir .. "/.local/bin"
+    end
+    for _, segment in ipairs({
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    }) do
+        segments[#segments + 1] = segment
+    end
+    return table.concat(segments, ":")
+end
+
+local serverLaunchSequence = 0
+
+local function nextServerLaunchLabel(prefix)
+    serverLaunchSequence = serverLaunchSequence + 1
+    return "com.styleai.server." .. prefix .. "." ..
+        string.format("%.0f", math.floor(LrDate.currentTime() * 1000)) .. "." ..
+        tostring(serverLaunchSequence)
+end
+
+-- LrTasks.execute children can be terminated with Lightroom even when
+-- the shell backgrounds them with nohup. Submit the development server
+-- to launchd so it owns an independent process lifetime, matching the
+-- installed macOS service. A unique label avoids stale-job collisions.
+local function writeServerLaunchdJob(launchLabel, programArguments, environment, logPath)
+    local plistPath = LrPathUtils.child(getServerControlDir(), "styleai-server-launch.plist")
+    local lines = {
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+        '<plist version="1.0">',
+        '<dict>',
+        '\t<key>Label</key>',
+        '\t<string>' .. escapeXmlText(launchLabel) .. '</string>',
+        '\t<key>ProgramArguments</key>',
+        '\t<array>',
+    }
+    for _, argument in ipairs(programArguments) do
+        lines[#lines + 1] = '\t\t<string>' .. escapeXmlText(argument) .. '</string>'
+    end
+    lines[#lines + 1] = '\t</array>'
+    if environment then
+        lines[#lines + 1] = '\t<key>EnvironmentVariables</key>'
+        lines[#lines + 1] = '\t<dict>'
+        for key, value in pairs(environment) do
+            lines[#lines + 1] = '\t\t<key>' .. escapeXmlText(key) .. '</key>'
+            lines[#lines + 1] = '\t\t<string>' .. escapeXmlText(value) .. '</string>'
+        end
+        lines[#lines + 1] = '\t</dict>'
+    end
+    lines[#lines + 1] = '\t<key>RunAtLoad</key>'
+    lines[#lines + 1] = '\t<true/>'
+    lines[#lines + 1] = '\t<key>KeepAlive</key>'
+    lines[#lines + 1] = '\t<false/>'
+    lines[#lines + 1] = '\t<key>StandardOutPath</key>'
+    lines[#lines + 1] = '\t<string>' .. escapeXmlText(logPath) .. '</string>'
+    lines[#lines + 1] = '\t<key>StandardErrorPath</key>'
+    lines[#lines + 1] = '\t<string>' .. escapeXmlText(logPath) .. '</string>'
+    lines[#lines + 1] = '</dict>'
+    lines[#lines + 1] = '</plist>'
+    local plistFile = io.open(plistPath, "w")
+    if not plistFile then
+        return nil
+    end
+    plistFile:write(table.concat(lines, "\n") .. "\n")
+    plistFile:close()
+    return "launchctl bootstrap \"gui/$(id -u)\" " .. shellQuotePath(plistPath)
+end
+
 function SearchIndexAPI.shutdownServer(opts)
     opts = opts or {}
     local graceSeconds = opts.graceSeconds or 10
@@ -3047,25 +3139,15 @@ function SearchIndexAPI.unloadResources(opts)
 end
 
 function SearchIndexAPI.restartBackend()
-    local url = getBaseUrl() .. ENDPOINTS.RESTART
-    log:info("Requesting backend restart via API")
-    local _, err = _request('POST', url, {}, 5)
-    if err then
-        log:error("Failed to request backend restart: " .. tostring(err))
-        return false, err
+    log:info("Requesting backend restart via managed relaunch")
+    local stopped = SearchIndexAPI.shutdownServer()
+    if not stopped then
+        return false, "Backend shutdown failed"
     end
-
     -- Wait a bit and then ping until back
-    LrTasks.sleep(2)
-    local deadline = LrDate.currentTime() + 60
-    while LrDate.currentTime() < deadline do
-        if SearchIndexAPI.pingServer() then
-            log:info("Backend restarted successfully")
-            local dbPath = LrPathUtils.child(getServerControlDir(), "styleai.db")
-            SearchIndexAPI.initializeCatalog(dbPath)
-            return true
-        end
-        LrTasks.sleep(1)
+    if SearchIndexAPI.startServer({ readyTimeoutSeconds = 120 }) then
+        log:info("Backend restarted successfully")
+        return true
     end
     return false, "Restart timeout"
 end
@@ -3255,28 +3337,47 @@ function SearchIndexAPI.startServer(opts)
         if isDevMode and not LrFileUtils.exists(serverBinary) then
             local launchLogPath = LrPathUtils.child(getServerControlDir(), "styleai-server-launcher.log")
             if WIN_ENV then
-                startServerCmd = string.format("cd /d \"%s\" && start /b \"\" uv run python src/styleai_server.py --db-path \"%s\" > \"%s\" 2>&1",
+                startServerCmd = string.format("cd /d \"%s\" && start /b \"\" uv run python src/styleai_server.py --db-path \"%s\" --lightroom-managed > \"%s\" 2>&1",
                     devServerDir, dbPath, launchLogPath)
             elseif MAC_ENV then
-                -- LrTasks.execute children can be terminated with Lightroom even when
-                -- the shell backgrounds them with nohup. Submit the development server
-                -- to launchd so it owns an independent process lifetime, matching the
-                -- installed macOS service. A unique label avoids stale-job collisions.
-                local launchLabel = "com.styleai.server.dev." .. tostring(os.time())
+                local launchLabel = nextServerLaunchLabel("dev")
                 local venvPython = LrPathUtils.child(LrPathUtils.child(devServerDir, ".venv"), "bin/python")
+                local programArguments
+                local environment
                 if LrFileUtils.exists(venvPython) then
+                    programArguments = {
+                        venvPython,
+                        devServerScript,
+                        "--db-path",
+                        dbPath,
+                        "--lightroom-managed",
+                    }
+                    environment = {
+                        PATH = buildDevLaunchPath(),
+                        KMP_DUPLICATE_LIB_OK = "TRUE",
+                    }
+                else
                     -- Restore the executable search path that Lightroom does not
                     -- inherit from the user's interactive shell. `exec` replaces
                     -- bash with Python, so launchd still supervises the service
                     -- process directly and receives its true exit status.
-                    startServerCmd = string.format("launchctl submit -l '%s' -o '%s' -e '%s' -- /bin/bash -c 'PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" exec \"%s\" \"%s\" --db-path \"%s\"'",
-                        launchLabel, launchLogPath, launchLogPath, venvPython, devServerScript, dbPath)
-                else
-                    startServerCmd = string.format("launchctl submit -l '%s' -o '%s' -e '%s' -- /bin/bash -c 'cd \"%s\" && PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" exec uv run python src/styleai_server.py --db-path \"%s\"'",
-                        launchLabel, launchLogPath, launchLogPath, devServerDir, dbPath)
+                    programArguments = {
+                        "/bin/bash",
+                        "-c",
+                        "cd " .. shellQuotePath(devServerDir) ..
+                            " && PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"" ..
+                            " exec uv run python src/styleai_server.py --db-path " ..
+                            shellQuotePath(dbPath) .. " --lightroom-managed",
+                    }
+                end
+                startServerCmd = writeServerLaunchdJob(
+                    launchLabel, programArguments, environment, launchLogPath)
+                if not startServerCmd then
+                    log:error("Could not write the backend launchd job plist")
+                    return false
                 end
             else
-                startServerCmd = string.format("cd '%s' && nohup bash -c 'PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run python src/styleai_server.py --db-path \"%s\"' </dev/null > '%s' 2>&1 &",
+                startServerCmd = string.format("cd '%s' && nohup bash -c 'PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" uv run python src/styleai_server.py --db-path \"%s\" --lightroom-managed' </dev/null > '%s' 2>&1 &",
                     devServerDir, dbPath, launchLogPath)
             end
         else
@@ -3284,20 +3385,29 @@ function SearchIndexAPI.startServer(opts)
             if WIN_ENV then
                 -- The .cmd launcher handles environment variables and uses pythonw.exe for invisible execution.
                 startServerCmd = "start /b /d \"" ..
-                    serverDir .. "\" \"\" \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
+                    serverDir .. "\" \"\" \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\" --lightroom-managed"
             elseif MAC_ENV then
-                if serverBinary:match("^/Applications") then
-                    -- System install: use launchctl to trigger the system-wide service
-                    startServerCmd = "launchctl kickstart -k gui/$(id -u)/com.styleai.server"
-                else
-                    -- Local/Dev fallback
-                    local envPrefix = "KMP_DUPLICATE_LIB_OK=TRUE "
-                    startServerCmd = envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
+                -- System install: use launchctl to trigger the system-wide service
+                -- Local/Dev fallback
+                local launchLabel = nextServerLaunchLabel("session")
+                local launchLogPath = LrPathUtils.child(getServerControlDir(), "styleai-server-launcher.log")
+                local programArguments = {
+                    tostring(serverBinary),
+                    "--db-path",
+                    dbPath,
+                    "--lightroom-managed",
+                }
+                local environment = { KMP_DUPLICATE_LIB_OK = "TRUE" }
+                startServerCmd = writeServerLaunchdJob(
+                    launchLabel, programArguments, environment, launchLogPath)
+                if not startServerCmd then
+                    log:error("Could not write the backend launchd job plist")
+                    return false
                 end
             else
                 -- Unknown platform fallback
                 local envPrefix = "KMP_DUPLICATE_LIB_OK=TRUE "
-                startServerCmd = envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\""
+                startServerCmd = envPrefix .. "bash \"" .. tostring(serverBinary) .. "\" --db-path \"" .. dbPath .. "\" --lightroom-managed"
             end
         end
 
@@ -4551,6 +4661,68 @@ function SearchIndexAPI.recordStyleEditOutcomes(items, skipExisting)
         return true, response
     end
     return false, response.error or "Unexpected response"
+end
+
+function SearchIndexAPI.evaluateAppliedEdits(options, progressScope)
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_EDIT_EVALUATION
+    local response, err = _request('POST', url, options or {}, 30)
+    if not response or not response.job_id then
+        return false, err or "Backend did not create an applied-edit evaluation job"
+    end
+    local jobId = response.job_id
+    for _ = 1, 7200 do
+        if progressScope and progressScope:isCanceled() then
+            SearchIndexAPI.cancelOperation(jobId)
+            return false, "canceled"
+        end
+        local jobResponse, jobError = _request('GET', url .. "?job_id=" .. tostring(jobId), nil, 15)
+        if jobResponse and jobResponse.state == "succeeded" then
+            if type(jobResponse.summary) == "table" and jobResponse.report_path then
+                return true, jobResponse
+            end
+            return false, "Backend completed the evaluation without a valid report"
+        end
+        if jobResponse and (jobResponse.state == "failed" or jobResponse.state == "canceled" or jobResponse.state == "interrupted") then
+            return false, jobResponse.error or ("Applied-edit evaluation " .. tostring(jobResponse.state))
+        end
+        if not jobResponse and jobError then return false, jobError end
+        LrTasks.yield()
+        LrTasks.sleep(0.25)
+    end
+    return false, "Applied-edit evaluation timed out"
+end
+
+function SearchIndexAPI.createStyleRefinementSession(options)
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_REFINEMENT .. "/sessions"
+    local response, err = _request('POST', url, options or {}, 30)
+    if not response then return false, err or "Unknown error" end
+    return true, response
+end
+
+function SearchIndexAPI.getNextStyleRefinementPair(sessionId)
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_REFINEMENT
+        .. "/sessions/" .. encodeQueryValue(sessionId) .. "/next"
+    local response, err = _request('GET', url, nil, 30)
+    if response == nil then return false, err or "Unexpected response" end
+    if response.done then return true, nil end
+    if type(response.pair) ~= "table" then return false, "Backend returned an invalid refinement pair" end
+    return true, response.pair
+end
+
+function SearchIndexAPI.recordStyleRefinementChoice(sessionId, choice)
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_REFINEMENT
+        .. "/sessions/" .. encodeQueryValue(sessionId) .. "/choices"
+    local response, err = _request('POST', url, choice or {}, 30)
+    if not response then return false, err or "Unknown error" end
+    return true, response
+end
+
+function SearchIndexAPI.finalizeStyleRefinementSession(sessionId)
+    local url = getBaseUrl() .. ENDPOINTS.STYLE_REFINEMENT
+        .. "/sessions/" .. encodeQueryValue(sessionId) .. "/finalize"
+    local response, err = _request('POST', url, {}, 30)
+    if not response then return false, err or "Unknown error" end
+    return true, response
 end
 
 ---

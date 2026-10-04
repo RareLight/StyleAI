@@ -173,3 +173,21 @@ appear, then run
 system, display scale, language, pass/fail totals, and the first error for any
 failure. Confirm the normal **File > Plug-in Extras** workflow menu remains
 unchanged.
+
+Run **Developer: Evaluate Applied Edit Quality...** with empty evidence, fewer
+than 30 reviews, and at least 30 reviews in one generation. Compare its counts
+with the CLI report from the same frozen database, reveal and validate the JSON,
+cancel an active run, and confirm a concurrent restore waits safely. Quit
+Lightroom during evaluation and confirm shutdown remains prompt.
+
+For **Developer: Test Style Refinement...**, use only disposable virtual
+copies: prepare exactly two copies carrying the same tracked inference ID for
+each comparison. Test Quick Refinement and Correction Validation, all five
+choice labels, the optional keepable signal, Save and Exit, an interrupted
+session, and an active-generation change. Verify A/B identity is not disclosed,
+the two previews start from equivalent unmodeled settings, every choice commits
+once, and both copies return exactly to their captured Develop settings after
+Save, Skip, exit, and error. Confirm originals, retained working copies,
+training examples, active policy artifacts, and File-menu workflows remain
+unchanged. Quit Lightroom while the comparison dialog is open and verify no
+shutdown hook or backend job prevents prompt exit.

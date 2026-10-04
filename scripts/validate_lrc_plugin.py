@@ -14,6 +14,264 @@ import subprocess
 import sys
 
 
+# Lightroom persists each custom metadata field's complete specification in the
+# catalog. Changing any part of that specification without advancing the field's
+# own version prevents the plug-in from loading. Keep prior signatures here so a
+# future contract edit must add a new version instead of silently rewriting one.
+# A signature is: title LOC string, data type, read-only, searchable, browsable.
+METADATA_SCHEMA_VERSION = 35
+METADATA_FIELD_CONTRACT_HISTORY = {
+    "aiLastRun": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/aiLastRun=Last AI run",
+            "string",
+            True,
+            True,
+            True,
+        ),
+        2: (
+            "$$$/StyleAI/AIMetadataProvider/aiLastRun=StyleAI Metadata Date",
+            "string",
+            True,
+            True,
+            True,
+        ),
+    },
+    "aiModel": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/aiModel=AI model",
+            "string",
+            True,
+            True,
+            True,
+        ),
+        2: (
+            "$$$/StyleAI/AIMetadataProvider/aiModel=StyleAI Metadata Model",
+            "string",
+            True,
+            True,
+            True,
+        ),
+    },
+    "aiEditLastRun": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditLastRun=Last AI edit run",
+            "string",
+            True,
+            True,
+            True,
+        ),
+        2: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditLastRun=StyleAI Edit Date",
+            "string",
+            True,
+            True,
+            True,
+        ),
+    },
+    "aiEditModel": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditModel=AI edit model",
+            "string",
+            True,
+            True,
+            True,
+        ),
+        2: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditModel=StyleAI Edit Model",
+            "string",
+            True,
+            False,
+            False,
+        ),
+    },
+    "aiEditStatus": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditStatus=AI edit status",
+            "string",
+            True,
+            True,
+            True,
+        ),
+        2: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditStatus=Legacy StyleAI edit status",
+            "string",
+            True,
+            False,
+            False,
+        ),
+    },
+    "aiEditApplied": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditApplied=StyleAI Edit Applied",
+            "string",
+            True,
+            True,
+            True,
+        ),
+    },
+    "aiEditState": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditState=StyleAI Edit State",
+            "string",
+            True,
+            True,
+            True,
+        ),
+    },
+    "aiEditReview": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditReview=StyleAI Edit Review",
+            "string",
+            True,
+            True,
+            True,
+        ),
+    },
+    "aiEditInferenceId": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditInferenceId=AI edit inference ID",
+            "string",
+            True,
+            True,
+            False,
+        ),
+        2: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditInferenceId=AI edit inference ID",
+            "string",
+            True,
+            False,
+            False,
+        ),
+    },
+    "aiEditSummary": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditSummary=AI edit summary",
+            "string",
+            True,
+            True,
+            True,
+        ),
+        2: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditSummary=StyleAI Edit Summary",
+            "string",
+            True,
+            True,
+            True,
+        ),
+    },
+    "aiEditWarnings": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditWarnings=AI edit warnings",
+            "string",
+            True,
+            True,
+            True,
+        ),
+        2: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditWarnings=StyleAI Edit Warnings",
+            "string",
+            True,
+            True,
+            True,
+        ),
+    },
+    "aiEditRecipe": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/AiEditRecipeJson=AI edit recipe JSON",
+            "string",
+            True,
+            False,
+            False,
+        ),
+    },
+    "pendingAiEditApplicationEvent": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/PendingAiEditApplicationEvent=Pending AI edit application event",
+            "string",
+            True,
+            False,
+            False,
+        ),
+    },
+    "photoContext": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/photoContext=Photo context",
+            "string",
+            False,
+            True,
+            True,
+        ),
+        2: (
+            "$$$/StyleAI/AIMetadataProvider/photoContext=StyleAI Photo Instructions",
+            "string",
+            False,
+            True,
+            True,
+        ),
+    },
+    "keywords": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/keywords=AI Keywords",
+            "string",
+            True,
+            True,
+            True,
+        ),
+        2: (
+            "$$$/StyleAI/AIMetadataProvider/keywords=Legacy StyleAI Keywords",
+            "string",
+            True,
+            False,
+            False,
+        ),
+    },
+    "globalPhotoId": {
+        2: (
+            "$$$/StyleAI/AIMetadataProvider/GlobalPhotoId=Global Photo ID",
+            "string",
+            True,
+            True,
+            False,
+        ),
+        3: (
+            "$$$/StyleAI/AIMetadataProvider/GlobalPhotoId=Global Photo ID",
+            "string",
+            True,
+            False,
+            False,
+        ),
+    },
+    "globalPhotoIdFileSize": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/GlobalPhotoIdFileSize=Global Photo ID File Size",
+            "string",
+            True,
+            False,
+            False,
+        ),
+    },
+    "globalPhotoIdFileModificationDate": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/GlobalPhotoIdModificationDate=Global Photo ID File Modification Date",
+            "string",
+            True,
+            False,
+            False,
+        ),
+    },
+    "globalPhotoIdAlgorithm": {
+        1: (
+            "$$$/StyleAI/AIMetadataProvider/GlobalPhotoIdAlgorithm=Global Photo ID Algorithm",
+            "string",
+            True,
+            False,
+            False,
+        ),
+    },
+}
+
+
 def check_info_manifest(plugin_dir):
     """Evaluate Info.lua and validate Lightroom's strict menu-table contract."""
     info_path = os.path.join(plugin_dir, "Info.lua")
@@ -168,6 +426,94 @@ def check_photo_metadata_properties(plugin_dir):
     return errors
 
 
+def check_metadata_contract_versions(plugin_dir):
+    """Reject catalog-facing field changes that omit a per-field version bump."""
+    provider_path = os.path.join(plugin_dir, "MetadataProvider.lua")
+    if not os.path.isfile(provider_path):
+        return [f"[Metadata Error] Required file is missing: {provider_path}"]
+
+    with open(provider_path, encoding="utf-8") as provider_file:
+        source = provider_file.read()
+
+    errors = []
+    schema_match = re.search(r"\bschemaVersion\s*=\s*(\d+)", source)
+    if not schema_match or int(schema_match.group(1)) != METADATA_SCHEMA_VERSION:
+        actual = schema_match.group(1) if schema_match else "missing"
+        errors.append(
+            "[Metadata Contract Error] Provider schemaVersion is "
+            f"{actual}; expected {METADATA_SCHEMA_VERSION}."
+        )
+
+    parsed = {}
+    field_pattern = re.compile(
+        r'\bid\s*=\s*"(?P<id>[^"]+)"(?P<body>.*?)(?=\n\s*\},)', re.DOTALL
+    )
+    for match in field_pattern.finditer(source):
+        field_id = match.group("id")
+        body = match.group("body")
+
+        def string_property(name):
+            found = re.search(rf'\b{name}\s*=\s*"([^"]+)"', body, re.DOTALL)
+            return found.group(1) if found else None
+
+        def boolean_property(name):
+            found = re.search(rf"\b{name}\s*=\s*(true|false)", body)
+            return found.group(1) == "true" if found else None
+
+        title_match = re.search(r'\btitle\s*=\s*LOC\(\s*"([^"]+)"', body, re.DOTALL)
+        version_match = re.search(r"\bversion\s*=\s*(\d+)", body)
+        parsed[field_id] = (
+            int(version_match.group(1)) if version_match else None,
+            (
+                title_match.group(1) if title_match else None,
+                string_property("dataType"),
+                boolean_property("readOnly"),
+                boolean_property("searchable"),
+                boolean_property("browsable"),
+            ),
+        )
+
+    expected_ids = set(METADATA_FIELD_CONTRACT_HISTORY)
+    actual_ids = set(parsed)
+    for field_id in sorted(expected_ids - actual_ids):
+        errors.append(
+            f"[Metadata Contract Error] Expected field '{field_id}' is missing."
+        )
+    for field_id in sorted(actual_ids - expected_ids):
+        errors.append(
+            f"[Metadata Contract Error] Field '{field_id}' has no version history. "
+            "Add its version-1 signature to METADATA_FIELD_CONTRACT_HISTORY."
+        )
+
+    for field_id in sorted(expected_ids & actual_ids):
+        version, signature = parsed[field_id]
+        history = METADATA_FIELD_CONTRACT_HISTORY[field_id]
+        current_version = max(history)
+        if version is None:
+            errors.append(
+                f"[Metadata Contract Error] Field '{field_id}' has no explicit version."
+            )
+        elif version != current_version:
+            errors.append(
+                f"[Metadata Contract Error] Field '{field_id}' declares version {version}; "
+                f"contract history requires {current_version}."
+            )
+        elif signature != history[version]:
+            errors.append(
+                f"[Metadata Contract Error] Field '{field_id}' changed without a new "
+                f"version. Add version {version + 1} with the new signature to "
+                "METADATA_FIELD_CONTRACT_HISTORY and increment schemaVersion."
+            )
+
+        ordered_signatures = [history[item] for item in sorted(history)]
+        if len(ordered_signatures) != len(set(ordered_signatures)):
+            errors.append(
+                f"[Metadata Contract Error] Field '{field_id}' contains a version bump "
+                "without a contract change."
+            )
+    return errors
+
+
 def scan_files(plugin_dir):
     """Scan all Lua files for best practice violations."""
     errors = []
@@ -262,6 +608,9 @@ def main():
 
     metadata_errors = check_photo_metadata_properties(plugin_dir)
     all_errors.extend(metadata_errors)
+
+    metadata_contract_errors = check_metadata_contract_versions(plugin_dir)
+    all_errors.extend(metadata_contract_errors)
 
     scan_errors = scan_files(plugin_dir)
     all_errors.extend(scan_errors)

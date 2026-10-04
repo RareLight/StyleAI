@@ -19,6 +19,9 @@ _ALLOWED_KINDS = frozenset(
         "backup",
         "prune",
         "maintenance",
+        "applied_edit_evaluation",
+        "style_refinement",
+        "refinement_candidate",
     }
 )
 

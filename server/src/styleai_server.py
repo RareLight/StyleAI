@@ -23,6 +23,8 @@ from routes.style_catalog import style_catalog_bp
 from routes.clip import clip_bp
 from routes.operations import operations_bp
 from routes.metadata_benchmark import metadata_benchmark_bp
+from routes.style_evaluation import style_evaluation_bp
+from routes.style_refinement import style_refinement_bp
 from services import chroma as service_chroma
 from services import db as service_db
 from services import operations
@@ -35,10 +37,18 @@ def _tracks_client_activity(path: str) -> bool:
     return path not in ("/ping", "/health") and not path.startswith("/status")
 
 
+_SHUTDOWN_ALLOWED_PATHS = frozenset({"/ping", "/health", "/shutdown", "/restart"})
+
+
 @app.before_request
 def _touch_activity():
     """Protect substantive requests from idle shutdown while they are running."""
     path = request.path or ""
+    if (
+        server_lifecycle.GLOBAL_SHUTDOWN_EVENT.is_set()
+        and path not in _SHUTDOWN_ALLOWED_PATHS
+    ):
+        return jsonify({"error": "Backend is shutting down"}), 503
     if _tracks_client_activity(path):
         server_lifecycle.begin_client_request()
         g.styleai_client_activity_active = True
@@ -71,6 +81,8 @@ app.register_blueprint(style_catalog_bp)
 app.register_blueprint(clip_bp)
 app.register_blueprint(operations_bp)
 app.register_blueprint(metadata_benchmark_bp)
+app.register_blueprint(style_evaluation_bp)
+app.register_blueprint(style_refinement_bp)
 
 
 def _start_housekeeping_scheduler() -> None:
@@ -213,6 +225,18 @@ def handle_exception(e):
 
 
 if __name__ == "__main__":
+    # Preserve clean session state and marker ownership if launchd or another
+    # process manager asks the backend to terminate gracefully.
+    server_lifecycle.install_signal_handlers()
+
+    if server_lifecycle.is_lightroom_managed():
+        if server_lifecycle._lightroom_exit_due():
+            logger.info(
+                "Lightroom-managed backend started without a Lightroom owner; exiting"
+            )
+            sys.exit(0)
+        server_lifecycle._ensure_lightroom_monitor_thread()
+
     version_info = get_backend_version_info()
     logger.info("=" * 60)
     logger.info(
@@ -237,18 +261,15 @@ if __name__ == "__main__":
     # Write PID for lifecycle management
     server_lifecycle.write_pid_file()
 
-    # Preserve clean session state and marker ownership if launchd or another
-    # process manager asks the backend to terminate gracefully.
-    server_lifecycle.install_signal_handlers()
-
     # Start optional background schedulers (housekeeping only)
     _start_housekeeping_scheduler()
 
     # Start idle monitor (model unload + server auto-shutdown)
     server_lifecycle._ensure_unloader_thread()
 
-    # Preload models asynchronously to prevent blocking the first request
-    server_lifecycle.preload_models_async()
+    if not server_lifecycle.is_lightroom_managed():
+        # Preload models asynchronously to prevent blocking the first request
+        server_lifecycle.preload_models_async()
 
     # The Lightroom bridge is process-local and is never network-addressable.
     host = "127.0.0.1"

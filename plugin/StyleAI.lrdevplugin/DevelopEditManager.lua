@@ -1097,4 +1097,17 @@ function DevelopEditManager.applyRecipe(photo, response, options)
 	return globalApplied, warnings
 end
 
+function DevelopEditManager.applyPreviewRecipe(photo, recipe)
+	-- Developer refinement previews are applied only to caller-validated,
+	-- disposable virtual copies.  They deliberately bypass StyleAI metadata and
+	-- edit-history persistence so a blinded comparison cannot masquerade as a
+	-- production inference or user outcome.
+	if type(recipe) ~= "table" or type(recipe.global) ~= "table" then
+		return false, { "Refinement preview did not contain global settings." }
+	end
+	local warnings = {}
+	local applied = applyGlobalDevelopSettings(photo, recipe, warnings)
+	return applied, warnings
+end
+
 return DevelopEditManager

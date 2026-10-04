@@ -60,6 +60,14 @@ return {
 			title = LOC("$$$/StyleAI/Menu/DeveloperReconcile=Developer: Reconcile Selected AI Edits..."),
 			file = "TaskReconcileAIEditState.lua",
 		},
+		{
+			title = LOC("$$$/StyleAI/Menu/DeveloperEvaluateAppliedEdits=Developer: Evaluate Applied Edit Quality..."),
+			file = "TaskEvaluateAppliedEditQuality.lua",
+		},
+		{
+			title = LOC("$$$/StyleAI/Menu/DeveloperStyleRefinement=Developer: Test Style Refinement..."),
+			file = "TaskStyleRefinement.lua",
+		},
 	},
 
 	-- LrExportMenuItems is Lightroom's cross-module File > Plug-in Extras

@@ -8,6 +8,8 @@ to free GPU resources after a period of inactivity.
 """
 
 import os
+import re
+import sys
 import time
 import json
 import signal
@@ -17,6 +19,7 @@ import threading
 import datetime
 import gc
 from uuid import uuid4
+import psutil
 from huggingface_hub import hf_hub_download
 from services import chroma as service_chroma
 
@@ -487,6 +490,158 @@ def _ensure_unloader_thread():
         _unloader_thread.start()
 
 
+_LAUNCHD_MANAGED_LABEL = re.compile(r"^com\.styleai\.server(?:\.dev\.\d+)?$")
+_MACOS_LIGHTROOM_NAMES = frozenset({"adobe lightroom classic", "adobe lightroom"})
+_MACOS_LIGHTROOM_EXECUTABLE_SUFFIX = (
+    "/adobe lightroom classic.app/contents/macos/adobe lightroom classic"
+)
+_WINDOWS_LIGHTROOM_NAME = "lightroom.exe"
+_WINDOWS_LIGHTROOM_DIRECTORY_PREFIX = "adobe lightroom classic"
+_LIGHTROOM_CANDIDATE_NAMES = {
+    "darwin": _MACOS_LIGHTROOM_NAMES,
+    "win32": frozenset({_WINDOWS_LIGHTROOM_NAME}),
+}
+_lightroom_owner = None
+_lightroom_monitor_thread = None
+
+
+def is_lightroom_managed() -> bool:
+    """Return whether the Lightroom plug-in owns this backend's lifetime."""
+    if getattr(config.args, "lightroom_managed", False):
+        return True
+    label = os.environ.get("XPC_SERVICE_NAME") or ""
+    return bool(_LAUNCHD_MANAGED_LABEL.match(label))
+
+
+def _is_lightroom_process(name: str, executable: str) -> bool:
+    """Match only the Lightroom Classic main binary on supported platforms."""
+    process_name = (name or "").strip().lower()
+    normalized_path = (executable or "").replace("\\", "/").lower()
+    if sys.platform == "darwin":
+        if process_name not in _MACOS_LIGHTROOM_NAMES:
+            return False
+        return normalized_path.endswith(_MACOS_LIGHTROOM_EXECUTABLE_SUFFIX)
+    if sys.platform == "win32":
+        if process_name != _WINDOWS_LIGHTROOM_NAME:
+            return False
+        if "/" not in normalized_path:
+            return False
+        parent_dir = normalized_path.rsplit("/", 2)[-2]
+        return parent_dir.startswith(_WINDOWS_LIGHTROOM_DIRECTORY_PREFIX)
+    return False
+
+
+def _lightroom_exit_due() -> bool:
+    """Return True only on confirmed loss of the Lightroom owner process.
+
+    The first scan pins one Lightroom Classic main process by PID and create
+    time. After attachment, disappearance, a zombie state, or PID reuse
+    (detected by ``is_running``) all count as owner loss; a replacement
+    Lightroom process is never adopted silently. Access-denied or inspection
+    failures leave the state unknown and retry instead of exiting falsely.
+    """
+    global _lightroom_owner
+    candidate_names = _LIGHTROOM_CANDIDATE_NAMES.get(sys.platform)
+    if candidate_names is None:
+        return False
+    if _lightroom_owner is not None:
+        try:
+            alive = (
+                _lightroom_owner.is_running()
+                and _lightroom_owner.status() != psutil.STATUS_ZOMBIE
+            )
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            alive = False
+        except (psutil.Error, OSError):
+            logger.debug("Could not re-check pinned Lightroom owner", exc_info=True)
+            return False
+        if alive:
+            return False
+        logger.info(
+            "Pinned Lightroom owner pid=%s exited; backend shutdown is due",
+            _lightroom_owner.pid,
+        )
+        return True
+    try:
+        current_username = psutil.Process().username()
+    except (psutil.Error, OSError):
+        logger.debug(
+            "Could not resolve backend username for Lightroom owner check",
+            exc_info=True,
+        )
+        return False
+    inspection_incomplete = False
+    try:
+        for process in psutil.process_iter(["name"]):
+            name = process.info.get("name")
+            if name is None:
+                inspection_incomplete = True
+                continue
+            if name.strip().lower() not in candidate_names:
+                continue
+            try:
+                executable = process.exe()
+                username = process.username()
+            except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                continue
+            except (psutil.Error, OSError):
+                inspection_incomplete = True
+                continue
+            if username != current_username:
+                continue
+            if not _is_lightroom_process(name, executable):
+                continue
+            try:
+                process.create_time()
+            except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                continue
+            except (psutil.Error, OSError):
+                inspection_incomplete = True
+                continue
+            _lightroom_owner = process
+            logger.info("Watching Lightroom owner process pid=%s", process.pid)
+            return False
+    except (psutil.Error, OSError):
+        logger.debug("Lightroom owner scan failed; retrying", exc_info=True)
+        return False
+    if inspection_incomplete:
+        logger.debug("Lightroom owner scan was incomplete; retrying")
+        return False
+    return True
+
+
+def _lightroom_monitor_loop():
+    """Shut down a plug-in managed backend once its Lightroom owner is gone."""
+    try:
+        while not GLOBAL_SHUTDOWN_EVENT.wait(1):
+            try:
+                if _lightroom_exit_due():
+                    logger.info(
+                        "Lightroom owner process is gone; shutting down backend"
+                    )
+                    request_shutdown()
+                    return
+            except Exception:
+                logger.exception("Error in Lightroom owner monitor thread")
+    finally:
+        logger.debug("Lightroom owner monitor thread exiting")
+
+
+def _ensure_lightroom_monitor_thread():
+    global _lightroom_monitor_thread
+    if not is_lightroom_managed():
+        return
+    if sys.platform not in _LIGHTROOM_CANDIDATE_NAMES:
+        return
+    if _lightroom_monitor_thread is None or not _lightroom_monitor_thread.is_alive():
+        _lightroom_monitor_thread = threading.Thread(
+            target=_lightroom_monitor_loop,
+            daemon=True,
+            name="server_lifecycle_lightroom_monitor",
+        )
+        _lightroom_monitor_thread.start()
+
+
 def get_model():
     """Return the model, loading it lazily if needed."""
     load_model()
@@ -564,64 +719,104 @@ def remove_ok_file():
         pass
 
 
+_shutdown_claim_lock = threading.RLock()
+SHUTDOWN_CLEANUP_DEADLINE_SECONDS = 5.0
+SHUTDOWN_RESPONSE_FLUSH_SECONDS = 0.25
+
+
 def request_shutdown():
     """Gracefully-but-firmly shut down the server process.
 
-    Uses a daemon thread so the current HTTP response can finish being sent
+    Uses daemon threads so the current HTTP response can finish being sent
     before the process exits.  os._exit(0) is used instead of SIGINT because
     waitress's signal handler and shell job control can swallow/intercept SIGINT
-    in background processes, leaving a zombie server on port 19819.
+    in background processes, leaving a zombie server on port 19819.  A deadline
+    thread exits the process after a bounded cleanup window even if session
+    persistence or marker cleanup stalls; a marker that outlives the deadline
+    simply triggers conservative recovery on the next startup.
     """
-    if GLOBAL_SHUTDOWN_EVENT.is_set():
-        return
-    logger.info("Shutdown request received")
-    GLOBAL_SHUTDOWN_EVENT.set()
-    GLOBAL_CANCEL_EVENT.set()
-    try:
-        from services.axengine_runtime import get_axengine_runtime
+    with _shutdown_claim_lock:
+        if GLOBAL_SHUTDOWN_EVENT.is_set():
+            return
+        GLOBAL_SHUTDOWN_EVENT.set()
+        GLOBAL_CANCEL_EVENT.set()
 
-        get_axengine_runtime().request_owned_stop()
-    except Exception:
-        logger.exception("Unable to signal managed AX Engine during shutdown")
-    active_work = False
-    try:
-        from services.index import active_embeddings_uuids, stop_index_queue
+    cleanup_complete = threading.Event()
 
-        active_work = bool(active_embeddings_uuids)
-        discarded = stop_index_queue()
-        active_work = (isinstance(discarded, int) and discarded > 0) or active_work
-    except Exception:
-        logger.exception("Unable to discard queued indexing work during shutdown")
-        active_work = True
-    if config.DB_PATH:
+    def _shutdown_cleanup():
         try:
-            from services import operations
+            try:
+                logger.info("Shutdown request received")
+            except Exception:
+                pass
+            try:
+                from services.axengine_runtime import get_axengine_runtime
 
-            active_work = (
-                bool(operations.list_active_jobs(config.DB_PATH)) or active_work
-            )
-            operations.recover_interrupted_jobs(config.DB_PATH)
-        except Exception:
-            logger.exception("Unable to persist interrupted operation state")
-            active_work = True
-    try:
-        _write_session_state("interrupted" if active_work else "clean", active_work)
-    except Exception:
-        logger.exception("Unable to persist catalog shutdown state")
+                get_axengine_runtime().request_owned_stop()
+            except Exception:
+                logger.exception("Unable to signal managed AX Engine during shutdown")
+            active_work = False
+            try:
+                from services.index import active_embeddings_uuids, stop_index_queue
 
-    def _exit_after_delay():
+                active_work = bool(active_embeddings_uuids)
+                discarded = stop_index_queue()
+                active_work = (
+                    isinstance(discarded, int) and discarded > 0
+                ) or active_work
+            except Exception:
+                logger.exception(
+                    "Unable to discard queued indexing work during shutdown"
+                )
+                active_work = True
+            if config.DB_PATH:
+                try:
+                    from services import operations
+
+                    active_work = (
+                        bool(operations.list_active_jobs(config.DB_PATH)) or active_work
+                    )
+                    operations.recover_interrupted_jobs(config.DB_PATH)
+                except Exception:
+                    logger.exception("Unable to persist interrupted operation state")
+                    active_work = True
+            try:
+                _write_session_state(
+                    "interrupted" if active_work else "clean", active_work
+                )
+            except Exception:
+                logger.exception("Unable to persist catalog shutdown state")
+            try:
+                remove_pid_file()
+            except Exception:
+                logger.exception("Unable to remove owned PID file")
+            try:
+                remove_ok_file()
+            except Exception:
+                logger.exception("Unable to remove owned OK file")
+            try:
+                logger.info("Bye.")
+            except Exception:
+                pass
+        finally:
+            cleanup_complete.set()
+
+    def _shutdown_deadline():
+        cleanup_complete.wait(SHUTDOWN_CLEANUP_DEADLINE_SECONDS)
         # Give Waitress just enough time to flush the already-returned response.
         # Do not wait for a GPU/LLM task: cancellation and os._exit prevent the
         # historical shutdown hang from blocking Lightroom teardown.
-        time.sleep(0.25)
-        remove_pid_file()
-        remove_ok_file()
-        logger.info("Bye.")
+        time.sleep(SHUTDOWN_RESPONSE_FLUSH_SECONDS)
         # Hard exit — skips Python-level finally blocks but guarantees the
         # process actually terminates (waitress doesn't always honour SIGINT).
         os._exit(0)
 
-    threading.Thread(target=_exit_after_delay, daemon=True).start()
+    threading.Thread(
+        target=_shutdown_deadline, daemon=True, name="styleai-shutdown-deadline"
+    ).start()
+    threading.Thread(
+        target=_shutdown_cleanup, daemon=True, name="styleai-shutdown-cleanup"
+    ).start()
 
 
 def install_signal_handlers() -> None:

@@ -121,6 +121,11 @@ parser.add_argument(
     help="Inactivity timeout before shutting down the local backend (0 disables)",
 )
 parser.add_argument(
+    "--lightroom-managed",
+    action="store_true",
+    help="The Lightroom plug-in launched this backend; exit when Lightroom exits",
+)
+parser.add_argument(
     "--backup-interval",
     type=int,
     default=86400,

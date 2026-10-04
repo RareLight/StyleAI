@@ -4,7 +4,9 @@ from pathlib import Path
 
 from jsonschema.validators import Draft202012Validator
 
+from core.migrations import run_migrations
 from services import edit_history
+from services.applied_edit_reporting import generate_applied_edit_report
 from services.edit_quality_evaluation import evaluate_applied_edit_histories
 
 
@@ -119,6 +121,69 @@ def test_empty_applied_edit_report_is_well_defined():
     assert report["delivered_target_corrections"]["evaluated_reviews"] == 0
     assert report["schema_version"] == "applied-edit-quality-v2"
     assert report["burst_coherence"]["admitted_photos"] == 0
+
+
+def test_shared_reporting_service_writes_bounded_summary(tmp_path):
+    db_path = str(tmp_path / "styleai.db")
+    _applied_history(db_path, "accepted", 0.5, "accepted", 0.5)
+    _applied_history(db_path, "modified", 0.5, "modified_and_kept", 0.7)
+
+    result = generate_applied_edit_report(
+        db_path=db_path,
+        minimum_reviewed_per_generation=2,
+    )
+
+    report_path = Path(result["report_path"])
+    assert report_path.is_file()
+    stored = json.loads(report_path.read_text(encoding="utf-8"))
+    assert stored["dataset_fingerprint"] == result["report"]["dataset_fingerprint"]
+    assert stored["parameters"]["minimum_reviewed_per_generation"] == 2
+    summary = result["summary"]
+    assert summary["deployment_status"] == "evaluation_only"
+    assert summary["dataset"]["reviewed_inferences"] == 2
+    assert summary["user_outcomes"]["modified_and_kept"] == 1
+    assert summary["generations"][0]["reviews_needed"] == 0
+
+
+def test_shared_reporting_service_reuses_identical_report_and_separates_parameters(
+    tmp_path,
+):
+    db_path = str(tmp_path / "styleai.db")
+    run_migrations(db_path)
+    first = generate_applied_edit_report(db_path=db_path)
+    second = generate_applied_edit_report(db_path=db_path)
+    different = generate_applied_edit_report(
+        db_path=db_path, minimum_reviewed_per_generation=50
+    )
+
+    assert first["reused"] is False
+    assert second["reused"] is True
+    assert second["report_path"] == first["report_path"]
+    assert second["report"]["generated_at_utc"] == first["report"]["generated_at_utc"]
+    assert different["report_path"] != first["report_path"]
+
+
+def test_shared_reporting_service_honors_cancellation(tmp_path):
+    db_path = str(tmp_path / "styleai.db")
+    _applied_history(db_path, "accepted", 0.5, "accepted", 0.5)
+
+    try:
+        generate_applied_edit_report(db_path=db_path, cancel_check=lambda: True)
+    except InterruptedError as exc:
+        assert "canceled" in str(exc)
+    else:
+        raise AssertionError("canceled report generation unexpectedly completed")
+
+
+def test_shared_reporting_service_rejects_invalid_date_boundary(tmp_path):
+    run_migrations(str(tmp_path / "styleai.db"))
+
+    import pytest
+
+    with pytest.raises(ValueError, match="ISO-8601"):
+        generate_applied_edit_report(
+            db_path=str(tmp_path / "styleai.db"), created_after="yesterday-ish"
+        )
 
 
 def test_generated_report_conforms_to_applied_edit_quality_v2_schema():

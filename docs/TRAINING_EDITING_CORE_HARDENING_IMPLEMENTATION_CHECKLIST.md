@@ -4,6 +4,11 @@ Status: core implementation and automated validation complete; deferred
 optimizations, catalog-baseline comparison, and Lightroom human gates remain.
 This checklist is the source of truth for the end-to-end training and Apply My
 Style hardening work identified by the August 2026 architecture review.
+Preference evidence, Quick Refinement, Correction Validation, and inactive
+feedback-derived candidates are intentionally not retrofitted into this
+historical hardening scope; `STYLE_REFINEMENT_IMPLEMENTATION_CHECKLIST.md` owns
+that work and must preserve the base-training, neutral-source, generation,
+activation, and recovery contracts completed here.
 
 ## Product and validation boundaries
 

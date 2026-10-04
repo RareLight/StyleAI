@@ -70,6 +70,11 @@ received a StyleAI edit; modifying, reverting, or reviewing an edit does not
 clear that historical marker. Internal inference and stable-photo identifiers
 remain hidden from Smart Collection criteria.
 
+Photographers do not need to run an external quality script or interpret an
+aggregate report. Ratings are optional local review records and evaluation
+evidence. The developer-only quality report and style-refinement prototype live
+under **Help > Plug-in Extras** and do not change active styles.
+
 ## Styles & Training
 
 Shows active policies, rendering partitions, example counts, evidence cues,
