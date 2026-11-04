@@ -3278,26 +3278,18 @@ function SearchIndexAPI.startServer(opts)
             cleanupServerPidAndOkFiles(pid)
         end
 
-        -- Check standard system locations first (if installed via PKG/EXE)
-        local serverBinary = nil
-        if MAC_ENV then
-            serverBinary = "/Applications/StyleAI/Server/styleai-server"
-        elseif WIN_ENV then
-            serverBinary = "C:\\Program Files\\StyleAI\\backend\\styleai-server.cmd"
+        -- Prefer the backend shipped beside this plug-in over an older system install.
+        local serverDir = LrPathUtils.child(LrPathUtils.parent(_PLUGIN.path), "styleai-server")
+        local serverBinary = LrPathUtils.child(serverDir, "styleai-server")
+        if WIN_ENV then
+            local serverLauncherCmd = serverBinary .. ".cmd"
+            serverBinary = LrFileUtils.exists(serverLauncherCmd) and serverLauncherCmd or (serverBinary .. ".exe")
         end
-
-        -- Fallback to plugin-local binary (development or old installs)
-        if not serverBinary or not LrFileUtils.exists(serverBinary) then
-            local serverDir = LrPathUtils.child(LrPathUtils.parent(_PLUGIN.path), "styleai-server")
-            serverBinary = LrPathUtils.child(serverDir, "styleai-server")
-            if WIN_ENV then
-                local serverLauncherCmd = serverBinary .. ".cmd"
-                local serverExe = serverBinary .. ".exe"
-                if LrFileUtils.exists(serverLauncherCmd) then
-                    serverBinary = serverLauncherCmd
-                else
-                    serverBinary = serverExe
-                end
+        if not LrFileUtils.exists(serverBinary) then
+            if MAC_ENV then
+                serverBinary = "/Applications/StyleAI/Server/styleai-server"
+            elseif WIN_ENV then
+                serverBinary = "C:\\Program Files\\StyleAI\\backend\\styleai-server.cmd"
             end
         end
 

@@ -2,12 +2,7 @@
 
 ## Install
 
-1. Download the correct macOS or Windows archive from the StyleAI releases page.
-2. Extract the complete archive; keep the plug-in and packaged backend in their
-   distributed layout.
-3. Add `StyleAI.lrplugin` in **File → Plug-in Manager**.
-4. If the unsigned backend is blocked, follow the platform-specific release
-   notes to authorize that exact downloaded binary.
+Download the Apple silicon macOS or Windows x64 archive from [GitHub Releases](https://github.com/RareLight/StyleAI/releases), extract it to a permanent folder, and add `StyleAI.lrplugin` in **File → Plug-in Manager**. Keep the adjacent `styleai-server` folder in place. Follow the [complete installation instructions](https://github.com/RareLight/StyleAI/blob/main/docs/INSTALL.md), also included in each archive, for security prompts, updates, and removal.
 
 The plug-in starts a loopback service automatically and binds it to
 `styleai.db` beside the active Lightroom catalog. Do not point two catalogs at

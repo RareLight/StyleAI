@@ -13,6 +13,12 @@ cd server
 uv run python scripts/download_models.py
 ```
 
+The setup script installs a uv-managed Python in `server/.python-managed` and
+creates `server/.venv` from `uv.lock`, including development dependencies. It
+does not require Conda or system Python. The venv references that local Python;
+keep both directories together and rerun the setup script after moving the
+checkout. Both are ignored by Git. Use `--no-dev` for runtime dependencies only.
+
 The checked-in `plugin/StyleAI.lrdevplugin` is the canonical deployed source.
 It registers normal photography workflows under **File → Plug-in Extras** and
 support/developer workflows under **Help → Plug-in Extras**. No toggle,
@@ -461,8 +467,22 @@ catalog.
 
 The release workflow syncs the locked `uv` environment, freezes the backend
 with PyInstaller, includes OpenCLIP package data and migration modules, and
-packages it beside the Lightroom plug-in. A clean-database frozen-backend smoke
-test is required when dependency, migration, spec, or launch behavior changes.
+packages it beside the Lightroom plug-in, and smoke-tests the frozen backend
+against a disposable database. A push to `dev` or a manual workflow run uploads
+ZIP artifacts; a `v*` tag creates a draft GitHub release after both builds pass.
+Tag versions must match the checked-in plug-in, backend, and project versions;
+prerelease suffixes are allowed. Review and publish the draft separately. To
+bundle any already frozen backend:
+
+```sh
+python scripts/package_release.py --backend dist/styleai-server --platform macos-arm64 --version build-identifier
+```
+
+Use `windows-x64` on Windows. The command produces a ZIP and SHA-256 file in
+`dist/release`; run it on the target platform after building that platform's
+backend. Release archives contain the canonical plug-in, backend, installation
+instructions, and license. Test releases on clean target machines with Lightroom
+before publishing; CI cannot verify Lightroom or OS security dialogs.
 
 Wiki sources live in `docs/wiki`. `Project-README.md` is generated from the root
 README; run `bash scripts/build-wiki-pages.sh` after changing it. Keep all five

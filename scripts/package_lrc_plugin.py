@@ -43,7 +43,8 @@ def build_package(mode: str, output: Path) -> Path:
     if mode not in DEFAULT_OUTPUTS:
         raise ValueError(f"Unsupported package mode: {mode}")
     output = output.resolve()
-    if output == SOURCE_PLUGIN.resolve() or SOURCE_PLUGIN.resolve() in output.parents:
+    if (output == SOURCE_PLUGIN.resolve() or SOURCE_PLUGIN.resolve() in output.parents
+            or output in SOURCE_PLUGIN.resolve().parents):
         raise ValueError("Output must not overwrite or nest inside the source plugin")
     if output.exists():
         shutil.rmtree(output)

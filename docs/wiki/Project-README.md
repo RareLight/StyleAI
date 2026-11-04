@@ -45,15 +45,14 @@ Metadata generation does.
 
 ## Install and start
 
-1. Download the correct package from [GitHub Releases](https://github.com/RareLight/StyleAI/releases).
-2. Extract it and add `StyleAI.lrplugin` in Lightroom's **Plug-in Manager**.
-3. If the unsigned backend is blocked, follow the operating-system instructions
-   in the release notes.
-4. Open StyleAI in Plug-in Manager and complete **Configure Local Models...**.
+Download the archive for Apple silicon macOS or Windows x64 from
+[GitHub Releases](https://github.com/RareLight/StyleAI/releases), extract it to
+a permanent folder, and add `StyleAI.lrplugin` in Lightroom Classic's **File →
+Plug-in Manager**. Keep the adjacent `styleai-server` folder in place.
 
-The plugin starts the packaged backend automatically. Source developers should
-read the [Developer Guide](https://github.com/RareLight/StyleAI/wiki/Developer-Guide)
-and [contribution guide](https://github.com/RareLight/StyleAI/blob/main/CONTRIBUTING.md).
+Follow the [installation instructions](docs/INSTALL.md) for first-time setup,
+unsigned builds, updates, and removal. Source developers should read the
+[Developer Guide](docs/wiki/Developer-Guide.md) and [contribution guide](CONTRIBUTING.md).
 
 ## Architecture
 

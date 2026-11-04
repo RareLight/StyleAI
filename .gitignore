@@ -12,6 +12,7 @@ model_scripts/**/*.bin
 **.weight
 **/venv/
 **/.venv/
+/server/.python-managed/
 **/__pycache__/
 **/.pytest_cache/
 **/.ruff_cache/

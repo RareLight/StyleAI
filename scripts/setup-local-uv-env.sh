@@ -6,8 +6,8 @@ set -euo pipefail
 # Reads the locked dependency set from server/pyproject.toml + server/uv.lock
 # and creates server/.venv/ as the project's virtual environment.
 #
-# This is a thin convenience wrapper. The equivalent direct command is:
-#   cd server && uv sync --locked
+# The interpreter is installed inside the project, independently of Conda or
+# a system Python. The venv refers to that interpreter and must stay with it.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -65,7 +65,8 @@ if [[ ! -f "${SERVER_DIR}/pyproject.toml" ]]; then
   exit 1
 fi
 
-UV_ARGS=(sync --locked)
+export UV_PYTHON_INSTALL_DIR="${SERVER_DIR}/.python-managed"
+UV_ARGS=(sync --locked --managed-python)
 if [[ ${INCLUDE_DEV} -eq 0 ]]; then
   UV_ARGS+=(--no-dev)
 fi
@@ -78,6 +79,7 @@ echo "Running 'uv ${UV_ARGS[*]}' in ${SERVER_DIR}..."
 
 echo
 echo "Environment ready at: ${SERVER_DIR}/.venv"
+echo "Project-managed Python: ${UV_PYTHON_INSTALL_DIR}"
 echo
 echo "Next steps:"
 echo "  cd \"${SERVER_DIR}\" && uv run python src/styleai_server.py --db-path /tmp/styleai-data"
