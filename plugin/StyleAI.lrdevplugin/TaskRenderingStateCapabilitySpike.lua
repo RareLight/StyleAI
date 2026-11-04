@@ -67,7 +67,8 @@ local function photoRecord(photo, index)
 		rendering_state = Capability.captureRenderingState(settings),
 		profile_display_name = Capability.profileDisplayName(Capability.captureRenderingState(settings)),
 		is_hdr = Capability.isHdr(Capability.captureRenderingState(settings)),
-	}, nil
+	},
+		nil
 end
 
 local function presentKeys(state, allowedKeys)
@@ -114,17 +115,13 @@ local function runScenario(catalog, source, target, keys, kind)
 		end
 	end
 	local matched = applied
-		and afterState
-		and Capability.keysMatch(afterState, target.rendering_state, keys)
-		and preservedOtherCategory
+			and afterState
+			and Capability.keysMatch(afterState, target.rendering_state, keys)
+			and preservedOtherCategory
 		or false
 
-	local restored, restoreError = applySettings(
-		catalog,
-		source.photo,
-		source.settings,
-		"StyleAI SDK spike: restore disposable copy"
-	)
+	local restored, restoreError =
+		applySettings(catalog, source.photo, source.settings, "StyleAI SDK spike: restore disposable copy")
 	local restoredSettings, restoreReadError = readSettings(source.photo)
 	local restoredState = restoredSettings and Capability.captureRenderingState(restoredSettings) or nil
 	local restoreVerified = restored
@@ -181,7 +178,9 @@ local function runSpike()
 		if raw(photo, "isVirtualCopy") ~= true then
 			LrDialogs.message(
 				LOC("$$$/StyleAI/RenderingSpike/InvalidSelectionTitle=Rendering-State Spike Not Started"),
-				LOC("$$$/StyleAI/RenderingSpike/VirtualCopiesOnly=Every selected photo must be a disposable virtual copy. Originals are never accepted by this test."),
+				LOC(
+					"$$$/StyleAI/RenderingSpike/VirtualCopiesOnly=Every selected photo must be a disposable virtual copy. Originals are never accepted by this test."
+				),
 				"warning"
 			)
 			return
@@ -190,7 +189,9 @@ local function runSpike()
 
 	local confirm = LrDialogs.confirm(
 		LOC("$$$/StyleAI/RenderingSpike/ConfirmTitle=Run Rendering-State SDK Spike?"),
-		LOC("$$$/StyleAI/RenderingSpike/Confirm=StyleAI will temporarily apply profile and HDR representations copied exactly from the selected virtual copies, verify Lightroom readback, and restore each copy. Use only disposable virtual copies prepared according to the Developer Guide."),
+		LOC(
+			"$$$/StyleAI/RenderingSpike/Confirm=StyleAI will temporarily apply profile and HDR representations copied exactly from the selected virtual copies, verify Lightroom readback, and restore each copy. Use only disposable virtual copies prepared according to the Developer Guide."
+		),
 		LOC("$$$/StyleAI/RenderingSpike/Run=Run Spike"),
 		LOC("$$$/StyleAI/common/Cancel=Cancel")
 	)
@@ -259,7 +260,12 @@ local function runSpike()
 		end
 		LrDialogs.message(
 			LOC("$$$/StyleAI/RenderingSpike/IncompleteTitle=Rendering-State Specimens Are Incomplete"),
-			LOC("$$$/StyleAI/RenderingSpike/Incomplete=The selection contains ^1 distinct profile state(s) and ^2 HDR state(s). Prepare at least two different profiles and both SDR and HDR virtual copies from the same camera, then rerun the spike. No Develop settings were changed. Report: ^3", profileStateCount, hdrStateCount, incompletePath),
+			LOC(
+				"$$$/StyleAI/RenderingSpike/Incomplete=The selection contains ^1 distinct profile state(s) and ^2 HDR state(s). Prepare at least two different profiles and both SDR and HDR virtual copies from the same camera, then rerun the spike. No Develop settings were changed. Report: ^3",
+				profileStateCount,
+				hdrStateCount,
+				incompletePath
+			),
 			"warning"
 		)
 		return
@@ -292,7 +298,9 @@ local function runSpike()
 						local result = runScenario(catalog, source, target, { key }, "profile_key")
 						table.insert(report.tests, result)
 						restoreBlocked = not result.restore_verified
-						if restoreBlocked then break end
+						if restoreBlocked then
+							break
+						end
 					end
 				end
 				if
@@ -318,8 +326,12 @@ local function runSpike()
 				end
 
 				local combinedKeys = {}
-				for _, key in ipairs(profileKeys) do table.insert(combinedKeys, key) end
-				for _, key in ipairs(hdrKeys) do table.insert(combinedKeys, key) end
+				for _, key in ipairs(profileKeys) do
+					table.insert(combinedKeys, key)
+				end
+				for _, key in ipairs(hdrKeys) do
+					table.insert(combinedKeys, key)
+				end
 				if
 					not restoreBlocked
 					and #profileKeys > 0
@@ -338,8 +350,12 @@ local function runSpike()
 	local passCount = 0
 	local restoreFailureCount = 0
 	for _, result in ipairs(report.tests) do
-		if result.matched then passCount = passCount + 1 end
-		if not result.restore_verified then restoreFailureCount = restoreFailureCount + 1 end
+		if result.matched then
+			passCount = passCount + 1
+		end
+		if not result.restore_verified then
+			restoreFailureCount = restoreFailureCount + 1
+		end
 	end
 	report.summary = {
 		test_count = #report.tests,
@@ -357,7 +373,13 @@ local function runSpike()
 	log:info("Rendering-state SDK spike report written to " .. reportPath)
 	LrDialogs.message(
 		LOC("$$$/StyleAI/RenderingSpike/CompleteTitle=Rendering-State Spike Complete"),
-		LOC("$$$/StyleAI/RenderingSpike/Complete=Completed ^1 application/readback tests; ^2 matched and ^3 restores failed. The production gate remains closed until the report is annotated with profile types and the manual Undo/Redo checks pass. Report: ^4", #report.tests, passCount, restoreFailureCount, reportPath),
+		LOC(
+			"$$$/StyleAI/RenderingSpike/Complete=Completed ^1 application/readback tests; ^2 matched and ^3 restores failed. The production gate remains closed until the report is annotated with profile types and the manual Undo/Redo checks pass. Report: ^4",
+			#report.tests,
+			passCount,
+			restoreFailureCount,
+			reportPath
+		),
 		restoreFailureCount == 0 and "info" or "critical"
 	)
 end

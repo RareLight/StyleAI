@@ -116,9 +116,21 @@ LrTasks.startAsyncTask(function()
 		end)
 
 		runTest("PhotoSelector preserves selected-photo snapshot", function()
-			local photoOne = { getRawMetadata = function(self, key) return key == "isVideo" and false or nil end }
-			local photoTwo = { getRawMetadata = function(self, key) return key == "isVideo" and false or nil end }
-			local video = { getRawMetadata = function(self, key) return key == "isVideo" and true or nil end }
+			local photoOne = {
+				getRawMetadata = function(self, key)
+					return key == "isVideo" and false or nil
+				end,
+			}
+			local photoTwo = {
+				getRawMetadata = function(self, key)
+					return key == "isVideo" and false or nil
+				end,
+			}
+			local video = {
+				getRawMetadata = function(self, key)
+					return key == "isVideo" and true or nil
+				end,
+			}
 			local capturedSelection = { photoOne, photoTwo, video }
 			local resolved = PhotoSelector.getPhotosInScope("selected", nil, nil, capturedSelection)
 
@@ -136,7 +148,11 @@ LrTasks.startAsyncTask(function()
 			}
 			assertEqual(7, StyleUI.keepSelection(items, 7), "Visible selection should be preserved")
 			assertEqual(2, StyleUI.keepSelection(items, 99), "Missing selection should fall back deterministically")
-			assertEqual(7, StyleUI.resolveSelectedIndex({ value = 7 }, items), "Lightroom table selection should resolve")
+			assertEqual(
+				7,
+				StyleUI.resolveSelectedIndex({ value = 7 }, items),
+				"Lightroom table selection should resolve"
+			)
 		end)
 
 		---------------------------------------------------------
@@ -147,7 +163,9 @@ LrTasks.startAsyncTask(function()
 			local mockPhotos = { { id = 1 }, { id = 2 } }
 			-- Mock photo object
 			for _, p in ipairs(mockPhotos) do
-				p.getFormattedMetadata = function(self, key) return "MockPhoto" .. self.id end
+				p.getFormattedMetadata = function(self, key)
+					return "MockPhoto" .. self.id
+				end
 			end
 
 			local processFn = function(photo, index, total, catalog)
@@ -162,7 +180,9 @@ LrTasks.startAsyncTask(function()
 		runTest("Pipeline.runSequentialBatch - Error Capture", function()
 			local mockPhotos = { { id = 1 }, { id = 2 } }
 			for _, p in ipairs(mockPhotos) do
-				p.getFormattedMetadata = function(self, key) return "MockPhoto" .. self.id end
+				p.getFormattedMetadata = function(self, key)
+					return "MockPhoto" .. self.id
+				end
 			end
 
 			local processFn = function(photo, index, total, catalog)
@@ -176,13 +196,18 @@ LrTasks.startAsyncTask(function()
 			local summary = Pipeline.runSequentialBatch(mockPhotos, nil, {}, processFn)
 			assertEqual(1, summary.successCount, "Should have 1 success")
 			assertEqual(1, summary.errorCount, "Should have 1 error")
-			assertTrue(string.find(summary.errors[1], "Failed on photo 1") ~= nil, "Error array should contain the failure message")
+			assertTrue(
+				string.find(summary.errors[1], "Failed on photo 1") ~= nil,
+				"Error array should contain the failure message"
+			)
 		end)
 
 		runTest("Pipeline.runSequentialBatch - pcall Crash Protection", function()
 			local mockPhotos = { { id = 1 } }
 			for _, p in ipairs(mockPhotos) do
-				p.getFormattedMetadata = function(self, key) return "MockPhoto" .. self.id end
+				p.getFormattedMetadata = function(self, key)
+					return "MockPhoto" .. self.id
+				end
 			end
 
 			local processFn = function(photo, index, total, catalog)
@@ -192,7 +217,10 @@ LrTasks.startAsyncTask(function()
 			local summary = Pipeline.runSequentialBatch(mockPhotos, nil, {}, processFn)
 			assertEqual(0, summary.successCount, "Should have 0 successes")
 			assertEqual(1, summary.errorCount, "Should have 1 error")
-			assertTrue(string.find(summary.errors[1], "Simulated crash") ~= nil, "Crash message should be caught and returned")
+			assertTrue(
+				string.find(summary.errors[1], "Simulated crash") ~= nil,
+				"Crash message should be caught and returned"
+			)
 		end)
 
 		runTest("Util.getGlobalPhotoIdForPhoto - Stable Deterministic ID", function()
@@ -222,7 +250,7 @@ LrTasks.startAsyncTask(function()
 					Contrast = 10,
 				},
 				confidence = 0.85,
-					source = "policy_v2",
+				source = "policy_v2",
 			}
 			local details = DevelopEditManager.formatRecipeDetails(response)
 			assertTrue(details ~= nil and details ~= "", "Formatted recipe details should not be empty")
@@ -234,13 +262,18 @@ LrTasks.startAsyncTask(function()
 				CameraProfileRaw = "custom-profile-id",
 				HDREditMode = 1,
 			})
-			assertEqual("Camera Standard + HDR", RenderingStateCapability.profileDisplayName(state), "Profile name must be preserved verbatim")
+			assertEqual(
+				"Camera Standard + HDR",
+				RenderingStateCapability.profileDisplayName(state),
+				"Profile name must be preserved verbatim"
+			)
 			assertTrue(RenderingStateCapability.isHdr(state), "HDR must be read from its own SDK field")
 		end)
 
 		runTest("RenderingStateCapability - Candidate settings preserve unrelated state", function()
 			local baseline = { Exposure2012 = 0.25, CameraProfile = "Adobe Color", HDREditMode = 0 }
-			local target = RenderingStateCapability.captureRenderingState({ CameraProfile = "Camera Neutral", HDREditMode = 1 })
+			local target =
+				RenderingStateCapability.captureRenderingState({ CameraProfile = "Camera Neutral", HDREditMode = 1 })
 			local candidate = RenderingStateCapability.buildCandidateSettings(baseline, target, { "CameraProfile" })
 			assertEqual(0.25, candidate.Exposure2012, "Unrelated Develop settings must survive")
 			assertEqual("Camera Neutral", candidate.CameraProfile, "Observed target representation must be copied")
@@ -251,8 +284,16 @@ LrTasks.startAsyncTask(function()
 			local first = RenderingStateCapability.cameraCompatibilityKey("Canon", "EOS R5")
 			local second = RenderingStateCapability.cameraCompatibilityKey("Canon", "EOS R6")
 			assertTrue(first ~= second, "Profiles from different camera models must not share a compatibility key")
-			assertEqual(first, RenderingStateCapability.cameraCompatibilityKey("CANON", "EOS R5"), "Compatibility matching should be case-insensitive")
-			assertEqual(nil, RenderingStateCapability.cameraCompatibilityKey(nil, nil), "Missing camera identity must never form a compatibility group")
+			assertEqual(
+				first,
+				RenderingStateCapability.cameraCompatibilityKey("CANON", "EOS R5"),
+				"Compatibility matching should be case-insensitive"
+			)
+			assertEqual(
+				nil,
+				RenderingStateCapability.cameraCompatibilityKey(nil, nil),
+				"Missing camera identity must never form a compatibility group"
+			)
 		end)
 
 		runTest("RenderingStateCapability - Substituted profiles fail exact verification", function()
@@ -287,10 +328,7 @@ LrTasks.startAsyncTask(function()
 					.. LOC("$$$/StyleAI/common/MoreErrors=... and ^1 more errors", #errorMessages - 5)
 			end
 
-			ErrorHandler.handleError(
-				LOC("$$$/StyleAI/TaskAutomatedTests/FailedTitle=Some Tests Failed"),
-				combinedError
-			)
+			ErrorHandler.handleError(LOC("$$$/StyleAI/TaskAutomatedTests/FailedTitle=Some Tests Failed"), combinedError)
 		else
 			LrDialogs.message(LOC("$$$/StyleAI/TaskAutomatedTests/PassedTitle=All Tests Passed"), summary, "info")
 		end

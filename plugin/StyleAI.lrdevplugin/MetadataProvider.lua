@@ -112,7 +112,9 @@ return {
 			-- Durable Lightroom-side outbox used between Develop application and
 			-- the backend receipt. It must be declared even though it is never shown.
 			id = "pendingAiEditApplicationEvent",
-			title = LOC("$$$/StyleAI/AIMetadataProvider/PendingAiEditApplicationEvent=Pending AI edit application event"),
+			title = LOC(
+				"$$$/StyleAI/AIMetadataProvider/PendingAiEditApplicationEvent=Pending AI edit application event"
+			),
 			dataType = "string",
 			readOnly = true,
 			searchable = false,

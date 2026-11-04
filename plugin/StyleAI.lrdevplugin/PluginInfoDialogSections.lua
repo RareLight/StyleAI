@@ -5,14 +5,20 @@ PluginInfoDialogSections = {}
 local function abbreviatePath(path, maxCharacters)
 	path = tostring(path or "")
 	maxCharacters = tonumber(maxCharacters) or 84
-	if #path <= maxCharacters then return path end
+	if #path <= maxCharacters then
+		return path
+	end
 	return "…" .. string.sub(path, -(maxCharacters - 1))
 end
 
 local function processingLoadMode(profile)
 	profile = tonumber(profile)
-	if profile and profile <= 1 then return "lower" end
-	if profile and profile >= 3 then return "faster" end
+	if profile and profile <= 1 then
+		return "lower"
+	end
+	if profile and profile >= 3 then
+		return "faster"
+	end
 	return "automatic"
 end
 
@@ -37,7 +43,9 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 				log:error("Could not refresh diagnostic capture information: " .. tostring(info))
 				return
 			end
-			if type(info) ~= "table" then return end
+			if type(info) ~= "table" then
+				return
+			end
 			if propertyTable.captureLlmInputsPath == "" and info.path then
 				propertyTable.captureLlmInputsPath = tostring(info.path)
 			end
@@ -53,31 +61,31 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.refreshCaptureInfo = refreshCaptureInfo
 	refreshCaptureInfo()
 
-	propertyTable.pluginVersionText = string.format(
-		"%d.%d.%d (%d)",
-		Info.MAJOR or 0,
-		Info.MINOR or 0,
-		Info.REVISION or 0,
-		Info.BUILD or 0
-	)
+	propertyTable.pluginVersionText =
+		string.format("%d.%d.%d (%d)", Info.MAJOR or 0, Info.MINOR or 0, Info.REVISION or 0, Info.BUILD or 0)
 	propertyTable.backendVersionText = LOC("$$$/StyleAI/common/Checking=Checking...")
 	LrTasks.startAsyncTask(function()
 		local versionInfo = SearchIndexAPI.getBackendVersion()
 		propertyTable.backendVersionText = type(versionInfo) == "table"
-			and tostring(versionInfo.backend_version or versionInfo.version or LOC("$$$/StyleAI/common/Unavailable=Unavailable"))
+				and tostring(
+					versionInfo.backend_version
+						or versionInfo.version
+						or LOC("$$$/StyleAI/common/Unavailable=Unavailable")
+				)
 			or LOC("$$$/StyleAI/common/Unavailable=Unavailable")
 	end)
 
 	local catalog = LrApplication.activeCatalog()
 	local catalogPath = catalog and catalog:getPath() or ""
-	propertyTable.databasePath = catalogPath ~= ""
-		and LrPathUtils.child(LrPathUtils.parent(catalogPath), "styleai.db")
+	propertyTable.databasePath = catalogPath ~= "" and LrPathUtils.child(LrPathUtils.parent(catalogPath), "styleai.db")
 		or ""
 	propertyTable.databaseDisplayPath = abbreviatePath(propertyTable.databasePath)
 	propertyTable.dataRecoveryBusy = false
 	propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryReady=Ready.")
 	propertyTable.runDataRecovery = function(runningStatus, errorTitle, work, onSuccess)
-		if propertyTable.dataRecoveryBusy then return end
+		if propertyTable.dataRecoveryBusy then
+			return
+		end
 		-- Claim the UI before scheduling so rapid repeat clicks cannot submit twice.
 		propertyTable.dataRecoveryBusy = true
 		propertyTable.dataRecoveryStatus = runningStatus
@@ -85,12 +93,16 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 			local callOk, actionOk, result, detail = LrTasks.pcall(work)
 			local errorDetail = nil
 			if not callOk then
-				propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryFailed=The action failed. Review the error details and try again.")
+				propertyTable.dataRecoveryStatus = LOC(
+					"$$$/StyleAI/PluginInfo/DataRecoveryFailed=The action failed. Review the error details and try again."
+				)
 				errorDetail = actionOk
 			elseif actionOk == nil and result == "canceled" then
 				propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryReady=Ready.")
 			elseif actionOk ~= true then
-				propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryFailed=The action failed. Review the error details and try again.")
+				propertyTable.dataRecoveryStatus = LOC(
+					"$$$/StyleAI/PluginInfo/DataRecoveryFailed=The action failed. Review the error details and try again."
+				)
 				errorDetail = result
 			else
 				local completionOk, completionError = LrTasks.pcall(function()
@@ -100,12 +112,16 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 					LrDialogs.showBezel(propertyTable.dataRecoveryStatus, 4)
 				end)
 				if not completionOk then
-					propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryFailed=The action failed. Review the error details and try again.")
+					propertyTable.dataRecoveryStatus = LOC(
+						"$$$/StyleAI/PluginInfo/DataRecoveryFailed=The action failed. Review the error details and try again."
+					)
 					errorDetail = completionError
 				end
 			end
 			propertyTable.dataRecoveryBusy = false
-			if errorDetail ~= nil then ErrorHandler.handleError(errorTitle, tostring(errorDetail)) end
+			if errorDetail ~= nil then
+				ErrorHandler.handleError(errorTitle, tostring(errorDetail))
+			end
 		end)
 	end
 
@@ -137,28 +153,46 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	propertyTable.serviceRepairStatus = ""
 
 	local function providerDisplayName(provider)
-		if provider == "disabled" then return LOC("$$$/StyleAI/PluginInfo/ProviderDisabled=Disabled") end
-		if provider == "ollama" then return LOC("$$$/StyleAI/PluginInfo/ProviderOllama=Ollama") end
-		if provider == "lmstudio" then return LOC("$$$/StyleAI/PluginInfo/ProviderLmStudio=LM Studio") end
-		if provider == "axengine" then return LOC("$$$/StyleAI/PluginInfo/ProviderAxEngine=AX Engine") end
+		if provider == "disabled" then
+			return LOC("$$$/StyleAI/PluginInfo/ProviderDisabled=Disabled")
+		end
+		if provider == "ollama" then
+			return LOC("$$$/StyleAI/PluginInfo/ProviderOllama=Ollama")
+		end
+		if provider == "lmstudio" then
+			return LOC("$$$/StyleAI/PluginInfo/ProviderLmStudio=LM Studio")
+		end
+		if provider == "axengine" then
+			return LOC("$$$/StyleAI/PluginInfo/ProviderAxEngine=AX Engine")
+		end
 		return tostring(provider or "")
 	end
 
 	local function syncMetadataProvider(provider)
-		propertyTable.metadataProviderStatus = LOC("$$$/StyleAI/PluginInfo/ProviderApplying=Applying provider selection...")
+		propertyTable.metadataProviderStatus =
+			LOC("$$$/StyleAI/PluginInfo/ProviderApplying=Applying provider selection...")
 		LrTasks.startAsyncTask(function()
 			local ok, result = SearchIndexAPI.setActiveMetadataProvider(provider)
 			if ok then
 				propertyTable.metadataProviderStatus = provider == "disabled"
-					and LOC("$$$/StyleAI/PluginInfo/ProviderOff=Local metadata generation is disabled.")
-					or LOC("$$$/StyleAI/PluginInfo/ProviderSelected=^1 is the active metadata API.", providerDisplayName(provider))
+						and LOC("$$$/StyleAI/PluginInfo/ProviderOff=Local metadata generation is disabled.")
+					or LOC(
+						"$$$/StyleAI/PluginInfo/ProviderSelected=^1 is the active metadata API.",
+						providerDisplayName(provider)
+					)
 			else
-				propertyTable.metadataProviderStatus = LOC("$$$/StyleAI/PluginInfo/ProviderApplyFailed=Could not activate ^1: ^2", providerDisplayName(provider), tostring(result))
+				propertyTable.metadataProviderStatus = LOC(
+					"$$$/StyleAI/PluginInfo/ProviderApplyFailed=Could not activate ^1: ^2",
+					providerDisplayName(provider),
+					tostring(result)
+				)
 			end
 		end)
 	end
 	propertyTable:addObserver("activeMetadataProvider", function(_, _, provider)
-		if provider then syncMetadataProvider(provider) end
+		if provider then
+			syncMetadataProvider(provider)
+		end
 	end)
 	syncMetadataProvider(propertyTable.activeMetadataProvider)
 
@@ -171,18 +205,28 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 
 			propertyTable.backendAvailable = health.backend == true
 			propertyTable.backendStatusText = health.backend
-				and LOC("$$$/StyleAI/Health/ServiceReady=Ready — local background service is running.")
-				or LOC("$$$/StyleAI/Health/ServiceUnavailable=Unavailable — local background service is not reachable.")
+					and LOC("$$$/StyleAI/Health/ServiceReady=Ready — local background service is running.")
+				or LOC(
+					"$$$/StyleAI/Health/ServiceUnavailable=Unavailable — local background service is not reachable."
+				)
 			propertyTable.visionStatusText = health.clip
-				and LOC("$$$/StyleAI/Health/VisionReady=Ready — vision model is installed.")
+					and LOC("$$$/StyleAI/Health/VisionReady=Ready — vision model is installed.")
 				or LOC("$$$/StyleAI/Health/VisionUnavailable=Unavailable — vision model setup is required.")
 			local activeProvider = propertyTable.activeMetadataProvider
 			local providerReady = activeProvider ~= "disabled" and health[activeProvider] == true
 			propertyTable.metadataStatusText = activeProvider == "disabled"
-				and LOC("$$$/StyleAI/Health/MetadataDisabled=Disabled — local metadata generation is off.")
-				or (providerReady
-					and LOC("$$$/StyleAI/Health/MetadataProviderReady=Ready — ^1 is available.", providerDisplayName(activeProvider))
-					or LOC("$$$/StyleAI/Health/MetadataProviderUnavailable=Unavailable — ^1 is not ready.", providerDisplayName(activeProvider)))
+					and LOC("$$$/StyleAI/Health/MetadataDisabled=Disabled — local metadata generation is off.")
+				or (
+					providerReady
+						and LOC(
+							"$$$/StyleAI/Health/MetadataProviderReady=Ready — ^1 is available.",
+							providerDisplayName(activeProvider)
+						)
+					or LOC(
+						"$$$/StyleAI/Health/MetadataProviderUnavailable=Unavailable — ^1 is not ready.",
+						providerDisplayName(activeProvider)
+					)
+				)
 
 			if not health.backend then
 				status = "critical"
@@ -199,7 +243,12 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 					status = "warning"
 					color = { 0.1, 0.5, 0.8 }
 				end
-				table.insert(issues, LOC("$$$/StyleAI/Health/LocalLlmOptional=Local metadata generation is optional and currently unavailable."))
+				table.insert(
+					issues,
+					LOC(
+						"$$$/StyleAI/Health/LocalLlmOptional=Local metadata generation is optional and currently unavailable."
+					)
+				)
 			end
 
 			propertyTable.healthStatus = status
@@ -211,9 +260,12 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	updateHealth()
 
 	propertyTable.repairService = function()
-		if propertyTable.serviceRepairing then return end
+		if propertyTable.serviceRepairing then
+			return
+		end
 		propertyTable.serviceRepairing = true
-		propertyTable.serviceRepairStatus = LOC("$$$/StyleAI/PluginInfo/RepairingService=Repairing the background service...")
+		propertyTable.serviceRepairStatus =
+			LOC("$$$/StyleAI/PluginInfo/RepairingService=Repairing the background service...")
 		LrTasks.startAsyncTask(function()
 			local progressScope = LrProgressScope({
 				title = LOC("$$$/StyleAI/PluginInfo/RepairingService=Repairing the background service..."),
@@ -223,7 +275,8 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 			progressScope:done()
 			propertyTable.serviceRepairing = false
 			if ok then
-				propertyTable.serviceRepairStatus = LOC("$$$/StyleAI/PluginInfo/RepairServiceSuccess=Background service is ready.")
+				propertyTable.serviceRepairStatus =
+					LOC("$$$/StyleAI/PluginInfo/RepairServiceSuccess=Background service is ready.")
 				propertyTable.refreshStyleSummary()
 			else
 				propertyTable.serviceRepairStatus = LOC(
@@ -238,15 +291,18 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 	LrTasks.startAsyncTask(function()
 		while propertyTable.keepChecksRunning do
 			for _ = 1, 20 do
-				if not propertyTable.keepChecksRunning then break end
+				if not propertyTable.keepChecksRunning then
+					break
+				end
 				LrTasks.sleep(0.5)
 			end
-			if propertyTable.keepChecksRunning then updateHealth() end
+			if propertyTable.keepChecksRunning then
+				updateHealth()
+			end
 		end
 	end)
 
-	propertyTable.updateStatus = propertyTable.periodicalUpdateCheck
-		and LOC("$$$/StyleAI/common/Checking=Checking...")
+	propertyTable.updateStatus = propertyTable.periodicalUpdateCheck and LOC("$$$/StyleAI/common/Checking=Checking...")
 		or LOC("$$$/StyleAI/PluginInfo/UpdatesManual=Use Help > Plug-in Extras to check for updates manually.")
 	propertyTable.updateStatusColor = { 0.5, 0.5, 0.5 }
 	propertyTable.updateAvailable = false
@@ -257,7 +313,8 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 			local info = UpdateCheck.getLatestReleaseInfo()
 			if info and info.is_newer then
 				propertyTable.updateAvailable = true
-				propertyTable.updateStatus = LOC("$$$/StyleAI/PluginInfo/UpdateAvailable=Update Available: ^1", info.tag_name)
+				propertyTable.updateStatus =
+					LOC("$$$/StyleAI/PluginInfo/UpdateAvailable=Update Available: ^1", info.tag_name)
 				propertyTable.updateStatusColor = { 0.1, 0.5, 0.8 }
 			else
 				propertyTable.updateAvailable = false
@@ -267,9 +324,13 @@ function PluginInfoDialogSections.startDialog(propertyTable)
 		end)
 	end
 	propertyTable:addObserver("periodicalUpdateCheck", function(_, _, newValue)
-		if newValue == true then checkUpdates() end
+		if newValue == true then
+			checkUpdates()
+		end
 	end)
-	if propertyTable.periodicalUpdateCheck then checkUpdates() end
+	if propertyTable.periodicalUpdateCheck then
+		checkUpdates()
+	end
 end
 
 function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
@@ -299,11 +360,18 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 				}),
 				UIFactory.HelpText(f, {
-					title = LOC("$$$/StyleAI/PluginInfo/LocalMetadataApiHelp=Choose one local API provider. Tagging and benchmark model lists will show models from this provider only."),
+					title = LOC(
+						"$$$/StyleAI/PluginInfo/LocalMetadataApiHelp=Choose one local API provider. Tagging and benchmark model lists will show models from this provider only."
+					),
 				}),
 				UIFactory.HelpText(f, { title = bind("metadataProviderStatus") }),
 				UIFactory.FormRow(f, {
-					visible = bind({ key = "activeMetadataProvider", transform = function(value) return value == "axengine" end }),
+					visible = bind({
+						key = "activeMetadataProvider",
+						transform = function(value)
+							return value == "axengine"
+						end,
+					}),
 					label = LOC("$$$/StyleAI/PluginInfo/AxModelRoot=AX model folder:"),
 					labelWidth = share("healthLabelWidth"),
 					f:edit_field({
@@ -312,8 +380,15 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 				}),
 				UIFactory.HelpText(f, {
-					visible = bind({ key = "activeMetadataProvider", transform = function(value) return value == "axengine" end }),
-					title = LOC("$$$/StyleAI/PluginInfo/AxModelRootHelp=StyleAI discovers AX-native MLX vision models in this folder and launches AX Engine only when a selected model is needed."),
+					visible = bind({
+						key = "activeMetadataProvider",
+						transform = function(value)
+							return value == "axengine"
+						end,
+					}),
+					title = LOC(
+						"$$$/StyleAI/PluginInfo/AxModelRootHelp=StyleAI discovers AX-native MLX vision models in this folder and launches AX Engine only when a selected model is needed."
+					),
 				}),
 				UIFactory.StatusRow(f, {
 					label = LOC("$$$/StyleAI/Health/VisionLabel=Vision model:"),
@@ -327,18 +402,35 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				}),
 				UIFactory.Notice(f, {
 					kind = "warning",
-					visible = bind({ key = "healthIssues", transform = function(value) return value ~= "" end }),
+					visible = bind({
+						key = "healthIssues",
+						transform = function(value)
+							return value ~= ""
+						end,
+					}),
 					title = bind("healthIssues"),
 				}),
 				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/Health/ConfigureModels=Configure Local Models..."),
-						action = function() OnboardingWizard.show(true) end,
+						action = function()
+							OnboardingWizard.show(true)
+						end,
 					}),
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/RepairService=Repair Background Service"),
-						visible = bind({ key = "backendAvailable", transform = function(value) return value ~= true end }),
-						enabled = bind({ key = "serviceRepairing", transform = function(value) return value ~= true end }),
+						visible = bind({
+							key = "backendAvailable",
+							transform = function(value)
+								return value ~= true
+							end,
+						}),
+						enabled = bind({
+							key = "serviceRepairing",
+							transform = function(value)
+								return value ~= true
+							end,
+						}),
 						action = propertyTable.repairService,
 					}),
 				}),
@@ -354,19 +446,26 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				spacing = f:control_spacing(),
 				UIFactory.HelpText(f, { title = bind("styleSummaryText") }),
 				UIFactory.HelpText(f, {
-					title = LOC("$$$/StyleAI/PluginInfo/StylesHelp=Manage learned styles, inspect evidence, rebuild policies, and remove training data in Styles & Training."),
+					title = LOC(
+						"$$$/StyleAI/PluginInfo/StylesHelp=Manage learned styles, inspect evidence, rebuild policies, and remove training data in Styles & Training."
+					),
 				}),
 				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/Menu/StylesTraining=Styles & Training..."),
 						action = function()
-						LrTasks.startAsyncTask(function()
-							local ok, err = LrTasks.pcall(function()
-								dofile(_PLUGIN.path .. "/TaskStyleCatalog.lua")
+							LrTasks.startAsyncTask(function()
+								local ok, err = LrTasks.pcall(function()
+									dofile(_PLUGIN.path .. "/TaskStyleCatalog.lua")
+								end)
+								if not ok then
+									ErrorHandler.handleError(
+										LOC("$$$/StyleAI/PluginInfo/OpenStylesFailed=Could not open Styles & Training"),
+										tostring(err)
+									)
+								end
 							end)
-							if not ok then ErrorHandler.handleError(LOC("$$$/StyleAI/PluginInfo/OpenStylesFailed=Could not open Styles & Training"), tostring(err)) end
-						end)
-					end,
+						end,
 					}),
 				}),
 			}),
@@ -389,20 +488,31 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 				}),
 				UIFactory.HelpText(f, {
-					title = LOC("$$$/StyleAI/PluginInfo/DatabaseLocationHelp=StyleAI keeps this catalog's search index, training examples, learned styles, and edit history beside the Lightroom catalog."),
+					title = LOC(
+						"$$$/StyleAI/PluginInfo/DatabaseLocationHelp=StyleAI keeps this catalog's search index, training examples, learned styles, and edit history beside the Lightroom catalog."
+					),
 				}),
 				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/RevealDataFolder=Reveal Data Folder"),
-						enabled = bind({ key = "databasePath", transform = function(value) return value ~= "" end }),
+						enabled = bind({
+							key = "databasePath",
+							transform = function(value)
+								return value ~= ""
+							end,
+						}),
 						action = function()
-						if propertyTable.databasePath ~= "" then LrShell.revealInShell(propertyTable.databasePath) end
-					end,
+							if propertyTable.databasePath ~= "" then
+								LrShell.revealInShell(propertyTable.databasePath)
+							end
+						end,
 					}),
 				}),
 				f:separator({ fill_horizontal = 1 }),
 				UIFactory.HelpText(f, {
-					title = LOC("$$$/StyleAI/PluginInfo/BackupScopeNote=StyleAI backups protect AI indexes, training data, learned styles, and history. They do not back up the Lightroom catalog, photo files, or Develop edits."),
+					title = LOC(
+						"$$$/StyleAI/PluginInfo/BackupScopeNote=StyleAI backups protect AI indexes, training data, learned styles, and history. They do not back up the Lightroom catalog, photo files, or Develop edits."
+					),
 				}),
 				UIFactory.StatusRow(f, {
 					label = LOC("$$$/StyleAI/PluginInfo/DataRecoveryStatus=Status:"),
@@ -412,21 +522,36 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/ExportDbBackup=Export Backup..."),
-						enabled = bind({ key = "dataRecoveryBusy", transform = function(value) return value ~= true end }),
+						enabled = bind({
+							key = "dataRecoveryBusy",
+							transform = function(value)
+								return value ~= true
+							end,
+						}),
 						action = function()
-							if propertyTable.dataRecoveryBusy then return end
+							if propertyTable.dataRecoveryBusy then
+								return
+							end
 							propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryReady=Ready.")
 							local outputPath, chooseError = SearchIndexAPI.chooseDatabaseBackupDestination()
 							if not outputPath then
-								if chooseError ~= "canceled" then ErrorHandler.handleError(LOC("$$$/StyleAI/PluginInfo/DbBackupFailed=Database backup failed"), tostring(chooseError)) end
+								if chooseError ~= "canceled" then
+									ErrorHandler.handleError(
+										LOC("$$$/StyleAI/PluginInfo/DbBackupFailed=Database backup failed"),
+										tostring(chooseError)
+									)
+								end
 								return
 							end
 							propertyTable.runDataRecovery(
 								LOC("$$$/StyleAI/PluginInfo/BackupRunning=Creating and validating the backup..."),
 								LOC("$$$/StyleAI/PluginInfo/DbBackupFailed=Database backup failed"),
-								function() return SearchIndexAPI.createDatabaseBackup(outputPath) end,
+								function()
+									return SearchIndexAPI.createDatabaseBackup(outputPath)
+								end,
 								function(path)
-									propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/BackupComplete=Backup exported successfully.")
+									propertyTable.dataRecoveryStatus =
+										LOC("$$$/StyleAI/PluginInfo/BackupComplete=Backup exported successfully.")
 									LrShell.revealInShell(path)
 								end
 							)
@@ -434,29 +559,49 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					}),
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/RestoreDbBackup=Restore Backup..."),
-						enabled = bind({ key = "dataRecoveryBusy", transform = function(value) return value ~= true end }),
+						enabled = bind({
+							key = "dataRecoveryBusy",
+							transform = function(value)
+								return value ~= true
+							end,
+						}),
 						action = function()
-							if propertyTable.dataRecoveryBusy then return end
+							if propertyTable.dataRecoveryBusy then
+								return
+							end
 							propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryReady=Ready.")
 							local confirm = LrDialogs.confirm(
 								LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupTitle=Restore StyleAI Database"),
-								LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupConfirm=This restores StyleAI's AI data only. It does not restore your Lightroom catalog, photo files, or Develop edits. StyleAI will validate the backup and create a pre-restore recovery snapshot before replacing its current database. Continue?"),
+								LOC(
+									"$$$/StyleAI/PluginInfo/RestoreDbBackupConfirm=This restores StyleAI's AI data only. It does not restore your Lightroom catalog, photo files, or Develop edits. StyleAI will validate the backup and create a pre-restore recovery snapshot before replacing its current database. Continue?"
+								),
 								LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupAction=Choose Backup"),
 								LOC("$$$/StyleAI/common/Cancel=Cancel")
 							)
-							if confirm ~= "ok" then return end
+							if confirm ~= "ok" then
+								return
+							end
 							local archivePath, chooseError = SearchIndexAPI.chooseDatabaseBackupArchive()
 							if not archivePath then
-								if chooseError ~= "canceled" then ErrorHandler.handleError(LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupFailed=Database restore failed"), tostring(chooseError)) end
+								if chooseError ~= "canceled" then
+									ErrorHandler.handleError(
+										LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupFailed=Database restore failed"),
+										tostring(chooseError)
+									)
+								end
 								return
 							end
 							propertyTable.runDataRecovery(
 								LOC("$$$/StyleAI/PluginInfo/RestoreRunning=Validating and restoring the backup..."),
 								LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupFailed=Database restore failed"),
-								function() return SearchIndexAPI.restoreDatabaseBackupFromPath(archivePath) end,
+								function()
+									return SearchIndexAPI.restoreDatabaseBackupFromPath(archivePath)
+								end,
 								function()
 									propertyTable.refreshStyleSummary()
-									propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/RestoreDbBackupCompleteMessage=The validated backup was restored successfully. Your Lightroom catalog and Develop edits were not changed.")
+									propertyTable.dataRecoveryStatus = LOC(
+										"$$$/StyleAI/PluginInfo/RestoreDbBackupCompleteMessage=The validated backup was restored successfully. Your Lightroom catalog and Develop edits were not changed."
+									)
 								end
 							)
 						end,
@@ -464,21 +609,36 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				}),
 				f:separator({ fill_horizontal = 1 }),
 				UIFactory.HelpText(f, {
-					title = LOC("$$$/StyleAI/PluginInfo/CleanupHelp=Remove StyleAI records for photos that are no longer in this Lightroom catalog. A backup is created before cleanup."),
+					title = LOC(
+						"$$$/StyleAI/PluginInfo/CleanupHelp=Remove StyleAI records for photos that are no longer in this Lightroom catalog. A backup is created before cleanup."
+					),
 				}),
 				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/CleanupRemovedPhotos=Clean Up Removed Photos..."),
-						enabled = bind({ key = "dataRecoveryBusy", transform = function(value) return value ~= true end }),
+						enabled = bind({
+							key = "dataRecoveryBusy",
+							transform = function(value)
+								return value ~= true
+							end,
+						}),
 						action = function()
-							if propertyTable.dataRecoveryBusy then return end
+							if propertyTable.dataRecoveryBusy then
+								return
+							end
 							propertyTable.dataRecoveryStatus = LOC("$$$/StyleAI/PluginInfo/DataRecoveryReady=Ready.")
 							local task = require("TaskPruneDatabase")
-							if not task.confirm() then return end
+							if not task.confirm() then
+								return
+							end
 							propertyTable.runDataRecovery(
-								LOC("$$$/StyleAI/PluginInfo/CleanupRunning=Checking the catalog and cleaning removed-photo records..."),
+								LOC(
+									"$$$/StyleAI/PluginInfo/CleanupRunning=Checking the catalog and cleaning removed-photo records..."
+								),
 								LOC("$$$/StyleAI/PruneDatabase/FailedTitle=Database Cleanup Failed"),
-								function() return task.process() end,
+								function()
+									return task.process()
+								end,
 								function(results)
 									results = type(results) == "table" and results or {}
 									propertyTable.dataRecoveryStatus = LOC(
@@ -502,7 +662,9 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				fill_horizontal = 1,
 				spacing = f:control_spacing(),
 				UIFactory.HelpText(f, {
-					title = LOC("$$$/StyleAI/PluginInfo/DiagnosticsHelp=Performance overrides and diagnostic image capture are normally unnecessary. Support reports and logs are available under Help > Plug-in Extras."),
+					title = LOC(
+						"$$$/StyleAI/PluginInfo/DiagnosticsHelp=Performance overrides and diagnostic image capture are normally unnecessary. Support reports and logs are available under Help > Plug-in Extras."
+					),
 				}),
 				f:separator({ fill_horizontal = 1 }),
 				f:column({
@@ -510,7 +672,9 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					spacing = f:control_spacing(),
 					UIFactory.Notice(f, {
 						kind = "warning",
-						title = LOC("$$$/StyleAI/Debug/PrivacyWarning=Diagnostic capture is local, but saved files can contain photo pixels and metadata. Enable it only while troubleshooting."),
+						title = LOC(
+							"$$$/StyleAI/Debug/PrivacyWarning=Diagnostic capture is local, but saved files can contain photo pixels and metadata. Enable it only while troubleshooting."
+						),
 					}),
 					UIFactory.FormRow(f, {
 						label = LOC("$$$/StyleAI/PluginInfo/ProcessingLoad=Processing load:"),
@@ -522,14 +686,19 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							-- full pane width, which separates choices from their text.
 							width = 220,
 							items = {
-								{ title = LOC("$$$/StyleAI/PluginInfo/LoadAutomatic=Automatic (recommended)"), value = "automatic" },
+								{
+									title = LOC("$$$/StyleAI/PluginInfo/LoadAutomatic=Automatic (recommended)"),
+									value = "automatic",
+								},
 								{ title = LOC("$$$/StyleAI/PluginInfo/LoadLower=Lower Resource Use"), value = "lower" },
 								{ title = LOC("$$$/StyleAI/PluginInfo/LoadFaster=Faster"), value = "faster" },
 							},
 						}),
 					}),
 					UIFactory.HelpText(f, {
-						title = LOC("$$$/StyleAI/PluginInfo/ProcessingLoadHelp=Automatic respects detected hardware limits and runtime memory pressure. Change this only while troubleshooting performance."),
+						title = LOC(
+							"$$$/StyleAI/PluginInfo/ProcessingLoadHelp=Automatic respects detected hardware limits and runtime memory pressure. Change this only while troubleshooting performance."
+						),
 					}),
 					f:checkbox({
 						value = bind("captureLlmInputs"),
@@ -549,7 +718,9 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							title = LOC("$$$/StyleAI/common/Choose=Choose..."),
 							action = function()
 								local selected = LrDialogs.runOpenPanel({
-									title = LOC("$$$/StyleAI/Debug/ChooseDestination=Choose a diagnostic capture folder"),
+									title = LOC(
+										"$$$/StyleAI/Debug/ChooseDestination=Choose a diagnostic capture folder"
+									),
 									canChooseFiles = false,
 									canChooseDirectories = true,
 									allowsMultipleSelection = false,
@@ -562,9 +733,16 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						}),
 						f:push_button({
 							title = LOC("$$$/StyleAI/common/Reveal=Reveal"),
-							enabled = bind({ key = "captureLlmInputsPath", transform = function(value) return value ~= "" end }),
+							enabled = bind({
+								key = "captureLlmInputsPath",
+								transform = function(value)
+									return value ~= ""
+								end,
+							}),
 							action = function()
-								if propertyTable.captureLlmInputsPath ~= "" then LrShell.revealInShell(propertyTable.captureLlmInputsPath) end
+								if propertyTable.captureLlmInputsPath ~= "" then
+									LrShell.revealInShell(propertyTable.captureLlmInputsPath)
+								end
 							end,
 						}),
 					}),
@@ -575,22 +753,33 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 							action = function()
 								local confirmed = LrDialogs.confirm(
 									LOC("$$$/StyleAI/Debug/ClearTitle=Clear Diagnostic Captures?"),
-									LOC("$$$/StyleAI/Debug/ClearMessage=This deletes only StyleAI diagnostic capture files in the selected capture folder. Photos, catalogs, databases, and normal logs are not changed."),
+									LOC(
+										"$$$/StyleAI/Debug/ClearMessage=This deletes only StyleAI diagnostic capture files in the selected capture folder. Photos, catalogs, databases, and normal logs are not changed."
+									),
 									LOC("$$$/StyleAI/Debug/ClearAction=Clear Captures"),
 									LOC("$$$/StyleAI/common/Cancel=Cancel")
 								)
-								if confirmed ~= "ok" then return end
+								if confirmed ~= "ok" then
+									return
+								end
 								LrTasks.startAsyncTask(function()
-									local result, err = SearchIndexAPI.clearDiagnosticCaptures(propertyTable.captureLlmInputsPath)
+									local result, err =
+										SearchIndexAPI.clearDiagnosticCaptures(propertyTable.captureLlmInputsPath)
 									if result then
 										propertyTable.refreshCaptureInfo()
 										LrDialogs.message(
 											LOC("$$$/StyleAI/Debug/ClearedTitle=Diagnostic Captures Cleared"),
-											LOC("$$$/StyleAI/Debug/ClearedMessage=Deleted ^1 diagnostic file(s).", tostring(result.deleted_files or 0)),
+											LOC(
+												"$$$/StyleAI/Debug/ClearedMessage=Deleted ^1 diagnostic file(s).",
+												tostring(result.deleted_files or 0)
+											),
 											"info"
 										)
 									else
-										ErrorHandler.handleError(LOC("$$$/StyleAI/Debug/ClearFailed=Could Not Clear Diagnostic Captures"), tostring(err))
+										ErrorHandler.handleError(
+											LOC("$$$/StyleAI/Debug/ClearFailed=Could Not Clear Diagnostic Captures"),
+											tostring(err)
+										)
 									end
 								end)
 							end,
@@ -632,7 +821,9 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 				fill_horizontal = 1,
 				spacing = f:control_spacing(),
 				UIFactory.HelpText(f, {
-					title = LOC("$$$/StyleAI/PluginInfo/AboutText=StyleAI is local-first software built with open-source libraries and models."),
+					title = LOC(
+						"$$$/StyleAI/PluginInfo/AboutText=StyleAI is local-first software built with open-source libraries and models."
+					),
 				}),
 				UIFactory.FormRow(f, {
 					label = LOC("$$$/StyleAI/PluginInfo/PluginVersion=Plugin version:"),
@@ -647,11 +838,15 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 				f:row({
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/ViewCredits=View Credits"),
-						action = function() LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Credits") end,
+						action = function()
+							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Credits")
+						end,
 					}),
 					f:push_button({
 						title = LOC("$$$/StyleAI/PluginInfo/ViewLicense=View License"),
-						action = function() LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/blob/main/LICENSE") end,
+						action = function()
+							LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/blob/main/LICENSE")
+						end,
 					}),
 				}),
 			}),

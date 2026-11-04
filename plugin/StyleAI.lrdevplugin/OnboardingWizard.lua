@@ -19,14 +19,16 @@ function OnboardingWizard.show(manualTrigger)
 			propertyTable:addObserver("backendRunning", updateSetupState)
 			propertyTable:addObserver("clipReady", updateSetupState)
 
-
 			if propertyTable.backendRunning == true and prefs.indexingPerformanceProfile == nil then
 				local vInfo = SearchIndexAPI.getBackendVersion()
 				if vInfo and vInfo.recommended_parallel_tasks then
 					local rec = tonumber(vInfo.recommended_parallel_tasks) or 4
 					local profile = math.ceil(rec / 2)
 					prefs.indexingPerformanceProfile = math.min(math.max(profile, 1), 4)
-					log:info("Dynamically profiled indexingPerformanceProfile to " .. tostring(prefs.indexingPerformanceProfile))
+					log:info(
+						"Dynamically profiled indexingPerformanceProfile to "
+							.. tostring(prefs.indexingPerformanceProfile)
+					)
 				end
 			end
 
@@ -45,7 +47,10 @@ function OnboardingWizard.show(manualTrigger)
 							local rec = tonumber(vInfo.recommended_parallel_tasks) or 4
 							local profile = math.ceil(rec / 2)
 							prefs.indexingPerformanceProfile = math.min(math.max(profile, 1), 4)
-							log:info("Dynamically profiled indexingPerformanceProfile to " .. tostring(prefs.indexingPerformanceProfile))
+							log:info(
+								"Dynamically profiled indexingPerformanceProfile to "
+									.. tostring(prefs.indexingPerformanceProfile)
+							)
 						end
 					end
 				end)
@@ -142,7 +147,9 @@ function OnboardingWizard.show(manualTrigger)
 								key = "clipDownloading",
 								transform = function(v)
 									if v then
-										return LOC("$$$/StyleAI/Onboarding/DownloadingClip=Downloading (Check progress bar)...")
+										return LOC(
+											"$$$/StyleAI/Onboarding/DownloadingClip=Downloading (Check progress bar)..."
+										)
 									end
 									return LOC("$$$/StyleAI/Onboarding/DownloadClip=Download SigLIP2 Model")
 								end,
@@ -174,23 +181,29 @@ function OnboardingWizard.show(manualTrigger)
 						),
 					}),
 					f:spacer({ height = 10 }),
-						f:row({
-							fill_horizontal = 1,
-							f:push_button({
-								title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
-								tooltip = LOC("$$$/StyleAI/PluginInfo/OllamaTooltip=Opens the setup guide for Ollama integration."),
+					f:row({
+						fill_horizontal = 1,
+						f:push_button({
+							title = LOC("$$$/StyleAI/PluginInfoDialogSections/OllamaSetup=Setup Ollama"),
+							tooltip = LOC(
+								"$$$/StyleAI/PluginInfo/OllamaTooltip=Opens the setup guide for Ollama integration."
+							),
 							action = function(button)
 								LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-Ollama-Setup")
 							end,
-							}),
-							f:push_button({
-								title = LOC("$$$/StyleAI/PluginInfo/SetupLmStudio=Setup LM Studio"),
-							tooltip = LOC("$$$/StyleAI/PluginInfo/LmStudioTooltip=Opens the setup guide for LM Studio integration."),
-							action = function(button)
-								LrHttp.openUrlInBrowser("https://github.com/RareLight/StyleAI/wiki/Help-LM-Studio-Setup")
-							end,
-							}),
 						}),
+						f:push_button({
+							title = LOC("$$$/StyleAI/PluginInfo/SetupLmStudio=Setup LM Studio"),
+							tooltip = LOC(
+								"$$$/StyleAI/PluginInfo/LmStudioTooltip=Opens the setup guide for LM Studio integration."
+							),
+							action = function(button)
+								LrHttp.openUrlInBrowser(
+									"https://github.com/RareLight/StyleAI/wiki/Help-LM-Studio-Setup"
+								)
+							end,
+						}),
+					}),
 				}),
 
 				f:group_box({
@@ -201,9 +214,13 @@ function OnboardingWizard.show(manualTrigger)
 							key = "setupReady",
 							transform = function(ready)
 								if ready then
-									return LOC("$$$/StyleAI/Onboarding/SetupReady=StyleAI is ready. Index photos next to prepare visual analysis for search, learning, and editing.")
+									return LOC(
+										"$$$/StyleAI/Onboarding/SetupReady=StyleAI is ready. Index photos next to prepare visual analysis for search, learning, and editing."
+									)
 								end
-								return LOC("$$$/StyleAI/Onboarding/SetupIncomplete=Finish the required items above to enable style learning and editing. You can finish setup later.")
+								return LOC(
+									"$$$/StyleAI/Onboarding/SetupIncomplete=Finish the required items above to enable style learning and editing. You can finish setup later."
+								)
 							end,
 						}),
 					}),

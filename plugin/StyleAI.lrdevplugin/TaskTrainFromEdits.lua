@@ -19,7 +19,9 @@ local function showTrainDialog(ctx, selectedPhotosSnapshot)
 	local props = LrBinding.makePropertyTable(ctx)
 
 	props.scope = prefs.trainingScope or "selected"
-	if props.scope == "view" then props.scope = "selected" end
+	if props.scope == "view" then
+		props.scope = "selected"
+	end
 	props.forceRetrain = false
 	props.selectedCount = #(selectedPhotosSnapshot or {})
 
@@ -29,7 +31,9 @@ local function showTrainDialog(ctx, selectedPhotosSnapshot)
 		spacing = f:control_spacing(),
 		UIFactory.Notice(f, {
 			kind = "info",
-			title = LOC("$$$/StyleAI/Training/DialogHint=StyleAI learns from edited RAW and DNG photos without changing them."),
+			title = LOC(
+				"$$$/StyleAI/Training/DialogHint=StyleAI learns from edited RAW and DNG photos without changing them."
+			),
 		}),
 		UIFactory.SettingsGroup(f, {
 			title = LOC("$$$/StyleAI/Training/Photos=Training Photos"),
@@ -49,9 +53,14 @@ local function showTrainDialog(ctx, selectedPhotosSnapshot)
 					key = "scope",
 					transform = function(scope)
 						if scope == "selected" then
-							return LOC("$$$/StyleAI/Training/SelectedCount=^1 selected photo(s) will be checked for training eligibility.", tostring(props.selectedCount))
+							return LOC(
+								"$$$/StyleAI/Training/SelectedCount=^1 selected photo(s) will be checked for training eligibility.",
+								tostring(props.selectedCount)
+							)
 						end
-						return LOC("$$$/StyleAI/Training/ScopeCountPending=StyleAI will count and check eligible photos after you continue.")
+						return LOC(
+							"$$$/StyleAI/Training/ScopeCountPending=StyleAI will count and check eligible photos after you continue."
+						)
 					end,
 				}),
 			}),
@@ -63,7 +72,9 @@ local function showTrainDialog(ctx, selectedPhotosSnapshot)
 				value = bind("forceRetrain"),
 			}),
 			UIFactory.HelpText(f, {
-				title = LOC("$$$/StyleAI/Training/UpdateHelp=Re-read current Develop settings and source analysis for photos already learned."),
+				title = LOC(
+					"$$$/StyleAI/Training/UpdateHelp=Re-read current Develop settings and source analysis for photos already learned."
+				),
 			}),
 		}),
 	})
@@ -153,9 +164,7 @@ LrTasks.startAsyncTask(function()
 		local uniquePhotos = {}
 		local duplicateSourceCount = 0
 		for index, photo in ipairs(photos) do
-			progressScope:setCaption(
-				LOC("$$$/StyleAI/Training/PreparingOperation=Preparing training operation...")
-			)
+			progressScope:setCaption(LOC("$$$/StyleAI/Training/PreparingOperation=Preparing training operation..."))
 			progressScope:setPortionComplete(index - 1, #photos)
 			local photoId = SearchIndexAPI.getPhotoIdForPhoto(photo)
 			if photoId then
@@ -183,11 +192,8 @@ LrTasks.startAsyncTask(function()
 			)
 			return
 		end
-		local preflightOk, preflight = SearchIndexAPI.preflightTrainingExamples(
-			operationItemIds,
-			options.forceRetrain,
-			progressScope
-		)
+		local preflightOk, preflight =
+			SearchIndexAPI.preflightTrainingExamples(operationItemIds, options.forceRetrain, progressScope)
 		if not preflightOk then
 			progressScope:done()
 			ErrorHandler.handleError("Could not check existing training examples", preflight)
@@ -218,16 +224,20 @@ LrTasks.startAsyncTask(function()
 				tostring(existingSkippedCount)
 			)
 			if duplicateSourceCount > 0 then
-				allExistingMessage = allExistingMessage .. "\n" .. LOC(
-					"$$$/StyleAI/Training/SkippedDuplicateSources=Skipped ^1 duplicate source instance(s), including virtual copies.",
-					tostring(duplicateSourceCount)
-				)
+				allExistingMessage = allExistingMessage
+					.. "\n"
+					.. LOC(
+						"$$$/StyleAI/Training/SkippedDuplicateSources=Skipped ^1 duplicate source instance(s), including virtual copies.",
+						tostring(duplicateSourceCount)
+					)
 			end
 			local trainingStats = SearchIndexAPI.getTrainingStats()
 			if trainingStats and trainingStats.has_active_generation ~= true then
-				allExistingMessage = allExistingMessage .. "\n" .. LOC(
-					"$$$/StyleAI/Training/ExistingNeedsRebuild=The examples are saved, but no active editing policy is available. Open Styles & Training and choose Rebuild."
-				)
+				allExistingMessage = allExistingMessage
+					.. "\n"
+					.. LOC(
+						"$$$/StyleAI/Training/ExistingNeedsRebuild=The examples are saved, but no active editing policy is available. Open Styles & Training and choose Rebuild."
+					)
 			end
 			LrDialogs.message(
 				LOC("$$$/StyleAI/Training/SuccessTitle=Training Examples Saved"),
@@ -236,37 +246,24 @@ LrTasks.startAsyncTask(function()
 			)
 			return
 		end
-		local requestFingerprint = SearchIndexAPI.trainingOperationFingerprint(
-			requestedOperationItemIds,
-			options.scope,
-			options.forceRetrain
-		)
-		local operationOk, operation = SearchIndexAPI.startOperation(
-			"training",
-			operationItemIds,
-			{
-				scope = tostring(options.scope),
-				force_retrain = options.forceRetrain == true,
-				photo_count = #operationItemIds,
-				requested_photo_count = #requestedOperationItemIds,
-				existing_photo_count = existingSkippedCount,
-				duplicate_source_count = duplicateSourceCount,
-				ineligible_format_count = ineligibleFormatCount,
-			},
-			requestFingerprint,
-			8,
-			false
-		)
+		local requestFingerprint =
+			SearchIndexAPI.trainingOperationFingerprint(requestedOperationItemIds, options.scope, options.forceRetrain)
+		local operationOk, operation = SearchIndexAPI.startOperation("training", operationItemIds, {
+			scope = tostring(options.scope),
+			force_retrain = options.forceRetrain == true,
+			photo_count = #operationItemIds,
+			requested_photo_count = #requestedOperationItemIds,
+			existing_photo_count = existingSkippedCount,
+			duplicate_source_count = duplicateSourceCount,
+			ineligible_format_count = ineligibleFormatCount,
+		}, requestFingerprint, 8, false)
 		if not operationOk then
 			progressScope:done()
 			ErrorHandler.handleError("Could not start training operation", operation)
 			return
 		end
 		local operationId = operation.job_id
-		local trainingLease, trainingLeaseError = WorkCoordinator.acquire(
-			"backend_training_workflow",
-			progressScope
-		)
+		local trainingLease, trainingLeaseError = WorkCoordinator.acquire("backend_training_workflow", progressScope)
 		if not trainingLease then
 			SearchIndexAPI.cancelOperation(operationId)
 			SearchIndexAPI.completeOperation(operationId)
@@ -313,26 +310,41 @@ LrTasks.startAsyncTask(function()
 						local retryChunk = true
 						while retryChunk and not progressScope:isCanceled() do
 							retryChunk = false
-							progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
-							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain, false, operationId)
-	
+							progressScope:setCaption(
+								LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server...")
+							)
+							local ok, resp =
+								SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain, false, operationId)
+
 							if ok and resp and resp.results then
 								local hitTimeout = false
 								for _, result in ipairs(resp.results) do
-									if result.status ~= "ok" and result.error and string.find(result.error, "EXIFTOOL_") then
+									if
+										result.status ~= "ok"
+										and result.error
+										and string.find(result.error, "EXIFTOOL_")
+									then
 										hitTimeout = true
 									end
 								end
-								
+
 								if hitTimeout then
 									local LrDialogs = require("LrDialogs")
 									local userAction = LrDialogs.promptForActionWithDoNotShow({
-										message = LOC("$$$/StyleAI/Training/ExiftoolTimeout=Waiting for file access. Your NAS may be spinning up, or macOS might be prompting for file permissions in the background. Do you want to keep waiting or cancel?"),
+										message = LOC(
+											"$$$/StyleAI/Training/ExiftoolTimeout=Waiting for file access. Your NAS may be spinning up, or macOS might be prompting for file permissions in the background. Do you want to keep waiting or cancel?"
+										),
 										actionPrefKey = "exiftoolTimeoutAction",
 										verbBtns = {
-											{ label = LOC("$$$/StyleAI/Training/Proceed=Keep Waiting"), verb = "proceed" },
-											{ label = LOC("$$$/StyleAI/Training/Cancel=Cancel Training"), verb = "cancel" }
-										}
+											{
+												label = LOC("$$$/StyleAI/Training/Proceed=Keep Waiting"),
+												verb = "proceed",
+											},
+											{
+												label = LOC("$$$/StyleAI/Training/Cancel=Cancel Training"),
+												verb = "cancel",
+											},
+										},
 									})
 									if userAction == "proceed" then
 										retryChunk = true
@@ -341,7 +353,7 @@ LrTasks.startAsyncTask(function()
 										break
 									end
 								end
-								
+
 								if not retryChunk then
 									for _, result in ipairs(resp.results) do
 										if result.status == "ok" then
@@ -350,12 +362,18 @@ LrTasks.startAsyncTask(function()
 												if string.find(result.warning, "Already trained") then
 													log:info("Suppressed warning: " .. result.warning)
 												else
-													table.insert(backendWarnings, result.photo_id .. ": " .. result.warning)
+													table.insert(
+														backendWarnings,
+														result.photo_id .. ": " .. result.warning
+													)
 												end
 											end
 										else
 											errorCount = errorCount + 1
-											table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
+											table.insert(
+												errorMessages,
+												result.photo_id .. ": " .. (result.error or "Unknown error")
+											)
 										end
 									end
 								end
@@ -363,7 +381,10 @@ LrTasks.startAsyncTask(function()
 								markChunkFailed(currentChunk, resp)
 								for _, chunkEx in ipairs(currentChunk) do
 									errorCount = errorCount + 1
-									table.insert(errorMessages, chunkEx.photo_id .. ": " .. tostring(resp or "API request failed"))
+									table.insert(
+										errorMessages,
+										chunkEx.photo_id .. ": " .. tostring(resp or "API request failed")
+									)
 								end
 							end
 						end
@@ -376,25 +397,40 @@ LrTasks.startAsyncTask(function()
 						local retryChunk = true
 						while retryChunk and not progressScope:isCanceled() do
 							retryChunk = false
-							progressScope:setCaption(LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server..."))
-							local ok, resp = SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain, false, operationId)
+							progressScope:setCaption(
+								LOC("$$$/StyleAI/Training/SendingBatch=Sending batch to StyleAI server...")
+							)
+							local ok, resp =
+								SearchIndexAPI.addTrainingBatch(currentChunk, options.forceRetrain, false, operationId)
 							if ok and resp and resp.results then
 								local hitTimeout = false
 								for _, result in ipairs(resp.results) do
-									if result.status ~= "ok" and result.error and string.find(result.error, "EXIFTOOL_") then
+									if
+										result.status ~= "ok"
+										and result.error
+										and string.find(result.error, "EXIFTOOL_")
+									then
 										hitTimeout = true
 									end
 								end
-								
+
 								if hitTimeout then
 									local LrDialogs = require("LrDialogs")
 									local userAction = LrDialogs.promptForActionWithDoNotShow({
-										message = LOC("$$$/StyleAI/Training/ExiftoolTimeout=Waiting for file access. Your NAS may be spinning up, or macOS might be prompting for file permissions in the background. Do you want to keep waiting or cancel?"),
+										message = LOC(
+											"$$$/StyleAI/Training/ExiftoolTimeout=Waiting for file access. Your NAS may be spinning up, or macOS might be prompting for file permissions in the background. Do you want to keep waiting or cancel?"
+										),
 										actionPrefKey = "exiftoolTimeoutAction",
 										verbBtns = {
-											{ label = LOC("$$$/StyleAI/Training/Proceed=Keep Waiting"), verb = "proceed" },
-											{ label = LOC("$$$/StyleAI/Training/Cancel=Cancel Training"), verb = "cancel" }
-										}
+											{
+												label = LOC("$$$/StyleAI/Training/Proceed=Keep Waiting"),
+												verb = "proceed",
+											},
+											{
+												label = LOC("$$$/StyleAI/Training/Cancel=Cancel Training"),
+												verb = "cancel",
+											},
+										},
 									})
 									if userAction == "proceed" then
 										retryChunk = true
@@ -403,7 +439,7 @@ LrTasks.startAsyncTask(function()
 										break
 									end
 								end
-								
+
 								if not retryChunk then
 									for _, result in ipairs(resp.results) do
 										if result.status == "ok" then
@@ -413,7 +449,10 @@ LrTasks.startAsyncTask(function()
 											end
 										else
 											errorCount = errorCount + 1
-											table.insert(errorMessages, result.photo_id .. ": " .. (result.error or "Unknown error"))
+											table.insert(
+												errorMessages,
+												result.photo_id .. ": " .. (result.error or "Unknown error")
+											)
 										end
 									end
 								end
@@ -421,7 +460,10 @@ LrTasks.startAsyncTask(function()
 								markChunkFailed(currentChunk, resp)
 								for _, chunkEx in ipairs(currentChunk) do
 									errorCount = errorCount + 1
-									table.insert(errorMessages, chunkEx.photo_id .. ": " .. tostring(resp or "API request failed"))
+									table.insert(
+										errorMessages,
+										chunkEx.photo_id .. ": " .. tostring(resp or "API request failed")
+									)
 								end
 							end
 						end
@@ -559,17 +601,27 @@ LrTasks.startAsyncTask(function()
 			)
 			local rebuilt, rebuildResult = SearchIndexAPI.discoverStyles()
 			if rebuilt then
-				rebuilt, rebuildResult = StyleDiscovery.waitForCompletion(function(discovery)
-					if discovery.phase == "fitting_partitions" then
-						progressScope:setCaption(LOC(
-							"$$$/StyleAI/Training/BuildingProgress=Building editing policies: ^1 of ^2 compatible partitions...",
-							tostring(discovery.completed_partitions or 0),
-							tostring(discovery.eligible_partitions or 0)
-						))
-					elseif discovery.phase == "activating" then
-						progressScope:setCaption(LOC("$$$/StyleAI/Training/Activating=Validating and activating learned styles..."))
+				rebuilt, rebuildResult = StyleDiscovery.waitForCompletion(
+					function(discovery)
+						if discovery.phase == "fitting_partitions" then
+							progressScope:setCaption(
+								LOC(
+									"$$$/StyleAI/Training/BuildingProgress=Building editing policies: ^1 of ^2 compatible partitions...",
+									tostring(discovery.completed_partitions or 0),
+									tostring(discovery.eligible_partitions or 0)
+								)
+							)
+						elseif discovery.phase == "activating" then
+							progressScope:setCaption(
+								LOC("$$$/StyleAI/Training/Activating=Validating and activating learned styles...")
+							)
+						end
+					end,
+					nil,
+					function()
+						return progressScope:isCanceled()
 					end
-				end, nil, function() return progressScope:isCanceled() end)
+				)
 			end
 			if not rebuilt then
 				table.insert(
@@ -622,40 +674,51 @@ LrTasks.startAsyncTask(function()
 		if successCount > 0 then
 			local ok, styles = SearchIndexAPI.listStyles()
 			if ok and styles and #styles > 0 then
-				recommendationMsg = "\n\n" .. LOC(
-					"$$$/StyleAI/Training/PolicyComplete=Style learning completed. Open Find More Training Examples to review high-confidence photos that may improve policy coverage."
-				)
+				recommendationMsg = "\n\n"
+					.. LOC(
+						"$$$/StyleAI/Training/PolicyComplete=Style learning completed. Open Find More Training Examples to review high-confidence photos that may improve policy coverage."
+					)
 			end
 		end
 
 		-- 3. Construct the final report
 		local combinedReport = LOC("$$$/StyleAI/Training/Summary=Saved ^1 training example(s).", tostring(successCount))
 		if existingSkippedCount > 0 then
-			combinedReport = combinedReport .. "\n" .. LOC(
-				"$$$/StyleAI/Training/SkippedExisting=Skipped ^1 photo(s) that were already learned.",
-				tostring(existingSkippedCount)
-			)
+			combinedReport = combinedReport
+				.. "\n"
+				.. LOC(
+					"$$$/StyleAI/Training/SkippedExisting=Skipped ^1 photo(s) that were already learned.",
+					tostring(existingSkippedCount)
+				)
 		end
 		if duplicateSourceCount > 0 then
-			combinedReport = combinedReport .. "\n" .. LOC(
-				"$$$/StyleAI/Training/SkippedDuplicateSources=Skipped ^1 duplicate source instance(s), including virtual copies.",
-				tostring(duplicateSourceCount)
-			)
+			combinedReport = combinedReport
+				.. "\n"
+				.. LOC(
+					"$$$/StyleAI/Training/SkippedDuplicateSources=Skipped ^1 duplicate source instance(s), including virtual copies.",
+					tostring(duplicateSourceCount)
+				)
 		end
-		
+
 		if errorCount > 0 then
 			combinedReport = combinedReport .. "\n" .. LOC("$$$/StyleAI/common/Errors=Errors: ^1", tostring(errorCount))
 			combinedReport = combinedReport .. "\n" .. table.concat(errorList, "\n")
 			if errorCount > 3 then
-				combinedReport = combinedReport .. "\n" .. LOC("$$$/StyleAI/common/MoreErrors=... and ^1 more errors", tostring(errorCount - 3))
+				combinedReport = combinedReport
+					.. "\n"
+					.. LOC("$$$/StyleAI/common/MoreErrors=... and ^1 more errors", tostring(errorCount - 3))
 			end
 		end
 
 		if #backendWarnings > 0 then
-			combinedReport = combinedReport .. "\n\n" .. LOC("$$$/StyleAI/common/BackendWarnings=Warnings: ^1", tostring(#backendWarnings))
+			combinedReport = combinedReport
+				.. "\n\n"
+				.. LOC("$$$/StyleAI/common/BackendWarnings=Warnings: ^1", tostring(#backendWarnings))
 			combinedReport = combinedReport .. "\n" .. table.concat(warningList, "\n")
 			if #backendWarnings > 2 then
-				combinedReport = combinedReport .. "\n" .. LOC("$$$/StyleAI/common/MoreWarnings=... and ^1 more warnings", tostring(#backendWarnings - 2))
+				combinedReport = combinedReport
+					.. "\n"
+					.. LOC("$$$/StyleAI/common/MoreWarnings=... and ^1 more warnings", tostring(#backendWarnings - 2))
 			end
 		end
 

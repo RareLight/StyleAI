@@ -6,8 +6,12 @@ end
 
 local function sortPromptTitles(items)
 	table.sort(items, function(a, b)
-		if a.value == "Default" then return true end
-		if b.value == "Default" then return false end
+		if a.value == "Default" then
+			return true
+		end
+		if b.value == "Default" then
+			return false
+		end
 		return string.lower(a.title or "") < string.lower(b.title or "")
 	end)
 end
@@ -23,9 +27,7 @@ end
 function PromptConfigProvider.deletePrompt(props)
 	local promptTitle = props.prompt
 	if promptTitle == "Default" then
-		LrDialogs.showError(
-			LOC("$$$/StyleAI/PromptConfig/DefaultPromptCannotDelete=Default prompt cannot be deleted.")
-		)
+		LrDialogs.showError(LOC("$$$/StyleAI/PromptConfig/DefaultPromptCannotDelete=Default prompt cannot be deleted."))
 		return nil
 	end
 
@@ -52,7 +54,9 @@ end
 function PromptConfigProvider.renamePrompt(props)
 	local promptTitle = props.prompt
 	if promptTitle == "Default" then
-		LrDialogs.showError(LOC("$$$/StyleAI/PromptConfig/DefaultPromptCannotRename=The Default prompt cannot be renamed."))
+		LrDialogs.showError(
+			LOC("$$$/StyleAI/PromptConfig/DefaultPromptCannotRename=The Default prompt cannot be renamed.")
+		)
 		return nil
 	end
 	local newName = LrDialogs.runTextInputDialog(
@@ -61,7 +65,9 @@ function PromptConfigProvider.renamePrompt(props)
 		promptTitle
 	)
 	newName = trim(newName)
-	if newName == "" or newName == promptTitle then return nil end
+	if newName == "" or newName == promptTitle then
+		return nil
+	end
 	if props.prompts[newName] ~= nil then
 		LrDialogs.showError(LOC("$$$/StyleAI/PromptConfig/NameExists=A prompt with that name already exists."))
 		return nil
@@ -84,11 +90,15 @@ end
 function PromptConfigProvider.restoreDefaultPrompt(props, defaultText)
 	local confirmed = LrDialogs.confirm(
 		LOC("$$$/StyleAI/PromptConfig/RestoreTitle=Restore the Default Prompt?"),
-		LOC("$$$/StyleAI/PromptConfig/RestoreMessage=This replaces only the shipped Default prompt text. Your named custom prompts are not changed."),
+		LOC(
+			"$$$/StyleAI/PromptConfig/RestoreMessage=This replaces only the shipped Default prompt text. Your named custom prompts are not changed."
+		),
 		LOC("$$$/StyleAI/PromptConfig/RestoreAction=Restore Default"),
 		LOC("$$$/StyleAI/common/Cancel=Cancel")
 	)
-	if confirmed ~= "ok" then return false end
+	if confirmed ~= "ok" then
+		return false
+	end
 	props.prompts.Default = defaultText
 	local found = false
 	for _, item in ipairs(props.promptTitles) do
@@ -167,7 +177,9 @@ function PromptConfigProvider.addPrompt(props)
 		local name = trim(propertyTable.name)
 		local prompt = trim(propertyTable.prompt)
 		if name == "" or prompt == "" then
-			LrDialogs.showError(LOC("$$$/StyleAI/PromptConfig/NameAndPromptRequired=A prompt name and prompt text are required."))
+			LrDialogs.showError(
+				LOC("$$$/StyleAI/PromptConfig/NameAndPromptRequired=A prompt name and prompt text are required.")
+			)
 			return nil
 		end
 		if props.prompts[name] ~= nil then

@@ -11,13 +11,8 @@ function TaskDiagnostics.generateReport()
 		local backendHealth = SearchIndexAPI.getBackendHealth() or {}
 		local versionInfo = SearchIndexAPI.getBackendVersion() or {}
 		local details = table.concat({
-			"Plugin version: " .. string.format(
-				"%d.%d.%d (%d)",
-				Info.MAJOR or 0,
-				Info.MINOR or 0,
-				Info.REVISION or 0,
-				Info.BUILD or 0
-			),
+			"Plugin version: "
+				.. string.format("%d.%d.%d (%d)", Info.MAJOR or 0, Info.MINOR or 0, Info.REVISION or 0, Info.BUILD or 0),
 			"Service version: " .. tostring(versionInfo.backend_version or versionInfo.version or "Unavailable"),
 			"Background service: " .. (health.backend and "Ready" or "Unavailable"),
 			"Vision model: " .. (health.clip and "Ready" or "Unavailable"),

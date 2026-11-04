@@ -42,15 +42,21 @@ local function utf8Characters(value)
 end
 
 local function containsIgnoreCase(value, fragment)
-	if fragment == nil or tostring(fragment) == "" then return false end
+	if fragment == nil or tostring(fragment) == "" then
+		return false
+	end
 	return string.find(string.lower(tostring(value)), string.lower(tostring(fragment)), 1, true) ~= nil
 end
 
 local function addCompactQualifier(qualifiers, modelName, value)
-	if value == nil or tostring(value) == "" or containsIgnoreCase(modelName, value) then return end
+	if value == nil or tostring(value) == "" or containsIgnoreCase(modelName, value) then
+		return
+	end
 	local normalized = tostring(value)
 	for _, existing in ipairs(qualifiers) do
-		if string.lower(existing) == string.lower(normalized) then return end
+		if string.lower(existing) == string.lower(normalized) then
+			return
+		end
 	end
 	table.insert(qualifiers, normalized)
 end
@@ -60,7 +66,9 @@ local function progressModelTitle(model)
 	local modelName = tostring(details.display_name or (model and model.model) or (model and model.title) or "")
 	local namespace, leafName = string.match(modelName, "^([^/]+)/(.+)$")
 	local publisher = tostring(details.publisher or namespace or "")
-	if leafName then modelName = leafName end
+	if leafName then
+		modelName = leafName
+	end
 	if publisher ~= "" then
 		local publisherPrefix = string.lower(publisher) .. "-"
 		if string.sub(string.lower(modelName), 1, #publisherPrefix) == publisherPrefix then
@@ -72,16 +80,21 @@ local function progressModelTitle(model)
 	addCompactQualifier(qualifiers, modelName, details.params_string)
 	addCompactQualifier(qualifiers, modelName, details.quantization)
 	addCompactQualifier(qualifiers, modelName, details.format and string.upper(tostring(details.format)) or nil)
-	if details.quantization == nil then addCompactQualifier(qualifiers, modelName, details.selected_variant) end
+	if details.quantization == nil then
+		addCompactQualifier(qualifiers, modelName, details.selected_variant)
+	end
 
 	local title = (publisher ~= "" and (publisher .. ":") or "") .. modelName
-	if #qualifiers > 0 then title = title .. " [" .. table.concat(qualifiers, "/") .. "]" end
+	if #qualifiers > 0 then
+		title = title .. " [" .. table.concat(qualifiers, "/") .. "]"
+	end
 	if model and model.benchmark_variant == "speculative" then
 		if model.speculation_mode == "automatic_mtp" then
 			title = title .. " [MTP]"
 		else
 			local draft = type(model.draft) == "table" and model.draft or {}
-			local draftName = tostring((draft.details or {}).display_name or draft.model or model.draft_model or "draft")
+			local draftName =
+				tostring((draft.details or {}).display_name or draft.model or model.draft_model or "draft")
 			title = title .. " + " .. draftName
 		end
 	elseif model and model.benchmark_variant == "baseline" then
@@ -90,7 +103,9 @@ local function progressModelTitle(model)
 		title = title .. " [runtime]"
 	end
 	local characters = utf8Characters(title)
-	if #characters <= MAX_PROGRESS_MODEL_CHARS then return title end
+	if #characters <= MAX_PROGRESS_MODEL_CHARS then
+		return title
+	end
 	local suffixLength = 16
 	local prefixLength = MAX_PROGRESS_MODEL_CHARS - suffixLength - 3
 	return table.concat(characters, "", 1, prefixLength)
@@ -99,24 +114,29 @@ local function progressModelTitle(model)
 end
 
 local function setModelProgressCaption(progressScope, modelTitle, photoIndex, photoCount)
-	progressScope:setCaption(LOC(
-		"$$$/StyleAI/MetadataBenchmark/Model=^1 (^2/^3)",
-		modelTitle,
-		tostring(photoIndex),
-		tostring(photoCount)
-	))
+	progressScope:setCaption(
+		LOC("$$$/StyleAI/MetadataBenchmark/Model=^1 (^2/^3)", modelTitle, tostring(photoIndex), tostring(photoCount))
+	)
 end
 
 local function optionalRuntimeValue(owner, methodName, fallback)
-	if type(owner) ~= "table" or type(owner[methodName]) ~= "function" then return fallback end
-	local ok, value = LrTasks.pcall(function() return owner[methodName]() end)
-	if not ok or value == nil then return fallback end
+	if type(owner) ~= "table" or type(owner[methodName]) ~= "function" then
+		return fallback
+	end
+	local ok, value = LrTasks.pcall(function()
+		return owner[methodName]()
+	end)
+	if not ok or value == nil then
+		return fallback
+	end
 	return value
 end
 
 local function validateBenchmarkRuntime()
 	local ok, err = Report.validateRuntime()
-	if not ok then return false, err end
+	if not ok then
+		return false, err
+	end
 	local requirements = {
 		{ LrApplication, "LrApplication", "activeCatalog" },
 		{ LrDate, "LrDate", "timeToW3CDate" },
@@ -134,7 +154,9 @@ end
 
 local function copyTable(value)
 	local copied = {}
-	for key, item in pairs(value or {}) do copied[key] = item end
+	for key, item in pairs(value or {}) do
+		copied[key] = item
+	end
 	return copied
 end
 
@@ -158,7 +180,9 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 	props.warmup = true
 	props.compareDraftBaseline = true
 	local draftByKey = {}
-	for _, draft in ipairs(draftModels) do draftByKey[draft.key] = draft end
+	for _, draft in ipairs(draftModels) do
+		draftByKey[draft.key] = draft
+	end
 
 	local modelControls = {}
 	for index, model in ipairs(models) do
@@ -176,27 +200,40 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 			}
 			for _, draft in ipairs(draftModels) do
 				local draftDetails = type(draft.details) == "table" and draft.details or {}
-				local sameFormat = not modelDetails.format or not draftDetails.format or modelDetails.format == draftDetails.format
-				if draft.provider == "lmstudio" and draft.model ~= model.model and sameFormat
-					and draftDetails.speculation_kind ~= "mtp_sidecar" then
+				local sameFormat = not modelDetails.format
+					or not draftDetails.format
+					or modelDetails.format == draftDetails.format
+				if
+					draft.provider == "lmstudio"
+					and draft.model ~= model.model
+					and sameFormat
+					and draftDetails.speculation_kind ~= "mtp_sidecar"
+				then
 					table.insert(draftItems, {
 						title = LOC("$$$/StyleAI/MetadataBenchmark/FullDraftChoice=Full draft: ^1", draft.title),
 						value = draft.key,
 					})
 				end
 			end
-			table.insert(modelControls, f:row({
-				spacing = f:control_spacing(),
-				f:spacer({ width = 22 }),
-				f:static_text({ title = LOC("$$$/StyleAI/MetadataBenchmark/DraftModel=Speculation:") }),
-				f:popup_menu({ value = bind(draftKey), items = draftItems, width = 520 }),
-			}))
+			table.insert(
+				modelControls,
+				f:row({
+					spacing = f:control_spacing(),
+					f:spacer({ width = 22 }),
+					f:static_text({ title = LOC("$$$/StyleAI/MetadataBenchmark/DraftModel=Speculation:") }),
+					f:popup_menu({ value = bind(draftKey), items = draftItems, width = 520 }),
+				})
+			)
 		end
 	end
 	if #models > 0 then
 		local anySelected = false
-		for index = 1, #models do anySelected = anySelected or props["benchmarkModel" .. tostring(index)] end
-		if not anySelected then props.benchmarkModel1 = true end
+		for index = 1, #models do
+			anySelected = anySelected or props["benchmarkModel" .. tostring(index)]
+		end
+		if not anySelected then
+			props.benchmarkModel1 = true
+		end
 	end
 
 	local function updateRequestEstimate()
@@ -234,18 +271,25 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 	updateRequestEstimate()
 
 	local modelColumn = { spacing = f:control_spacing(), fill_horizontal = 1 }
-	for _, control in ipairs(modelControls) do table.insert(modelColumn, control) end
+	for _, control in ipairs(modelControls) do
+		table.insert(modelColumn, control)
+	end
 
 	local contents = UIFactory.DialogColumn(f, {
 		bind_to_object = props,
 		width = 720,
 		UIFactory.Notice(f, {
-			title = LOC("$$$/StyleAI/MetadataBenchmark/Notice=Developer benchmark: generated metadata is written only to a local comparison report, never to Lightroom or StyleAI's image index."),
+			title = LOC(
+				"$$$/StyleAI/MetadataBenchmark/Notice=Developer benchmark: generated metadata is written only to a local comparison report, never to Lightroom or StyleAI's image index."
+			),
 		}),
 		UIFactory.SettingsGroup(f, {
 			title = LOC("$$$/StyleAI/MetadataBenchmark/Set=Frozen Benchmark Set"),
 			UIFactory.HelpText(f, {
-				title = LOC("$$$/StyleAI/MetadataBenchmark/SelectedCount=^1 selected photo(s) will be frozen into a uniquely named StyleAI benchmark collection. A representative set of 24–32 photos is recommended for normal comparisons.", tostring(selectedCount)),
+				title = LOC(
+					"$$$/StyleAI/MetadataBenchmark/SelectedCount=^1 selected photo(s) will be frozen into a uniquely named StyleAI benchmark collection. A representative set of 24–32 photos is recommended for normal comparisons.",
+					tostring(selectedCount)
+				),
 			}),
 		}),
 		UIFactory.SettingsGroup(f, {
@@ -257,20 +301,26 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 				f:column(modelColumn),
 			}),
 			f:checkbox({
-				title = LOC("$$$/StyleAI/MetadataBenchmark/CompareDraftBaseline=Also run a baseline without the selected draft model"),
+				title = LOC(
+					"$$$/StyleAI/MetadataBenchmark/CompareDraftBaseline=Also run a baseline without the selected draft model"
+				),
 				value = bind("compareDraftBaseline"),
 			}),
 			UIFactory.HelpText(f, {
-				title = LOC("$$$/StyleAI/MetadataBenchmark/DraftHelp=Integrated MTP GGUFs run automatically with ordinary inference.\nOnly complete models appear in the full-draft selector.\nStandalone MTP heads and unverified MLX MTP packages are not drafting models."),
-				width = 650,
-			}),
-			#unavailableSpeculators > 0 and UIFactory.HelpText(f, {
 				title = LOC(
-					"$$$/StyleAI/MetadataBenchmark/HiddenMtp=^1 standalone MTP head(s) are hidden because LM Studio cannot safely expose their exact load-time pairing to StyleAI.",
-					tostring(#unavailableSpeculators)
+					"$$$/StyleAI/MetadataBenchmark/DraftHelp=Integrated MTP GGUFs run automatically with ordinary inference.\nOnly complete models appear in the full-draft selector.\nStandalone MTP heads and unverified MLX MTP packages are not drafting models."
 				),
 				width = 650,
-			}) or f:spacer({ height = 0 }),
+			}),
+			#unavailableSpeculators > 0
+					and UIFactory.HelpText(f, {
+						title = LOC(
+							"$$$/StyleAI/MetadataBenchmark/HiddenMtp=^1 standalone MTP head(s) are hidden because LM Studio cannot safely expose their exact load-time pairing to StyleAI.",
+							tostring(#unavailableSpeculators)
+						),
+						width = 650,
+					})
+				or f:spacer({ height = 0 }),
 			f:checkbox({
 				title = LOC("$$$/StyleAI/MetadataBenchmark/Warmup=Run one excluded warm-up photo per model"),
 				value = bind("warmup"),
@@ -281,10 +331,22 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 			title = LOC("$$$/StyleAI/MetadataBenchmark/Outputs=Fixed Metadata Settings"),
 			f:row({
 				spacing = f:control_spacing(),
-				f:checkbox({ title = LOC("$$$/StyleAI/PluginInfoDialogSections/keywords=Keywords"), value = bind("generateKeywords") }),
-				f:checkbox({ title = LOC("$$$/StyleAI/PluginInfoDialogSections/title=Title"), value = bind("generateTitle") }),
-				f:checkbox({ title = LOC("$$$/StyleAI/PluginInfoDialogSections/caption=Caption"), value = bind("generateCaption") }),
-				f:checkbox({ title = LOC("$$$/StyleAI/PluginInfoDialogSections/alttext=Alt Text"), value = bind("generateAltText") }),
+				f:checkbox({
+					title = LOC("$$$/StyleAI/PluginInfoDialogSections/keywords=Keywords"),
+					value = bind("generateKeywords"),
+				}),
+				f:checkbox({
+					title = LOC("$$$/StyleAI/PluginInfoDialogSections/title=Title"),
+					value = bind("generateTitle"),
+				}),
+				f:checkbox({
+					title = LOC("$$$/StyleAI/PluginInfoDialogSections/caption=Caption"),
+					value = bind("generateCaption"),
+				}),
+				f:checkbox({
+					title = LOC("$$$/StyleAI/PluginInfoDialogSections/alttext=Alt Text"),
+					value = bind("generateAltText"),
+				}),
 			}),
 			UIFactory.FormRow(f, {
 				label = LOC("$$$/StyleAI/PluginInfoDialogSections/language=Language:"),
@@ -293,7 +355,9 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 					width = 240,
 					items = (function()
 						local items = {}
-						for _, language in ipairs(Defaults.generateLanguages) do table.insert(items, { title = language, value = language }) end
+						for _, language in ipairs(Defaults.generateLanguages) do
+							table.insert(items, { title = language, value = language })
+						end
 						return items
 					end)(),
 				}),
@@ -306,16 +370,28 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 				label = LOC("$$$/StyleAI/MetadataBenchmark/MaxTokens=Maximum output tokens:"),
 				f:edit_field({ value = bind("maxTokens"), width_in_digits = 6, precision = 0, min = 256, max = 8192 }),
 			}),
-			f:checkbox({ title = LOC("$$$/StyleAI/UI/EnableHierarchy=Organize generated keywords in a hierarchy"), value = bind("useKeywordHierarchy") }),
+			f:checkbox({
+				title = LOC("$$$/StyleAI/UI/EnableHierarchy=Organize generated keywords in a hierarchy"),
+				value = bind("useKeywordHierarchy"),
+			}),
 		}),
 		UIFactory.SettingsGroup(f, {
 			title = LOC("$$$/StyleAI/AnalyzeAndIndex/ContextOptions=Optional Context Sent to the Local Model"),
 			f:row({
 				spacing = f:control_spacing(),
 				f:checkbox({ title = LOC("$$$/StyleAI/PluginInfoDialogSections/gps=GPS"), value = bind("submitGPS") }),
-				f:checkbox({ title = LOC("$$$/StyleAI/PluginInfoDialogSections/keywords=Keywords"), value = bind("submitKeywords") }),
-				f:checkbox({ title = LOC("$$$/StyleAI/PluginInfoDialogSections/folder=Folder name"), value = bind("submitFolderName") }),
-				f:checkbox({ title = LOC("$$$/StyleAI/MetadataBenchmark/PhotoContext=Saved photo instructions"), value = bind("submitPhotoContext") }),
+				f:checkbox({
+					title = LOC("$$$/StyleAI/PluginInfoDialogSections/keywords=Keywords"),
+					value = bind("submitKeywords"),
+				}),
+				f:checkbox({
+					title = LOC("$$$/StyleAI/PluginInfoDialogSections/folder=Folder name"),
+					value = bind("submitFolderName"),
+				}),
+				f:checkbox({
+					title = LOC("$$$/StyleAI/MetadataBenchmark/PhotoContext=Saved photo instructions"),
+					value = bind("submitPhotoContext"),
+				}),
 			}),
 		}),
 		UIFactory.SettingsGroup(f, {
@@ -331,7 +407,9 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 		cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
 		resizable = true,
 	})
-	if result ~= "ok" then return nil end
+	if result ~= "ok" then
+		return nil
+	end
 
 	local selectedModels = {}
 	for index, model in ipairs(models) do
@@ -347,7 +425,9 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 				runtimeModel.key = model.key .. "::runtime_managed"
 				runtimeModel.benchmark_variant = "runtime_managed"
 				runtimeModel.speculation_mode = "runtime_managed"
-				runtimeModel.title = model.title .. " — " .. LOC("$$$/StyleAI/MetadataBenchmark/RuntimeManaged=Runtime-managed acceleration")
+				runtimeModel.title = model.title
+					.. " — "
+					.. LOC("$$$/StyleAI/MetadataBenchmark/RuntimeManaged=Runtime-managed acceleration")
 				table.insert(selectedModels, runtimeModel)
 			elseif automaticMtp then
 				local speculative = copyTable(model)
@@ -355,7 +435,9 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 				speculative.key = model.key .. "::automatic_mtp"
 				speculative.benchmark_variant = "speculative"
 				speculative.speculation_mode = "automatic_mtp"
-				speculative.title = model.title .. " — " .. LOC("$$$/StyleAI/MetadataBenchmark/IntegratedMtpShort=Automatic MTP")
+				speculative.title = model.title
+					.. " — "
+					.. LOC("$$$/StyleAI/MetadataBenchmark/IntegratedMtpShort=Automatic MTP")
 				table.insert(selectedModels, speculative)
 			elseif not selectedDraft or props.compareDraftBaseline then
 				local baseline = copyTable(model)
@@ -374,7 +456,9 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 				speculative.speculation_mode = "full_draft"
 				speculative.draft_model = selectedDraft.model
 				speculative.draft = selectedDraft
-				speculative.title = model.title .. " — " .. LOC("$$$/StyleAI/MetadataBenchmark/WithDraft=Draft: ^1", selectedDraft.title)
+				speculative.title = model.title
+					.. " — "
+					.. LOC("$$$/StyleAI/MetadataBenchmark/WithDraft=Draft: ^1", selectedDraft.title)
 				table.insert(selectedModels, speculative)
 			end
 		end
@@ -416,7 +500,11 @@ local function showDialog(ctx, selectedCount, models, draftModels, unavailableSp
 end
 
 local function findSet(children, name)
-	for _, child in ipairs(children or {}) do if child:getName() == name then return child end end
+	for _, child in ipairs(children or {}) do
+		if child:getName() == name then
+			return child
+		end
+	end
 	return nil
 end
 
@@ -425,13 +513,19 @@ local function createBenchmarkCollection(catalog, photos, collectionName)
 	local benchmarksSet = rootSet and findSet(rootSet:getChildCollectionSets(), "Benchmarks") or nil
 	local collection
 	local writeLease, leaseError = WorkCoordinator.acquire("catalog_write")
-	if not writeLease then error(tostring(leaseError)) end
+	if not writeLease then
+		error(tostring(leaseError))
+	end
 	local writeOk, writeError = LrTasks.pcall(function()
 		catalog:withWriteAccessDo(
 			LOC("$$$/StyleAI/MetadataBenchmark/CreateCollection=Create metadata benchmark collection"),
 			function()
-				if not rootSet then rootSet = catalog:createCollectionSet("StyleAI", nil, true) end
-				if not benchmarksSet then benchmarksSet = catalog:createCollectionSet("Benchmarks", rootSet, true) end
+				if not rootSet then
+					rootSet = catalog:createCollectionSet("StyleAI", nil, true)
+				end
+				if not benchmarksSet then
+					benchmarksSet = catalog:createCollectionSet("Benchmarks", rootSet, true)
+				end
 				collection = catalog:createCollection(collectionName, benchmarksSet, false)
 				collection:addPhotos(photos)
 			end,
@@ -439,20 +533,26 @@ local function createBenchmarkCollection(catalog, photos, collectionName)
 		)
 	end)
 	WorkCoordinator.release(writeLease)
-	if not writeOk then error(tostring(writeError)) end
+	if not writeOk then
+		error(tostring(writeError))
+	end
 	return collection
 end
 
 local function readFile(path)
 	local file, err = io.open(path, "rb")
-	if not file then return nil, err end
+	if not file then
+		return nil, err
+	end
 	local data = file:read("*all")
 	file:close()
 	return data
 end
 
 local function gpsLocation(gps)
-	if type(gps) ~= "table" then return nil end
+	if type(gps) ~= "table" then
+		return nil
+	end
 	local latitude = gps.latitude or gps.lat or gps[1]
 	local longitude = gps.longitude or gps.lon or gps.lng or gps[2]
 	if tonumber(latitude) and tonumber(longitude) then
@@ -464,14 +564,23 @@ end
 local function preparePhotos(photos, options, progressScope, runId)
 	local prepared = {}
 	for index, photo in ipairs(photos) do
-		if progressScope:isCanceled() then break end
-		progressScope:setCaption(LOC("$$$/StyleAI/MetadataBenchmark/Preparing=Preparing benchmark photo ^1 of ^2...", tostring(index), tostring(#photos)))
+		if progressScope:isCanceled() then
+			break
+		end
+		progressScope:setCaption(
+			LOC(
+				"$$$/StyleAI/MetadataBenchmark/Preparing=Preparing benchmark photo ^1 of ^2...",
+				tostring(index),
+				tostring(#photos)
+			)
+		)
 		local sourcePhotoId, idError = Util.getGlobalPhotoIdForPhoto(photo)
 		if sourcePhotoId then
 			local jpegData, previewError
 			local renderLease, leaseError = WorkCoordinator.acquire("render", progressScope)
 			if renderLease then
-				jpegData, previewError = SearchIndexAPI.getJpegThumbnailForPhoto(photo, 1024, 1024, { timeoutSeconds = 30 })
+				jpegData, previewError =
+					SearchIndexAPI.getJpegThumbnailForPhoto(photo, 1024, 1024, { timeoutSeconds = 30 })
 				WorkCoordinator.release(renderLease)
 			else
 				previewError = leaseError
@@ -488,20 +597,31 @@ local function preparePhotos(photos, options, progressScope, runId)
 				local itemOptions = {}
 				if options.submitKeywords then
 					local keywords = photo:getFormattedMetadata("keywordTagsForExport")
-					if type(keywords) == "string" then itemOptions.existing_keywords = Util.string_split(keywords, ",")
-					elseif type(keywords) == "table" then itemOptions.existing_keywords = keywords end
+					if type(keywords) == "string" then
+						itemOptions.existing_keywords = Util.string_split(keywords, ",")
+					elseif type(keywords) == "table" then
+						itemOptions.existing_keywords = keywords
+					end
 					itemOptions.submit_keywords = itemOptions.existing_keywords ~= nil
 				end
 				if options.submitFolderName then
 					local path = photo:getRawMetadata("path")
-					if path then itemOptions.folder_names = LrPathUtils.leafName(LrPathUtils.parent(path)) end
+					if path then
+						itemOptions.folder_names = LrPathUtils.leafName(LrPathUtils.parent(path))
+					end
 					itemOptions.submit_folder_names = itemOptions.folder_names ~= nil
 				end
 				local exif = Util.getPhotoExif(photo)
 				local captureTime = exif and exif.capture_time
-				if type(captureTime) == "number" then itemOptions.date_time = LrDate.timeToW3CDate(captureTime) end
-				if options.submitGPS then itemOptions.location_data = gpsLocation(photo:getRawMetadata("gps")) end
-				if options.submitPhotoContext then itemOptions.user_context = photo:getPropertyForPlugin(_PLUGIN, "photoContext") or "" end
+				if type(captureTime) == "number" then
+					itemOptions.date_time = LrDate.timeToW3CDate(captureTime)
+				end
+				if options.submitGPS then
+					itemOptions.location_data = gpsLocation(photo:getRawMetadata("gps"))
+				end
+				if options.submitPhotoContext then
+					itemOptions.user_context = photo:getPropertyForPlugin(_PLUGIN, "photoContext") or ""
+				end
 				table.insert(prepared, {
 					photo = photo,
 					photo_id = runId .. ":photo:" .. tostring(index),
@@ -518,7 +638,9 @@ local function preparePhotos(photos, options, progressScope, runId)
 		end
 		progressScope:setPortionComplete(index, math.max(1, #photos * (#options.models + 1)))
 		LrTasks.yield()
-		if MAC_ENV then LrTasks.sleep(0.01) end
+		if MAC_ENV then
+			LrTasks.sleep(0.01)
+		end
 	end
 	return prepared
 end
@@ -550,10 +672,14 @@ local function appendResponse(report, response, warmup)
 		error("The local metadata service returned an invalid benchmark response")
 	end
 	for _, result in ipairs(response.items) do
-		if type(result) ~= "table" then error("The local metadata service returned an invalid benchmark result") end
+		if type(result) ~= "table" then
+			error("The local metadata service returned an invalid benchmark result")
+		end
 		result.warmup = warmup == true
 		local ok, err = Report.append(report, result)
-		if not ok then error("Could not append benchmark report: " .. tostring(err)) end
+		if not ok then
+			error("Could not append benchmark report: " .. tostring(err))
+		end
 	end
 end
 
@@ -562,16 +688,24 @@ local function warmupFailure(response)
 		return "The benchmark warm-up returned no result"
 	end
 	local result = response.items[1]
-	if type(result) ~= "table" then return "The benchmark warm-up returned an invalid result" end
-	if result.status == "succeeded" then return nil end
+	if type(result) ~= "table" then
+		return "The benchmark warm-up returned an invalid result"
+	end
+	if result.status == "succeeded" then
+		return nil
+	end
 	return tostring(result.error or "The benchmark configuration failed its warm-up")
 end
 
 local function preflightModels(models)
 	for _, model in ipairs(models) do
 		local ok, result = SearchIndexAPI.preflightMetadataBenchmark(model)
-		if not ok then return false, tostring(result) end
-		if type(result) ~= "table" then return false, "The benchmark preflight returned an invalid response" end
+		if not ok then
+			return false, tostring(result)
+		end
+		if type(result) ~= "table" then
+			return false, "The benchmark preflight returned an invalid response"
+		end
 		model.preflight = result
 		if tostring(result.capability or "unknown") == "unsupported" then
 			return false, tostring(result.message or result.reason or "Unsupported speculative configuration")
@@ -590,23 +724,32 @@ function MetadataBenchmark.run(ctx)
 		)
 		return
 	end
-	if not Util.waitForServerDialog({ suppressProgressDialog = false }) then return end
+	if not Util.waitForServerDialog({ suppressProgressDialog = false }) then
+		return
+	end
 	local models, draftModels, unavailableSpeculators = availableModels()
 	if #models == 0 then
 		LrDialogs.message(
 			LOC("$$$/StyleAI/MetadataBenchmark/NoModelsTitle=No Models Selected"),
-			LOC("$$$/StyleAI/MetadataBenchmark/Unavailable=No local vision-capable Ollama or LM Studio models are available."),
+			LOC(
+				"$$$/StyleAI/MetadataBenchmark/Unavailable=No local vision-capable Ollama or LM Studio models are available."
+			),
 			"warning"
 		)
 		return
 	end
 	local options = showDialog(ctx, #selectedPhotos, models, draftModels, unavailableSpeculators)
-	if not options then return end
+	if not options then
+		return
+	end
 	local runtimeOk, runtimeError = validateBenchmarkRuntime()
 	if not runtimeOk then
 		LrDialogs.message(
 			LOC("$$$/StyleAI/MetadataBenchmark/UnavailableTitle=Benchmark Runtime Unavailable"),
-			LOC("$$$/StyleAI/MetadataBenchmark/RuntimeError=The benchmark cannot start because a required Lightroom capability is unavailable: ^1", tostring(runtimeError)),
+			LOC(
+				"$$$/StyleAI/MetadataBenchmark/RuntimeError=The benchmark cannot start because a required Lightroom capability is unavailable: ^1",
+				tostring(runtimeError)
+			),
 			"critical"
 		)
 		return
@@ -630,13 +773,18 @@ function MetadataBenchmark.run(ctx)
 			LOC("$$$/StyleAI/MetadataBenchmark/Continue=Continue"),
 			LOC("$$$/StyleAI/common/Cancel=Cancel")
 		)
-		if confirmation == "cancel" then return end
+		if confirmation == "cancel" then
+			return
+		end
 	end
 	local preflightOk, preflightError = preflightModels(options.models)
 	if not preflightOk then
 		LrDialogs.message(
 			LOC("$$$/StyleAI/MetadataBenchmark/PreflightTitle=Benchmark Configuration Unsupported"),
-			LOC("$$$/StyleAI/MetadataBenchmark/PreflightError=The selected model configuration cannot be benchmarked: ^1", tostring(preflightError)),
+			LOC(
+				"$$$/StyleAI/MetadataBenchmark/PreflightError=The selected model configuration cannot be benchmarked: ^1",
+				tostring(preflightError)
+			),
 			"critical"
 		)
 		return
@@ -650,7 +798,10 @@ function MetadataBenchmark.run(ctx)
 	local runId = "llm-metadata-" .. uniqueToken
 	local collectionName = "LLM Metadata " .. uniqueToken
 	local catalogDirectory = LrPathUtils.parent(catalog:getPath())
-	local reportDirectory = LrPathUtils.child(LrPathUtils.child(LrPathUtils.child(catalogDirectory, "styleai.db"), "evaluation_reports"), runId)
+	local reportDirectory = LrPathUtils.child(
+		LrPathUtils.child(LrPathUtils.child(catalogDirectory, "styleai.db"), "evaluation_reports"),
+		runId
+	)
 	local backendVersion = SearchIndexAPI.getBackendVersion() or {}
 	local manifest = {
 		schema_version = "styleai_llm_metadata_benchmark_v2",
@@ -661,7 +812,13 @@ function MetadataBenchmark.run(ctx)
 		collection_name = collectionName,
 		photo_count = #selectedPhotos,
 		models = options.models,
-		model_order = (function() local values = {}; for _, model in ipairs(options.models) do table.insert(values, model.key) end; return values end)(),
+		model_order = (function()
+			local values = {}
+			for _, model in ipairs(options.models) do
+				table.insert(values, model.key)
+			end
+			return values
+		end)(),
 		prompt = options.prompt,
 		output_contract = {
 			normalized = true,
@@ -677,7 +834,13 @@ function MetadataBenchmark.run(ctx)
 			version = 1,
 			optional = true,
 			model_labels_may_be_blinded = true,
-			dimensions = { "correctness", "specificity", "search_usefulness", "alt_text_quality", "hallucination_severity" },
+			dimensions = {
+				"correctness",
+				"specificity",
+				"search_usefulness",
+				"alt_text_quality",
+				"hallucination_severity",
+			},
 		},
 		settings = {
 			language = options.language,
@@ -687,7 +850,12 @@ function MetadataBenchmark.run(ctx)
 			generate_caption = options.generateCaption,
 			generate_alt_text = options.generateAltText,
 			use_keyword_hierarchy = options.useKeywordHierarchy,
-			context = { gps = options.submitGPS, existing_keywords = options.submitKeywords, folder_name = options.submitFolderName, photo_context = options.submitPhotoContext },
+			context = {
+				gps = options.submitGPS,
+				existing_keywords = options.submitKeywords,
+				folder_name = options.submitFolderName,
+				photo_context = options.submitPhotoContext,
+			},
 			warmup = options.warmup,
 			draft_comparison = options.compareDraftBaseline,
 			sampling_overrides = { temperature = options.temperature, max_tokens = options.maxTokens },
@@ -704,7 +872,9 @@ function MetadataBenchmark.run(ctx)
 		model_runs = {},
 	}
 	local report, reportError = Report.new(reportDirectory, manifest)
-	if not report then error("Could not create benchmark report: " .. tostring(reportError)) end
+	if not report then
+		error("Could not create benchmark report: " .. tostring(reportError))
+	end
 
 	local progressScope = LrDialogs.showModalProgressDialog({
 		title = LOC("$$$/StyleAI/MetadataBenchmark/Running=Running Metadata Benchmark..."),
@@ -718,18 +888,33 @@ function MetadataBenchmark.run(ctx)
 	local ok, runError = LrTasks.pcall(function()
 		createBenchmarkCollection(catalog, selectedPhotos, collectionName)
 		local prepared = preparePhotos(selectedPhotos, options, progressScope, runId)
-		if #prepared == 0 then error("No selected photos could be prepared") end
+		if #prepared == 0 then
+			error("No selected photos could be prepared")
+		end
 		manifest.prepared_photo_count = #prepared
 		manifest.photos = {}
 		for _, item in ipairs(prepared) do
-			table.insert(manifest.photos, { photo_id = item.photo_id, source_photo_id = item.source_photo_id, filename = item.filename })
+			table.insert(
+				manifest.photos,
+				{ photo_id = item.photo_id, source_photo_id = item.source_photo_id, filename = item.filename }
+			)
 		end
-		local manifestOk, manifestError = Report.updateManifest(report, { state = "running", prepared_photo_count = #prepared, photos = manifest.photos })
-		if not manifestOk then error("Could not update benchmark manifest: " .. tostring(manifestError)) end
+		local manifestOk, manifestError = Report.updateManifest(
+			report,
+			{ state = "running", prepared_photo_count = #prepared, photos = manifest.photos }
+		)
+		if not manifestOk then
+			error("Could not update benchmark manifest: " .. tostring(manifestError))
+		end
 
 		local operationItemIds = {}
 		for modelIndex, model in ipairs(options.models) do
-			for photoIndex = 1, #prepared do table.insert(operationItemIds, runId .. ":model:" .. tostring(modelIndex) .. ":photo:" .. tostring(photoIndex)) end
+			for photoIndex = 1, #prepared do
+				table.insert(
+					operationItemIds,
+					runId .. ":model:" .. tostring(modelIndex) .. ":photo:" .. tostring(photoIndex)
+				)
+			end
 		end
 		local operationOk, operation = SearchIndexAPI.startOperation(
 			"metadata_benchmark",
@@ -739,18 +924,30 @@ function MetadataBenchmark.run(ctx)
 			0,
 			false
 		)
-		if not operationOk then error(tostring(operation)) end
+		if not operationOk then
+			error(tostring(operation))
+		end
 		operationId = operation.job_id
 		LrTasks.startAsyncTask(function()
 			while keepWatching do
-				local cancelOk, canceled = LrTasks.pcall(function() return progressScope:isCanceled() end)
-				if cancelOk and canceled and operationId then SearchIndexAPI.cancelOperation(operationId); break end
+				local cancelOk, canceled = LrTasks.pcall(function()
+					return progressScope:isCanceled()
+				end)
+				if cancelOk and canceled and operationId then
+					SearchIndexAPI.cancelOperation(operationId)
+					break
+				end
 				if operationId and progressState.showPhotoProgress then
 					local statusOk, operation = SearchIndexAPI.getOperation(operationId, false)
 					local details = statusOk and type(operation) == "table" and operation.details or nil
 					local currentModel = type(details) == "table" and tonumber(details.current_model_index) or nil
 					local currentPhoto = type(details) == "table" and tonumber(details.current_photo_index) or nil
-					if currentModel == progressState.modelIndex and currentPhoto and currentPhoto >= 1 and currentPhoto <= #prepared then
+					if
+						currentModel == progressState.modelIndex
+						and currentPhoto
+						and currentPhoto >= 1
+						and currentPhoto <= #prepared
+					then
 						setModelProgressCaption(progressScope, progressState.modelTitle, currentPhoto, #prepared)
 					end
 				end
@@ -760,7 +957,9 @@ function MetadataBenchmark.run(ctx)
 
 		local completed = 0
 		for modelIndex, model in ipairs(options.models) do
-			if progressScope:isCanceled() then break end
+			if progressScope:isCanceled() then
+				break
+			end
 			local modelStarted = LrDate.currentTime()
 			local modelTitle = progressModelTitle(model)
 			progressState.modelIndex = modelIndex
@@ -789,13 +988,23 @@ function MetadataBenchmark.run(ctx)
 				else
 					preflightError = tostring(warmupResponse)
 					local appended, appendError = Report.append(report, {
-						photo_id = warmupItem.photo_id, source_photo_id = warmupItem.source_photo_id,
-						filename = warmupItem.filename, provider = model.provider, model = model.model,
-						benchmark_variant = model.benchmark_variant, speculation_mode = model.speculation_mode,
+						photo_id = warmupItem.photo_id,
+						source_photo_id = warmupItem.source_photo_id,
+						filename = warmupItem.filename,
+						provider = model.provider,
+						model = model.model,
+						benchmark_variant = model.benchmark_variant,
+						speculation_mode = model.speculation_mode,
 						draft_model_requested = model.draft_model,
-						status = "failed", warmup = true, error = tostring(warmupResponse), timing = {}, inference = {},
+						status = "failed",
+						warmup = true,
+						error = tostring(warmupResponse),
+						timing = {},
+						inference = {},
 					})
-					if not appended then error("Could not append benchmark report: " .. tostring(appendError)) end
+					if not appended then
+						error("Could not append benchmark report: " .. tostring(appendError))
+					end
 				end
 			end
 			if preflightError then
@@ -803,73 +1012,109 @@ function MetadataBenchmark.run(ctx)
 				local failedUpdates = {}
 				for photoIndex, item in ipairs(prepared) do
 					local appended, appendError = Report.append(report, {
-						photo_id = item.photo_id, source_photo_id = item.source_photo_id,
-						filename = item.filename, provider = model.provider, model = model.model,
-						benchmark_variant = model.benchmark_variant, speculation_mode = model.speculation_mode,
+						photo_id = item.photo_id,
+						source_photo_id = item.source_photo_id,
+						filename = item.filename,
+						provider = model.provider,
+						model = model.model,
+						benchmark_variant = model.benchmark_variant,
+						speculation_mode = model.speculation_mode,
 						draft_model_requested = model.draft_model,
-						status = "failed", warmup = false, error = skippedError, timing = {}, inference = preflightInference,
+						status = "failed",
+						warmup = false,
+						error = skippedError,
+						timing = {},
+						inference = preflightInference,
 					})
-					if not appended then error("Could not append benchmark report: " .. tostring(appendError)) end
+					if not appended then
+						error("Could not append benchmark report: " .. tostring(appendError))
+					end
 					table.insert(failedUpdates, {
 						item_id = runId .. ":model:" .. tostring(modelIndex) .. ":photo:" .. tostring(photoIndex),
-						state = "failed", error = skippedError,
+						state = "failed",
+						error = skippedError,
 					})
 				end
 				local updateOk, updateError = SearchIndexAPI.updateOperationItems(operationId, failedUpdates)
-				if not updateOk then error("Warm-up failed and operation bookkeeping also failed: " .. tostring(updateError)) end
+				if not updateOk then
+					error("Warm-up failed and operation bookkeeping also failed: " .. tostring(updateError))
+				end
 				completed = completed + #prepared
 			else
 				progressState.showPhotoProgress = true
 				setModelProgressCaption(progressScope, modelTitle, 1, #prepared)
 
-			for batchStart = 1, #prepared, 12 do
-				if progressScope:isCanceled() then break end
-				local batch = {}
-				for photoIndex = batchStart, math.min(#prepared, batchStart + 11) do
-					local item = prepared[photoIndex]
-					table.insert(batch, {
-						photo_id = item.photo_id,
-						source_photo_id = item.source_photo_id,
-						filename = item.filename,
-						image = item.image,
-						options = item.options,
-						operation_item_id = runId .. ":model:" .. tostring(modelIndex) .. ":photo:" .. tostring(photoIndex),
-						model_index = modelIndex,
-						photo_index = photoIndex,
-					})
-				end
-				local batchOptions = requestOptions(options, model, operationId)
-				local batchOk, response = SearchIndexAPI.runMetadataBenchmarkBatch(batch, batchOptions)
-				if batchOk then
-					appendResponse(report, response, false)
-				else
-					local failedUpdates = {}
-					for _, item in ipairs(batch) do
-						local appended, appendError = Report.append(report, {
-							photo_id = item.photo_id, source_photo_id = item.source_photo_id,
-							filename = item.filename, provider = model.provider, model = model.model,
-							benchmark_variant = model.benchmark_variant, speculation_mode = model.speculation_mode,
-							draft_model_requested = model.draft_model,
-							status = "failed", warmup = false, error = tostring(response), timing = {}, inference = {},
+				for batchStart = 1, #prepared, 12 do
+					if progressScope:isCanceled() then
+						break
+					end
+					local batch = {}
+					for photoIndex = batchStart, math.min(#prepared, batchStart + 11) do
+						local item = prepared[photoIndex]
+						table.insert(batch, {
+							photo_id = item.photo_id,
+							source_photo_id = item.source_photo_id,
+							filename = item.filename,
+							image = item.image,
+							options = item.options,
+							operation_item_id = runId .. ":model:" .. tostring(modelIndex) .. ":photo:" .. tostring(
+								photoIndex
+							),
+							model_index = modelIndex,
+							photo_index = photoIndex,
 						})
-						if not appended then error("Could not append benchmark report: " .. tostring(appendError)) end
-						table.insert(failedUpdates, { item_id = item.operation_item_id, state = "failed", error = tostring(response) })
 					end
-					local updateOk, updateError = SearchIndexAPI.updateOperationItems(operationId, failedUpdates)
-					if not updateOk then
-						error(tostring(response) .. "; operation bookkeeping also failed: " .. tostring(updateError))
+					local batchOptions = requestOptions(options, model, operationId)
+					local batchOk, response = SearchIndexAPI.runMetadataBenchmarkBatch(batch, batchOptions)
+					if batchOk then
+						appendResponse(report, response, false)
+					else
+						local failedUpdates = {}
+						for _, item in ipairs(batch) do
+							local appended, appendError = Report.append(report, {
+								photo_id = item.photo_id,
+								source_photo_id = item.source_photo_id,
+								filename = item.filename,
+								provider = model.provider,
+								model = model.model,
+								benchmark_variant = model.benchmark_variant,
+								speculation_mode = model.speculation_mode,
+								draft_model_requested = model.draft_model,
+								status = "failed",
+								warmup = false,
+								error = tostring(response),
+								timing = {},
+								inference = {},
+							})
+							if not appended then
+								error("Could not append benchmark report: " .. tostring(appendError))
+							end
+							table.insert(
+								failedUpdates,
+								{ item_id = item.operation_item_id, state = "failed", error = tostring(response) }
+							)
+						end
+						local updateOk, updateError = SearchIndexAPI.updateOperationItems(operationId, failedUpdates)
+						if not updateOk then
+							error(
+								tostring(response) .. "; operation bookkeeping also failed: " .. tostring(updateError)
+							)
+						end
+					end
+					completed = completed + #batch
+					progressScope:setPortionComplete(#prepared + completed, #prepared * (#options.models + 1))
+					manifestOk, manifestError = Report.updateManifest(report, {})
+					if not manifestOk then
+						error("Could not update benchmark manifest: " .. tostring(manifestError))
 					end
 				end
-				completed = completed + #batch
-				progressScope:setPortionComplete(#prepared + completed, #prepared * (#options.models + 1))
-				manifestOk, manifestError = Report.updateManifest(report, {})
-				if not manifestOk then error("Could not update benchmark manifest: " .. tostring(manifestError)) end
-			end
 			end
 			progressScope:setPortionComplete(#prepared + completed, #prepared * (#options.models + 1))
 			table.insert(manifest.model_runs, {
-				provider = model.provider, model = model.model,
-				benchmark_variant = model.benchmark_variant, draft_model = model.draft_model,
+				provider = model.provider,
+				model = model.model,
+				benchmark_variant = model.benchmark_variant,
+				draft_model = model.draft_model,
 				speculation_mode = model.speculation_mode,
 				preflight = model.preflight,
 				preflight_error = preflightError,
@@ -878,18 +1123,24 @@ function MetadataBenchmark.run(ctx)
 		end
 
 		if progressScope:isCanceled() then
-			if operationId then SearchIndexAPI.cancelOperation(operationId) end
+			if operationId then
+				SearchIndexAPI.cancelOperation(operationId)
+			end
 			finalState = "canceled"
 		else
 			local completeOk, completion = SearchIndexAPI.completeOperation(operationId)
-			if not completeOk then error(tostring(completion)) end
+			if not completeOk then
+				error(tostring(completion))
+			end
 			finalState = completion.state == "succeeded" and "completed" or "partial"
 		end
 	end)
 	keepWatching = false
 	if not ok then
 		manifest.run_error = tostring(runError)
-		if operationId then SearchIndexAPI.cancelOperation(operationId) end
+		if operationId then
+			SearchIndexAPI.cancelOperation(operationId)
+		end
 		finalState = progressScope:isCanceled() and "canceled" or "failed"
 	end
 	local finalizeOk, finalizeError = Report.finalize(report, finalState, {
@@ -898,23 +1149,37 @@ function MetadataBenchmark.run(ctx)
 		run_error = manifest.run_error,
 	})
 	progressScope:done()
-	if not finalizeOk then error("Could not finalize benchmark report: " .. tostring(finalizeError)) end
+	if not finalizeOk then
+		error("Could not finalize benchmark report: " .. tostring(finalizeError))
+	end
 	if type(LrShell) == "table" and type(LrShell.revealInShell) == "function" then
-		local revealOk, revealError = LrTasks.pcall(function() LrShell.revealInShell(reportDirectory) end)
-		if not revealOk then log:error("Could not reveal benchmark report directory: " .. tostring(revealError)) end
+		local revealOk, revealError = LrTasks.pcall(function()
+			LrShell.revealInShell(reportDirectory)
+		end)
+		if not revealOk then
+			log:error("Could not reveal benchmark report directory: " .. tostring(revealError))
+		end
 	else
 		log:error("Could not reveal benchmark report directory because LrShell.revealInShell is unavailable")
 	end
 	if not ok then
 		LrDialogs.message(
 			LOC("$$$/StyleAI/MetadataBenchmark/FailedTitle=Benchmark Incomplete"),
-			LOC("$$$/StyleAI/MetadataBenchmark/Failed=The benchmark did not complete: ^1\n\nPartial results were saved to ^2", tostring(runError), reportDirectory),
+			LOC(
+				"$$$/StyleAI/MetadataBenchmark/Failed=The benchmark did not complete: ^1\n\nPartial results were saved to ^2",
+				tostring(runError),
+				reportDirectory
+			),
 			"critical"
 		)
 	else
 		LrDialogs.message(
 			LOC("$$$/StyleAI/MetadataBenchmark/CompleteTitle=Benchmark Report Ready"),
-			LOC("$$$/StyleAI/MetadataBenchmark/Complete=The ^1 benchmark report was saved to:\n^2", finalState, reportDirectory),
+			LOC(
+				"$$$/StyleAI/MetadataBenchmark/Complete=The ^1 benchmark report was saved to:\n^2",
+				finalState,
+				reportDirectory
+			),
 			"info"
 		)
 	end

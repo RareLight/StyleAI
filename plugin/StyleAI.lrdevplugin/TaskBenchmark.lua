@@ -14,16 +14,16 @@ LrTasks.startAsyncTask(function()
 	LrFunctionContext.callWithContext("benchmarkTask", function(ctx)
 		local catalog = LrApplication.activeCatalog()
 		local selectedPhotos = catalog:getTargetPhotos()
-		
+
 		local permutations = {
-			{senders = 4, analyzers = 32, batch = 32},
-			{senders = 4, analyzers = 32, batch = 64},
-			{senders = 8, analyzers = 64, batch = 32},
-			{senders = 8, analyzers = 64, batch = 64},
+			{ senders = 4, analyzers = 32, batch = 32 },
+			{ senders = 4, analyzers = 32, batch = 64 },
+			{ senders = 8, analyzers = 64, batch = 32 },
+			{ senders = 8, analyzers = 64, batch = 64 },
 		}
 
 		local minRequired = 256
-		
+
 		if not selectedPhotos or #selectedPhotos < minRequired then
 			LrDialogs.message(
 				LOC("$$$/StyleAI/TaskBenchmark/SelectionTitle=Indexing Throughput Benchmark Needs 256+ Photos"),
@@ -35,7 +35,7 @@ LrTasks.startAsyncTask(function()
 			)
 			return
 		end
-		
+
 		local confirm = LrDialogs.confirm(
 			LOC("$$$/StyleAI/TaskBenchmark/ConfirmTitle=Run Indexing Throughput Benchmark?"),
 			LOC(
@@ -46,18 +46,18 @@ LrTasks.startAsyncTask(function()
 			LOC("$$$/StyleAI/TaskBenchmark/Run=Run Indexing Benchmark"),
 			LOC("$$$/StyleAI/common/Cancel=Cancel")
 		)
-		if confirm == "cancel" then return end
-		
+		if confirm == "cancel" then
+			return
+		end
+
 		if not Util.waitForServerDialog({ suppressProgressDialog = false }) then
 			return
 		end
-		
-
 
 		local results = {}
 		local progressScope = LrDialogs.showModalProgressDialog({
 			title = LOC("$$$/StyleAI/TaskBenchmark/Running=Running Indexing Throughput Benchmark..."),
-			functionContext = ctx
+			functionContext = ctx,
 		})
 
 		log:info("--- STARTING PERFORMANCE BENCHMARK ---")
@@ -66,20 +66,20 @@ LrTasks.startAsyncTask(function()
 		if not progressScope:isCanceled() then
 			log:info("Starting Run 0 (Warmup Pass)")
 			progressScope:setCaption("Run 0: Warmup Pass (Generating Thumbnails...)")
-			local warmupConfig = {senders = 4, analyzers = 32, batch = 32}
+			local warmupConfig = { senders = 4, analyzers = 32, batch = 32 }
 			local warmupOptions = {
-				tasks = {"embeddings"},
+				tasks = { "embeddings" },
 				indexingMode = "embed",
 				enableEmbeddings = true,
 				enableMetadata = false,
 				regenerate_metadata = true,
 				cache_images = false,
 				benchmarkConfig = warmupConfig,
-				forceRecompute = true
+				forceRecompute = true,
 			}
 			SearchIndexAPI.analyzeAndIndexSelectedPhotos(selectedPhotos, progressScope, warmupOptions, false)
 			log:info("Finished Run 0 (Warmup Pass)")
-			
+
 			if not progressScope:isCanceled() then
 				LrTasks.sleep(5)
 			end
@@ -90,31 +90,40 @@ LrTasks.startAsyncTask(function()
 				log:info("Benchmark canceled by user.")
 				break
 			end
-			
-			local titleText = string.format("Test %d of %d (Senders: %d, Analyzers: %d, Batch: %d)", i, #permutations, config.senders, config.analyzers, config.batch)
+
+			local titleText = string.format(
+				"Test %d of %d (Senders: %d, Analyzers: %d, Batch: %d)",
+				i,
+				#permutations,
+				config.senders,
+				config.analyzers,
+				config.batch
+			)
 			progressScope:setCaption(titleText)
-			
+
 			local options = {
-				tasks = {"embeddings"},
+				tasks = { "embeddings" },
 				indexingMode = "embed",
 				enableEmbeddings = true,
 				enableMetadata = false,
 				regenerate_metadata = true,
 				cache_images = false,
 				benchmarkConfig = config,
-				forceRecompute = true
+				forceRecompute = true,
 			}
-			
+
 			local testPhotos = selectedPhotos
 
 			local startTime = LrDate.currentTime()
 			-- Run the batch pipeline natively
-			local status, processed, failed, processedPhotos, combinedError, combinedWarnings = 
+			local status, processed, failed, processedPhotos, combinedError, combinedWarnings =
 				SearchIndexAPI.analyzeAndIndexSelectedPhotos(testPhotos, progressScope, options, false)
-				
+
 			local duration = LrDate.currentTime() - startTime
 			local avg = 0
-			if processed and processed > 0 then avg = duration / processed end
+			if processed and processed > 0 then
+				avg = duration / processed
+			end
 
 			table.insert(results, {
 				senders = config.senders,
@@ -123,11 +132,20 @@ LrTasks.startAsyncTask(function()
 				duration = duration,
 				processed = processed or 0,
 				failed = failed or 0,
-				avg = avg
+				avg = avg,
 			})
 
-			log:info(string.format("BENCHMARK RESULT: Senders=%d, Analyzers=%d, Batch=%d | Duration: %.2f sec (%.2f s/photo) | Failed: %d", 
-					 config.senders, config.analyzers, config.batch, duration, avg, failed or 0))
+			log:info(
+				string.format(
+					"BENCHMARK RESULT: Senders=%d, Analyzers=%d, Batch=%d | Duration: %.2f sec (%.2f s/photo) | Failed: %d",
+					config.senders,
+					config.analyzers,
+					config.batch,
+					duration,
+					avg,
+					failed or 0
+				)
+			)
 
 			-- Wait 5 seconds to let the system cool down and the DB flush between runs
 			if i < #permutations and not progressScope:isCanceled() then
@@ -140,11 +158,21 @@ LrTasks.startAsyncTask(function()
 
 		-- Output summary to log
 		log:info("--- BENCHMARK RESULTS SUMMARY ---")
-		table.sort(results, function(a, b) return a.duration < b.duration end)
-		
+		table.sort(results, function(a, b)
+			return a.duration < b.duration
+		end)
+
 		local summary = "Benchmark Complete.\nSee StyleAI.log for full details.\n\nTop Results:\n"
 		for i, r in ipairs(results) do
-			local line = string.format("#%d: S:%d A:%d B:%d -> %.1f sec (%.2f s/photo)", i, r.senders, r.analyzers, r.batch, r.duration, r.avg)
+			local line = string.format(
+				"#%d: S:%d A:%d B:%d -> %.1f sec (%.2f s/photo)",
+				i,
+				r.senders,
+				r.analyzers,
+				r.batch,
+				r.duration,
+				r.avg
+			)
 			log:info(line)
 			if i <= 5 then
 				summary = summary .. line .. "\n"

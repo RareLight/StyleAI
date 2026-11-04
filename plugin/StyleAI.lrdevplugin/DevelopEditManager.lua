@@ -55,7 +55,6 @@ local HSL_LABELS = {
 	magenta = "Magenta",
 }
 
-
 local DEVELOP_VALUE_BOUNDS = {
 	Exposure2012 = { min = -5, max = 5 },
 	Contrast2012 = { min = -100, max = 100 },
@@ -215,7 +214,7 @@ local function buildColorGradingDevelopSettings(colorGrading, warnings)
 		settings.SplitToningBalance = colorGrading.balance
 		settings.ColorGradeBalance = colorGrading.balance
 	end
-	
+
 	local midtones = colorGrading.midtones
 	if type(midtones) == "table" then
 		if midtones.hue ~= nil then
@@ -228,7 +227,7 @@ local function buildColorGradingDevelopSettings(colorGrading, warnings)
 			settings.ColorGradeMidtoneLum = midtones.luminance
 		end
 	end
-	
+
 	local global_cg = colorGrading.global
 	if type(global_cg) == "table" then
 		if global_cg.hue ~= nil then
@@ -241,7 +240,7 @@ local function buildColorGradingDevelopSettings(colorGrading, warnings)
 			settings.ColorGradeGlobalLum = global_cg.luminance
 		end
 	end
-	
+
 	if colorGrading.blending ~= nil then
 		settings.ColorGradeBlending = colorGrading.blending
 	end
@@ -550,7 +549,10 @@ function DevelopEditManager.formatRecipeDetails(response)
 		table.insert(lines, "- Proposed HDR: " .. (proposed.is_hdr and "On" or "Off"))
 		table.insert(lines, "- Profile mode: " .. tostring(rendering.profile_mode or "suggest"))
 		table.insert(lines, "- HDR mode: " .. tostring(rendering.hdr_mode or "suggest"))
-		table.insert(lines, "- Profile confidence: " .. tostring(math.floor((rendering.profile_confidence or 0) * 100)) .. "%")
+		table.insert(
+			lines,
+			"- Profile confidence: " .. tostring(math.floor((rendering.profile_confidence or 0) * 100)) .. "%"
+		)
 		table.insert(lines, "- HDR confidence: " .. tostring(math.floor((rendering.hdr_confidence or 0) * 100)) .. "%")
 		if rendering.abstention_reason then
 			table.insert(lines, "- Fallback: " .. tostring(rendering.abstention_reason))
@@ -828,7 +830,9 @@ local function applyRenderingIntent(photo, recipe, warnings)
 	if not profileAuto and not hdrAuto then
 		return true, nil
 	end
-	local okBefore, before = LrTasks.pcall(function() return photo:getDevelopSettings() end)
+	local okBefore, before = LrTasks.pcall(function()
+		return photo:getDevelopSettings()
+	end)
 	if not okBefore or type(before) ~= "table" then
 		appendWarning(warnings, "Could not capture the pre-edit rendering state; profile/HDR Auto was canceled.")
 		return false, nil
@@ -840,15 +844,22 @@ local function applyRenderingIntent(photo, recipe, warnings)
 	local needsProfileChange = false
 	if profileAuto then
 		for key, value in pairs(sdk) do
-			if not RenderingStateCapability.deepEqual(before[key], value) then needsProfileChange = true break end
+			if not RenderingStateCapability.deepEqual(before[key], value) then
+				needsProfileChange = true
+				break
+			end
 		end
 	end
 	local beforeHdr = RenderingStateCapability.isHdr(RenderingStateCapability.captureRenderingState(before))
 	local needsHdrChange = hdrAuto and beforeHdr ~= (target.is_hdr == true)
-	if not needsProfileChange and not needsHdrChange then return true, nil end
+	if not needsProfileChange and not needsHdrChange then
+		return true, nil
+	end
 	if profileAuto then
 		for _, key in ipairs(RenderingStateCapability.PROFILE_KEYS) do
-			if sdk[key] ~= nil then desired[key] = RenderingStateCapability.deepCopy(sdk[key]) end
+			if sdk[key] ~= nil then
+				desired[key] = RenderingStateCapability.deepCopy(sdk[key])
+			end
 		end
 	end
 	if hdrAuto then
@@ -860,15 +871,21 @@ local function applyRenderingIntent(photo, recipe, warnings)
 			photo:applyDevelopSettings(desired)
 		end, Defaults.catalogWriteAccessOptions)
 	end)
-	local okRead, after = LrTasks.pcall(function() return photo:getDevelopSettings() end)
+	local okRead, after = LrTasks.pcall(function()
+		return photo:getDevelopSettings()
+	end)
 	local verified = okApply and okRead and type(after) == "table"
 	if verified and profileAuto then
 		for key, value in pairs(sdk) do
-			if not RenderingStateCapability.deepEqual(after[key], value) then verified = false break end
+			if not RenderingStateCapability.deepEqual(after[key], value) then
+				verified = false
+				break
+			end
 		end
 	end
 	if verified and hdrAuto then
-		verified = RenderingStateCapability.isHdr(RenderingStateCapability.captureRenderingState(after)) == (target.is_hdr == true)
+		verified = RenderingStateCapability.isHdr(RenderingStateCapability.captureRenderingState(after))
+			== (target.is_hdr == true)
 	end
 	if verified then
 		return true, before
@@ -883,12 +900,16 @@ local function applyRenderingIntent(photo, recipe, warnings)
 		"Profile/HDR application could not be verified; sliders were not applied and the original rendering state was restored. "
 			.. tostring(applyErr or restoreErr or "Lightroom substituted the requested state")
 	)
-	if not restoreOk then log:error("Rendering-state restore failed: " .. tostring(restoreErr)) end
+	if not restoreOk then
+		log:error("Rendering-state restore failed: " .. tostring(restoreErr))
+	end
 	return false, before
 end
 
 local function restoreRenderingState(photo, before, warnings)
-	if type(before) ~= "table" then return end
+	if type(before) ~= "table" then
+		return
+	end
 	local catalog = LrApplication.activeCatalog()
 	local ok, err = LrTasks.pcall(function()
 		catalog:withWriteAccessDo("Restore rendering state after failed StyleAI edit", function()
@@ -927,10 +948,10 @@ function DevelopEditManager.showValidationDialog(context, photo, response, optio
 		and burstContext.tier ~= nil
 		and burstContext.tier ~= "independent"
 	props.burstContext = props.hasBurstContext
-		and LOC(
-			"$$$/StyleAI/DevelopEdit/BurstContext=Coherent burst edit · ^1 photos",
-			tostring(tonumber(burstContext.group_size) or 1)
-		)
+			and LOC(
+				"$$$/StyleAI/DevelopEdit/BurstContext=Coherent burst edit · ^1 photos",
+				tostring(tonumber(burstContext.group_size) or 1)
+			)
 		or ""
 
 	local confColor = { 0.7, 0.7, 0.7 } -- gray
@@ -1040,16 +1061,14 @@ function DevelopEditManager.applyRecipe(photo, response, options)
 			table.insert(warnings, tostring(warning))
 		end
 	end
-	local okOriginal, originalSettings = LrTasks.pcall(function() return photo:getDevelopSettings() end)
+	local okOriginal, originalSettings = LrTasks.pcall(function()
+		return photo:getDevelopSettings()
+	end)
 	if not okOriginal or type(originalSettings) ~= "table" then
 		return false, { "Could not capture the pre-edit Lightroom settings." }
 	end
-	local generatedPersisted, generatedPersistError = DevelopEditManager.persistEditRecipe(
-		photo,
-		response,
-		warnings,
-		"generated"
-	)
+	local generatedPersisted, generatedPersistError =
+		DevelopEditManager.persistEditRecipe(photo, response, warnings, "generated")
 	if not generatedPersisted then
 		return false, { "Could not persist AI edit tracking: " .. tostring(generatedPersistError) }
 	end
@@ -1064,17 +1083,15 @@ function DevelopEditManager.applyRecipe(photo, response, options)
 			globalApplied = false
 		else
 			globalApplied = applyGlobalDevelopSettings(photo, recipe, warnings)
-			if not globalApplied then restoreRenderingState(photo, originalRenderingSettings, warnings) end
+			if not globalApplied then
+				restoreRenderingState(photo, originalRenderingSettings, warnings)
+			end
 		end
 	end
 
 	local applicationStatus = globalApplied and "applied" or "apply_failed"
-	local finalPersisted, finalPersistError = DevelopEditManager.persistEditRecipe(
-		photo,
-		response,
-		warnings,
-		applicationStatus
-	)
+	local finalPersisted, finalPersistError =
+		DevelopEditManager.persistEditRecipe(photo, response, warnings, applicationStatus)
 	if not finalPersisted then
 		local catalog = LrApplication.activeCatalog()
 		local restored, restoreError = LrTasks.pcall(function()
@@ -1084,7 +1101,9 @@ function DevelopEditManager.applyRecipe(photo, response, options)
 		end)
 		local message = "AI edit tracking failed; the original settings were restored. "
 			.. tostring(finalPersistError or restoreError)
-		if not restored then message = message .. " Restore also failed: " .. tostring(restoreError) end
+		if not restored then
+			message = message .. " Restore also failed: " .. tostring(restoreError)
+		end
 		table.insert(warnings, message)
 		globalApplied = false
 	end

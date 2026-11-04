@@ -217,9 +217,7 @@ function Util.getPhotoExif(photo)
 		elseif type(devSettings.CameraProfileRaw) == "string" and devSettings.CameraProfileRaw ~= "" then
 			exif.camera_profile = devSettings.CameraProfileRaw
 		end
-		exif.is_hdr = devSettings.HDREditMode == 1
-			or devSettings.HDREditMode == true
-			or devSettings.HDR == true
+		exif.is_hdr = devSettings.HDREditMode == 1 or devSettings.HDREditMode == true or devSettings.HDR == true
 	end
 
 	return exif
@@ -465,7 +463,11 @@ function Util.getGlobalPhotoIdForPhoto(photo, options)
 				"globalPhotoIdFileModificationDate",
 				tostring(metadata.fileModificationDate or "")
 			)
-			photo:setPropertyForPlugin(_PLUGIN, "globalPhotoIdAlgorithm", tostring(metadata.algorithm or STABLE_ID_ALGO))
+			photo:setPropertyForPlugin(
+				_PLUGIN,
+				"globalPhotoIdAlgorithm",
+				tostring(metadata.algorithm or STABLE_ID_ALGO)
+			)
 		end, { timeout = 15 })
 	end
 
@@ -1249,7 +1251,9 @@ function Util.waitForServerDialog(options)
 		while (not progressScope or not progressScope:isCanceled()) and elapsedTime < timeout do
 			if SearchIndexAPI.pingServer() then
 				local compatible, versionMessage = SearchIndexAPI.ensureVersionCompatibility()
-				if progressScope then progressScope:done() end
+				if progressScope then
+					progressScope:done()
+				end
 				if compatible then
 					local catalog = LrApplication.activeCatalog()
 					local catalogPath = catalog:getPath()
@@ -1334,11 +1338,15 @@ function Util.waitForServerDialog(options)
 			end
 			LrTasks.sleep(0.5) -- Poll every 500ms
 			elapsedTime = elapsedTime + 0.5
-			if progressScope then progressScope:setPortionComplete(elapsedTime, timeout) end
+			if progressScope then
+				progressScope:setPortionComplete(elapsedTime, timeout)
+			end
 		end
 
 		if elapsedTime >= timeout then
-			if progressScope then progressScope:done() end
+			if progressScope then
+				progressScope:done()
+			end
 			-- Diagnose and show detailed error
 			local diag = SearchIndexAPI.diagnoseStartupFailure()
 			Util.showDiagnosticFailureDialog(diag)
@@ -1506,10 +1514,7 @@ function Util.showHealthIssuesDialog(report)
 				}),
 			})
 		)
-		table.insert(
-			contents,
-			UIFactory.HelpText(f, { title = issue.hint })
-		)
+		table.insert(contents, UIFactory.HelpText(f, { title = issue.hint }))
 	end
 
 	local result = LrDialogs.presentModalDialog({
@@ -1555,7 +1560,9 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 	-- Step 1: Read — look for existing set (no write access needed)
 	local collectionSet
 	local children = nil
-	LrTasks.pcall(function() children = catalog:getChildCollections() end)
+	LrTasks.pcall(function()
+		children = catalog:getChildCollections()
+	end)
 	if children then
 		for _, child in ipairs(children) do
 			if child:type() == "LrCollectionSet" and child:getName() == setName then
@@ -1567,9 +1574,13 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 
 	-- Step 2: Write — create set if it doesn't exist
 	if not collectionSet then
-		catalog:withWriteAccessDo(LOC("$$$/StyleAI/Rejected/CreateCollection=Create Rejected AI Descriptions"), function()
-			collectionSet = catalog:createCollectionSet(setName, nil, true)
-		end, writeOptions)
+		catalog:withWriteAccessDo(
+			LOC("$$$/StyleAI/Rejected/CreateCollection=Create Rejected AI Descriptions"),
+			function()
+				collectionSet = catalog:createCollectionSet(setName, nil, true)
+			end,
+			writeOptions
+		)
 		LrTasks.yield()
 		LrTasks.sleep(0.05)
 	end
@@ -1581,7 +1592,9 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 	-- Step 3: Read — look for existing collection inside the set
 	local collection
 	local collChildren = nil
-	LrTasks.pcall(function() collChildren = collectionSet:getChildCollections() end)
+	LrTasks.pcall(function()
+		collChildren = collectionSet:getChildCollections()
+	end)
 	if collChildren then
 		for _, c in ipairs(collChildren) do
 			if c:type() == "LrCollection" and c:getName() == collName then
@@ -1593,18 +1606,26 @@ function Util.addPhotoToRejectedDescriptionsCollection(photo, writeOptions)
 
 	-- Step 4: Write — create collection if it doesn't exist
 	if not collection then
-		catalog:withWriteAccessDo(LOC("$$$/StyleAI/Rejected/CreateCollection=Create Rejected AI Descriptions"), function()
-			collection = catalog:createCollection(collName, collectionSet, false)
-		end, writeOptions)
+		catalog:withWriteAccessDo(
+			LOC("$$$/StyleAI/Rejected/CreateCollection=Create Rejected AI Descriptions"),
+			function()
+				collection = catalog:createCollection(collName, collectionSet, false)
+			end,
+			writeOptions
+		)
 		LrTasks.yield()
 		LrTasks.sleep(0.05)
 	end
 
 	-- Step 5: Write — add the photo
 	if collection then
-		catalog:withWriteAccessDo(LOC("$$$/StyleAI/Rejected/AddToCollection=Add to Rejected AI Descriptions"), function()
-			collection:addPhotos({ photo })
-		end, writeOptions)
+		catalog:withWriteAccessDo(
+			LOC("$$$/StyleAI/Rejected/AddToCollection=Add to Rejected AI Descriptions"),
+			function()
+				collection:addPhotos({ photo })
+			end,
+			writeOptions
+		)
 	end
 end
 
@@ -1623,7 +1644,9 @@ end
 local function getOrCreateCollectionSet(catalog, setName, parentSet, writeOptions)
 	local collectionSet
 	local children = nil
-	LrTasks.pcall(function() children = parentSet and parentSet:getChildCollections() or catalog:getChildCollections() end)
+	LrTasks.pcall(function()
+		children = parentSet and parentSet:getChildCollections() or catalog:getChildCollections()
+	end)
 	if children then
 		for _, child in ipairs(children) do
 			if child:type() == "LrCollectionSet" and child:getName() == setName then
@@ -1646,7 +1669,9 @@ end
 local function getOrCreateCollection(catalog, collName, parentSet, writeOptions)
 	local collection
 	local collChildren = nil
-	LrTasks.pcall(function() collChildren = parentSet:getChildCollections() end)
+	LrTasks.pcall(function()
+		collChildren = parentSet:getChildCollections()
+	end)
 	if collChildren then
 		for _, c in ipairs(collChildren) do
 			if c:type() == "LrCollection" and c:getName() == collName then
@@ -1674,12 +1699,16 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 	local catalog = LrApplication.activeCatalog()
 
 	local rootSet = getOrCreateCollectionSet(catalog, "StyleAI", nil, writeOptions)
-	if not rootSet then return false end
+	if not rootSet then
+		return false
+	end
 	local trainedSet = getOrCreateCollectionSet(catalog, "Trained Styles", rootSet, writeOptions)
-	if not trainedSet then return false end
+	if not trainedSet then
+		return false
+	end
 
 	local collectionsToPopulate = {}
-	
+
 	if progressScope then
 		progressScope:setCaption("Creating style collections...")
 	end
@@ -1687,7 +1716,7 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 	catalog:withWriteAccessDo("Create and Populate Style Collections", function()
 		-- Cache existing profile sets to avoid repeated C-boundary calls
 		local existingProfileSets = {}
-			local children = trainedSet:getChildCollections()
+		local children = trainedSet:getChildCollections()
 		if children then
 			for _, child in ipairs(children) do
 				if child:type() == "LrCollectionSet" then
@@ -1700,7 +1729,7 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 			if data.photos and #data.photos > 0 then
 				local profileName = data.profileName or "Unknown Profile"
 				local styleName = data.styleName or "Unknown Style"
-				
+
 				-- 1. Find or create profile set
 				local profileSet = existingProfileSets[profileName]
 				local isNewProfileSet = false
@@ -1714,7 +1743,7 @@ function Util.addMultipleStylePhotosToCollections(stylesData, writeOptions, prog
 				if not profileSet.cachedCollections then
 					profileSet.cachedCollections = {}
 					if not isNewProfileSet then
-							local collChildren = profileSet:getChildCollections()
+						local collChildren = profileSet:getChildCollections()
 						if collChildren then
 							for _, c in ipairs(collChildren) do
 								if c:type() == "LrCollection" then
@@ -1762,12 +1791,16 @@ function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions, pr
 	local catalog = LrApplication.activeCatalog()
 
 	local rootSet = getOrCreateCollectionSet(catalog, "StyleAI", nil, writeOptions)
-	if not rootSet then return false end
+	if not rootSet then
+		return false
+	end
 	local recSet = getOrCreateCollectionSet(catalog, "Training Recommendations", rootSet, writeOptions)
-	if not recSet then return false end
+	if not recSet then
+		return false
+	end
 
 	local collectionsToPopulate = {}
-	
+
 	if progressScope then
 		progressScope:setCaption("Creating upgrade collections...")
 	end
@@ -1775,7 +1808,7 @@ function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions, pr
 	catalog:withWriteAccessDo("Create and Populate Upgrade Collections", function()
 		-- Cache existing collections to avoid repeated C-boundary calls
 		local existingCollections = {}
-			local children = recSet:getChildCollections()
+		local children = recSet:getChildCollections()
 		if children then
 			for _, child in ipairs(children) do
 				if child:type() == "LrCollection" then
@@ -1789,7 +1822,7 @@ function Util.addMultipleUpgradePhotosToCollections(stylesData, writeOptions, pr
 			if data.photos and #data.photos > 0 then
 				local styleName = data.styleName or "Style"
 				local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName)
-				
+
 				local collection = recSet.cachedCollections[collName]
 				if not collection then
 					collection = catalog:createCollection(collName, recSet, true)
@@ -1823,13 +1856,17 @@ function Util.addPhotosToUpgradeCandidatesCollection(photos, styleName, writeOpt
 	end
 	writeOptions = writeOptions or { timeout = 60 }
 	local catalog = LrApplication.activeCatalog()
-	
+
 	local rootSet = getOrCreateCollectionSet(catalog, "StyleAI", nil, writeOptions)
-	if not rootSet then return nil end
-	
+	if not rootSet then
+		return nil
+	end
+
 	local recSet = getOrCreateCollectionSet(catalog, "Training Recommendations", rootSet, writeOptions)
-	if not recSet then return nil end
-	
+	if not recSet then
+		return nil
+	end
+
 	local collName = string.format(LOC("$$$/StyleAI/UpgradeAssistant/CollectionNameFmt=%s"), styleName or "Style")
 	local collection = getOrCreateCollection(catalog, collName, recSet, writeOptions)
 
@@ -1850,15 +1887,21 @@ function Util.addPhotosToTrainedStylesCollection(photos, profileName, styleName,
 	end
 	writeOptions = writeOptions or { timeout = 60 }
 	local catalog = LrApplication.activeCatalog()
-	
+
 	local rootSet = getOrCreateCollectionSet(catalog, "StyleAI", nil, writeOptions)
-	if not rootSet then return nil end
-	
+	if not rootSet then
+		return nil
+	end
+
 	local trainedSet = getOrCreateCollectionSet(catalog, "Trained Styles", rootSet, writeOptions)
-	if not trainedSet then return nil end
-	
+	if not trainedSet then
+		return nil
+	end
+
 	local profileSet = getOrCreateCollectionSet(catalog, profileName or "Unknown Profile", trainedSet, writeOptions)
-	if not profileSet then return nil end
+	if not profileSet then
+		return nil
+	end
 
 	local collection = getOrCreateCollection(catalog, styleName or "Unknown Style", profileSet, writeOptions)
 

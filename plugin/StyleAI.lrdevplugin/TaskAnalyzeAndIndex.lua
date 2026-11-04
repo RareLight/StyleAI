@@ -14,212 +14,223 @@ local Util = require("Util")
 -- @return table with configuration options or nil if canceled.
 --
 local function showAnalyzeAndIndexDialog(ctx)
-    local f = LrView.osFactory()
-    local bind = LrView.bind
-    local share = LrView.share
+	local f = LrView.osFactory()
+	local bind = LrView.bind
+	local share = LrView.share
 
-    local props = LrBinding.makePropertyTable(ctx)
+	local props = LrBinding.makePropertyTable(ctx)
 
-    -- Scope settings
-    props.scope = prefs.indexScope or "selected"
-    if props.scope == "view" then props.scope = "selected" end
-    props.indexingMode = prefs.indexingMode or "both"
+	-- Scope settings
+	props.scope = prefs.indexScope or "selected"
+	if props.scope == "view" then
+		props.scope = "selected"
+	end
+	props.indexingMode = prefs.indexingMode or "both"
 	local selectedPhotos = LrApplication.activeCatalog():getTargetPhotos() or {}
 	props.selectedCount = #selectedPhotos
 
+	-- Check if CLIP model is ready on server non-blockingly
+	props.clipReady = true
+	LrTasks.startAsyncTask(function()
+		local ready = SearchIndexAPI.isClipReady()
+		if props and props.clipReady ~= nil then
+			props.clipReady = ready
+		end
+	end)
 
-    -- Check if CLIP model is ready on server non-blockingly
-    props.clipReady = true
-    LrTasks.startAsyncTask(function()
-        local ready = SearchIndexAPI.isClipReady()
-        if props and props.clipReady ~= nil then
-            props.clipReady = ready
-        end
-    end)
+	-- Tasks to perform (automatically aligned with selected indexingMode)
+	if props.indexingMode == "meta" then
+		props.enableEmbeddings = false
+		props.enableMetadata = true
+	elseif props.indexingMode == "embed" then
+		props.enableEmbeddings = props.clipReady
+		props.enableMetadata = false
+	else -- "both"
+		props.enableEmbeddings = props.clipReady
+		props.enableMetadata = true
+	end
+	props.regenerateMetadata = false
 
-    -- Tasks to perform (automatically aligned with selected indexingMode)
-    if props.indexingMode == "meta" then
-        props.enableEmbeddings = false
-        props.enableMetadata = true
-    elseif props.indexingMode == "embed" then
-        props.enableEmbeddings = props.clipReady
-        props.enableMetadata = false
-    else -- "both"
-        props.enableEmbeddings = props.clipReady
-        props.enableMetadata = true
-    end
-    props.regenerateMetadata = false
+	-- Automatically sync task checkboxes whenever indexingMode changes
+	props:addObserver("indexingMode", function(properties, key, newValue)
+		if newValue == "both" then
+			properties.enableEmbeddings = properties.clipReady
+			properties.enableMetadata = true
+		elseif newValue == "meta" then
+			properties.enableEmbeddings = false
+			properties.enableMetadata = true
+		elseif newValue == "embed" then
+			properties.enableEmbeddings = properties.clipReady
+			properties.enableMetadata = false
+		end
+	end)
 
-    -- Automatically sync task checkboxes whenever indexingMode changes
-    props:addObserver('indexingMode', function(properties, key, newValue)
-        if newValue == "both" then
-            properties.enableEmbeddings = properties.clipReady
-            properties.enableMetadata = true
-        elseif newValue == "meta" then
-            properties.enableEmbeddings = false
-            properties.enableMetadata = true
-        elseif newValue == "embed" then
-            properties.enableEmbeddings = properties.clipReady
-            properties.enableMetadata = false
-        end
-    end)
+	props:addObserver("clipReady", function(properties, key, newValue)
+		if properties.indexingMode == "embed" or properties.indexingMode == "both" then
+			properties.enableEmbeddings = newValue
+		end
+	end)
 
-    props:addObserver('clipReady', function(properties, key, newValue)
-        if properties.indexingMode == "embed" or properties.indexingMode == "both" then
-            properties.enableEmbeddings = newValue
-        end
-    end)
+	local syncingTasks = false
+	local function syncModeFromTasks(properties)
+		if syncingTasks then
+			return
+		end
+		syncingTasks = true
+		if properties.enableEmbeddings and properties.enableMetadata then
+			properties.indexingMode = "both"
+		elseif properties.enableEmbeddings then
+			properties.indexingMode = "embed"
+		elseif properties.enableMetadata then
+			properties.indexingMode = "meta"
+		end
+		syncingTasks = false
+	end
+	props:addObserver("enableEmbeddings", syncModeFromTasks)
+	props:addObserver("enableMetadata", syncModeFromTasks)
 
-    local syncingTasks = false
-    local function syncModeFromTasks(properties)
-        if syncingTasks then return end
-        syncingTasks = true
-        if properties.enableEmbeddings and properties.enableMetadata then
-            properties.indexingMode = "both"
-        elseif properties.enableEmbeddings then
-            properties.indexingMode = "embed"
-        elseif properties.enableMetadata then
-            properties.indexingMode = "meta"
-        end
-        syncingTasks = false
-    end
-    props:addObserver('enableEmbeddings', syncModeFromTasks)
-    props:addObserver('enableMetadata', syncModeFromTasks)
-
-    -- Force Re-index automatically switches write mode to overwrite (appendMetadata = false)
-    props:addObserver('regenerateMetadata', function(properties, key, newValue)
-        if newValue == true then
-            properties.appendMetadata = false
-        else
-            properties.appendMetadata = prefs.appendMetadata ~= false
-        end
-    end)
-	props:addObserver('scope', function(properties, key, newValue)
-		if newValue == 'missing' and properties.regenerateMetadata then
+	-- Force Re-index automatically switches write mode to overwrite (appendMetadata = false)
+	props:addObserver("regenerateMetadata", function(properties, key, newValue)
+		if newValue == true then
+			properties.appendMetadata = false
+		else
+			properties.appendMetadata = prefs.appendMetadata ~= false
+		end
+	end)
+	props:addObserver("scope", function(properties, key, newValue)
+		if newValue == "missing" and properties.regenerateMetadata then
 			properties.regenerateMetadata = false
 		end
 	end)
 
-    -- Metadata generation options
-    props.temperature = prefs.temperature or 0.1
-    props.promptTitles = {}
-    for title, _ in pairs(prefs.prompts) do
-        table.insert(props.promptTitles, { title = title, value = title })
-    end
+	-- Metadata generation options
+	props.temperature = prefs.temperature or 0.1
+	props.promptTitles = {}
+	for title, _ in pairs(prefs.prompts) do
+		table.insert(props.promptTitles, { title = title, value = title })
+	end
 
-    props.prompt = prefs.prompt
+	props.prompt = prefs.prompt
 	props.prompts = {}
 	for name, prompt in pairs(prefs.prompts or {}) do
 		props.prompts[name] = prompt
 	end
 
-    props.selectedPrompt = prefs.prompts[props.prompt]
+	props.selectedPrompt = prefs.prompts[props.prompt]
 
-    props:addObserver('prompt', function(properties, key, newValue)
-        properties.selectedPrompt = properties.prompts[newValue]
-    end)
+	props:addObserver("prompt", function(properties, key, newValue)
+		properties.selectedPrompt = properties.prompts[newValue]
+	end)
 
-    props:addObserver('selectedPrompt', function(properties, key, newValue)
-        if newValue ~= nil and properties.prompt then
-            properties.prompts[properties.prompt] = newValue
-        end
-    end)
+	props:addObserver("selectedPrompt", function(properties, key, newValue)
+		if newValue ~= nil and properties.prompt then
+			properties.prompts[properties.prompt] = newValue
+		end
+	end)
 
-    props.generateKeywords = prefs.generateKeywords ~= false
-    props.generateCaption = prefs.generateCaption ~= false
-    props.generateTitle = prefs.generateTitle ~= false
-    props.generateAltText = prefs.generateAltText or false
-    props.useKeywordHierarchy = prefs.useKeywordHierarchy or false
-    props.useCatalogKeywordStructure = prefs.useCatalogKeywordStructure or false
-    props.useTopLevelKeyword = true
-    props.topLevelKeyword = prefs.topLevelKeyword or "StyleAI"
-    props.bilingualKeywords = prefs.bilingualKeywords or false
-    props.keywordSecondaryLanguage = prefs.keywordSecondaryLanguage or Defaults.defaultKeywordSecondaryLanguage
+	props.generateKeywords = prefs.generateKeywords ~= false
+	props.generateCaption = prefs.generateCaption ~= false
+	props.generateTitle = prefs.generateTitle ~= false
+	props.generateAltText = prefs.generateAltText or false
+	props.useKeywordHierarchy = prefs.useKeywordHierarchy or false
+	props.useCatalogKeywordStructure = prefs.useCatalogKeywordStructure or false
+	props.useTopLevelKeyword = true
+	props.topLevelKeyword = prefs.topLevelKeyword or "StyleAI"
+	props.bilingualKeywords = prefs.bilingualKeywords or false
+	props.keywordSecondaryLanguage = prefs.keywordSecondaryLanguage or Defaults.defaultKeywordSecondaryLanguage
 
-    -- AI Model selection (unified across providers)
-    local activeProvider = prefs.activeMetadataProvider or Defaults.defaultMetadataProvider
-    props.modelKey = prefs[activeProvider .. "ModelKey"] or prefs.modelKey -- format: "provider::model"
-    props.language = prefs.generateLanguage or "English"
-    props.temperature = prefs.temperature or 0.1
-    props.replaceSS = prefs.replaceSS or false
+	-- AI Model selection (unified across providers)
+	local activeProvider = prefs.activeMetadataProvider or Defaults.defaultMetadataProvider
+	props.modelKey = prefs[activeProvider .. "ModelKey"] or prefs.modelKey -- format: "provider::model"
+	props.language = prefs.generateLanguage or "English"
+	props.temperature = prefs.temperature or 0.1
+	props.replaceSS = prefs.replaceSS or false
 
-    -- Build model list from server (local providers first)
-    local modelItems = {}
+	-- Build model list from server (local providers first)
+	local modelItems = {}
 
-    for _, choice in ipairs(SearchIndexAPI.getModelChoices()) do
-        table.insert(modelItems, { title = choice.title, value = choice.key })
-    end
+	for _, choice in ipairs(SearchIndexAPI.getModelChoices()) do
+		table.insert(modelItems, { title = choice.title, value = choice.key })
+	end
 
-    table.sort(modelItems, function(a, b) return a.title < b.title end)
-    if (not modelItems or #modelItems == 0) then
-        -- Fallback option if no models detected from backend
-        table.insert(modelItems, { title = LOC("$$$/StyleAI/TaskAiEditPhotos/NoModels=No AI models available"), value = "none" })
-    end
-    local validModelKeys = {}
-    for _, item in ipairs(modelItems) do validModelKeys[item.value] = true end
-    if not props.modelKey or props.modelKey == '' or not validModelKeys[props.modelKey] then
-        props.modelKey = modelItems[1].value
-    end
+	table.sort(modelItems, function(a, b)
+		return a.title < b.title
+	end)
+	if not modelItems or #modelItems == 0 then
+		-- Fallback option if no models detected from backend
+		table.insert(
+			modelItems,
+			{ title = LOC("$$$/StyleAI/TaskAiEditPhotos/NoModels=No AI models available"), value = "none" }
+		)
+	end
+	local validModelKeys = {}
+	for _, item in ipairs(modelItems) do
+		validModelKeys[item.value] = true
+	end
+	if not props.modelKey or props.modelKey == "" or not validModelKeys[props.modelKey] then
+		props.modelKey = modelItems[1].value
+	end
 
-    -- Context options
-    props.submitGPS = prefs.submitGPS or false
-    props.submitKeywords = prefs.submitKeywords or false
-    props.submitFolderName = prefs.submitFolderName or false
-    props.showPhotoContextDialog = prefs.showPhotoContextDialog or false
+	-- Context options
+	props.submitGPS = prefs.submitGPS or false
+	props.submitKeywords = prefs.submitKeywords or false
+	props.submitFolderName = prefs.submitFolderName or false
+	props.showPhotoContextDialog = prefs.showPhotoContextDialog or false
 
-    -- Catalog data writing options
-    props.saveDataToCatalog = prefs.saveDataToCatalog ~= false -- default true
-    props.appendMetadata = prefs.appendMetadata
-    if props.appendMetadata == nil then
-        props.appendMetadata = true
-    end
-    -- Validation
-    props.enableValidation = prefs.enableValidation or false
+	-- Catalog data writing options
+	props.saveDataToCatalog = prefs.saveDataToCatalog ~= false -- default true
+	props.appendMetadata = prefs.appendMetadata
+	if props.appendMetadata == nil then
+		props.appendMetadata = true
+	end
+	-- Validation
+	props.enableValidation = prefs.enableValidation or false
 
-    -- LLM status properties
-    local function updateLlmStatusText(properties)
-        local key = properties.modelKey
-        if not key or key == "" then
-            properties.llmStatusText = LOC("$$$/StyleAI/AnalyzeAndIndex/LlmStatusNone=LLM: No model selected")
-            properties.llmStatusColor = LrColor(0.8, 0, 0)
-            return
-        end
+	-- LLM status properties
+	local function updateLlmStatusText(properties)
+		local key = properties.modelKey
+		if not key or key == "" then
+			properties.llmStatusText = LOC("$$$/StyleAI/AnalyzeAndIndex/LlmStatusNone=LLM: No model selected")
+			properties.llmStatusColor = LrColor(0.8, 0, 0)
+			return
+		end
 
-        local sep = string.find(key, "::", 1, true)
-        local provider = key
-        if sep then
-            provider = string.sub(key, 1, sep - 1)
-        end
-        
-        local health = properties.healthData or {}
-        local providers = health.llm_providers or {}
-        local status = providers[provider]
+		local sep = string.find(key, "::", 1, true)
+		local provider = key
+		if sep then
+			provider = string.sub(key, 1, sep - 1)
+		end
 
-        if status == "available" or status == "registered" then
+		local health = properties.healthData or {}
+		local providers = health.llm_providers or {}
+		local status = providers[provider]
+
+		if status == "available" or status == "registered" then
 			properties.llmStatusText = LOC("$$$/StyleAI/Prepare/ProviderReady=^1: Ready", string.upper(provider))
-            properties.llmStatusColor = LrColor(0, 0.8, 0)
-        elseif status == "failed" then
-            local errMsg = health.llm_errors and health.llm_errors[provider] or "unknown error"
-			properties.llmStatusText = LOC("$$$/StyleAI/Prepare/ProviderFailed=^1: Failed (^2)", string.upper(provider), tostring(errMsg))
-            properties.llmStatusColor = LrColor(0.8, 0, 0)
-        elseif status == "not_configured" then
-			properties.llmStatusText = LOC("$$$/StyleAI/Prepare/ProviderNotConfigured=^1: Not configured", string.upper(provider))
-            properties.llmStatusColor = LrColor(0.8, 0.5, 0)
-        else
-			properties.llmStatusText = LOC("$$$/StyleAI/Prepare/ProviderUnknown=^1: Status unknown", string.upper(provider))
-            properties.llmStatusColor = LrColor(0.5, 0.5, 0.5)
-        end
-    end
+			properties.llmStatusColor = LrColor(0, 0.8, 0)
+		elseif status == "failed" then
+			local errMsg = health.llm_errors and health.llm_errors[provider] or "unknown error"
+			properties.llmStatusText =
+				LOC("$$$/StyleAI/Prepare/ProviderFailed=^1: Failed (^2)", string.upper(provider), tostring(errMsg))
+			properties.llmStatusColor = LrColor(0.8, 0, 0)
+		elseif status == "not_configured" then
+			properties.llmStatusText =
+				LOC("$$$/StyleAI/Prepare/ProviderNotConfigured=^1: Not configured", string.upper(provider))
+			properties.llmStatusColor = LrColor(0.8, 0.5, 0)
+		else
+			properties.llmStatusText =
+				LOC("$$$/StyleAI/Prepare/ProviderUnknown=^1: Status unknown", string.upper(provider))
+			properties.llmStatusColor = LrColor(0.5, 0.5, 0.5)
+		end
+	end
 
-    local healthData = SearchIndexAPI.getHealth()
-    props.healthData = healthData or {}
+	local healthData = SearchIndexAPI.getHealth()
+	props.healthData = healthData or {}
 
-    props:addObserver('modelKey', function(properties, key, newValue)
-        updateLlmStatusText(properties)
-    end)
-    updateLlmStatusText(props)
-
-
+	props:addObserver("modelKey", function(properties, key, newValue)
+		updateLlmStatusText(properties)
+	end)
+	updateLlmStatusText(props)
 
 	-- The former mode-popup/overlapping-view implementation was removed after
 	-- payload parity verification; the outcome-based controls below are now
@@ -255,11 +266,11 @@ local function showAnalyzeAndIndexDialog(ctx)
 		for _, key in ipairs(metadataSettingKeys) do
 			snapshot[key] = props[key]
 		end
-		local promptTitleMenu = f:popup_menu {
-			items = bind 'promptTitles',
-			value = bind 'prompt',
+		local promptTitleMenu = f:popup_menu({
+			items = bind("promptTitles"),
+			value = bind("prompt"),
 			width = 320,
-		}
+		})
 		props.promptTitleMenu = promptTitleMenu
 
 		local metadataContents = UIFactory.DialogColumn(f, {
@@ -267,163 +278,236 @@ local function showAnalyzeAndIndexDialog(ctx)
 			spacing = f:control_spacing(),
 			width = 700,
 			UIFactory.HelpText(f, {
-				title = LOC "$$$/StyleAI/Prepare/MetadataSettingsHelp=Choose the generated fields, local model, instructions, and optional context.",
+				title = LOC(
+					"$$$/StyleAI/Prepare/MetadataSettingsHelp=Choose the generated fields, local model, instructions, and optional context."
+				),
 			}),
-			f:tab_view {
+			f:tab_view({
 				fill_horizontal = 1,
-				f:tab_view_item {
-					title = LOC "$$$/StyleAI/Prepare/TabOutput=Metadata Output",
-					identifier = 'prepare_output',
-					f:column {
+				f:tab_view_item({
+					title = LOC("$$$/StyleAI/Prepare/TabOutput=Metadata Output"),
+					identifier = "prepare_output",
+					f:column({
 						spacing = f:control_spacing(),
 						UIFactory.SettingsGroup(f, {
-							title = LOC "$$$/StyleAI/AnalyzeAndIndex/MetadataOptions=Generated Fields",
-							f:row {
-								f:checkbox { value = bind 'generateKeywords', title = LOC "$$$/StyleAI/PluginInfoDialogSections/keywords=Keywords" },
-								f:checkbox { value = bind 'generateTitle', title = LOC "$$$/StyleAI/PluginInfoDialogSections/title=Title" },
-								f:checkbox { value = bind 'generateCaption', title = LOC "$$$/StyleAI/PluginInfoDialogSections/caption=Caption" },
-								f:checkbox { value = bind 'generateAltText', title = LOC "$$$/StyleAI/PluginInfoDialogSections/alttext=Alt Text" },
-							},
+							title = LOC("$$$/StyleAI/AnalyzeAndIndex/MetadataOptions=Generated Fields"),
+							f:row({
+								f:checkbox({
+									value = bind("generateKeywords"),
+									title = LOC("$$$/StyleAI/PluginInfoDialogSections/keywords=Keywords"),
+								}),
+								f:checkbox({
+									value = bind("generateTitle"),
+									title = LOC("$$$/StyleAI/PluginInfoDialogSections/title=Title"),
+								}),
+								f:checkbox({
+									value = bind("generateCaption"),
+									title = LOC("$$$/StyleAI/PluginInfoDialogSections/caption=Caption"),
+								}),
+								f:checkbox({
+									value = bind("generateAltText"),
+									title = LOC("$$$/StyleAI/PluginInfoDialogSections/alttext=Alt Text"),
+								}),
+							}),
 						}),
 						UIFactory.SettingsGroup(f, {
-							title = LOC "$$$/StyleAI/Prepare/KeywordOrganization=Keyword Organization",
-							f:checkbox {
-								value = bind 'useKeywordHierarchy',
-								enabled = bind 'generateKeywords',
-								title = LOC "$$$/StyleAI/UI/EnableHierarchy=Organize generated keywords in a hierarchy",
-							},
-							f:row {
-								visible = bind 'useKeywordHierarchy',
-								f:checkbox {
-									value = bind 'useCatalogKeywordStructure',
-									enabled = bind 'generateKeywords',
-									title = LOC "$$$/StyleAI/UI/UseCatalogKeywordStructure=Use the existing catalog structure",
-								},
-								f:push_button {
-									enabled = bind 'generateKeywords',
-									title = LOC "$$$/StyleAI/PluginInfoDialogSections/editKeywordHierarchy=Edit categories...",
-									action = function() KeywordConfigProvider.showKeywordCategoryDialog() end,
-								},
-							},
-							f:row {
-								f:checkbox {
-									value = bind 'bilingualKeywords',
-									enabled = bind 'generateKeywords',
-									title = LOC "$$$/StyleAI/UI/BilingualKeywords=Add bilingual keyword synonyms",
-								},
-								f:combo_box {
-									value = bind 'keywordSecondaryLanguage',
+							title = LOC("$$$/StyleAI/Prepare/KeywordOrganization=Keyword Organization"),
+							f:checkbox({
+								value = bind("useKeywordHierarchy"),
+								enabled = bind("generateKeywords"),
+								title = LOC(
+									"$$$/StyleAI/UI/EnableHierarchy=Organize generated keywords in a hierarchy"
+								),
+							}),
+							f:row({
+								visible = bind("useKeywordHierarchy"),
+								f:checkbox({
+									value = bind("useCatalogKeywordStructure"),
+									enabled = bind("generateKeywords"),
+									title = LOC(
+										"$$$/StyleAI/UI/UseCatalogKeywordStructure=Use the existing catalog structure"
+									),
+								}),
+								f:push_button({
+									enabled = bind("generateKeywords"),
+									title = LOC(
+										"$$$/StyleAI/PluginInfoDialogSections/editKeywordHierarchy=Edit categories..."
+									),
+									action = function()
+										KeywordConfigProvider.showKeywordCategoryDialog()
+									end,
+								}),
+							}),
+							f:row({
+								f:checkbox({
+									value = bind("bilingualKeywords"),
+									enabled = bind("generateKeywords"),
+									title = LOC("$$$/StyleAI/UI/BilingualKeywords=Add bilingual keyword synonyms"),
+								}),
+								f:combo_box({
+									value = bind("keywordSecondaryLanguage"),
 									items = Defaults.generateLanguages,
-									enabled = bind 'bilingualKeywords',
-								},
-							},
-						}),
-						UIFactory.SettingsGroup(f, {
-							title = LOC "$$$/StyleAI/Prepare/CatalogWriting=Lightroom Catalog",
-							f:checkbox {
-								value = bind 'saveDataToCatalog',
-								title = LOC "$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalog=Write generated metadata to the Lightroom catalog",
-							},
-							f:checkbox {
-								enabled = bind 'saveDataToCatalog',
-								value = bind 'enableValidation',
-								title = LOC "$$$/StyleAI/PluginInfoDialogSections/validation=Review each photo before saving",
-							},
-							f:column {
-								enabled = bind 'saveDataToCatalog',
-								f:radio_button {
-									value = bind 'appendMetadata',
-									checked_value = true,
-									title = LOC "$$$/StyleAI/Prepare/Append=Append generated metadata to existing values",
-								},
-								f:radio_button {
-									value = bind 'appendMetadata',
-									checked_value = false,
-									title = LOC "$$$/StyleAI/Prepare/Replace=Replace existing values for generated fields",
-								},
-							},
-							UIFactory.HelpText(f, {
-								title = LOC "$$$/StyleAI/Prepare/ReplaceFieldsHelp=Replace changes only the generated fields selected above; other Lightroom metadata is preserved.",
+									enabled = bind("bilingualKeywords"),
+								}),
 							}),
 						}),
-					},
-				},
-				f:tab_view_item {
-					title = LOC "$$$/StyleAI/Prepare/TabInstructions=Model & Instructions",
-					identifier = 'prepare_instructions',
-					f:column {
+						UIFactory.SettingsGroup(f, {
+							title = LOC("$$$/StyleAI/Prepare/CatalogWriting=Lightroom Catalog"),
+							f:checkbox({
+								value = bind("saveDataToCatalog"),
+								title = LOC(
+									"$$$/StyleAI/AnalyzeAndIndex/SaveDataToCatalog=Write generated metadata to the Lightroom catalog"
+								),
+							}),
+							f:checkbox({
+								enabled = bind("saveDataToCatalog"),
+								value = bind("enableValidation"),
+								title = LOC(
+									"$$$/StyleAI/PluginInfoDialogSections/validation=Review each photo before saving"
+								),
+							}),
+							f:column({
+								enabled = bind("saveDataToCatalog"),
+								f:radio_button({
+									value = bind("appendMetadata"),
+									checked_value = true,
+									title = LOC(
+										"$$$/StyleAI/Prepare/Append=Append generated metadata to existing values"
+									),
+								}),
+								f:radio_button({
+									value = bind("appendMetadata"),
+									checked_value = false,
+									title = LOC(
+										"$$$/StyleAI/Prepare/Replace=Replace existing values for generated fields"
+									),
+								}),
+							}),
+							UIFactory.HelpText(f, {
+								title = LOC(
+									"$$$/StyleAI/Prepare/ReplaceFieldsHelp=Replace changes only the generated fields selected above; other Lightroom metadata is preserved."
+								),
+							}),
+						}),
+					}),
+				}),
+				f:tab_view_item({
+					title = LOC("$$$/StyleAI/Prepare/TabInstructions=Model & Instructions"),
+					identifier = "prepare_instructions",
+					f:column({
 						spacing = f:control_spacing(),
 						UIFactory.SettingsGroup(f, {
-							title = LOC "$$$/StyleAI/AnalyzeAndIndex/LlmTasks=Local Metadata Model",
+							title = LOC("$$$/StyleAI/AnalyzeAndIndex/LlmTasks=Local Metadata Model"),
 							UIFactory.FormRow(f, {
-								label = LOC "$$$/StyleAI/PluginInfoDialogSections/aiModel=Model:",
-								labelWidth = share 'prepareMetadataLabel',
-								f:popup_menu { value = bind 'modelKey', items = modelItems, width = 540 },
+								label = LOC("$$$/StyleAI/PluginInfoDialogSections/aiModel=Model:"),
+								labelWidth = share("prepareMetadataLabel"),
+								f:popup_menu({ value = bind("modelKey"), items = modelItems, width = 540 }),
 							}),
 							UIFactory.FormRow(f, {
-								label = LOC "$$$/StyleAI/PluginInfoDialogSections/generateLanguage=Language:",
-								labelWidth = share 'prepareMetadataLabel',
-								f:combo_box { value = bind 'language', items = Defaults.generateLanguages },
+								label = LOC("$$$/StyleAI/PluginInfoDialogSections/generateLanguage=Language:"),
+								labelWidth = share("prepareMetadataLabel"),
+								f:combo_box({ value = bind("language"), items = Defaults.generateLanguages }),
 							}),
 							UIFactory.FormRow(f, {
-								label = LOC "$$$/StyleAI/AnalyzeAndIndex/Temperature=Creativity:",
-								labelWidth = share 'prepareMetadataLabel',
-								f:slider { value = bind 'temperature', min = 0.0, max = 0.5, fill_horizontal = 1 },
-								f:static_text { title = bind 'temperature' },
+								label = LOC("$$$/StyleAI/AnalyzeAndIndex/Temperature=Creativity:"),
+								labelWidth = share("prepareMetadataLabel"),
+								f:slider({ value = bind("temperature"), min = 0.0, max = 0.5, fill_horizontal = 1 }),
+								f:static_text({ title = bind("temperature") }),
 							}),
 						}),
 						UIFactory.SettingsGroup(f, {
-							title = LOC "$$$/StyleAI/UI/PromptTitle=Prompt Template",
-							f:row {
+							title = LOC("$$$/StyleAI/UI/PromptTitle=Prompt Template"),
+							f:row({
 								fill_horizontal = 1,
 								promptTitleMenu,
-								f:push_button { title = LOC "$$$/StyleAI/PluginInfoDialogSections/add=Add...", action = function() PromptConfigProvider.addPrompt(props) end },
-								f:push_button { title = LOC "$$$/StyleAI/PromptConfig/Rename=Rename", action = function() PromptConfigProvider.renamePrompt(props) end },
-								f:push_button { title = LOC "$$$/StyleAI/PluginInfoDialogSections/delete=Delete", action = function() PromptConfigProvider.deletePrompt(props) end },
-								f:push_button { title = LOC "$$$/StyleAI/PromptConfig/RestoreAction=Restore Default", action = function() PromptConfigProvider.restoreDefaultPrompt(props, Defaults.defaultSystemInstruction) end },
-							},
-							f:scrolled_view {
+								f:push_button({
+									title = LOC("$$$/StyleAI/PluginInfoDialogSections/add=Add..."),
+									action = function()
+										PromptConfigProvider.addPrompt(props)
+									end,
+								}),
+								f:push_button({
+									title = LOC("$$$/StyleAI/PromptConfig/Rename=Rename"),
+									action = function()
+										PromptConfigProvider.renamePrompt(props)
+									end,
+								}),
+								f:push_button({
+									title = LOC("$$$/StyleAI/PluginInfoDialogSections/delete=Delete"),
+									action = function()
+										PromptConfigProvider.deletePrompt(props)
+									end,
+								}),
+								f:push_button({
+									title = LOC("$$$/StyleAI/PromptConfig/RestoreAction=Restore Default"),
+									action = function()
+										PromptConfigProvider.restoreDefaultPrompt(
+											props,
+											Defaults.defaultSystemInstruction
+										)
+									end,
+								}),
+							}),
+							f:scrolled_view({
 								fill_horizontal = 1,
 								height = 150,
 								horizontal_scroller = false,
 								vertical_scroller = true,
-								f:edit_field {
-									value = bind 'selectedPrompt',
+								f:edit_field({
+									value = bind("selectedPrompt"),
 									fill_horizontal = 1,
 									height_in_lines = 10,
 									wraps = true,
 									allow_newlines = true,
-								},
-							},
-						}),
-					},
-				},
-				f:tab_view_item {
-					title = LOC "$$$/StyleAI/Prepare/TabContext=Context",
-					identifier = 'prepare_context',
-					UIFactory.SettingsGroup(f, {
-						title = LOC "$$$/StyleAI/AnalyzeAndIndex/ContextOptions=Optional Context Sent to the Local Model",
-						f:checkbox { value = bind 'submitGPS', title = LOC "$$$/StyleAI/MetadataProvider/GPS=GPS coordinates" },
-						f:checkbox { value = bind 'submitKeywords', title = LOC "$$$/StyleAI/PluginInfoDialogSections/submitKeywords=Existing Lightroom keywords" },
-						f:checkbox { value = bind 'submitFolderName', title = LOC "$$$/StyleAI/PluginInfoDialogSections/folderNames=Parent folder names" },
-						f:checkbox { value = bind 'showPhotoContextDialog', title = LOC "$$$/StyleAI/Prepare/AskContext=Ask for optional instructions for each photo" },
-						UIFactory.HelpText(f, {
-							title = LOC "$$$/StyleAI/Prepare/ContextLocal=All selected context remains on this computer and is sent only to the selected local model.",
+								}),
+							}),
 						}),
 					}),
-				},
-			},
+				}),
+				f:tab_view_item({
+					title = LOC("$$$/StyleAI/Prepare/TabContext=Context"),
+					identifier = "prepare_context",
+					UIFactory.SettingsGroup(f, {
+						title = LOC(
+							"$$$/StyleAI/AnalyzeAndIndex/ContextOptions=Optional Context Sent to the Local Model"
+						),
+						f:checkbox({
+							value = bind("submitGPS"),
+							title = LOC("$$$/StyleAI/MetadataProvider/GPS=GPS coordinates"),
+						}),
+						f:checkbox({
+							value = bind("submitKeywords"),
+							title = LOC(
+								"$$$/StyleAI/PluginInfoDialogSections/submitKeywords=Existing Lightroom keywords"
+							),
+						}),
+						f:checkbox({
+							value = bind("submitFolderName"),
+							title = LOC("$$$/StyleAI/PluginInfoDialogSections/folderNames=Parent folder names"),
+						}),
+						f:checkbox({
+							value = bind("showPhotoContextDialog"),
+							title = LOC("$$$/StyleAI/Prepare/AskContext=Ask for optional instructions for each photo"),
+						}),
+						UIFactory.HelpText(f, {
+							title = LOC(
+								"$$$/StyleAI/Prepare/ContextLocal=All selected context remains on this computer and is sent only to the selected local model."
+							),
+						}),
+					}),
+				}),
+			}),
 		})
 
-		local result = LrDialogs.presentModalDialog {
-			title = LOC "$$$/StyleAI/Prepare/MetadataSettingsTitle=Local Metadata Settings",
+		local result = LrDialogs.presentModalDialog({
+			title = LOC("$$$/StyleAI/Prepare/MetadataSettingsTitle=Local Metadata Settings"),
 			contents = metadataContents,
-			actionVerb = LOC "$$$/StyleAI/common/Done=Done",
-			cancelVerb = LOC "$$$/StyleAI/common/Cancel=Cancel",
+			actionVerb = LOC("$$$/StyleAI/common/Done=Done"),
+			cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
 			resizable = true,
-		}
+		})
 
-		if result ~= 'ok' then
+		if result ~= "ok" then
 			props.prompts = Util.deepcopy(snapshot.prompts)
 			props.promptTitles = Util.deepcopy(snapshot.promptTitles)
 			for _, key in ipairs(metadataSettingKeys) do
@@ -433,274 +517,316 @@ local function showAnalyzeAndIndexDialog(ctx)
 	end
 
 	local contents = UIFactory.DialogColumn(f, {
-        bind_to_object = props,
-        spacing = f:control_spacing(),
+		bind_to_object = props,
+		spacing = f:control_spacing(),
 		width = 620,
 
 		UIFactory.Notice(f, {
 			kind = "info",
-			title = LOC "$$$/StyleAI/Prepare/Intro=Prepare photos for learned editing and optional local metadata.",
+			title = LOC("$$$/StyleAI/Prepare/Intro=Prepare photos for learned editing and optional local metadata."),
 		}),
 
-        UIFactory.SettingsGroup(f, {
-            title = LOC "$$$/StyleAI/Prepare/Tasks=What should StyleAI do?",
-            f:row {
-                fill_horizontal = 1,
-                f:checkbox {
-                    value = bind 'enableEmbeddings',
-                    title = LOC "$$$/StyleAI/Prepare/Analyze=Analyze photos for StyleAI",
-                    enabled = bind 'clipReady',
-                },
-                f:static_text {
-                    title = bind {
-                        key = 'clipReady',
-                        transform = function(ready)
-                            return ready
-                                and LOC "$$$/StyleAI/Prepare/VisionReady=Vision model ready"
-                                or LOC "$$$/StyleAI/Prepare/VisionMissing=Vision model needs setup"
-                        end,
-                    },
-					width = 210,
-					wrap = true,
-                },
-            },
-			UIFactory.HelpText(f, {
-				title = LOC "$$$/StyleAI/Prepare/AnalyzeHelp=Creates visual analysis for learned editing and training recommendations.",
-            }),
-            f:row {
-                fill_horizontal = 1,
-                f:checkbox {
-                    value = bind 'enableMetadata',
-                    title = LOC "$$$/StyleAI/Prepare/Metadata=Generate keywords and descriptions",
-                },
-                f:static_text {
-                    title = bind 'llmStatusText',
-                    text_color = bind 'llmStatusColor',
-					width = 210,
-					wrap = true,
-                },
-            },
-			UIFactory.HelpText(f, {
-				title = LOC "$$$/StyleAI/Prepare/MetadataHelp=Uses your selected local vision-language model to generate Lightroom metadata.",
-			}),
-			f:row {
-				f:push_button {
-					title = LOC "$$$/StyleAI/Prepare/MetadataSettingsAction=Metadata Settings...",
-					enabled = bind 'enableMetadata',
-					action = showMetadataSettingsDialog,
-				},
-			},
-        }),
-
-        UIFactory.SettingsGroup(f, {
-            title = LOC "$$$/StyleAI/Prepare/Photos=Photos and existing data",
-            UIFactory.FormRow(f, {
-                label = LOC "$$$/StyleAI/common/Scope=Scope:",
-                labelWidth = share 'prepareLabelWidth',
-                f:popup_menu {
-                    value = bind 'scope',
-					width = 360,
-                    items = {
-                        { title = LOC "$$$/StyleAI/common/ScopeSelected=Selected photos only", value = 'selected' },
-                        { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeAll=All photos in catalog", value = 'all' },
-                        { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos", value = 'missing' },
-                        { title = LOC "$$$/StyleAI/AnalyzeAndIndex/ScopeIndexed=Previously indexed photos", value = 'indexed' },
-                    },
-                },
-            }),
-            UIFactory.FormRow(f, {
-                label = LOC "$$$/StyleAI/Prepare/Existing=Existing StyleAI data:",
-                labelWidth = share 'prepareLabelWidth',
-                f:column {
-                    f:radio_button {
-                        value = bind 'regenerateMetadata',
-                        checked_value = false,
-                        title = LOC "$$$/StyleAI/Prepare/SkipExisting=Keep existing data and process only what is needed",
-                    },
-                    f:radio_button {
-                        value = bind 'regenerateMetadata',
-                        checked_value = true,
-						enabled = bind {
-							key = 'scope',
-							transform = function(scope) return scope ~= 'missing' end,
-						},
-                        title = LOC "$$$/StyleAI/Prepare/ReplaceExisting=Replace selected StyleAI-generated data",
-                    },
-					UIFactory.HelpText(f, {
-						visible = bind { key = 'scope', transform = function(scope) return scope == 'missing' end },
-						title = LOC "$$$/StyleAI/Prepare/MissingKeepsExisting=New or unprocessed scope always keeps existing StyleAI data; choose another scope to replace data.",
+		UIFactory.SettingsGroup(f, {
+			title = LOC("$$$/StyleAI/Prepare/Tasks=What should StyleAI do?"),
+			f:row({
+				fill_horizontal = 1,
+				f:checkbox({
+					value = bind("enableEmbeddings"),
+					title = LOC("$$$/StyleAI/Prepare/Analyze=Analyze photos for StyleAI"),
+					enabled = bind("clipReady"),
+				}),
+				f:static_text({
+					title = bind({
+						key = "clipReady",
+						transform = function(ready)
+							return ready and LOC("$$$/StyleAI/Prepare/VisionReady=Vision model ready")
+								or LOC("$$$/StyleAI/Prepare/VisionMissing=Vision model needs setup")
+						end,
 					}),
-                },
-            }),
+					width = 210,
+					wrap = true,
+				}),
+			}),
 			UIFactory.HelpText(f, {
-				title = LOC "$$$/StyleAI/Prepare/ExistingDataHelp=Keep is recommended. Replace affects only StyleAI data selected for this run.",
+				title = LOC(
+					"$$$/StyleAI/Prepare/AnalyzeHelp=Creates visual analysis for learned editing and training recommendations."
+				),
+			}),
+			f:row({
+				fill_horizontal = 1,
+				f:checkbox({
+					value = bind("enableMetadata"),
+					title = LOC("$$$/StyleAI/Prepare/Metadata=Generate keywords and descriptions"),
+				}),
+				f:static_text({
+					title = bind("llmStatusText"),
+					text_color = bind("llmStatusColor"),
+					width = 210,
+					wrap = true,
+				}),
+			}),
+			UIFactory.HelpText(f, {
+				title = LOC(
+					"$$$/StyleAI/Prepare/MetadataHelp=Uses your selected local vision-language model to generate Lightroom metadata."
+				),
+			}),
+			f:row({
+				f:push_button({
+					title = LOC("$$$/StyleAI/Prepare/MetadataSettingsAction=Metadata Settings..."),
+					enabled = bind("enableMetadata"),
+					action = showMetadataSettingsDialog,
+				}),
 			}),
 		}),
 
-        UIFactory.Summary(f, {
-            title = LOC "$$$/StyleAI/UI/Summary=Run Summary",
-            text = bind {
-				keys = { 'enableEmbeddings', 'enableMetadata', 'scope', 'regenerateMetadata', 'selectedCount' },
-                transform = function()
-                    local tasks = {}
-                    if props.enableEmbeddings then table.insert(tasks, LOC "$$$/StyleAI/Prepare/SummaryAnalyze=visual analysis") end
-                    if props.enableMetadata then table.insert(tasks, LOC "$$$/StyleAI/Prepare/SummaryMetadata=local metadata") end
-                    local taskText = #tasks > 0 and table.concat(tasks, " + ") or LOC "$$$/StyleAI/Prepare/SummaryNone=no task selected"
-                    local existingText = props.regenerateMetadata
-                        and LOC "$$$/StyleAI/Prepare/SummaryReplace=replace selected existing StyleAI data"
-                        or LOC "$$$/StyleAI/Prepare/SummaryKeep=keep existing data where available"
-					local scopeText = props.scope == 'selected'
-						and LOC("$$$/StyleAI/Prepare/SummarySelected=^1 selected photo(s)", tostring(props.selectedCount or 0))
-						or LOC "$$$/StyleAI/Prepare/SummaryChosenScope=the chosen photo scope"
+		UIFactory.SettingsGroup(f, {
+			title = LOC("$$$/StyleAI/Prepare/Photos=Photos and existing data"),
+			UIFactory.FormRow(f, {
+				label = LOC("$$$/StyleAI/common/Scope=Scope:"),
+				labelWidth = share("prepareLabelWidth"),
+				f:popup_menu({
+					value = bind("scope"),
+					width = 360,
+					items = {
+						{ title = LOC("$$$/StyleAI/common/ScopeSelected=Selected photos only"), value = "selected" },
+						{ title = LOC("$$$/StyleAI/AnalyzeAndIndex/ScopeAll=All photos in catalog"), value = "all" },
+						{
+							title = LOC("$$$/StyleAI/AnalyzeAndIndex/ScopeMissing=New or unprocessed photos"),
+							value = "missing",
+						},
+						{
+							title = LOC("$$$/StyleAI/AnalyzeAndIndex/ScopeIndexed=Previously indexed photos"),
+							value = "indexed",
+						},
+					},
+				}),
+			}),
+			UIFactory.FormRow(f, {
+				label = LOC("$$$/StyleAI/Prepare/Existing=Existing StyleAI data:"),
+				labelWidth = share("prepareLabelWidth"),
+				f:column({
+					f:radio_button({
+						value = bind("regenerateMetadata"),
+						checked_value = false,
+						title = LOC(
+							"$$$/StyleAI/Prepare/SkipExisting=Keep existing data and process only what is needed"
+						),
+					}),
+					f:radio_button({
+						value = bind("regenerateMetadata"),
+						checked_value = true,
+						enabled = bind({
+							key = "scope",
+							transform = function(scope)
+								return scope ~= "missing"
+							end,
+						}),
+						title = LOC("$$$/StyleAI/Prepare/ReplaceExisting=Replace selected StyleAI-generated data"),
+					}),
+					UIFactory.HelpText(f, {
+						visible = bind({
+							key = "scope",
+							transform = function(scope)
+								return scope == "missing"
+							end,
+						}),
+						title = LOC(
+							"$$$/StyleAI/Prepare/MissingKeepsExisting=New or unprocessed scope always keeps existing StyleAI data; choose another scope to replace data."
+						),
+					}),
+				}),
+			}),
+			UIFactory.HelpText(f, {
+				title = LOC(
+					"$$$/StyleAI/Prepare/ExistingDataHelp=Keep is recommended. Replace affects only StyleAI data selected for this run."
+				),
+			}),
+		}),
+
+		UIFactory.Summary(f, {
+			title = LOC("$$$/StyleAI/UI/Summary=Run Summary"),
+			text = bind({
+				keys = { "enableEmbeddings", "enableMetadata", "scope", "regenerateMetadata", "selectedCount" },
+				transform = function()
+					local tasks = {}
+					if props.enableEmbeddings then
+						table.insert(tasks, LOC("$$$/StyleAI/Prepare/SummaryAnalyze=visual analysis"))
+					end
+					if props.enableMetadata then
+						table.insert(tasks, LOC("$$$/StyleAI/Prepare/SummaryMetadata=local metadata"))
+					end
+					local taskText = #tasks > 0 and table.concat(tasks, " + ")
+						or LOC("$$$/StyleAI/Prepare/SummaryNone=no task selected")
+					local existingText = props.regenerateMetadata
+							and LOC("$$$/StyleAI/Prepare/SummaryReplace=replace selected existing StyleAI data")
+						or LOC("$$$/StyleAI/Prepare/SummaryKeep=keep existing data where available")
+					local scopeText = props.scope == "selected"
+							and LOC(
+								"$$$/StyleAI/Prepare/SummarySelected=^1 selected photo(s)",
+								tostring(props.selectedCount or 0)
+							)
+						or LOC("$$$/StyleAI/Prepare/SummaryChosenScope=the chosen photo scope")
 					return scopeText .. " — " .. taskText .. " — " .. existingText
-                end,
-            },
-        }),
-    })
+				end,
+			}),
+		}),
+	})
 
-    local result = LrDialogs.presentModalDialog {
-        title = LOC "$$$/StyleAI/Prepare/WindowTitle=Prepare Photos",
-        contents = contents,
-        actionVerb = LOC "$$$/StyleAI/Prepare/Action=Prepare Photos",
-        cancelVerb = LOC "$$$/StyleAI/common/Cancel=Cancel",
-        resizable = true,
-    }
+	local result = LrDialogs.presentModalDialog({
+		title = LOC("$$$/StyleAI/Prepare/WindowTitle=Prepare Photos"),
+		contents = contents,
+		actionVerb = LOC("$$$/StyleAI/Prepare/Action=Prepare Photos"),
+		cancelVerb = LOC("$$$/StyleAI/common/Cancel=Cancel"),
+		resizable = true,
+	})
 
-    if result == 'ok' then
+	if result == "ok" then
 		if not props.enableEmbeddings and not props.enableMetadata then
 			LrDialogs.message(
-				LOC "$$$/StyleAI/Prepare/NoTaskTitle=Nothing Selected",
-				LOC "$$$/StyleAI/Prepare/NoTaskMessage=Select Analyze photos for StyleAI, Generate keywords and descriptions, or both.",
+				LOC("$$$/StyleAI/Prepare/NoTaskTitle=Nothing Selected"),
+				LOC(
+					"$$$/StyleAI/Prepare/NoTaskMessage=Select Analyze photos for StyleAI, Generate keywords and descriptions, or both."
+				),
 				"warning"
 			)
 			return nil
 		end
 		if props.enableMetadata and (not props.modelKey or props.modelKey == "" or props.modelKey == "none") then
 			LrDialogs.message(
-				LOC "$$$/StyleAI/Prepare/NoModelTitle=Local Metadata Model Required",
-				LOC "$$$/StyleAI/Prepare/NoModelMessage=Choose an available local Ollama or LM Studio model, or turn off metadata generation.",
+				LOC("$$$/StyleAI/Prepare/NoModelTitle=Local Metadata Model Required"),
+				LOC(
+					"$$$/StyleAI/Prepare/NoModelMessage=Choose an available local Ollama or LM Studio model, or turn off metadata generation."
+				),
 				"warning"
 			)
 			return nil
 		end
-		if props.enableMetadata and not (props.generateKeywords or props.generateCaption or props.generateTitle or props.generateAltText) then
+		if
+			props.enableMetadata
+			and not (props.generateKeywords or props.generateCaption or props.generateTitle or props.generateAltText)
+		then
 			LrDialogs.message(
-				LOC "$$$/StyleAI/Prepare/NoFieldsTitle=No Metadata Fields Selected",
-				LOC "$$$/StyleAI/Prepare/NoFieldsMessage=Select at least one generated metadata field, or turn off metadata generation.",
+				LOC("$$$/StyleAI/Prepare/NoFieldsTitle=No Metadata Fields Selected"),
+				LOC(
+					"$$$/StyleAI/Prepare/NoFieldsMessage=Select at least one generated metadata field, or turn off metadata generation."
+				),
 				"warning"
 			)
 			return nil
 		end
-        -- Save preferences
-        prefs.indexingMode = props.indexingMode
-        prefs.indexScope = props.scope
-        prefs.enableEmbeddings = props.enableEmbeddings
-        prefs.enableMetadata = props.enableMetadata
-        prefs.appendMetadata = props.appendMetadata
-        prefs.generateKeywords = props.generateKeywords
-        prefs.generateCaption = props.generateCaption
-        prefs.generateTitle = props.generateTitle
-        prefs.generateAltText = props.generateAltText
-        prefs.replaceSS = props.replaceSS
-        prefs.modelKey = props.modelKey
-        if props.modelKey then
-            local sep = string.find(props.modelKey, "::", 1, true)
-            if sep then
-                local prov = string.sub(props.modelKey, 1, sep - 1)
-                prefs.ai = prov
-                prefs[prov .. "ModelKey"] = props.modelKey
-            end
-        end
-        prefs.generateLanguage = props.language
-        prefs.temperature = props.temperature
-        prefs.submitGPS = props.submitGPS
-        prefs.submitKeywords = props.submitKeywords
-        prefs.submitFolderName = props.submitFolderName
-        prefs.showPhotoContextDialog = props.showPhotoContextDialog
-        prefs.enableValidation = props.enableValidation
-        prefs.saveDataToCatalog = props.saveDataToCatalog
-        prefs.indexingPerformanceProfile = prefs.indexingPerformanceProfile or 2
-        prefs.prompt = props.prompt
-        prefs.prompts = props.prompts
-        prefs.useKeywordHierarchy = props.useKeywordHierarchy
-        prefs.useCatalogKeywordStructure = props.useCatalogKeywordStructure
-        prefs.useTopLevelKeyword = props.useTopLevelKeyword
-        prefs.topLevelKeyword = props.topLevelKeyword
-        prefs.bilingualKeywords = props.bilingualKeywords
-        prefs.keywordSecondaryLanguage = props.keywordSecondaryLanguage
+		-- Save preferences
+		prefs.indexingMode = props.indexingMode
+		prefs.indexScope = props.scope
+		prefs.enableEmbeddings = props.enableEmbeddings
+		prefs.enableMetadata = props.enableMetadata
+		prefs.appendMetadata = props.appendMetadata
+		prefs.generateKeywords = props.generateKeywords
+		prefs.generateCaption = props.generateCaption
+		prefs.generateTitle = props.generateTitle
+		prefs.generateAltText = props.generateAltText
+		prefs.replaceSS = props.replaceSS
+		prefs.modelKey = props.modelKey
+		if props.modelKey then
+			local sep = string.find(props.modelKey, "::", 1, true)
+			if sep then
+				local prov = string.sub(props.modelKey, 1, sep - 1)
+				prefs.ai = prov
+				prefs[prov .. "ModelKey"] = props.modelKey
+			end
+		end
+		prefs.generateLanguage = props.language
+		prefs.temperature = props.temperature
+		prefs.submitGPS = props.submitGPS
+		prefs.submitKeywords = props.submitKeywords
+		prefs.submitFolderName = props.submitFolderName
+		prefs.showPhotoContextDialog = props.showPhotoContextDialog
+		prefs.enableValidation = props.enableValidation
+		prefs.saveDataToCatalog = props.saveDataToCatalog
+		prefs.indexingPerformanceProfile = prefs.indexingPerformanceProfile or 2
+		prefs.prompt = props.prompt
+		prefs.prompts = props.prompts
+		prefs.useKeywordHierarchy = props.useKeywordHierarchy
+		prefs.useCatalogKeywordStructure = props.useCatalogKeywordStructure
+		prefs.useTopLevelKeyword = props.useTopLevelKeyword
+		prefs.topLevelKeyword = props.topLevelKeyword
+		prefs.bilingualKeywords = props.bilingualKeywords
+		prefs.keywordSecondaryLanguage = props.keywordSecondaryLanguage
 
-        -- Keep track of used top-level keywords
-        if not prefs.knownTopLevelKeywords then prefs.knownTopLevelKeywords = {} end
-        if props.useTopLevelKeyword and not Util.table_contains(prefs.knownTopLevelKeywords, props.topLevelKeyword) then
-            table.insert(prefs.knownTopLevelKeywords, props.topLevelKeyword)
-        end
+		-- Keep track of used top-level keywords
+		if not prefs.knownTopLevelKeywords then
+			prefs.knownTopLevelKeywords = {}
+		end
+		if props.useTopLevelKeyword and not Util.table_contains(prefs.knownTopLevelKeywords, props.topLevelKeyword) then
+			table.insert(prefs.knownTopLevelKeywords, props.topLevelKeyword)
+		end
 
-        return props
-    end
+		return props
+	end
 
-    return nil
+	return nil
 end
 
-
 local function showPhotoContextDialog(photo)
-    local f = LrView.osFactory()
-    local bind = LrView.bind
+	local f = LrView.osFactory()
+	local bind = LrView.bind
 
-    local props = {}
-    props.skipFromHere = SkipPhotoContextDialog
-    local photoContextFromCatalog = photo:getPropertyForPlugin(_PLUGIN, 'photoContext')
-    if photoContextFromCatalog ~= nil then
-        PhotoContextData = photoContextFromCatalog
-    end
-    props.photoContextData = PhotoContextData
-    props.skipFromHere = false
+	local props = {}
+	props.skipFromHere = SkipPhotoContextDialog
+	local photoContextFromCatalog = photo:getPropertyForPlugin(_PLUGIN, "photoContext")
+	if photoContextFromCatalog ~= nil then
+		PhotoContextData = photoContextFromCatalog
+	end
+	props.photoContextData = PhotoContextData
+	props.skipFromHere = false
 
-    local dialogView = UIFactory.DialogColumn(f, {
-        bind_to_object = props,
+	local dialogView = UIFactory.DialogColumn(f, {
+		bind_to_object = props,
 		spacing = f:control_spacing(),
 		width = 620,
-        f:row {
-            f:static_text {
-                title = photo:getFormattedMetadata('fileName'),
-            },
-        },
-        f:row {
-            alignment = "center",
-            f:catalog_photo {
-                photo = photo,
+		f:row({
+			f:static_text({
+				title = photo:getFormattedMetadata("fileName"),
+			}),
+		}),
+		f:row({
+			alignment = "center",
+			f:catalog_photo({
+				photo = photo,
 				width = 240, -- Bounded preview; avoids unbounded modal growth.
-            },
-        },
-        f:row {
-            f:static_text {
-                title = LOC "$$$/StyleAI/AnalyzeImageTask/PhotoContextDialogData=Photo Context",
-            },
-        },
-        f:row {
+			}),
+		}),
+		f:row({
+			f:static_text({
+				title = LOC("$$$/StyleAI/AnalyzeImageTask/PhotoContextDialogData=Photo Context"),
+			}),
+		}),
+		f:row({
 			fill_horizontal = 1,
-            f:edit_field {
-                value = bind 'photoContextData',
+			f:edit_field({
+				value = bind("photoContextData"),
 				fill_horizontal = 1,
-                height_in_lines = 10,
+				height_in_lines = 10,
 				wraps = true,
 				allow_newlines = true,
-            },
-        },
-        f:checkbox {
-            value = bind 'skipFromHere',
-			title = LOC "$$$/StyleAI/AnalyzeImageTask/SkipPreflightFromHere=Use this context for all remaining photos.",
-        },
-    })
+			}),
+		}),
+		f:checkbox({
+			value = bind("skipFromHere"),
+			title = LOC(
+				"$$$/StyleAI/AnalyzeImageTask/SkipPreflightFromHere=Use this context for all remaining photos."
+			),
+		}),
+	})
 
-    local result = LrDialogs.presentModalDialog({
-        title = LOC "$$$/StyleAI/AnalyzeImageTask/PhotoContextDialogData=Photo Context",
-        contents = dialogView,
+	local result = LrDialogs.presentModalDialog({
+		title = LOC("$$$/StyleAI/AnalyzeImageTask/PhotoContextDialogData=Photo Context"),
+		contents = dialogView,
 		resizable = true,
-    })
+	})
 
-    SkipPhotoContextDialog = props.skipFromHere
+	SkipPhotoContextDialog = props.skipFromHere
 
-    return result, props.photoContextData, props.skipFromHere
+	return result, props.photoContextData, props.skipFromHere
 end
 
 -- Apply a keyword name mapping to a keyword structure (flat strings, hierarchical dict,
@@ -766,10 +892,7 @@ LrTasks.startAsyncTask(function()
 		end
 
 		-- Validate that at least one task is selected
-		if
-			not props.enableEmbeddings
-			and not props.enableMetadata
-		then
+		if not props.enableEmbeddings and not props.enableMetadata then
 			LrDialogs.showError(
 				LOC("$$$/StyleAI/AnalyzeAndIndex/NoTasksSelected=Please select at least one task to perform.")
 			)
@@ -800,7 +923,6 @@ LrTasks.startAsyncTask(function()
 		if props.enableMetadata and (props.indexingMode == "meta" or props.indexingMode == "both") then
 			table.insert(tasks, "metadata")
 		end
-
 
 		-- Parse provider and model from unified modelKey (format: provider::model)
 		local providerFromKey, modelFromKey = nil, nil
@@ -839,7 +961,6 @@ LrTasks.startAsyncTask(function()
 			bilingual_keywords = props.bilingualKeywords,
 			keyword_secondary_language = props.keywordSecondaryLanguage,
 		}
-
 
 		if prefs.useKeywordHierarchy then
 			if prefs.useCatalogKeywordStructure then
@@ -929,12 +1050,11 @@ LrTasks.startAsyncTask(function()
 		-- Indexing and local metadata generation are machine-saturating workflows.
 		-- Queue a second Lightroom request instead of multiplying GPU/LLM contexts.
 		progressScope:setCaption(
-			LOC("$$$/StyleAI/AnalyzeAndIndex/WaitingForWorkflow=Waiting for an earlier indexing or tagging operation...")
+			LOC(
+				"$$$/StyleAI/AnalyzeAndIndex/WaitingForWorkflow=Waiting for an earlier indexing or tagging operation..."
+			)
 		)
-		local workflowLease, workflowLeaseError = WorkCoordinator.acquire(
-			"backend_index_workflow",
-			progressScope
-		)
+		local workflowLease, workflowLeaseError = WorkCoordinator.acquire("backend_index_workflow", progressScope)
 		if not workflowLease then
 			progressScope:done()
 			if workflowLeaseError ~= "canceled" then
@@ -988,7 +1108,9 @@ LrTasks.startAsyncTask(function()
 					end, Defaults.catalogWriteAccessOptions)
 				end)
 				WorkCoordinator.release(writeLease)
-				if not writeOk then error(writeError) end
+				if not writeOk then
+					error(writeError)
+				end
 			end
 		end
 		options.deferCatalogHandoff = props.enableMetadata and props.saveDataToCatalog and not usedInlineApply
@@ -1003,7 +1125,6 @@ LrTasks.startAsyncTask(function()
 		-- No LLM validation here — CLIP threshold alone keeps latency reasonable.
 		local keywordMapping = {}
 		local mergedPairs = {} -- {from="Automobile", to="Car"} for dialog display
-
 
 		if
 			status ~= "allfailed"

@@ -355,11 +355,11 @@ def test_training_operation_fingerprint_covers_complete_deduplicated_request():
     capture = task_source.index("local requestedOperationItemIds = operationItemIds")
     filtering = task_source.index("operationItemIds = filteredOperationIds")
     fingerprint = task_source.index("SearchIndexAPI.trainingOperationFingerprint")
-    operation = task_source.index('SearchIndexAPI.startOperation(\n\t\t\t"training"')
+    operation = task_source.index('SearchIndexAPI.startOperation("training"')
     assert capture < filtering < fingerprint < operation
     assert "requestedOperationItemIds," in task_source[fingerprint:operation]
     assert "requestFingerprint," in task_source[operation : operation + 900]
-    assert "false\n\t\t)" in task_source[operation : operation + 900]
+    assert ", requestFingerprint, 8, false)" in task_source[operation : operation + 900]
 
 
 def test_training_preflight_failure_is_atomic_before_operation_or_source_work():
@@ -367,7 +367,7 @@ def test_training_preflight_failure_is_atomic_before_operation_or_source_work():
 
     preflight = source.index("SearchIndexAPI.preflightTrainingExamples")
     failure = source.index("if not preflightOk then", preflight)
-    operation = source.index('SearchIndexAPI.startOperation(\n\t\t\t"training"')
+    operation = source.index('SearchIndexAPI.startOperation("training"')
     source_collection = source.index("local producerDone = false")
     assert preflight < failure < operation < source_collection
     failure_block = source[failure:operation]

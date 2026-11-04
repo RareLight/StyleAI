@@ -235,7 +235,7 @@ def test_macos_development_backend_is_detached_from_lightroom():
     ).read_text(encoding="utf-8")
 
     assert "launchctl bootstrap" in api_source
-    assert '\\"gui/$(id -u)\\"' in api_source
+    assert '"gui/$(id -u)"' in api_source
     assert "launchctl submit" not in api_source
     assert "kickstart" not in api_source
     assert "styleai-server-launch.plist" in api_source
@@ -521,29 +521,54 @@ def test_release_archive_contains_complete_plugin_backend_and_instructions(tmp_p
     (backend / "library.dat").write_text("runtime")
     output = tmp_path / "output"
     result = subprocess.run(
-        ["python3", str(REPOSITORY_ROOT / "scripts/package_release.py"),
-         "--backend", str(backend), "--platform", "macos-arm64",
-         "--version", "build-test", "--output", str(output)],
-        capture_output=True, text=True,
+        [
+            "python3",
+            str(REPOSITORY_ROOT / "scripts/package_release.py"),
+            "--backend",
+            str(backend),
+            "--platform",
+            "macos-arm64",
+            "--version",
+            "build-test",
+            "--output",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stderr
     archive = output / "StyleAI-macos-arm64-build-test.zip"
     with zipfile.ZipFile(archive) as zf:
         for source in PLUGIN_ROOT.rglob("*"):
             if source.is_file():
-                assert zf.read("StyleAI.lrplugin/" + source.relative_to(PLUGIN_ROOT).as_posix()) == source.read_bytes()
+                assert (
+                    zf.read(
+                        "StyleAI.lrplugin/" + source.relative_to(PLUGIN_ROOT).as_posix()
+                    )
+                    == source.read_bytes()
+                )
         assert zf.read("styleai-server/library.dat") == b"runtime"
         assert zf.getinfo("styleai-server/styleai-server").external_attr >> 16 & 0o111
         assert "INSTALL.md" in zf.namelist()
         assert "LICENSE" in zf.namelist()
-    assert (output / (archive.name + ".sha256")).read_text().split()[0] == hashlib.sha256(archive.read_bytes()).hexdigest()
+    assert (output / (archive.name + ".sha256")).read_text().split()[
+        0
+    ] == hashlib.sha256(archive.read_bytes()).hexdigest()
 
 
 def test_release_archive_rejects_missing_backend_and_unsafe_version(tmp_path):
     script = REPOSITORY_ROOT / "scripts/package_release.py"
     backend = tmp_path / "backend"
     backend.mkdir()
-    command = ["python3", str(script), "--backend", str(backend), "--platform", "windows-x64", "--version"]
+    command = [
+        "python3",
+        str(script),
+        "--backend",
+        str(backend),
+        "--platform",
+        "windows-x64",
+        "--version",
+    ]
     assert subprocess.run(command + ["test"], capture_output=True).returncode != 0
     (backend / "styleai-server.exe").write_bytes(b"binary")
     assert subprocess.run(command + ["../escape"], capture_output=True).returncode != 0
@@ -560,5 +585,7 @@ def test_packaged_backend_takes_precedence_over_legacy_system_install():
     start = source.index("-- Prefer the backend shipped beside this plug-in")
     end = source.index("local startServerCmd", start)
     selection = source[start:end]
-    assert selection.index('LrPathUtils.parent(_PLUGIN.path)') < selection.index('"/Applications/StyleAI/Server/styleai-server"')
-    assert 'if not LrFileUtils.exists(serverBinary) then' in selection
+    assert selection.index("LrPathUtils.parent(_PLUGIN.path)") < selection.index(
+        '"/Applications/StyleAI/Server/styleai-server"'
+    )
+    assert "if not LrFileUtils.exists(serverBinary) then" in selection

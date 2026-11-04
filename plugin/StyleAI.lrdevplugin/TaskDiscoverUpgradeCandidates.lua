@@ -33,7 +33,8 @@ LrTasks.startAsyncTask(function()
 		props.listItems = {}
 		props.selectedStyleIndex = 0
 		props.selectedProfileFilter = "All Profiles"
-		props.profileFilters = { { title = LOC("$$$/StyleAI/StyleCatalog/AllProfiles=All Profiles"), value = "All Profiles" } }
+		props.profileFilters =
+			{ { title = LOC("$$$/StyleAI/StyleCatalog/AllProfiles=All Profiles"), value = "All Profiles" } }
 		props.isLoading = false
 		props.statusMessage = ""
 
@@ -82,7 +83,7 @@ LrTasks.startAsyncTask(function()
 
 			local s = props.styles[idx]
 			local sName = s.style_name or s.policy_name or LOC("$$$/StyleAI/common/UnknownStyle=Unknown Style")
-			
+
 			props.detailName = sName
 			props.detailProfile = s.camera_profile or LOC("$$$/StyleAI/common/Default=Default")
 			props.showPolicyDetails = true
@@ -92,16 +93,18 @@ LrTasks.startAsyncTask(function()
 				local cueName = type(cue) == "table" and cue.descriptor or cue
 				if cueName and cueName ~= "" then
 					table.insert(cueNames, tostring(cueName))
-					if #cueNames >= 4 then break end
+					if #cueNames >= 4 then
+						break
+					end
 				end
 			end
 			props.detailGenre = #cueNames > 0 and table.concat(cueNames, ", ")
 				or LOC("$$$/StyleAI/UpgradeAssistant/PolicyCuesPending=Learned visual/editing policy")
-			
+
 			local current = tonumber(s.current_count) or 0
-			local tierName = s.local_correction_enabled and
-				LOC("$$$/StyleAI/UpgradeAssistant/ValidatedLocalPolicy=Global + validated local refinement") or
-				LOC("$$$/StyleAI/UpgradeAssistant/GlobalPolicy=Global conditional policy")
+			local tierName = s.local_correction_enabled
+					and LOC("$$$/StyleAI/UpgradeAssistant/ValidatedLocalPolicy=Global + validated local refinement")
+				or LOC("$$$/StyleAI/UpgradeAssistant/GlobalPolicy=Global conditional policy")
 			props.detailTier = string.format("%s (%d examples)", tierName, current)
 
 			props.detailRecommendedIds = s.recommended_photo_ids or {}
@@ -113,20 +116,37 @@ LrTasks.startAsyncTask(function()
 			local ambiguous = tonumber(s.ambiguous_candidate_count) or 0
 			local rejected = tonumber(s.rejected_candidate_count) or 0
 			props.detailCoverage = s.coverage_summary
-				or string.format(LOC("$$$/StyleAI/UpgradeAssistant/CoverageSummaryFmt=%d coverage-focused recommendations"), recCount)
+				or string.format(
+					LOC("$$$/StyleAI/UpgradeAssistant/CoverageSummaryFmt=%d coverage-focused recommendations"),
+					recCount
+				)
 			props.detailNeeded = s.target_summary
-				or string.format(LOC("$$$/StyleAI/UpgradeAssistant/MoreExamplesFmt=Additional examples requested: %d"), tonumber(s.needed_count) or recCount)
+				or string.format(
+					LOC("$$$/StyleAI/UpgradeAssistant/MoreExamplesFmt=Additional examples requested: %d"),
+					tonumber(s.needed_count) or recCount
+				)
 			if recCount > 0 then
 				props.detailExplanation = string.format(
-					LOC("$$$/StyleAI/UpgradeAssistant/PolicyRecsFoundFmt=%d high-confidence candidates were selected after policy membership, ambiguity, burst, and quality checks. %d candidates were admissible; %d were ambiguous and %d were rejected."),
-					recCount, admitted, ambiguous, rejected
+					LOC(
+						"$$$/StyleAI/UpgradeAssistant/PolicyRecsFoundFmt=%d high-confidence candidates were selected after policy membership, ambiguity, burst, and quality checks. %d candidates were admissible; %d were ambiguous and %d were rejected."
+					),
+					recCount,
+					admitted,
+					ambiguous,
+					rejected
 				)
-				props.detailButtonTitle = string.format(LOC("$$$/StyleAI/UpgradeAssistant/BtnSelectFmt=Select %d Recommended Photos in Library"), recCount)
+				props.detailButtonTitle = string.format(
+					LOC("$$$/StyleAI/UpgradeAssistant/BtnSelectFmt=Select %d Recommended Photos in Library"),
+					recCount
+				)
 				props.detailButtonEnabled = true
 			else
 				props.detailExplanation = string.format(
-					LOC("$$$/StyleAI/UpgradeAssistant/PolicyNoRecsFmt=No high-confidence candidates are currently available. %d were ambiguous and %d failed policy or quality safeguards."),
-					ambiguous, rejected
+					LOC(
+						"$$$/StyleAI/UpgradeAssistant/PolicyNoRecsFmt=No high-confidence candidates are currently available. %d were ambiguous and %d failed policy or quality safeguards."
+					),
+					ambiguous,
+					rejected
 				)
 				props.detailButtonTitle = LOC("$$$/StyleAI/UpgradeAssistant/BtnNoRecs=No Candidate Photos Found")
 				props.detailButtonEnabled = false
@@ -156,12 +176,13 @@ LrTasks.startAsyncTask(function()
 				local profile = s.camera_profile or "Default"
 				if filter == "All Profiles" or profile == filter then
 					local count = tonumber(s.current_count) or 0
-					local badge = s.local_correction_enabled and
-						LOC("$$$/StyleAI/UpgradeAssistant/ValidatedLocalBadge=Validated local refinement") or
-						LOC("$$$/StyleAI/UpgradeAssistant/GlobalPolicyBadge=Global conditional policy")
+					local badge = s.local_correction_enabled
+							and LOC("$$$/StyleAI/UpgradeAssistant/ValidatedLocalBadge=Validated local refinement")
+						or LOC("$$$/StyleAI/UpgradeAssistant/GlobalPolicyBadge=Global conditional policy")
 					local recCount = #(s.recommended_photo_ids or {})
 					local name = s.style_name or s.policy_name or LOC("$$$/StyleAI/common/Unknown=Unknown")
-					local label = string.format("%s • %s • %d (+%d recs) • %s", profile, name, count, recCount, badge)
+					local label =
+						string.format("%s • %s • %d (+%d recs) • %s", profile, name, count, recCount, badge)
 					table.insert(items, { title = label, value = i })
 				end
 			end
@@ -174,7 +195,8 @@ LrTasks.startAsyncTask(function()
 
 		local function loadRecommendations()
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/ProgressWait=Waiting for StyleAI backend to load...")
+			props.statusMessage =
+				LOC("$$$/StyleAI/UpgradeAssistant/ProgressWait=Waiting for StyleAI backend to load...")
 
 			local progressScope = LrProgressScope({
 				title = LOC("$$$/StyleAI/UpgradeAssistant/Progress=Discovering style upgrade candidates..."),
@@ -192,7 +214,8 @@ LrTasks.startAsyncTask(function()
 			progressScope:done()
 
 			if not success then
-				props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/Error=Failed to get recommendations: ^1", tostring(results))
+				props.statusMessage =
+					LOC("$$$/StyleAI/UpgradeAssistant/Error=Failed to get recommendations: ^1", tostring(results))
 				props.isLoading = false
 				return
 			end
@@ -201,7 +224,9 @@ LrTasks.startAsyncTask(function()
 			if type(styles) ~= "table" or #styles == 0 then
 				props.styles = {}
 				props.listItems = {}
-				props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/NoStylesMsg=No styles currently need additional training examples. Styles with sufficient coverage are omitted; if you have not learned a style yet, start with Learn From My Edits.")
+				props.statusMessage = LOC(
+					"$$$/StyleAI/UpgradeAssistant/NoStylesMsg=No styles currently need additional training examples. Styles with sufficient coverage are omitted; if you have not learned a style yet, start with Learn From My Edits."
+				)
 				props.isLoading = false
 				return
 			end
@@ -226,7 +251,9 @@ LrTasks.startAsyncTask(function()
 				table.insert(sortedProfiles, { profile = profile, count = count })
 			end
 			table.sort(sortedProfiles, function(a, b)
-				if a.count == b.count then return a.profile < b.profile end
+				if a.count == b.count then
+					return a.profile < b.profile
+				end
 				return a.count > b.count
 			end)
 
@@ -243,39 +270,53 @@ LrTasks.startAsyncTask(function()
 			updateListItems()
 
 			props.isLoading = false
-			props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/LoadedCount=^1 style(s) could benefit from more examples.", tostring(#props.styles))
+			props.statusMessage = LOC(
+				"$$$/StyleAI/UpgradeAssistant/LoadedCount=^1 style(s) could benefit from more examples.",
+				tostring(#props.styles)
+			)
 		end
 
 		-- Action: Show Candidate Photos for selected style
 		local function showSelectedPhotos()
 			local idx = StyleUI.resolveSelectedIndex(props.selectedStyleIndex, props.listItems)
-			if not idx or idx < 1 or not props.styles or idx > #props.styles then return end
+			if not idx or idx < 1 or not props.styles or idx > #props.styles then
+				return
+			end
 			local s = props.styles[idx]
 			local recIds = s.recommended_photo_ids or {}
-			if #recIds == 0 then return end
+			if #recIds == 0 then
+				return
+			end
 
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/SelectingProgress=Selecting photos in Lightroom Library...")
+			props.statusMessage =
+				LOC("$$$/StyleAI/UpgradeAssistant/SelectingProgress=Selecting photos in Lightroom Library...")
 
 			LrTasks.startAsyncTask(function()
 				local selectProgress = LrProgressScope({
-					title = LOC("$$$/StyleAI/UpgradeAssistant/SelectingProgress=Selecting photos in Lightroom Library...")
+					title = LOC(
+						"$$$/StyleAI/UpgradeAssistant/SelectingProgress=Selecting photos in Lightroom Library..."
+					),
 				})
 				local photos = SearchIndexAPI.findPhotosByPhotoIds(recIds, selectProgress)
 				local wasCanceled = selectProgress:isCanceled()
 				selectProgress:done()
 				if wasCanceled then
-				props.statusMessage = LOC("$$$/StyleAI/common/Canceled=Canceled.")
-				props.isLoading = false
-				return
-			end
+					props.statusMessage = LOC("$$$/StyleAI/common/Canceled=Canceled.")
+					props.isLoading = false
+					return
+				end
 
 				if #photos > 0 then
 					local catalog = LrApplication.activeCatalog()
 					local sName = s.style_name or s.policy_name or "Unknown Style"
 					local sProf = s.camera_profile or ""
 					local fullName = sName
-					if sProf ~= "" and sProf ~= "Default" and not string.find(string.lower(sName), string.lower(sProf), 1, true) then
+					if
+						sProf ~= ""
+						and sProf ~= "Default"
+						and not string.find(string.lower(sName), string.lower(sProf), 1, true)
+					then
 						fullName = string.format("%s (%s)", sName, sProf)
 					end
 					local coll = Util.addPhotosToUpgradeCandidatesCollection(photos, fullName)
@@ -309,18 +350,30 @@ LrTasks.startAsyncTask(function()
 							catalog:setSelectedPhotos(photos[1], photos)
 						end)
 					end
-					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/PhotosSelectedStatus=Candidate photos added to collection and selected in Library.")
+					props.statusMessage = LOC(
+						"$$$/StyleAI/UpgradeAssistant/PhotosSelectedStatus=Candidate photos added to collection and selected in Library."
+					)
 					LrDialogs.message(
 						LOC("$$$/StyleAI/UpgradeAssistant/SelectedTitle=Photos Selected & Added to Collection"),
-						string.format(LOC("$$$/StyleAI/UpgradeAssistant/SelectedMsg=Added %d recommended candidate photos to collection '%s' (under set 'StyleAI') and selected them in Library. You can now easily review them or train!"), #photos, fullName),
+						string.format(
+							LOC(
+								"$$$/StyleAI/UpgradeAssistant/SelectedMsg=Added %d recommended candidate photos to collection '%s' (under set 'StyleAI') and selected them in Library. You can now easily review them or train!"
+							),
+							#photos,
+							fullName
+						),
 						"info"
 					)
 					LrDialogs.stopModalWithResult(ctx, "ok")
 				else
-					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/PhotosNotFoundStatus=Candidate photos could not be found in active catalog.")
+					props.statusMessage = LOC(
+						"$$$/StyleAI/UpgradeAssistant/PhotosNotFoundStatus=Candidate photos could not be found in active catalog."
+					)
 					LrDialogs.message(
 						LOC("$$$/StyleAI/UpgradeAssistant/NoneFound=No Photos Found"),
-						LOC("$$$/StyleAI/UpgradeAssistant/NoneFoundMsg=Could not locate the recommended photos in the active catalog. They may have been deleted or moved."),
+						LOC(
+							"$$$/StyleAI/UpgradeAssistant/NoneFoundMsg=Could not locate the recommended photos in the active catalog. They may have been deleted or moved."
+						),
 						"warning"
 					)
 				end
@@ -331,7 +384,8 @@ LrTasks.startAsyncTask(function()
 		-- Action: Find All & Create Collections for All Styles
 		local function showAllPhotos()
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/FindAllProgress=Creating upgrade collections for all styles...")
+			props.statusMessage =
+				LOC("$$$/StyleAI/UpgradeAssistant/FindAllProgress=Creating upgrade collections for all styles...")
 
 			LrTasks.startAsyncTask(function()
 				local totalPhotosAdded = 0
@@ -340,17 +394,25 @@ LrTasks.startAsyncTask(function()
 				local wasCanceled = false
 				local ok, err = LrTasks.pcall(function()
 					findAllProgress = LrProgressScope({
-						title = LOC("$$$/StyleAI/UpgradeAssistant/FindAllProgress=Creating upgrade collections for all styles...")
+						title = LOC(
+							"$$$/StyleAI/UpgradeAssistant/FindAllProgress=Creating upgrade collections for all styles..."
+						),
 					})
 					local styleEntries = {}
 					for _, s in ipairs(props.styles or {}) do
-						if findAllProgress:isCanceled() then break end
+						if findAllProgress:isCanceled() then
+							break
+						end
 						local recIds = s.recommended_photo_ids or {}
 						if #recIds > 0 then
 							local sName = s.style_name or s.policy_name or "Unknown Style"
 							local sProf = s.camera_profile or ""
 							local fullName = sName
-							if sProf ~= "" and sProf ~= "Default" and not string.find(string.lower(sName), string.lower(sProf), 1, true) then
+							if
+								sProf ~= ""
+								and sProf ~= "Default"
+								and not string.find(string.lower(sName), string.lower(sProf), 1, true)
+							then
 								fullName = string.format("%s (%s)", sName, sProf)
 							end
 							table.insert(styleEntries, {
@@ -363,7 +425,9 @@ LrTasks.startAsyncTask(function()
 					local batchedResults = SearchIndexAPI.findPhotosBatchedByStyleMap(styleEntries, findAllProgress)
 					local stylesData = {}
 					for _, entry in ipairs(batchedResults) do
-						if findAllProgress:isCanceled() then break end
+						if findAllProgress:isCanceled() then
+							break
+						end
 						if #(entry.photos or {}) > 0 then
 							table.insert(stylesData, {
 								styleKey = entry.styleKey,
@@ -395,10 +459,13 @@ LrTasks.startAsyncTask(function()
 
 				if not ok then
 					log:error("Show All Candidate Photos failed: " .. tostring(err))
-					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/FindAllErrorStatus=Could not create all upgrade collections.")
+					props.statusMessage =
+						LOC("$$$/StyleAI/UpgradeAssistant/FindAllErrorStatus=Could not create all upgrade collections.")
 					LrDialogs.message(
 						LOC("$$$/StyleAI/UpgradeAssistant/FindAllErrorTitle=Unable to Create Upgrade Collections"),
-						LOC("$$$/StyleAI/UpgradeAssistant/FindAllErrorMsg=StyleAI stopped creating upgrade collections. Any completed collection changes were preserved; see the plugin log for details."),
+						LOC(
+							"$$$/StyleAI/UpgradeAssistant/FindAllErrorMsg=StyleAI stopped creating upgrade collections. Any completed collection changes were preserved; see the plugin log for details."
+						),
 						"critical"
 					)
 					return
@@ -409,18 +476,30 @@ LrTasks.startAsyncTask(function()
 					return
 				end
 				if stylesProcessed > 0 then
-					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/FindAllSuccessStatus=Created upgrade collections for all candidate styles.")
+					props.statusMessage = LOC(
+						"$$$/StyleAI/UpgradeAssistant/FindAllSuccessStatus=Created upgrade collections for all candidate styles."
+					)
 					LrDialogs.message(
 						LOC("$$$/StyleAI/UpgradeAssistant/FindAllSuccessTitle=Upgrade Collections Created"),
-						string.format(LOC("$$$/StyleAI/UpgradeAssistant/FindAllSuccessMsg=Successfully created collections for %d styles (added %d total candidate photos) under set 'StyleAI'. You can now review them in Lightroom Library!"), stylesProcessed, totalPhotosAdded),
+						string.format(
+							LOC(
+								"$$$/StyleAI/UpgradeAssistant/FindAllSuccessMsg=Successfully created collections for %d styles (added %d total candidate photos) under set 'StyleAI'. You can now review them in Lightroom Library!"
+							),
+							stylesProcessed,
+							totalPhotosAdded
+						),
 						"info"
 					)
 					LrDialogs.stopModalWithResult(ctx, "ok")
 				else
-					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/FindAllNoneStatus=Could not locate candidate photos in active catalog.")
+					props.statusMessage = LOC(
+						"$$$/StyleAI/UpgradeAssistant/FindAllNoneStatus=Could not locate candidate photos in active catalog."
+					)
 					LrDialogs.message(
 						LOC("$$$/StyleAI/UpgradeAssistant/NoneFound=No Photos Found"),
-						LOC("$$$/StyleAI/UpgradeAssistant/FindAllNoneMsg=Could not locate any recommended candidate photos in the active catalog."),
+						LOC(
+							"$$$/StyleAI/UpgradeAssistant/FindAllNoneMsg=Could not locate any recommended candidate photos in the active catalog."
+						),
 						"warning"
 					)
 				end
@@ -430,7 +509,9 @@ LrTasks.startAsyncTask(function()
 		local function submitSelectedFeedback(policyMatch, useful)
 			local reviewId = props.detailReviewId or ""
 			local policyId = props.detailPolicyId or ""
-			if reviewId == "" or policyId == "" then return end
+			if reviewId == "" or policyId == "" then
+				return
+			end
 
 			local candidateIds = {}
 			for _, item in ipairs(props.detailRecommendedIds or {}) do
@@ -454,19 +535,23 @@ LrTasks.startAsyncTask(function()
 			if #labels == 0 then
 				LrDialogs.message(
 					LOC("$$$/StyleAI/UpgradeAssistant/FeedbackNoneTitle=No Reviewed Candidates Selected"),
-					LOC("$$$/StyleAI/UpgradeAssistant/FeedbackNoneMsg=Select one or more photos from the selected policy candidate collection in Library, then reopen the assistant and record the appropriate review label."),
+					LOC(
+						"$$$/StyleAI/UpgradeAssistant/FeedbackNoneMsg=Select one or more photos from the selected policy candidate collection in Library, then reopen the assistant and record the appropriate review label."
+					),
 					"warning"
 				)
 				return
 			end
 
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackSaving=Saving local recommendation feedback...")
+			props.statusMessage =
+				LOC("$$$/StyleAI/UpgradeAssistant/FeedbackSaving=Saving local recommendation feedback...")
 			LrTasks.startAsyncTask(function()
 				local success, result = SearchIndexAPI.submitUpgradeFeedback(reviewId, policyId, labels)
 				props.isLoading = false
 				if not success then
-					props.statusMessage = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackError=Could not save feedback: ^1", tostring(result))
+					props.statusMessage =
+						LOC("$$$/StyleAI/UpgradeAssistant/FeedbackError=Could not save feedback: ^1", tostring(result))
 					return
 				end
 				props.statusMessage = LOC(
@@ -525,37 +610,79 @@ LrTasks.startAsyncTask(function()
 					fill_horizontal = 1,
 					f:column({
 						fill_horizontal = 1,
-							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailName=Name:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailName"), fill_horizontal = 1, wrap = true }),
+						f:row({
+							f:static_text({
+								title = LOC("$$$/StyleAI/StyleCatalog/DetailName=Name:"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
 							}),
-							f:row({
-								f:static_text({ title = bind("detailDescriptorLabel"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailGenre"), fill_horizontal = 1, wrap = true }),
+							f:static_text({ title = bind("detailName"), fill_horizontal = 1, wrap = true }),
+						}),
+						f:row({
+							f:static_text({
+								title = bind("detailDescriptorLabel"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
 							}),
-							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailProfile=Profile:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailProfile"), fill_horizontal = 1, wrap = true }),
+							f:static_text({ title = bind("detailGenre"), fill_horizontal = 1, wrap = true }),
+						}),
+						f:row({
+							f:static_text({
+								title = LOC("$$$/StyleAI/StyleCatalog/DetailProfile=Profile:"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
 							}),
-							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/DetailTierLabel=Policy model:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailTier"), fill_horizontal = 1, wrap = true }),
+							f:static_text({ title = bind("detailProfile"), fill_horizontal = 1, wrap = true }),
+						}),
+						f:row({
+							f:static_text({
+								title = LOC("$$$/StyleAI/UpgradeAssistant/DetailTierLabel=Policy model:"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
 							}),
-							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/DetailNeededLabel=Target:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailNeeded"), fill_horizontal = 1, wrap = true, font = "<system/bold>" }),
+							f:static_text({ title = bind("detailTier"), fill_horizontal = 1, wrap = true }),
+						}),
+						f:row({
+							f:static_text({
+								title = LOC("$$$/StyleAI/UpgradeAssistant/DetailNeededLabel=Target:"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
 							}),
-							f:row({
-								visible = bind("showPolicyDetails"),
-								f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/CoverageLabel=Coverage:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailCoverage"), fill_horizontal = 1, wrap = true }),
-							}),
-							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/UpgradeAssistant/DetailExplanationLabel=Recommendation Details:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailExplanation"), fill_horizontal = 1, wrap = true }),
+							f:static_text({
+								title = bind("detailNeeded"),
+								fill_horizontal = 1,
+								wrap = true,
+								font = "<system/bold>",
 							}),
 						}),
+						f:row({
+							visible = bind("showPolicyDetails"),
+							f:static_text({
+								title = LOC("$$$/StyleAI/UpgradeAssistant/CoverageLabel=Coverage:"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
+							}),
+							f:static_text({ title = bind("detailCoverage"), fill_horizontal = 1, wrap = true }),
+						}),
+						f:row({
+							f:static_text({
+								title = LOC(
+									"$$$/StyleAI/UpgradeAssistant/DetailExplanationLabel=Recommendation Details:"
+								),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
+							}),
+							f:static_text({ title = bind("detailExplanation"), fill_horizontal = 1, wrap = true }),
+						}),
 					}),
+				}),
 
 				f:group_box({
 					title = LOC("$$$/StyleAI/UpgradeAssistant/Actions=Candidate Review"),
@@ -564,7 +691,9 @@ LrTasks.startAsyncTask(function()
 						fill_horizontal = 1,
 						spacing = f:control_spacing(),
 						UIFactory.HelpText(f, {
-							title = LOC("$$$/StyleAI/UpgradeAssistant/ShowGuide=Open candidate photos in Library before deciding whether they improve this style."),
+							title = LOC(
+								"$$$/StyleAI/UpgradeAssistant/ShowGuide=Open candidate photos in Library before deciding whether they improve this style."
+							),
 						}),
 						f:row({
 							f:push_button({
@@ -580,22 +709,30 @@ LrTasks.startAsyncTask(function()
 						}),
 						f:separator({ fill_horizontal = 1 }),
 						UIFactory.HelpText(f, {
-							title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackGuide=After reviewing a candidate collection in Library, select photos and label them here:"),
+							title = LOC(
+								"$$$/StyleAI/UpgradeAssistant/FeedbackGuide=After reviewing a candidate collection in Library, select photos and label them here:"
+							),
 						}),
 						f:row({
 							f:push_button({
 								title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackHelpful=Helpful Example"),
-								action = function() submitSelectedFeedback(true, true) end,
+								action = function()
+									submitSelectedFeedback(true, true)
+								end,
 								enabled = bind("feedbackActionEnabled"),
 							}),
 							f:push_button({
 								title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackRedundant=Fits, But Redundant"),
-								action = function() submitSelectedFeedback(true, false) end,
+								action = function()
+									submitSelectedFeedback(true, false)
+								end,
 								enabled = bind("feedbackActionEnabled"),
 							}),
 							f:push_button({
 								title = LOC("$$$/StyleAI/UpgradeAssistant/FeedbackWrong=Not This Policy"),
-								action = function() submitSelectedFeedback(false, false) end,
+								action = function()
+									submitSelectedFeedback(false, false)
+								end,
 								enabled = bind("feedbackActionEnabled"),
 							}),
 						}),

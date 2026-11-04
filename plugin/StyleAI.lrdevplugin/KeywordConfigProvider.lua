@@ -64,9 +64,7 @@ function KeywordConfigProvider.showKeywordCategoryDialog()
 
 		local function resetToDefaults()
 			local confirm = LrDialogs.confirm(
-				LOC(
-					"$$$/StyleAI/ResponseStructure/ResetToDefaultKeywordStructure=Reset to default keyword structure?"
-				)
+				LOC("$$$/StyleAI/ResponseStructure/ResetToDefaultKeywordStructure=Reset to default keyword structure?")
 			)
 			if confirm == "ok" then
 				props.categoriesText = keywordsToText(Defaults.defaultKeywordCategories)

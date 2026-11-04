@@ -13,16 +13,28 @@ local Util = require("Util")
 local UIFactory = require("UIFactory")
 
 local function reviewDisplayValue(outcome)
-	if outcome == "accepted" then return "Kept" end
-	if outcome == "modified_and_kept" then return "Modified and Kept" end
-	if outcome == "rejected" then return "Not Useful" end
+	if outcome == "accepted" then
+		return "Kept"
+	end
+	if outcome == "modified_and_kept" then
+		return "Modified and Kept"
+	end
+	if outcome == "rejected" then
+		return "Not Useful"
+	end
 	return "Unreviewed"
 end
 
 local function stateDisplayValue(state)
-	if state == "apply_confirmed" then return "Applied" end
-	if state == "reverted" then return "Reverted" end
-	if state == "diverged" then return "Modified" end
+	if state == "apply_confirmed" then
+		return "Applied"
+	end
+	if state == "reverted" then
+		return "Reverted"
+	end
+	if state == "diverged" then
+		return "Modified"
+	end
 	return nil
 end
 
@@ -65,12 +77,16 @@ LrTasks.startAsyncTask(function()
 				table.insert(inferenceIds, trackedPhoto.inferenceId)
 			end
 			local statusOk, statusResponse = SearchIndexAPI.getStyleEditOutcomeStatuses(inferenceIds)
-			if not statusOk then error(tostring(statusResponse)) end
+			if not statusOk then
+				error(tostring(statusResponse))
+			end
 			local statusByInference = {}
 			local alreadyReviewedCount = 0
 			for _, status in ipairs(statusResponse.photos or {}) do
 				statusByInference[status.inference_id] = status
-				if status.reviewed then alreadyReviewedCount = alreadyReviewedCount + 1 end
+				if status.reviewed then
+					alreadyReviewedCount = alreadyReviewedCount + 1
+				end
 			end
 			-- Opportunistically backfill the separated metadata for older tracked edits.
 			catalog:withPrivateWriteAccessDo(function()
@@ -124,13 +140,15 @@ LrTasks.startAsyncTask(function()
 					),
 				}),
 				UIFactory.SettingsGroup(f, outcomeControls),
-				alreadyReviewedCount > 0 and f:checkbox({
-					value = LrView.bind("includePreviouslyReviewed"),
-					title = LOC(
-						"$$$/StyleAI/EditOutcome/IncludeReviewed=Include ^1 previously reviewed photo(s) and record a corrected review",
-						tostring(alreadyReviewedCount)
-					),
-				}) or f:spacer({ height = 0 }),
+				alreadyReviewedCount > 0
+						and f:checkbox({
+							value = LrView.bind("includePreviouslyReviewed"),
+							title = LOC(
+								"$$$/StyleAI/EditOutcome/IncludeReviewed=Include ^1 previously reviewed photo(s) and record a corrected review",
+								tostring(alreadyReviewedCount)
+							),
+						})
+					or f:spacer({ height = 0 }),
 				UIFactory.HelpText(f, {
 					title = LOC(
 						"$$$/StyleAI/EditOutcome/Guidance=Not Useful does not undo an edit. Use Lightroom Undo or History when needed."
@@ -161,15 +179,14 @@ LrTasks.startAsyncTask(function()
 			if #items == 0 then
 				LrDialogs.message(
 					LOC("$$$/StyleAI/EditOutcome/Title=Rate Selected AI Edits"),
-					LOC("$$$/StyleAI/EditOutcome/AllReviewed=All selected tracked photos are already reviewed. Enable Include previously reviewed photos only when you intend to record corrected reviews."),
+					LOC(
+						"$$$/StyleAI/EditOutcome/AllReviewed=All selected tracked photos are already reviewed. Enable Include previously reviewed photos only when you intend to record corrected reviews."
+					),
 					"info"
 				)
 				return
 			end
-			local apiOk, response = SearchIndexAPI.recordStyleEditOutcomes(
-				items,
-				not props.includePreviouslyReviewed
-			)
+			local apiOk, response = SearchIndexAPI.recordStyleEditOutcomes(items, not props.includePreviouslyReviewed)
 			if not apiOk then
 				error(tostring(response))
 			end
@@ -185,11 +202,7 @@ LrTasks.startAsyncTask(function()
 						if photo and stored.outcome then
 							photo:setPropertyForPlugin(_PLUGIN, "aiEditStatus", stored.outcome)
 							photo:setPropertyForPlugin(_PLUGIN, "aiEditApplied", "Yes")
-							photo:setPropertyForPlugin(
-								_PLUGIN,
-								"aiEditReview",
-								reviewDisplayValue(stored.outcome)
-							)
+							photo:setPropertyForPlugin(_PLUGIN, "aiEditReview", reviewDisplayValue(stored.outcome))
 							local displayState = stateDisplayValue(stored.state)
 							if displayState then
 								photo:setPropertyForPlugin(_PLUGIN, "aiEditState", displayState)

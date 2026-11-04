@@ -148,7 +148,8 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 			if options.generateAliases then
 				local indexScope = nil
 				if options.useTopLevelKeyword and options.topLevelKeyword and options.topLevelKeyword ~= "" then
-					indexScope = findKeywordByNameInParent(nil, catalog, keywordSessionCache, nil, options.topLevelKeyword)
+					indexScope =
+						findKeywordByNameInParent(nil, catalog, keywordSessionCache, nil, options.topLevelKeyword)
 				end
 				keywordSessionCache._aliasIndex = MetadataManager.buildAliasIndex(catalog, indexScope)
 				local aliasIndexCount = 0
@@ -177,7 +178,9 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 					end
 				end
 				-- Keep track of used top-level keywords
-				if not prefs.knownTopLevelKeywords then prefs.knownTopLevelKeywords = {} end
+				if not prefs.knownTopLevelKeywords then
+					prefs.knownTopLevelKeywords = {}
+				end
 				if not Util.table_contains(prefs.knownTopLevelKeywords, options.topLevelKeyword) then
 					table.insert(prefs.knownTopLevelKeywords, options.topLevelKeyword)
 				end
@@ -205,11 +208,7 @@ function MetadataManager.applyMetadata(photo, response, validatedData, options)
 	if options.useExistingTransaction then
 		doApply()
 	else
-		catalog:withWriteAccessDo(
-			"Apply AI Metadata",
-			doApply,
-			Defaults.catalogWriteAccessOptions
-		)
+		catalog:withWriteAccessDo("Apply AI Metadata", doApply, Defaults.catalogWriteAccessOptions)
 	end
 end
 
@@ -939,7 +938,9 @@ function MetadataManager.showValidationDialog(ctx, photo, response, options, ded
 				title = LOC("$$$/StyleAI/MetadataManager/SkipRemaining=Skip remaining reviews"),
 			}),
 			UIFactory.HelpText(f, {
-				title = LOC("$$$/StyleAI/MetadataManager/SkipRemainingHelp=After saving this photo, save the remaining results automatically."),
+				title = LOC(
+					"$$$/StyleAI/MetadataManager/SkipRemainingHelp=After saving this photo, save the remaining results automatically."
+				),
 				width = 220,
 			}),
 		}),

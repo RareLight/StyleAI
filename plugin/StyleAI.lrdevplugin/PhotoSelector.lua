@@ -26,7 +26,9 @@ function PhotoSelector.snapshotSelectedPhotos()
 		return {}
 	end
 
-	local ok, targetPhotos = LrTasks.pcall(function() return catalog:getTargetPhotos() end)
+	local ok, targetPhotos = LrTasks.pcall(function()
+		return catalog:getTargetPhotos()
+	end)
 	if not ok then
 		log:error("Could not snapshot selected photos: " .. tostring(targetPhotos))
 		return {}
@@ -75,7 +77,9 @@ function PhotoSelector.getPhotosInScope(scope, taskOptions, lookupProgressScope,
 				photosToProcess = {}
 			else
 				local indexedSet = {}
-				for _, id in ipairs(indexedIds) do indexedSet[id] = true end
+				for _, id in ipairs(indexedIds) do
+					indexedSet[id] = true
+				end
 				local allPhotos = catalog:getAllPhotos()
 				local totalPhotos = #allPhotos
 				local updateInterval = math.max(1, math.floor(totalPhotos / 50))

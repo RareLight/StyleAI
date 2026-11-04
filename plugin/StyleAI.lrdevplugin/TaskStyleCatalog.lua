@@ -21,7 +21,8 @@ LrTasks.startAsyncTask(function()
 		props.listItems = {}
 		props.selectedStyleIndex = 0
 		props.selectedProfileFilter = "All Profiles"
-		props.profileFilters = { { title = LOC("$$$/StyleAI/StyleCatalog/AllProfiles=All Profiles"), value = "All Profiles" } }
+		props.profileFilters =
+			{ { title = LOC("$$$/StyleAI/StyleCatalog/AllProfiles=All Profiles"), value = "All Profiles" } }
 		props.isLoading = false
 
 		props.detailName = ""
@@ -34,7 +35,7 @@ LrTasks.startAsyncTask(function()
 
 		local function updateDetailView()
 			local idx = StyleUI.resolveSelectedIndex(props.selectedStyleIndex, props.listItems)
-			
+
 			if not idx or idx < 1 or not props.styles or idx > #props.styles then
 				props.detailName = LOC("$$$/StyleAI/StyleCatalog/SelectPrompt=Select a style to view details.")
 				props.detailGenre = ""
@@ -45,7 +46,7 @@ LrTasks.startAsyncTask(function()
 				props.detailDesc = ""
 				return
 			end
-			
+
 			local s = props.styles[idx]
 			props.detailName = s.style_name or ""
 			local cueNames = {}
@@ -54,19 +55,21 @@ LrTasks.startAsyncTask(function()
 					table.insert(cueNames, cue.descriptor)
 				end
 			end
-			props.detailGenre = #cueNames > 0 and table.concat(cueNames, ", ") or
-				LOC("$$$/StyleAI/StyleCatalog/NoCues=No explanatory cues yet")
+			props.detailGenre = #cueNames > 0 and table.concat(cueNames, ", ")
+				or LOC("$$$/StyleAI/StyleCatalog/NoCues=No explanatory cues yet")
 			props.detailProfile = s.camera_profile or ""
 			props.detailPartition = s.hard_partition_key or s.camera_profile or ""
-			
+
 			local count = tonumber(s.example_count) or 0
 			props.detailCount = tostring(count)
-			props.detailStrengthText = s.local_correction_enabled and
-				LOC("$$$/StyleAI/StyleCatalog/ValidatedLocalPolicy=Global + validated local refinement") or
-				LOC("$$$/StyleAI/StyleCatalog/GlobalPolicy=Global conditional policy")
-			
-			props.detailDesc = s.description or
-				LOC("$$$/StyleAI/StyleCatalog/PolicyDescription=Source-conditioned absolute Lightroom targets with ambiguity-aware matching.")
+			props.detailStrengthText = s.local_correction_enabled
+					and LOC("$$$/StyleAI/StyleCatalog/ValidatedLocalPolicy=Global + validated local refinement")
+				or LOC("$$$/StyleAI/StyleCatalog/GlobalPolicy=Global conditional policy")
+
+			props.detailDesc = s.description
+				or LOC(
+					"$$$/StyleAI/StyleCatalog/PolicyDescription=Source-conditioned absolute Lightroom targets with ambiguity-aware matching."
+				)
 		end
 
 		props:addObserver("selectedStyleIndex", updateDetailView)
@@ -81,9 +84,9 @@ LrTasks.startAsyncTask(function()
 					local name = style.style_name or style.style_id or LOC("$$$/StyleAI/common/Unknown=Unknown")
 					local count = style.example_count or 0
 					local cleanName = name
-					
+
 					local strength = LOC("$$$/StyleAI/StyleCatalog/PolicyShort=Editing Policy")
-					
+
 					local label = string.format("%s • %s • %d • %s", profile, cleanName, count, strength)
 					table.insert(items, { title = label, value = i })
 				end
@@ -115,7 +118,7 @@ LrTasks.startAsyncTask(function()
 					table.sort(props.styles, function(a, b)
 						return (a.example_count or 0) > (b.example_count or 0)
 					end)
-					
+
 					-- Build profile filters
 					local uniqueProfiles = {}
 					local profileCounts = {}
@@ -128,7 +131,7 @@ LrTasks.startAsyncTask(function()
 							profileCounts[profile] = profileCounts[profile] + 1
 						end
 					end
-					
+
 					local sortedProfiles = {}
 					for profile, count in pairs(profileCounts) do
 						table.insert(sortedProfiles, { profile = profile, count = count })
@@ -140,26 +143,23 @@ LrTasks.startAsyncTask(function()
 						return a.count > b.count
 					end)
 
-			local profileList = { { title = LOC("$$$/StyleAI/StyleCatalog/AllProfiles=All Profiles"), value = "All Profiles" } }
+					local profileList =
+						{ { title = LOC("$$$/StyleAI/StyleCatalog/AllProfiles=All Profiles"), value = "All Profiles" } }
 					for _, item in ipairs(sortedProfiles) do
-						table.insert(profileList, { 
-							title = string.format("%s (%d)", item.profile, item.count), 
-							value = item.profile 
+						table.insert(profileList, {
+							title = string.format("%s (%d)", item.profile, item.count),
+							value = item.profile,
 						})
 					end
 					props.profileFilters = profileList
-					
+
 					updateListItems()
 
-					props.statusMessage = LOC(
-						"$$$/StyleAI/StyleCatalog/LoadedCount=^1 style(s) discovered.",
-						tostring(#props.styles)
-					)
+					props.statusMessage =
+						LOC("$$$/StyleAI/StyleCatalog/LoadedCount=^1 style(s) discovered.", tostring(#props.styles))
 				else
-					props.statusMessage = LOC(
-						"$$$/StyleAI/StyleCatalog/LoadError=Error loading styles: ^1",
-						tostring(result)
-					)
+					props.statusMessage =
+						LOC("$$$/StyleAI/StyleCatalog/LoadError=Error loading styles: ^1", tostring(result))
 					props.styles = {}
 					props.listItems = {}
 				end
@@ -167,8 +167,6 @@ LrTasks.startAsyncTask(function()
 				props.isLoading = false
 			end)
 		end
-
-
 
 		-- Rename the selected style
 		local function renameSelectedStyle()
@@ -179,7 +177,7 @@ LrTasks.startAsyncTask(function()
 
 			local style = props.styles[idx]
 			local currentName = style.style_name or ""
-			
+
 			local newName = LrDialogs.runTextInputDialog(
 				LOC("$$$/StyleAI/StyleCatalog/RenameTitle=Rename Style"),
 				LOC("$$$/StyleAI/StyleCatalog/RenamePrompt=Enter a new name for this style:"),
@@ -199,10 +197,7 @@ LrTasks.startAsyncTask(function()
 					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Renamed=Style renamed.")
 					loadStyles()
 				else
-					props.statusMessage = LOC(
-						"$$$/StyleAI/StyleCatalog/RenameError=Rename failed: ^1",
-						tostring(err)
-					)
+					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/RenameError=Rename failed: ^1", tostring(err))
 					props.isLoading = false
 				end
 			end)
@@ -212,7 +207,9 @@ LrTasks.startAsyncTask(function()
 		local function resetAndDiscoverStyles()
 			local confirm = LrDialogs.confirm(
 				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverTitle=Rebuild Styles"),
-				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverConfirm=This will build a replacement style generation from your saved training examples. Your current styles remain available unless the rebuild succeeds. Continue?"),
+				LOC(
+					"$$$/StyleAI/StyleCatalog/ResetAndDiscoverConfirm=This will build a replacement style generation from your saved training examples. Your current styles remain available unless the rebuild succeeds. Continue?"
+				),
 				LOC("$$$/StyleAI/StyleCatalog/ResetAndDiscoverAction=Rebuild Styles"),
 				LOC("$$$/StyleAI/common/Cancel=Cancel")
 			)
@@ -222,7 +219,8 @@ LrTasks.startAsyncTask(function()
 			end
 
 			props.isLoading = true
-			props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Discovering=Discovering styles from training examples...")
+			props.statusMessage =
+				LOC("$$$/StyleAI/StyleCatalog/Discovering=Discovering styles from training examples...")
 
 			LrTasks.startAsyncTask(function()
 				local dSuccess, result = SearchIndexAPI.discoverStyles(nil)
@@ -235,7 +233,9 @@ LrTasks.startAsyncTask(function()
 								tostring(discovery.eligible_partitions or 0)
 							)
 						elseif discovery.phase == "activating" then
-							props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/Activating=Validating and activating the replacement style generation...")
+							props.statusMessage = LOC(
+								"$$$/StyleAI/StyleCatalog/Activating=Validating and activating the replacement style generation..."
+							)
 						end
 					end)
 					if completed then
@@ -248,10 +248,8 @@ LrTasks.startAsyncTask(function()
 						props.isLoading = false
 					end
 				else
-					props.statusMessage = LOC(
-						"$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1",
-						tostring(result)
-					)
+					props.statusMessage =
+						LOC("$$$/StyleAI/StyleCatalog/DiscoverError=Discovery failed: ^1", tostring(result))
 					props.isLoading = false
 				end
 			end)
@@ -260,11 +258,15 @@ LrTasks.startAsyncTask(function()
 		local function deleteAllTrainingData()
 			local deleteConfirm = LrDialogs.confirm(
 				LOC("$$$/StyleAI/Training/WipeConfirmTitle=Delete All Training Data"),
-				LOC("$$$/StyleAI/Training/WipeConfirmMsg=This permanently deletes all saved training examples and learned styles. Search data, Lightroom photos, and Develop edits are not changed. Continue?"),
+				LOC(
+					"$$$/StyleAI/Training/WipeConfirmMsg=This permanently deletes all saved training examples and learned styles. Search data, Lightroom photos, and Develop edits are not changed. Continue?"
+				),
 				LOC("$$$/StyleAI/Training/WipeConfirmOk=Delete Training Data"),
 				LOC("$$$/StyleAI/Training/WipeConfirmCancel=Cancel")
 			)
-			if deleteConfirm ~= "ok" then return end
+			if deleteConfirm ~= "ok" then
+				return
+			end
 
 			props.isLoading = true
 			props.statusMessage = LOC("$$$/StyleAI/Training/Wiping=Deleting saved training data...")
@@ -273,11 +275,15 @@ LrTasks.startAsyncTask(function()
 				if ok then
 					props.styles = {}
 					props.listItems = {}
-					props.statusMessage = LOC("$$$/StyleAI/Training/WipedMsg=Saved training examples and learned styles were permanently deleted.")
+					props.statusMessage = LOC(
+						"$$$/StyleAI/Training/WipedMsg=Saved training examples and learned styles were permanently deleted."
+					)
 					loadStyles()
 					LrDialogs.message(
 						LOC("$$$/StyleAI/Training/WipedTitle=Training Data Deleted"),
-						LOC("$$$/StyleAI/Training/WipedMsg=Saved training examples and learned styles were permanently deleted."),
+						LOC(
+							"$$$/StyleAI/Training/WipedMsg=Saved training examples and learned styles were permanently deleted."
+						),
 						"info"
 					)
 				else
@@ -293,7 +299,9 @@ LrTasks.startAsyncTask(function()
 		-- Show Photos for a specific style
 		local function showPhotos()
 			local idx = StyleUI.resolveSelectedIndex(props.selectedStyleIndex, props.listItems)
-			if not idx or idx < 1 or not props.styles or idx > #props.styles then return end
+			if not idx or idx < 1 or not props.styles or idx > #props.styles then
+				return
+			end
 			local s = props.styles[idx]
 
 			props.isLoading = true
@@ -313,13 +321,18 @@ LrTasks.startAsyncTask(function()
 					return
 				end
 
-				local selectProgress = LrProgressScope({ title = LOC("$$$/StyleAI/StyleCatalog/SelectingProgress=Selecting photos in Lightroom Library...") })
+				local selectProgress = LrProgressScope({
+					title = LOC("$$$/StyleAI/StyleCatalog/SelectingProgress=Selecting photos in Lightroom Library..."),
+				})
 				local photos = SearchIndexAPI.findPhotosByPhotoIds(details.example_photo_ids, selectProgress)
 				selectProgress:done()
 
 				if #photos > 0 then
-					local coll = Util.addPhotosToTrainedStylesCollection(photos, details.camera_profile, details.style_name)
-					LrTasks.pcall(function() LrApplicationView.switchToModule("library") end)
+					local coll =
+						Util.addPhotosToTrainedStylesCollection(photos, details.camera_profile, details.style_name)
+					LrTasks.pcall(function()
+						LrApplicationView.switchToModule("library")
+					end)
 					LrTasks.yield()
 					LrTasks.sleep(0.2)
 					if coll then
@@ -330,10 +343,12 @@ LrTasks.startAsyncTask(function()
 							catalog:setSelectedPhotos(photos[1], photos)
 						end)
 					end
-					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/PhotosShown=Photos added to collection and selected.")
+					props.statusMessage =
+						LOC("$$$/StyleAI/StyleCatalog/PhotosShown=Photos added to collection and selected.")
 					LrDialogs.stopModalWithResult(ctx, "ok")
 				else
-					props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/PhotosNotFound=Photos could not be found in catalog.")
+					props.statusMessage =
+						LOC("$$$/StyleAI/StyleCatalog/PhotosNotFound=Photos could not be found in catalog.")
 				end
 				props.isLoading = false
 			end)
@@ -352,11 +367,15 @@ LrTasks.startAsyncTask(function()
 					return
 				end
 
-				local findAllProgress = LrProgressScope({ title = LOC("$$$/StyleAI/StyleCatalog/FindAllProgress=Creating collections for all trained styles...") })
+				local findAllProgress = LrProgressScope({
+					title = LOC(
+						"$$$/StyleAI/StyleCatalog/FindAllProgress=Creating collections for all trained styles..."
+					),
+				})
 				local totalPhotos = 0
 				local totalStyles = 0
 				local stylesData = {}
-				
+
 				local allRequiredPhotoIds = {}
 				local uniqueIds = {}
 				for _, style in ipairs(styles) do
@@ -373,7 +392,7 @@ LrTasks.startAsyncTask(function()
 				end
 
 				local photoMap = SearchIndexAPI.findPhotosByPhotoIdsMap(allRequiredPhotoIds, findAllProgress)
-				
+
 				for _, style in ipairs(styles) do
 					local exList = style.examples or style.example_photo_ids
 					if exList and #exList > 0 then
@@ -389,23 +408,30 @@ LrTasks.startAsyncTask(function()
 							table.insert(stylesData, {
 								photos = photos,
 								profileName = style.camera_profile,
-								styleName = style.style_name
+								styleName = style.style_name,
 							})
 							totalPhotos = totalPhotos + #photos
 							totalStyles = totalStyles + 1
 						end
 					end
 				end
-				
+
 				if #stylesData > 0 then
 					Util.addMultipleStylePhotosToCollections(stylesData, nil, findAllProgress)
 				end
 				findAllProgress:done()
 
-				props.statusMessage = LOC("$$$/StyleAI/StyleCatalog/AllPhotosShown=Created collections for all trained photos.")
+				props.statusMessage =
+					LOC("$$$/StyleAI/StyleCatalog/AllPhotosShown=Created collections for all trained photos.")
 				LrDialogs.message(
 					LOC("$$$/StyleAI/StyleCatalog/FindAllComplete=Collections Created"),
-					string.format(LOC("$$$/StyleAI/StyleCatalog/FindAllCompleteMsg=Created collections for %d styles and added %d total photos under 'StyleAI -> Trained Styles'."), totalStyles, totalPhotos),
+					string.format(
+						LOC(
+							"$$$/StyleAI/StyleCatalog/FindAllCompleteMsg=Created collections for %d styles and added %d total photos under 'StyleAI -> Trained Styles'."
+						),
+						totalStyles,
+						totalPhotos
+					),
 					"info"
 				)
 				props.isLoading = false
@@ -432,7 +458,9 @@ LrTasks.startAsyncTask(function()
 						width = share("toolbarButton"),
 						enabled = bind({
 							key = "isLoading",
-							transform = function(v) return not v end,
+							transform = function(v)
+								return not v
+							end,
 						}),
 					}),
 					f:push_button({
@@ -441,7 +469,9 @@ LrTasks.startAsyncTask(function()
 						width = share("toolbarButton"),
 						enabled = bind({
 							key = "isLoading",
-							transform = function(v) return not v end,
+							transform = function(v)
+								return not v
+							end,
 						}),
 					}),
 					f:push_button({
@@ -450,7 +480,9 @@ LrTasks.startAsyncTask(function()
 						width = share("toolbarButton"),
 						enabled = bind({
 							key = "isLoading",
-							transform = function(v) return not v end,
+							transform = function(v)
+								return not v
+							end,
 						}),
 					}),
 					f:push_button({
@@ -460,7 +492,9 @@ LrTasks.startAsyncTask(function()
 						end,
 						enabled = bind({
 							key = "isLoading",
-							transform = function(v) return not v end,
+							transform = function(v)
+								return not v
+							end,
 						}),
 					}),
 				}),
@@ -482,33 +516,63 @@ LrTasks.startAsyncTask(function()
 					fill_horizontal = 1,
 					f:column({
 						fill_horizontal = 1,
-							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailName=Name:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailName"), fill_horizontal = 1, wrap = true }),
+						f:row({
+							f:static_text({
+								title = LOC("$$$/StyleAI/StyleCatalog/DetailName=Name:"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
 							}),
-							f:row({
-									f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailGenre=Evidence cues:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailGenre"), fill_horizontal = 1, wrap = true }),
+							f:static_text({ title = bind("detailName"), fill_horizontal = 1, wrap = true }),
+						}),
+						f:row({
+							f:static_text({
+								title = LOC("$$$/StyleAI/StyleCatalog/DetailGenre=Evidence cues:"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
 							}),
+							f:static_text({ title = bind("detailGenre"), fill_horizontal = 1, wrap = true }),
+						}),
 
-							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailProfile=Profile:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailProfile"), fill_horizontal = 1, wrap = true }),
+						f:row({
+							f:static_text({
+								title = LOC("$$$/StyleAI/StyleCatalog/DetailProfile=Profile:"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
 							}),
-							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailPartition=Rendering partition:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailPartition"), fill_horizontal = 1, wrap = true }),
+							f:static_text({ title = bind("detailProfile"), fill_horizontal = 1, wrap = true }),
+						}),
+						f:row({
+							f:static_text({
+								title = LOC("$$$/StyleAI/StyleCatalog/DetailPartition=Rendering partition:"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
 							}),
-							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailExamples=Examples:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailCount") }),
-								f:spacer({ width = 10 }),
-								f:static_text({ title = bind("detailStrengthText"), font = "<system/bold>" }),
+							f:static_text({ title = bind("detailPartition"), fill_horizontal = 1, wrap = true }),
+						}),
+						f:row({
+							f:static_text({
+								title = LOC("$$$/StyleAI/StyleCatalog/DetailExamples=Examples:"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
 							}),
-							f:row({
-								f:static_text({ title = LOC("$$$/StyleAI/StyleCatalog/DetailDescription=Description:"), width = share("detailLabel"), alignment = "right", font = "<system/bold>" }),
-								f:static_text({ title = bind("detailDesc"), fill_horizontal = 1, wrap = true }),
+							f:static_text({ title = bind("detailCount") }),
+							f:spacer({ width = 10 }),
+							f:static_text({ title = bind("detailStrengthText"), font = "<system/bold>" }),
+						}),
+						f:row({
+							f:static_text({
+								title = LOC("$$$/StyleAI/StyleCatalog/DetailDescription=Description:"),
+								width = share("detailLabel"),
+								alignment = "right",
+								font = "<system/bold>",
 							}),
+							f:static_text({ title = bind("detailDesc"), fill_horizontal = 1, wrap = true }),
+						}),
 					}),
 				}),
 
@@ -519,7 +583,9 @@ LrTasks.startAsyncTask(function()
 						fill_horizontal = 1,
 						spacing = f:control_spacing(),
 						UIFactory.HelpText(f, {
-							title = LOC("$$$/StyleAI/StyleCatalog/RebuildHelp=Rebuild learned styles from your saved training examples after changing or refreshing training data."),
+							title = LOC(
+								"$$$/StyleAI/StyleCatalog/RebuildHelp=Rebuild learned styles from your saved training examples after changing or refreshing training data."
+							),
 						}),
 						f:row({
 							f:push_button({
@@ -527,17 +593,23 @@ LrTasks.startAsyncTask(function()
 								action = resetAndDiscoverStyles,
 								enabled = bind({
 									key = "isLoading",
-									transform = function(v) return not v end,
+									transform = function(v)
+										return not v
+									end,
 								}),
 							}),
 						}),
 						f:separator({ fill_horizontal = 1 }),
 						UIFactory.DestructiveAction(f, {
 							title = LOC("$$$/StyleAI/Training/WipeAll=Delete All Training Data"),
-							explanation = LOC("$$$/StyleAI/Training/WipeMaintenanceHelp=Permanently delete saved training examples and learned styles. Search data, Lightroom photos, and Develop edits are not changed."),
+							explanation = LOC(
+								"$$$/StyleAI/Training/WipeMaintenanceHelp=Permanently delete saved training examples and learned styles. Search data, Lightroom photos, and Develop edits are not changed."
+							),
 							enabled = bind({
 								key = "isLoading",
-								transform = function(value) return not value end,
+								transform = function(value)
+									return not value
+								end,
 							}),
 							action = deleteAllTrainingData,
 						}),

@@ -49,7 +49,9 @@ return {
 			file = "TaskMetadataBenchmark.lua",
 		},
 		{
-			title = LOC("$$$/StyleAI/Menu/DeveloperIndexingBenchmark=Developer: Benchmark Indexing Throughput (256+ Photos)..."),
+			title = LOC(
+				"$$$/StyleAI/Menu/DeveloperIndexingBenchmark=Developer: Benchmark Indexing Throughput (256+ Photos)..."
+			),
 			file = "TaskBenchmark.lua",
 		},
 		{
