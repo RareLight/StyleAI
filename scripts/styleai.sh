@@ -15,16 +15,8 @@ echo ""
 # ── 1. Stop active processes on port 19819 ─────────────────────────────────────
 OLD_PID=$(lsof -sTCP:LISTEN -ti:"$PORT" 2>/dev/null || true)
 if [ -n "$OLD_PID" ]; then
-    echo "Found process on port $PORT (PID $OLD_PID) — stopping..."
-    sudo kill "$OLD_PID" 2>/dev/null || true
-    sleep 1
-    # Check if still running, escalate to SIGKILL
-    if lsof -sTCP:LISTEN -ti:"$PORT" >/dev/null 2>&1; then
-        echo "Process did not exit gracefully; sending SIGKILL..."
-        sudo kill -9 "$OLD_PID" 2>/dev/null || true
-        sleep 1
-    fi
-    echo "Process stopped."
+    echo "Port $PORT is occupied. Quit Lightroom and stop the backend before uninstalling."
+    exit 1
 else
     echo "No processes found running on port $PORT."
 fi
@@ -52,15 +44,6 @@ for LAUNCH_AGENT in "com.styleai.server" "com.lrgenius.server"; do
         echo "Removed user-specific ${LAUNCH_AGENT}.plist"
     fi
 done
-echo ""
-
-# ── 3. Kill any stray server processes ────────────────────────────────────
-echo "Killing any stray backend processes..."
-sudo pkill -f "styleai_server.py" 2>/dev/null || true
-sudo pkill -f "styleai-server" 2>/dev/null || true
-sudo pkill -f "geniusai_server.py" 2>/dev/null || true
-sudo pkill -f "lrgenius-server" 2>/dev/null || true
-echo "Cleanup of stray processes complete."
 echo ""
 
 # ── 4. Remove application bundles ──────────────────────────────────────────
@@ -124,13 +107,6 @@ case "$yn" in
         echo "User settings and databases preserved."
         ;;
 esac
-echo ""
-
-# ── 8. Remove quarantine attributes from Downloads (cleanup) ────────────────
-if command -v xattr >/dev/null 2>&1; then
-    echo "Clearing quarantine attributes..."
-    xattr -dr com.apple.quarantine "${HOME}/Downloads" 2>/dev/null || true
-fi
 echo ""
 
 # ── 9. Verification ───────────────────────────────────────────────────────

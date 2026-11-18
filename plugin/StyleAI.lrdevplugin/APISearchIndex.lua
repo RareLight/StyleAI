@@ -1123,9 +1123,22 @@ function SearchIndexAPI.getIndexQueueStatus()
 end
 
 function SearchIndexAPI.startOperation(kind, itemIds, details, requestFingerprint, priority, coalesce)
+	local limit = 5000
+	local registration
+	if itemIds and #itemIds > limit then
+		registration = {}
+		local seen = {}
+		for _, id in ipairs(itemIds) do
+			if not seen[id] then
+				table.insert(registration, id)
+				seen[id] = true
+			end
+		end
+	end
 	local response, err = _request("POST", getBaseUrl() .. ENDPOINTS.OPERATIONS, {
 		kind = kind,
-		item_ids = itemIds or {},
+		item_ids = not registration and itemIds or nil,
+		registration_size = registration and #registration or nil,
 		details = details or {},
 		request_fingerprint = requestFingerprint,
 		priority = priority or 0,
@@ -1133,6 +1146,24 @@ function SearchIndexAPI.startOperation(kind, itemIds, details, requestFingerprin
 	}, 30)
 	if not response or not response.job or not response.job.job_id then
 		return false, err or "Backend did not create an operation job"
+	end
+	if registration then
+		local jobId = response.job.job_id
+		for first = 1, #registration, limit do
+			local ids = {}
+			local last = math.min(first + limit - 1, #registration)
+			for index = first, last do
+				table.insert(ids, registration[index])
+			end
+			local accepted, problem = _request("POST", getBaseUrl() .. ENDPOINTS.OPERATIONS .. "/" .. jobId .. "/register", {
+				item_ids = ids, final = last == #registration,
+			}, 30)
+			if not accepted then
+				SearchIndexAPI.cancelOperation(jobId)
+				return false, problem
+			end
+		end
+		response.job.state = "queued"
 	end
 	return true, response.job
 end
@@ -1149,10 +1180,10 @@ function SearchIndexAPI.getOperation(jobId, includeItems)
 		return false, "Missing operation job ID"
 	end
 	local suffix = includeItems == false and "?include_items=false" or ""
-	local response, err =
+	local response, err, httpStatus =
 		_request("GET", getBaseUrl() .. ENDPOINTS.OPERATIONS .. "/" .. tostring(jobId) .. suffix, nil, 15)
 	if not response or not response.job then
-		return false, err or "Operation status unavailable"
+		return false, err or "Operation status unavailable", httpStatus
 	end
 	return true, response.job
 end
@@ -3738,6 +3769,15 @@ function SearchIndexAPI.startServer(opts)
 	return startResult == true
 end
 
+local function catalogHeaders(jsonBody)
+	local path = LrPathUtils.child(getServerControlDir(), "styleai.db")
+	local headers = { { field = "X-StyleAI-Database", value = encodeQueryValue(path) } }
+	if jsonBody then
+		table.insert(headers, { field = "Content-Type", value = "application/json" })
+	end
+	return headers
+end
+
 _requestMultipart = function(url, mimeChunks, timeout)
 	log:trace(
 		"_requestMultipart start: url="
@@ -3747,7 +3787,7 @@ _requestMultipart = function(url, mimeChunks, timeout)
 			.. " chunks="
 			.. tostring(type(mimeChunks) == "table" and #mimeChunks or "n/a")
 	)
-	local result, hdrs = LrHttp.postMultipart(url, mimeChunks, nil, timeout)
+	local result, hdrs = LrHttp.postMultipart(url, mimeChunks, catalogHeaders(), timeout)
 	log:trace(
 		"_requestMultipart raw return: resultType="
 			.. tostring(type(result))
@@ -3807,7 +3847,7 @@ _requestMultipart = function(url, mimeChunks, timeout)
 			end
 		end
 		log:error(err_msg)
-		return nil, err_msg
+		return nil, err_msg, status
 	end
 end
 
@@ -3819,16 +3859,12 @@ _request = function(method, url, body, timeout, options)
 
 	local ok, err = LrTasks.pcall(function()
 		if method == "GET" then
-			if timeout ~= nil then
-				result, hdrs = LrHttp.get(tostring(url), nil, timeout)
-			else
-				result, hdrs = LrHttp.get(tostring(url))
-			end
+			result, hdrs = LrHttp.get(tostring(url), catalogHeaders(), timeout)
 		else
 			result, hdrs = LrHttp.post(
 				tostring(url),
 				bodyString or "",
-				{ { field = "Content-Type", value = "application/json" } },
+				catalogHeaders(true),
 				method,
 				timeout
 			)
@@ -4183,7 +4219,7 @@ function SearchIndexAPI.downloadRawLog(logType, targetPath)
 	log:trace("Downloading raw " .. logType .. " log from: " .. url)
 
 	local ok, res, hdrs = LrTasks.pcall(function()
-		return LrHttp.get(url, nil, 60)
+		return LrHttp.get(url, catalogHeaders(), 60)
 	end)
 
 	-- Status can be in hdrs.status (table) or hdrs itself (number) depending on LR version

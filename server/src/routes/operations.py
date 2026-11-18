@@ -54,6 +54,11 @@ def create_operation():
     item_ids = data.get("item_ids") or []
     if not isinstance(item_ids, list) or len(item_ids) > 100_000:
         return jsonify({"error": "item_ids must be a list of at most 100000 IDs"}), 400
+    size = data.get("registration_size")
+    if size is not None and (type(size) is not int or size < 1 or item_ids):
+        return jsonify(
+            {"error": "registration_size requires a positive count and an empty job"}
+        ), 400
     job, created = operations.create_job(
         _db_path(),
         kind=kind,
@@ -61,11 +66,33 @@ def create_operation():
         priority=int(data.get("priority") or 0),
         details=data.get("details") if isinstance(data.get("details"), dict) else None,
         item_ids=item_ids,
-        coalesce=data.get("coalesce", True) is not False,
+        coalesce=size is None and data.get("coalesce", True) is not False,
+        registration_size=size,
     )
     return jsonify({"status": "accepted" if created else "attached", "job": job}), (
         202 if created else 200
     )
+
+
+@operations_bp.route("/operations/<job_id>/register", methods=["POST"])
+def register_operation_items(job_id):
+    data = request.get_json(silent=True) or {}
+    ids = data.get("item_ids")
+    if (
+        not isinstance(ids, list)
+        or not 1 <= len(ids) <= 5000
+        or not all(isinstance(i, str) and i.strip() == i and i for i in ids)
+    ):
+        return jsonify({"error": "expected 1 to 5000 nonempty item IDs"}), 400
+    try:
+        operations.register_job_items(
+            _db_path(), job_id, ids, final=data.get("final") is True
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"status": "ok"})
 
 
 @operations_bp.route("/operations/<job_id>", methods=["GET"])
@@ -102,7 +129,7 @@ def update_operation_items(job_id: str):
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify({"status": "ok", "job": operations.get_job(_db_path(), job_id)})
+    return jsonify({"status": "ok", "job": {"job_id": job_id}})
 
 
 @operations_bp.route("/operations/<job_id>/complete", methods=["POST"])
@@ -111,4 +138,6 @@ def complete_operation(job_id: str):
         job = operations.complete_submission(_db_path(), job_id)
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
     return jsonify({"status": "ok", "job": job})

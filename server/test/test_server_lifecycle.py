@@ -771,7 +771,7 @@ def test_main_entry_guards_managed_startup_and_lazy_preload():
     signals_at = main_body.index("server_lifecycle.install_signal_handlers()")
     probe_at = main_body.index("server_lifecycle._lightroom_exit_due()")
     monitor_at = main_body.index("server_lifecycle._ensure_lightroom_monitor_thread()")
-    catalog_at = main_body.index("service_db.ensure_catalog_ownership")
+    catalog_at = main_body.index("server_lifecycle.attach_catalog(config.DB_PATH)")
     preload_guard = main_body.index("if not server_lifecycle.is_lightroom_managed():")
     preload_at = main_body.index("server_lifecycle.preload_models_async()")
 

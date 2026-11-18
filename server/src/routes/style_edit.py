@@ -240,14 +240,12 @@ def _prepare_batch_source_embeddings(
         ]
         generated: list[list[float] | None] = [None] * len(decoded)
         if valid_positions:
-            maximum_bytes = operations.admission.maximum_capacities["image_bytes"]
-            admitted_bytes = max(1, min(image_byte_count, maximum_bytes))
             try:
                 with operations.admission.acquire(
                     {
                         "accelerator": 1,
                         "cpu_prepare": 1,
-                        "image_bytes": admitted_bytes,
+                        "image_bytes": max(1, image_byte_count),
                     },
                     priority=9,
                     cancel_event=cancel_signal,

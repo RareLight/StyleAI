@@ -625,8 +625,11 @@ function AiEditAction.run()
 					-- Lightroom may have crashed after both backend writes but before the
 					-- catalog outbox was cleared. Keep the receipt unless we can prove that
 					-- the desired terminal state is already durable.
-					local statusOk, job = SearchIndexAPI.getOperation(payload.operation_job_id, true)
-					local alreadyTerminal = false
+					local statusOk, job, httpStatus = SearchIndexAPI.getOperation(payload.operation_job_id, true)
+					-- Only abandon the ledger handoff after the immutable event was
+					-- acknowledged and the old ledger cannot accept further writes.
+					local alreadyTerminal = httpStatus == 404
+						or (statusOk and (job.state == "interrupted" or job.state == "canceled"))
 					if statusOk and type(job.items) == "table" then
 						for _, item in ipairs(job.items) do
 							if
@@ -692,6 +695,29 @@ function AiEditAction.run()
 					return false, "Could not create durable Lightroom application receipt: " .. tostring(pendingError)
 				end
 				return flushApplicationReceipt(photo, payload)
+			end
+
+			local function replaySourceReceipts(photo)
+				-- Older builds held the receipt on the newly created virtual copy.
+				-- Check those copies when the photographer reselects the original.
+				local owners = { photo }
+				if not photo:getRawMetadata("isVirtualCopy") then
+					for _, copy in ipairs(photo:getRawMetadata("virtualCopies") or {}) do
+						table.insert(owners, copy)
+					end
+				end
+				for _, owner in ipairs(owners) do
+					local pending, problem = readPendingApplicationEvent(owner)
+					if pending == false then
+						return false, problem
+					elseif pending then
+						local ok, failure = flushApplicationReceipt(owner, pending)
+						if not ok then
+							return false, failure
+						end
+					end
+				end
+				return true
 			end
 
 			local consumerIndex = 1
@@ -781,14 +807,7 @@ function AiEditAction.run()
 								clientTimingsMs = {},
 							}
 							local photoId = photoIdsByIndex[index]
-							local pendingReceipt, pendingReceiptError = readPendingApplicationEvent(photo)
-							local pendingReady = true
-							if pendingReceipt == false then
-								pendingReady = false
-								pendingReceiptError = pendingReceiptError or "Stored application receipt is invalid"
-							elseif pendingReceipt then
-								pendingReady, pendingReceiptError = flushApplicationReceipt(photo, pendingReceipt)
-							end
+							local pendingReady, pendingReceiptError = replaySourceReceipts(photo)
 							if not pendingReady then
 								resultObj.errorMsg = fileName
 									.. ": A previous AI edit receipt must be synchronized: "
@@ -1068,7 +1087,7 @@ function AiEditAction.run()
 							local receiptStartedAt = LrDate.currentTime()
 							if readOk and type(readback) == "table" then
 								receiptOk, receiptError = recordApplicationEvent(
-									editPhoto,
+									photo,
 									photoIdsByIndex[index],
 									response,
 									"apply_confirmed",
@@ -1080,7 +1099,7 @@ function AiEditAction.run()
 								)
 							else
 								receiptOk, receiptError = recordApplicationEvent(
-									editPhoto,
+									photo,
 									photoIdsByIndex[index],
 									response,
 									"apply_unconfirmed",

@@ -37,6 +37,7 @@ def _catalog_examples(count=24):
                     "source_embedding_provenance": "raw_preview",
                     "source_embedding_fingerprint": f"catalog-fingerprint-{index}",
                     "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+                    "verified_raw_training_source": True,
                     "source_embedding_model": source_embeddings.SOURCE_EMBEDDING_MODEL_ID,
                     "source_embedding_preprocess": source_embeddings.SOURCE_EMBEDDING_PREPROCESS_VERSION,
                     "camera_profile": "Adobe Color",

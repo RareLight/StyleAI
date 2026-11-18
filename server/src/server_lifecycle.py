@@ -50,6 +50,32 @@ GLOBAL_CANCEL_EVENT = threading.Event()
 GLOBAL_SHUTDOWN_EVENT = threading.Event()
 _SESSION_MARKER_NAME = "styleai-session.json"
 _PROCESS_TOKEN = uuid4().hex
+_catalog_init_lock = threading.Lock()
+_ready_catalog = None
+
+
+def attach_catalog(db_path: str) -> bool:
+    """Publish readiness only after all required initialization steps succeed."""
+    global _ready_catalog
+    from core.migrations import run_migrations
+    from services import db, operations
+
+    with _catalog_init_lock:
+        if config.DB_PATH and config.DB_PATH != db_path:
+            raise service_chroma.CatalogOwnershipError(
+                "This backend is already bound to a different Lightroom catalog."
+            )
+        if config.DB_PATH == db_path and _ready_catalog == db_path:
+            return False
+        with operations.admission.acquire({"maintenance": 1, "catalog_write": 1}):
+            service_chroma.ensure_db_path(db_path)
+            db.ensure_catalog_ownership(db_path)
+            run_migrations(db_path)
+            recover_catalog_session()
+            write_pid_file()
+            write_ok_file()
+            _ready_catalog = db_path
+        return True
 
 
 def _session_marker_path() -> str | None:
@@ -76,7 +102,7 @@ def _write_session_state(state: str, active_work: bool = False) -> None:
     os.replace(tmp_path, path)
 
 
-def recover_catalog_session() -> bool:
+def recover_catalog_session(*, restored: bool = False) -> bool:
     """Validate and invalidate derived state after an interrupted server session."""
     path = _session_marker_path()
     if not path:
@@ -99,7 +125,7 @@ def recover_catalog_session() -> bool:
         and previous.get("pid") == os.getpid()
         and previous.get("process_token") == _PROCESS_TOKEN
     )
-    needs_recovery = (
+    needs_recovery = restored or (
         previous.get("state") not in (None, "clean") and not is_current_session
     )
     if needs_recovery:

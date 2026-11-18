@@ -311,6 +311,8 @@ def test_batch_reuses_complete_existing_training_evidence_without_raw_extraction
 
     metrics = {key: float(index) for index, key in enumerate(SOURCE_METRIC_KEYS)}
     metadata = {
+        "verified_raw_training_source": True,
+        "source_provenance": "raw_preview",
         "source_embedding_provenance": "raw_preview",
         "source_embedding_fingerprint": "current-fingerprint",
         "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,

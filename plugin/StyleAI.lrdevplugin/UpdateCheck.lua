@@ -77,7 +77,7 @@ end
 -- ─────────────────────────────────────────────────────────────────────────────
 
 --- Fetch information about the latest release directly from GitHub.
---- Returns a table {tag_name, release_url, manifest_url, is_code_only, is_newer} or nil.
+--- Release builds are full platform ZIPs; never apply a remote patch manifest.
 function UpdateCheck.getLatestReleaseInfo()
 	local release = fetchJson("https://api.github.com/repos/RareLight/StyleAI/releases/latest")
 	if not release then
@@ -91,36 +91,11 @@ function UpdateCheck.getLatestReleaseInfo()
 
 	local isNewer = semverIsNewer(tag, UpdateCheck.releaseTagName)
 
-	-- Look for manifest asset
-	local manifestUrl = nil
-	for _, asset in ipairs(release.assets or {}) do
-		local name = asset.name or ""
-		if name:match("^update%-manifest%-.*%.json$") then
-			manifestUrl = asset.browser_download_url
-			break
-		end
-	end
-
 	return {
 		tag_name = tag,
 		release_url = release.html_url,
-		manifest_url = manifestUrl,
-		is_code_only = manifestUrl ~= nil,
 		is_newer = isNewer,
 	}
-end
-
---- Fetch and parse the update manifest JSON.
-function UpdateCheck.fetchManifest(manifestUrl)
-	return fetchJson(manifestUrl)
-end
-
---- Delegates the code-only update to the backend.
-function UpdateCheck.applyCodeUpdate(manifest)
-	if type(manifest) ~= "table" then
-		return false, "Invalid manifest"
-	end
-	return SearchIndexAPI.applyUpdate(manifest)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -136,23 +111,7 @@ function UpdateCheck.checkForNewVersion()
 	end
 
 	if info.is_newer then
-		if info.is_code_only then
-			local btn = LrDialogs.confirm(
-				LOC("$$$/StyleAI/UpdateCheck/CodeOnlyAvailableTitle=Update Available: ^1", info.tag_name),
-				LOC(
-					"$$$/StyleAI/UpdateCheck/CodeOnlyAvailableMsg=A new version is available (^1). You can update the plugin code directly.\n\nUpdate now?",
-					info.tag_name
-				),
-				LOC("$$$/StyleAI/UpdateCheck/UpdateNow=Update Now"),
-				LOC("$$$/StyleAI/common/Later=Later")
-			)
-			if btn == "ok" then
-				local tu = require("TaskUpdate")
-				tu.runUpdate(info)
-			end
-		else
-			LrHttp.openUrlInBrowser(info.release_url or "https://github.com/RareLight/StyleAI/releases/latest")
-		end
+		LrHttp.openUrlInBrowser(info.release_url or "https://github.com/RareLight/StyleAI/releases/latest")
 	else
 		LrDialogs.message(
 			LOC(
@@ -167,22 +126,19 @@ end
 --- Non-blocking background check.
 function UpdateCheck.checkForNewVersionInBackground()
 	local info = UpdateCheck.getLatestReleaseInfo()
-	if not info or not info.is_newer or not info.is_code_only then
+	if not info or not info.is_newer or prefs.lastPromptedRelease == info.tag_name then
 		return nil
 	end
 
+	prefs.lastPromptedRelease = info.tag_name
 	local btn = LrDialogs.confirm(
 		LOC("$$$/StyleAI/UpdateCheck/NewVersionAvailableTitle=New Version Available"),
-		LOC(
-			"$$$/StyleAI/UpdateCheck/CodeOnlyBackgroundMsg=StyleAI ^1 is available. You can update directly.\n\nUpdate now?",
-			info.tag_name
-		),
-		LOC("$$$/StyleAI/UpdateCheck/UpdateNow=Update Now"),
+		LOC("$$$/StyleAI/UpdateCheck/CodeOnlyAvailableTitle=Update Available: ^1", info.tag_name),
+		LOC("$$$/StyleAI/PluginInfo/DownloadNow=Download now"),
 		LOC("$$$/StyleAI/common/Later=Later")
 	)
 	if btn == "ok" then
-		local tu = require("TaskUpdate")
-		tu.runUpdate(info)
+		LrHttp.openUrlInBrowser(info.release_url or "https://github.com/RareLight/StyleAI/releases/latest")
 	end
 	return nil
 end

@@ -31,6 +31,7 @@ def _examples(count=12, *, camera_profile="Adobe Color", photo_prefix="photo"):
                     "source_embedding_provenance": "raw_preview",
                     "source_embedding_fingerprint": f"fingerprint-{index}",
                     "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+                    "verified_raw_training_source": True,
                     "source_embedding_model": source_embeddings.SOURCE_EMBEDDING_MODEL_ID,
                     "source_embedding_preprocess": source_embeddings.SOURCE_EMBEDDING_PREPROCESS_VERSION,
                     "camera_profile": camera_profile,
@@ -139,10 +140,55 @@ def test_generation_round_trip_and_absolute_inference(policy_database, monkeypat
     assert prediction is not None
     assert prediction.policy_id == policies[0]["policy_id"]
     assert prediction.applied == prediction.target
-
     policy_runtime.invalidate_runtime_cache()
     reloaded = policy_runtime.list_active_policies()
     assert reloaded == policies
+
+
+def test_failed_publication_preserves_examples_and_prune_failure_preserves_files(
+    policy_database, mocker
+):
+    from services import policy_store
+
+    rows = _examples()
+    mocker.patch.object(
+        policy_runtime.training_service,
+        "list_training_examples_with_embeddings",
+        return_value=rows,
+    )
+    original = policy_runtime.rebuild_active_generation()["generation_id"]
+    connection = policy_store.connect_policy_store(str(policy_database))
+    try:
+
+        def snapshot():
+            return dict(
+                connection.execute(
+                    "SELECT photo_id, target_values_json FROM policy_v2_examples"
+                )
+            )
+
+        old_evidence = snapshot()
+        rows[0]["metadata"]["canonical_settings"] = json.dumps({"exposure": 2.0})
+        fail = mocker.patch.object(
+            policy_store, "activate_generation", side_effect=RuntimeError("injected")
+        )
+        with pytest.raises(RuntimeError, match="injected"):
+            policy_runtime.rebuild_active_generation()
+        assert snapshot() == old_evidence
+        assert (
+            policy_store.get_active_generation(connection)["generation_id"] == original
+        )
+        mocker.stop(fail)
+        mocker.patch.object(
+            policy_store, "prune_inactive_generations", side_effect=RuntimeError("busy")
+        )
+        new = policy_runtime.rebuild_active_generation()["generation_id"]
+        assert new != original
+        assert snapshot() != old_evidence
+        assert policy_store.get_active_generation(connection)["generation_id"] == new
+        assert policy_runtime._load_active_artifacts()
+    finally:
+        connection.close()
 
 
 def test_incompatible_target_schema_requires_rebuild(policy_database, monkeypatch):

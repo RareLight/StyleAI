@@ -1,5 +1,6 @@
 import sys
 import threading
+from urllib.parse import unquote
 from flask import Flask, g, jsonify, request
 from waitress import serve
 from werkzeug.exceptions import HTTPException
@@ -155,27 +156,32 @@ def _auto_bind_db_path():
     if request.endpoint in _DB_PATH_BYPASS_ENDPOINTS:
         return
 
-    db_path = None
-    if request.method in ("POST", "PUT", "PATCH"):
+    header = request.headers.get("X-StyleAI-Database")
+    db_path = unquote(header) if header else None
+    if not db_path and request.method in ("POST", "PUT", "PATCH"):
         data = request.get_json(silent=True, cache=True)
         if isinstance(data, dict):
             db_path = data.get("db_path")
     if not db_path:
         db_path = request.args.get("db_path")
     if not db_path:
+        if server_lifecycle.is_lightroom_managed() and request.endpoint not in {
+            "server.shutdown",
+            "server.version",
+            "server.health",
+        }:
+            return jsonify(
+                {"error": "Catalog ownership is required for this request"}
+            ), 409
         return
 
-    from core.migrations import run_migrations
-
     try:
-        if service_chroma.ensure_db_path(db_path):
-            service_db.ensure_catalog_ownership(db_path)
-            run_migrations(db_path)
+        server_lifecycle.attach_catalog(db_path)
+    except service_chroma.CatalogOwnershipError as e:
+        return jsonify({"error": str(e)}), 409
     except Exception as e:
-        # Don't 500 here — let the route's own error handling report the
-        # underlying failure with more context. We only log so we can see
-        # an init crash separately from the route-level failure.
         logger.error("Auto-bind to db_path %s failed: %s", db_path, e, exc_info=True)
+        return jsonify({"error": "Catalog initialization failed"}), 503
 
 
 @app.after_request
@@ -219,6 +225,8 @@ def handle_exception(e):
     # Pass through HTTP errors
     if isinstance(e, HTTPException):
         return e
+    if isinstance(e, operations.ResourceBudgetExceeded):
+        return jsonify({"error": str(e)}), 413
 
     logger.error(f"Unhandled Exception: {e}", exc_info=True)
     return jsonify({"error": str(e)}), 500
@@ -252,14 +260,7 @@ if __name__ == "__main__":
     logger.info("=" * 60)
 
     if config.DB_PATH:
-        service_db.ensure_catalog_ownership(config.DB_PATH)
-        server_lifecycle.recover_catalog_session()
-
-    # Mark server as ready for startup scripts
-    server_lifecycle.write_ok_file()
-
-    # Write PID for lifecycle management
-    server_lifecycle.write_pid_file()
+        server_lifecycle.attach_catalog(config.DB_PATH)
 
     # Start optional background schedulers (housekeeping only)
     _start_housekeeping_scheduler()

@@ -102,15 +102,20 @@ def _ensure_initialized():
     from chromadb.config import Settings
 
     logger.info(f"Initializing ChromaDB client at {config.DB_PATH} (lazy)...")
-    chroma_client = chromadb.PersistentClient(
+    client = chromadb.PersistentClient(
         path=config.DB_PATH, settings=Settings(anonymized_telemetry=False)
     )
 
     # No embedding_function is passed: all callers supply pre-computed vectors
     # explicitly via embeddings=[...], so ChromaDB's built-in embedding is unused.
-    collection = chroma_client.get_or_create_collection(
-        name="image_embeddings", embedding_function=None
-    )
+    try:
+        collection = client.get_or_create_collection(
+            name="image_embeddings", embedding_function=None
+        )
+    except Exception:
+        client.close()
+        raise
+    chroma_client = client
     logger.info("Initialized ChromaDB image_embeddings collection.")
 
 
@@ -318,6 +323,7 @@ AI_METADATA_KEYS = frozenset(
         "keywords",
         "alt_text",
         "model",
+        "provider",
         "run_date",
         "tokens_used",
         "flattened_keywords",
@@ -346,7 +352,7 @@ def clear_image_metadata(photo_id, *, legacy_uuid=None):
         return False
     # Main collection: get current, strip AI fields, update (keep embedding)
     try:
-        data = collection.get(ids=[photo_id], include=["metadatas", "embeddings"])
+        data = collection.get(ids=[photo_id], include=["metadatas"])
     except Exception as e:
         if type(e).__name__ != "InternalError" or not getattr(
             type(e), "__module__", ""
@@ -358,15 +364,11 @@ def clear_image_metadata(photo_id, *, legacy_uuid=None):
             "clear_image_metadata: photo_id %s not in main collection", photo_id
         )
         return False
-    meta = dict(data["metadatas"][0]) if data.get("metadatas") else {}
-    embedding = _first_result_item(data.get("embeddings"))
-    for key in AI_METADATA_KEYS:
-        meta.pop(key, None)
-    meta = _ensure_photo_metadata(photo_id, meta, legacy_uuid=legacy_uuid)
-    if embedding is not None:
-        collection.update(ids=[photo_id], metadatas=[meta], embeddings=[embedding])
-    else:
-        collection.update(ids=[photo_id], metadatas=[meta])
+    # Chroma updates merge metadata; omission does not remove a stored key.
+    meta = (data.get("metadatas") or [{}])[0] or {}
+    removed = {key: None for key in AI_METADATA_KEYS if key in meta}
+    if removed:
+        collection.update(ids=[photo_id], metadatas=[removed])
     return True
 
 

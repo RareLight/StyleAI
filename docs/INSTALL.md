@@ -5,6 +5,11 @@ Choose the archive for your computer: `macos-arm64` is for Apple silicon Macs;
 not included in these builds. Lightroom **Classic**, not Lightroom cloud, is
 required. The backend is unsigned and macOS builds are not notarized.
 
+**Updates use the same full ZIP as installation.** The historical macOS
+`.pkg` and Windows Inno Setup recipes in `installers/` are not supported
+release artifacts. You do not need a system service, startup shortcut, or
+separate backend installer.
+
 1. Quit Lightroom Classic. Download the ZIP from the project's GitHub Releases
    page and extract the entire archive to a permanent folder you can write to,
    for example `Documents/StyleAI`. Do not run it from inside the ZIP. A locally

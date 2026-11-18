@@ -503,13 +503,13 @@ def restore_backup_archive(archive_path: str) -> dict:
         expected_catalog_database_id=ownership["catalog_database_id"],
         staging_parent=parent,
     )
-    pre_restore_backup = create_persistent_backup(reason="pre-restore")
     rollback_path = os.path.join(
         parent,
         f".{os.path.basename(db_path)}.restore-rollback-{uuid4().hex}",
     )
     swapped = False
     try:
+        pre_restore_backup = create_persistent_backup(reason="pre-restore")
         from services import policy_runtime
 
         chroma_service.unload_collections()
@@ -548,7 +548,7 @@ def restore_backup_archive(archive_path: str) -> dict:
         run_migrations(db_path, force=True)
         from server_lifecycle import recover_catalog_session
 
-        recover_catalog_session()
+        recover_catalog_session(restored=True)
 
         shutil.rmtree(rollback_path)
         rollback_path = ""
@@ -676,8 +676,13 @@ def prune_database(valid_photo_ids: list) -> dict:
     for pid in all_ids:
         if pid not in valid_set:
             chroma_service.delete_image(pid)
-            training_service.delete_training_example(pid)
             deleted += 1
 
+    training_deleted = training_service.prune_training_examples(valid_set)
+
     logger.info(f"Pruned database: {deleted} deleted from {len(all_ids)} checked.")
-    return {"deleted": deleted, "checked": len(all_ids)}
+    return {
+        "deleted": deleted,
+        "checked": len(all_ids),
+        "training_deleted": training_deleted,
+    }

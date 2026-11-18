@@ -64,10 +64,14 @@ def initialize_database(process, db_path):
         )
         response = http.getresponse()
         payload = json.loads(response.read())
+        results = payload.get("results") or {}
+        # Startup attach may complete init before this request: either a fresh
+        # "success" or "already_initialized" for the same path proves readiness.
         if (
             response.status != 200
             or payload.get("error")
-            or payload.get("results") != {"status": "success", "db_path": str(db_path)}
+            or results.get("db_path") != str(db_path)
+            or results.get("status") not in ("success", "already_initialized")
         ):
             raise RuntimeError(
                 f"Catalog initialization failed: {response.status} {payload}"

@@ -6,7 +6,6 @@ import config
 from config import logger
 from services.metadata import get_analysis_service
 from services import version as service_version
-from services import update as service_update
 
 server_bp = Blueprint("server", __name__)
 
@@ -98,33 +97,9 @@ def restart():
 
 @server_bp.route("/update/apply", methods=["POST"])
 def update_apply():
-    """
-    Apply a code-only update from a manifest.
-    JSON: { "manifest": {...}, "plugin_path": "/path/to/plugin" }
-    Only accepted from loopback to prevent arbitrary file-write via network.
-    """
-    remote = request.remote_addr or ""
-    if remote not in ("127.0.0.1", "::1", "localhost"):
-        logger.warning(f"Rejected /update/apply from non-loopback address: {remote}")
-        return jsonify(
-            {"error": "update endpoint only available on local backend"}
-        ), 403
-
-    data = request.get_json(silent=True) or {}
-    manifest = data.get("manifest")
-    plugin_path = data.get("plugin_path")
-
-    if not manifest or not plugin_path:
-        return jsonify({"error": "manifest and plugin_path are required"}), 400
-
-    success, message = service_update.perform_code_update(manifest, plugin_path)
-    if success:
-        # The updater thread handles backend shutdown after spawning the GUI process.
-        # Do NOT call request_shutdown() here — it would race with the response.
-        logger.info("Update process started successfully")
-        return jsonify({"status": "success", "message": message})
-    else:
-        return jsonify({"error": message}), 500
+    return jsonify(
+        {"error": "Code-only updates are retired. Install the full release ZIP."}
+    ), 410
 
 
 @server_bp.route("/initialize", methods=["POST"])
@@ -135,21 +110,13 @@ def initialize():
     """
     data = request.get_json(silent=True) or {}
     db_path = data.get("db_path")
-    if not db_path:
+    if not isinstance(db_path, str) or not db_path:
         return jsonify({"error": "db_path is required"}), 400
 
-    from services import chroma as service_chroma
-    from services import db as service_db
     from services.chroma import CatalogOwnershipError
-    from core.migrations import run_migrations
 
     try:
-        switched = service_chroma.ensure_db_path(db_path)
-        service_db.ensure_catalog_ownership(db_path)
-        # Run migrations on the catalog's database path immediately after binding
-        if switched:
-            run_migrations(db_path)
-            server_lifecycle.recover_catalog_session()
+        switched = server_lifecycle.attach_catalog(db_path)
     except CatalogOwnershipError as e:
         logger.warning("Rejected catalog switch: %s", e)
         return jsonify({"error": str(e)}), 409
@@ -160,8 +127,6 @@ def initialize():
     if not switched:
         return jsonify({"status": "already_initialized", "db_path": db_path})
 
-    server_lifecycle.write_ok_file()
-    server_lifecycle.write_pid_file()
     return jsonify({"status": "success", "db_path": db_path})
 
 

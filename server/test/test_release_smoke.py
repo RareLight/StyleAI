@@ -46,6 +46,71 @@ def test_port_handoff_sends_no_http_and_terminates_only_child(
     process.wait.assert_called_once()
 
 
+def _initialize_http(smoke, payload, status=200):
+    http = Mock()
+    http.getresponse.return_value.status = status
+    http.getresponse.return_value.read.return_value = json.dumps(payload).encode()
+    return http
+
+
+def test_already_initialized_for_same_catalog_is_accepted(smoke, tmp_path, monkeypatch):
+    db_path = tmp_path / "styleai.db"
+    db_path.mkdir()
+    (db_path / "chroma.sqlite3").touch()
+    db = sqlite3.connect(db_path / "styles.sqlite")
+    db.execute("CREATE TABLE schema_versions (version_id TEXT)")
+    expected = {
+        p.stem for p in smoke.MIGRATIONS.glob("*.py") if p.name != "__init__.py"
+    }
+    db.executemany(
+        "INSERT INTO schema_versions VALUES (?)", [(v,) for v in expected]
+    )
+    db.commit()
+    db.close()
+    monkeypatch.setattr(smoke, "wait_for_socket", Mock())
+    monkeypatch.setattr(smoke.psutil, "Process", Mock())
+    http = _initialize_http(
+        smoke,
+        {"results": {"status": "already_initialized", "db_path": str(db_path)}, "error": None},
+    )
+    monkeypatch.setattr(smoke, "HTTPConnection", Mock(return_value=http))
+    smoke.initialize_database(Mock(), db_path)
+
+
+def test_already_initialized_for_other_catalog_is_rejected(
+    smoke, tmp_path, monkeypatch
+):
+    db_path = tmp_path / "styleai.db"
+    monkeypatch.setattr(smoke, "wait_for_socket", Mock())
+    monkeypatch.setattr(smoke.psutil, "Process", Mock())
+    http = _initialize_http(
+        smoke,
+        {
+            "results": {
+                "status": "already_initialized",
+                "db_path": str(tmp_path / "other.db"),
+            },
+            "error": None,
+        },
+    )
+    monkeypatch.setattr(smoke, "HTTPConnection", Mock(return_value=http))
+    with pytest.raises(RuntimeError, match="initialization failed"):
+        smoke.initialize_database(Mock(), db_path)
+
+
+def test_unexpected_initialize_status_is_rejected(smoke, tmp_path, monkeypatch):
+    db_path = tmp_path / "styleai.db"
+    monkeypatch.setattr(smoke, "wait_for_socket", Mock())
+    monkeypatch.setattr(smoke.psutil, "Process", Mock())
+    http = _initialize_http(
+        smoke,
+        {"results": {"status": "pending", "db_path": str(db_path)}, "error": None},
+    )
+    monkeypatch.setattr(smoke, "HTTPConnection", Mock(return_value=http))
+    with pytest.raises(RuntimeError, match="initialization failed"):
+        smoke.initialize_database(Mock(), db_path)
+
+
 def test_success_response_is_not_enough_when_frozen_migration_is_missing(
     smoke, tmp_path, monkeypatch
 ):

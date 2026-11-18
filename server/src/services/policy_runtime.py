@@ -337,10 +337,7 @@ def _prepare_rows(raw_examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if (
             embedding is None
             or is_stitched_panorama(metadata)
-            or metadata.get("source_provenance") != "raw_preview"
-            or metadata.get("source_embedding_provenance") != "raw_preview"
-            or not source_embeddings.metadata_has_current_contract(metadata)
-            or not metadata.get("source_embedding_fingerprint")
+            or not source_embeddings.verified_training_record(metadata)
         ):
             continue
         normalized_embedding = np.asarray(embedding, dtype=np.float32).reshape(-1)
@@ -1306,27 +1303,28 @@ def rebuild_active_generation(
             }
             for key, value in selector.validation.items()
         )
-        policy_store.upsert_policy_examples(connection, persisted_examples)
-        policy_store.replace_policy_memberships(
+        policy_store.publish_generation(
             connection,
-            generation_id=generation_id,
-            memberships=all_memberships,
-        )
-        policy_store.replace_validation_results(
-            connection,
-            generation_id=generation_id,
-            results=validation_rows,
-        )
-        check_canceled()
-        policy_store.activate_generation(connection, generation_id)
-        pruned_generation_ids = policy_store.prune_inactive_generations(
-            connection,
-            retain_retired=0,
+            generation_id,
+            persisted_examples,
+            all_memberships,
+            validation_rows,
+            check_canceled,
         )
     except Exception:
         policy_store.fail_generation(connection, generation_id)
         shutil.rmtree(artifact_directory, ignore_errors=True)
         raise
+    else:
+        try:
+            pruned_generation_ids = policy_store.prune_inactive_generations(
+                connection, retain_retired=0
+            )
+        except Exception:
+            logger.exception(
+                "Generation is active; deferring retired-generation cleanup"
+            )
+            pruned_generation_ids = []
     finally:
         connection.close()
     for pruned_generation_id in pruned_generation_ids:

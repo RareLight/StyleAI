@@ -89,7 +89,8 @@ def _resolve_training_source(
         embedding = source_embeddings.compatible_embedding(
             chroma.get_image(photo_id),
             raw_filepath=raw_filepath,
-            rendered_image_bytes=rendered_image_bytes,
+            rendered_image_bytes=None,
+            resolved_source=source,
         )
     except Exception as exc:
         logger.debug(
@@ -174,6 +175,11 @@ def _resolve_training_sources_batch(
             try:
                 metadatas = existing.get("metadatas") or []
                 metadata = dict(metadatas[0]) if metadatas else {}
+                if (
+                    cache_name == "training"
+                    and not source_embeddings.verified_training_record(metadata)
+                ):
+                    continue
                 embedding = source_embeddings.compatible_embedding(
                     existing,
                     raw_filepath=raw_filepath,
@@ -246,7 +252,8 @@ def _resolve_training_sources_batch(
             embedding = source_embeddings.compatible_embedding(
                 chroma.get_image(photo_id),
                 raw_filepath=raw_filepath,
-                rendered_image_bytes=rendered_image_bytes,
+                rendered_image_bytes=None,
+                resolved_source=source,
             )
         except Exception as exc:
             logger.debug(
@@ -280,13 +287,11 @@ def _resolve_training_sources_batch(
         image_byte_count = sum(len(source.image_bytes) for _, source in chunk)
         try:
             if valid_positions:
-                maximum_bytes = operations.admission.maximum_capacities["image_bytes"]
-                admitted_bytes = max(1, min(image_byte_count, maximum_bytes))
                 with operations.admission.acquire(
                     {
                         "accelerator": 1,
                         "cpu_prepare": 1,
-                        "image_bytes": admitted_bytes,
+                        "image_bytes": max(1, image_byte_count),
                     },
                     priority=8,
                     cancel_event=cancel_signal,

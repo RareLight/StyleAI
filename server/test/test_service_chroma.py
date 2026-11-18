@@ -184,9 +184,8 @@ class TestChromaServiceCRUD(unittest.TestCase):
         self.mock_collection.update.assert_called_once()
         args, kwargs = self.mock_collection.update.call_args
         updated_meta = kwargs["metadatas"][0]
-        self.assertEqual(updated_meta["rating"], 5)
-        self.assertNotIn("caption", updated_meta)
-        self.assertNotIn("keywords", updated_meta)
+        self.assertEqual(updated_meta, {"caption": None, "keywords": None})
+        self.assertNotIn("embeddings", kwargs)
 
     @patch("services.chroma._ensure_initialized")
     def test_get_image_count(self, mock_init):

@@ -1080,30 +1080,31 @@ LrTasks.startAsyncTask(function()
 		then
 			usedInlineApply = true
 			options.onBatchAnalyzed = function(batch, scope)
+				local responses = {}
+				for index, item in ipairs(batch) do
+					local response = SearchIndexAPI.getPhotoData(item.photo_id)
+					if not response or not response.metadata then
+						error("Generated metadata was unavailable for " .. tostring(item.photo_id))
+					end
+					responses[index] = response
+				end
 				local writeLease, leaseError = WorkCoordinator.acquire("catalog_write", scope)
 				if not writeLease then
 					error("Catalog write canceled: " .. tostring(leaseError))
 				end
 				local writeOk, writeError = LrTasks.pcall(function()
 					LrApplication.activeCatalog():withWriteAccessDo("Apply AI Metadata Batch", function()
-						for _, item in ipairs(batch) do
-							local photo = item.photo
-							local photoId = item.photo_id
-							local response = SearchIndexAPI.getPhotoData(photoId)
-							if response and response.metadata then
-								MetadataManager.applyMetadata(photo, response, nil, {
-									applyKeywords = props.generateKeywords,
-									applyTitle = props.generateTitle,
-									applyCaption = props.generateCaption,
-									applyAltText = props.generateAltText,
-									useTopLevelKeyword = props.useTopLevelKeyword,
-									topLevelKeyword = props.topLevelKeyword,
-									appendMetadata = props.appendMetadata,
-									useExistingTransaction = true,
-								})
-							else
-								error("Generated metadata was unavailable for " .. tostring(photoId))
-							end
+						for index, item in ipairs(batch) do
+							MetadataManager.applyMetadata(item.photo, responses[index], nil, {
+								applyKeywords = props.generateKeywords,
+								applyTitle = props.generateTitle,
+								applyCaption = props.generateCaption,
+								applyAltText = props.generateAltText,
+								useTopLevelKeyword = props.useTopLevelKeyword,
+								topLevelKeyword = props.topLevelKeyword,
+								appendMetadata = props.appendMetadata,
+								useExistingTransaction = true,
+							})
 						end
 					end, Defaults.catalogWriteAccessOptions)
 				end)

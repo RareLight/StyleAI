@@ -231,6 +231,7 @@ class TestTrainingReadiness(unittest.TestCase):
             "source_embedding_provenance": "raw_preview",
             "source_embedding_fingerprint": "fingerprint",
             "source_embedding_schema": source_embeddings.SOURCE_EMBEDDING_SCHEMA_VERSION,
+            "verified_raw_training_source": True,
             "source_embedding_model": source_embeddings.SOURCE_EMBEDDING_MODEL_ID,
             "source_embedding_preprocess": source_embeddings.SOURCE_EMBEDDING_PREPROCESS_VERSION,
             "camera_profile": profile,
@@ -381,6 +382,7 @@ class TestTrainingEvidenceFeatures(unittest.TestCase):
         from services import source_embeddings, training
 
         current = {
+            "verified_raw_training_source": True,
             "has_embedding": True,
             "source_provenance": "raw_preview",
             "source_embedding_provenance": "raw_preview",

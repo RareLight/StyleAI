@@ -166,20 +166,35 @@ cmd_reset_db() {
     echo "=== Resetting StyleAI Databases ==="
     echo ""
     local catalog_path="${1:-}"
-    if [ -z "$catalog_path" ] || [ ! -f "$catalog_path" ]; then
+    if [[ "$catalog_path" != *.lrcat || ! -f "$catalog_path" || -L "$catalog_path" ]]; then
         echo "ERROR: Provide the path to the one Lightroom catalog whose database should be reset."
         echo "Example: $(basename "$0") reset-db \"$HOME/Pictures/Lightroom/My Catalog.lrcat\""
         return 1
     fi
-    cmd_stop
     local db_path
     db_path="$(dirname "$catalog_path")/styleai.db"
     if [ ! -d "$db_path" ]; then
         echo "No StyleAI database exists for: $catalog_path"
         return 0
     fi
-    rm -rf "$db_path"
-    echo "Deleted catalog-local StyleAI database: $db_path"
+    if [[ -L "$db_path" || ! -f "$db_path/.styleai-catalog-ownership.json" ]]; then
+        echo "Refusing reset: expected a catalog-owned database, not a link or unmarked folder."
+        return 1
+    fi
+    local catalogs=( "$(dirname "$catalog_path")"/*.lrcat )
+    if [[ ${#catalogs[@]} != 1 || -e "${catalog_path}.lock" ]]; then
+        echo "Refusing reset: close Lightroom and keep exactly one catalog in this folder."
+        return 1
+    fi
+    command -v lsof >/dev/null || { echo "Cannot verify the backend has stopped."; return 1; }
+    if port_in_use; then
+        echo "Quit Lightroom and stop the backend before resetting its database."
+        return 1
+    fi
+    local recovery
+    recovery=$(mktemp -d "${db_path}.pre-reset.XXXXXXXX")
+    mv "$db_path" "$recovery/styleai.db"
+    echo "Reset complete. The intact database and all backups are at: $recovery/styleai.db"
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────

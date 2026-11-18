@@ -56,6 +56,10 @@ def connect_policy_store(db_path: str) -> sqlite3.Connection:
 
 @contextmanager
 def _immediate_transaction(connection: sqlite3.Connection) -> Iterator[None]:
+    if connection.in_transaction:
+        # The publishing transaction owns rollback of all component writes.
+        yield
+        return
     connection.execute("BEGIN IMMEDIATE")
     try:
         yield
@@ -64,6 +68,22 @@ def _immediate_transaction(connection: sqlite3.Connection) -> Iterator[None]:
         raise
     else:
         connection.commit()
+
+
+def publish_generation(
+    connection, generation_id, examples, memberships, results, check_canceled
+):
+    """Publish shared example evidence and switch the active model as one commit."""
+    with _immediate_transaction(connection):
+        upsert_policy_examples(connection, examples)
+        replace_policy_memberships(
+            connection, generation_id=generation_id, memberships=memberships
+        )
+        replace_validation_results(
+            connection, generation_id=generation_id, results=results
+        )
+        check_canceled()
+        activate_generation(connection, generation_id)
 
 
 def create_generation(

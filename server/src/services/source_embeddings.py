@@ -133,6 +133,17 @@ def metadata_has_current_contract(metadata: dict[str, Any] | None) -> bool:
     return all(metadata.get(key) == value for key, value in _METADATA_KEYS.items())
 
 
+def verified_training_record(metadata: dict[str, Any]) -> bool:
+    """Pre-fix training records cannot distinguish mislabeled rendered vectors."""
+    return (
+        metadata.get("verified_raw_training_source") is True
+        and metadata.get("source_provenance") == RAW_PREVIEW_PROVENANCE
+        and metadata.get("source_embedding_provenance") == RAW_PREVIEW_PROVENANCE
+        and bool(metadata.get("source_embedding_fingerprint"))
+        and metadata_has_current_contract(metadata)
+    )
+
+
 def cached_source_metrics(metadata: dict[str, Any] | None) -> dict[str, float] | None:
     metadata = metadata or {}
     if not metadata_has_current_contract(metadata):
@@ -163,6 +174,7 @@ def compatible_embedding(
     *,
     raw_filepath: str | None,
     rendered_image_bytes: bytes | None,
+    resolved_source: NeutralSource | None = None,
 ) -> list[float] | None:
     """Return a vector only after validating its complete source contract."""
     if not record or not record.get("ids"):
@@ -177,6 +189,11 @@ def compatible_embedding(
         rendered_image_bytes=rendered_image_bytes,
     )
     if not expected or expected != metadata.get("source_embedding_fingerprint"):
+        return None
+    if resolved_source and (
+        resolved_source.provenance != metadata.get("source_embedding_provenance")
+        or resolved_source.fingerprint != expected
+    ):
         return None
     embeddings = record.get("embeddings")
     if embeddings is None or len(embeddings) == 0:

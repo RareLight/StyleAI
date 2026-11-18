@@ -118,6 +118,9 @@ class TestBackupSafety:
         mocker.patch.object(
             service_db.chroma_service, "get_all_image_ids", return_value=[]
         )
+        mocker.patch.object(
+            service_db.training_service, "prune_training_examples", return_value=0
+        )
 
         assert service_db.prune_database(["valid-photo"])["deleted"] == 0
         build.assert_called_once_with(require_persistent=True, reason="pre-prune")
@@ -157,7 +160,8 @@ class TestBackupSafety:
         connection.execute("UPDATE state SET value = 'after'")
         connection.commit()
         connection.close()
-        mocker.patch("core.migrations.run_migrations")
+        # A restored snapshot must run real ledger recovery, even without a
+        # prior crash. Use the real schema, not a stubbed migration.
         mocker.patch.object(service_db.chroma_service, "unload_collections")
         mocker.patch.object(service_db.training_service, "unload_collections")
         mocker.patch("services.policy_runtime.invalidate_runtime_cache")

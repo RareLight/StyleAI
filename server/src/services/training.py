@@ -554,12 +554,13 @@ def add_training_example(
         )
 
     try:
-        existing = _training_collection.get(ids=[photo_id], include=[])
+        existing = _training_collection.get(ids=[photo_id], include=["metadatas"])
     except _ChromaInternalError:
         existing = None
 
     if existing and existing.get("ids"):
-        if not force_retrain:
+        previous = (existing.get("metadatas") or [{}])[0] or {}
+        if not force_retrain and source_embeddings.verified_training_record(previous):
             raise ValueError(f"Skipped {photo_id}: Already trained")
 
     from services.photo_constraints import is_stitched_panorama
@@ -586,6 +587,7 @@ def add_training_example(
         "source_provenance": str(source_provenance or "unknown")[:64],
     }
     metadata.update(dict(source_stamp or {}))
+    metadata["verified_raw_training_source"] = True
     if not filename:
         try:
             from services import chroma as chroma_service
@@ -714,6 +716,24 @@ def update_training_example_labels(
         logger.info(f"Updated label for {len(ids)} training examples")
     except Exception as exc:
         logger.warning(f"Failed to update training example labels: {exc}")
+
+
+def prune_training_examples(valid_ids: set[str]) -> int:
+    """Scan training independently of the visual index; never page across deletes."""
+    _ensure_initialized()
+    orphaned = [
+        pid
+        for page in _iter_training_pages([])
+        for pid in page["ids"]
+        if pid not in valid_ids
+    ]
+    for start in range(0, len(orphaned), TRAINING_PAGE_SIZE):
+        _training_collection.delete(ids=orphaned[start : start + TRAINING_PAGE_SIZE])
+    if orphaned:
+        from services import policy_runtime
+
+        policy_runtime.schedule_rebuild()
+    return len(orphaned)
 
 
 def delete_training_example(photo_id: str) -> bool:
@@ -959,13 +979,9 @@ def get_existing_training_ids(photo_ids: list[str]) -> set[str]:
                 if index < len(metadatas) and isinstance(metadatas[index], dict)
                 else {}
             )
-            if (
-                metadata.get("has_embedding") is True
-                and metadata.get("source_provenance") == "raw_preview"
-                and metadata.get("source_embedding_provenance") == "raw_preview"
-                and metadata.get("source_embedding_fingerprint")
-                and source_embeddings.metadata_has_current_contract(metadata)
-            ):
+            if metadata.get(
+                "has_embedding"
+            ) is True and source_embeddings.verified_training_record(metadata):
                 existing.add(str(photo_id))
     return existing
 
@@ -1110,7 +1126,7 @@ def get_training_stats() -> dict[str, Any]:
                     continue
                 if (
                     meta.get("source_embedding_provenance") != "raw_preview"
-                    or not source_embeddings.metadata_has_current_contract(meta)
+                    or not source_embeddings.verified_training_record(meta)
                     or not meta.get("source_embedding_fingerprint")
                 ):
                     exclude("stale_source_stamp")

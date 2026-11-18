@@ -1160,6 +1160,9 @@ end
 function Util.waitForServerDialog(options)
 	options = options or {}
 	if SearchIndexAPI.pingServer() then
+		if not SearchIndexAPI.initializeCatalog() then
+			return false
+		end
 		local compatible, versionMessage = SearchIndexAPI.ensureVersionCompatibility()
 		if compatible then
 			if not options.skipHealthCheck then
@@ -1200,6 +1203,9 @@ function Util.waitForServerDialog(options)
 			end)
 
 			if SearchIndexAPI.pingServer() then
+				if not SearchIndexAPI.initializeCatalog() then
+					return false
+				end
 				local compatible2, versionMessage2 = SearchIndexAPI.ensureVersionCompatibility()
 				if compatible2 then
 					if not options.skipHealthCheck then
@@ -1250,17 +1256,17 @@ function Util.waitForServerDialog(options)
 
 		while (not progressScope or not progressScope:isCanceled()) and elapsedTime < timeout do
 			if SearchIndexAPI.pingServer() then
+				if not SearchIndexAPI.initializeCatalog() then
+					if progressScope then
+						progressScope:done()
+					end
+					return
+				end
 				local compatible, versionMessage = SearchIndexAPI.ensureVersionCompatibility()
 				if progressScope then
 					progressScope:done()
 				end
 				if compatible then
-					local catalog = LrApplication.activeCatalog()
-					local catalogPath = catalog:getPath()
-					local catalogDir = LrPathUtils.parent(catalogPath)
-					local dbPath = LrPathUtils.child(catalogDir, "styleai.db")
-					SearchIndexAPI.initializeCatalog(dbPath)
-
 					if options.skipHealthCheck then
 						result = true
 					else
@@ -1302,6 +1308,9 @@ function Util.waitForServerDialog(options)
 
 					-- Re-check compatibility immediately (without restarting the modal loop).
 					if SearchIndexAPI.pingServer() then
+						if not SearchIndexAPI.initializeCatalog() then
+							return
+						end
 						local compatible2, versionMessage2 = SearchIndexAPI.ensureVersionCompatibility()
 						if compatible2 then
 							if options.skipHealthCheck then

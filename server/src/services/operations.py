@@ -20,7 +20,9 @@ from uuid import uuid4
 import config
 
 
-ACTIVE_STATES = frozenset({"queued", "preparing", "running", "committing"})
+ACTIVE_STATES = frozenset(
+    {"registering", "queued", "preparing", "running", "committing"}
+)
 TERMINAL_STATES = frozenset({"succeeded", "failed", "canceled", "interrupted"})
 ALL_STATES = ACTIVE_STATES | TERMINAL_STATES
 
@@ -34,6 +36,10 @@ class JobCancelSignal:
 
     def is_set(self) -> bool:
         return is_cancel_requested(self._db_path, self._job_id)
+
+
+class ResourceBudgetExceeded(ValueError):
+    """The requested batch cannot fit even with no other work running."""
 
 
 def _database_file(db_path: str) -> str:
@@ -97,6 +103,7 @@ def create_job(
     details: Mapping[str, Any] | None = None,
     item_ids: list[str] | None = None,
     coalesce: bool = True,
+    registration_size: int | None = None,
 ) -> tuple[dict[str, Any], bool]:
     """Create a durable job or attach to an identical active request."""
     normalized_kind = str(kind or "").strip()
@@ -128,14 +135,25 @@ def create_job(
             INSERT INTO operation_jobs (
                 job_id, kind, state, priority, request_fingerprint,
                 details_json, created_at
-            ) VALUES (?, ?, 'queued', ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
                 normalized_kind,
+                "registering" if registration_size is not None else "queued",
                 int(priority),
                 fingerprint,
-                json.dumps(dict(details or {}), sort_keys=True),
+                json.dumps(
+                    {
+                        **(details or {}),
+                        **(
+                            {"registration_size": registration_size}
+                            if registration_size is not None
+                            else {}
+                        ),
+                    },
+                    sort_keys=True,
+                ),
                 now,
             ),
         )
@@ -158,6 +176,43 @@ def create_job(
     except Exception:
         connection.rollback()
         raise
+    finally:
+        connection.close()
+
+
+def register_job_items(
+    db_path: str, job_id: str, ids: list[str], *, final: bool
+) -> None:
+    """Insert a bounded chunk. Only the final, complete selection is admissible."""
+    connection = _connect(db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT state, cancel_requested, details_json FROM operation_jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+        if row is None:
+            raise LookupError("operation not found")
+        if row["state"] != "registering" or row["cancel_requested"]:
+            raise ValueError("operation is not accepting registration")
+        now = time()
+        connection.executemany(
+            """INSERT OR IGNORE INTO operation_job_items(job_id,item_id,state,updated_at)
+               VALUES (?, ?, 'queued', ?)""",
+            ((job_id, item, now) for item in ids),
+        )
+        if final:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM operation_job_items WHERE job_id=?", (job_id,)
+            ).fetchone()[0]
+            if count != _decode_json(row["details_json"])["registration_size"]:
+                raise ValueError(
+                    "registered selection does not match the expected item count"
+                )
+            connection.execute(
+                "UPDATE operation_jobs SET state='queued' WHERE job_id=?", (job_id,)
+            )
+        connection.commit()
     finally:
         connection.close()
 
@@ -218,6 +273,8 @@ def get_job_items(
             SELECT item_id, state, request_fingerprint, result_json, error, updated_at
             FROM operation_job_items
             WHERE job_id = ? AND item_id IN ({placeholders})
+              AND EXISTS (SELECT 1 FROM operation_jobs AS j
+                          WHERE j.job_id=operation_job_items.job_id AND j.state!='registering')
             """,
             (job_id, *normalized_ids),
         ).fetchall()
@@ -268,6 +325,8 @@ def set_job_state(
         ).fetchone()
         if row is None:
             raise LookupError(f"operation job not found: {job_id}")
+        if row["state"] == "registering" and state not in TERMINAL_STATES:
+            raise ValueError("operation registration is incomplete")
         if row["state"] in TERMINAL_STATES and row["state"] != state:
             raise ValueError("terminal operation state cannot be changed")
         started_at = row["started_at"]
@@ -373,6 +432,8 @@ def set_item_states(
         ).fetchone()
         if parent is None:
             raise LookupError(f"operation job not found: {normalized_job_id}")
+        if parent["state"] == "registering":
+            raise ValueError("operation registration is incomplete")
         placeholders = ",".join("?" for _ in normalized_updates)
         rows = connection.execute(
             f"""
@@ -502,6 +563,8 @@ def complete_submission(db_path: str, job_id: str) -> dict[str, Any]:
         if row is None:
             raise LookupError(f"operation job not found: {job_id}")
         details = _decode_json(row["details_json"])
+        if row["state"] == "registering":
+            raise ValueError("operation registration is incomplete")
         details["submission_complete"] = True
         connection.execute(
             "UPDATE operation_jobs SET details_json = ? WHERE job_id = ?",
@@ -783,7 +846,11 @@ class ResourceAdmission:
             if resource not in self._capacities:
                 raise ValueError(f"unknown resource: {resource}")
             amount = int(raw_amount)
-            if amount <= 0 or amount > self._maximums[resource]:
+            if amount > self._maximums[resource]:
+                raise ResourceBudgetExceeded(
+                    f"Batch exceeds {resource} budget; retry a smaller batch"
+                )
+            if amount <= 0:
                 raise ValueError(f"invalid {resource} claim: {amount}")
             normalized[resource] = amount
         return normalized
@@ -836,6 +903,15 @@ class ResourceAdmission:
                         self._waiting.remove(ticket)
                         self._condition.notify_all()
                         raise InterruptedError("resource admission canceled")
+                    if any(
+                        amount > self._capacities[key]
+                        for key, amount in normalized.items()
+                    ):
+                        self._waiting.remove(ticket)
+                        self._condition.notify_all()
+                        raise ResourceBudgetExceeded(
+                            "Batch exceeds the current resource budget; retry a smaller batch"
+                        )
                     if self._winner() is ticket:
                         self._waiting.remove(ticket)
                         for resource, amount in normalized.items():
@@ -935,7 +1011,7 @@ def recommended_gpu_batch_size() -> int:
     pressure = refresh_system_pressure()
     base = max(1, int(config.STYLEAI_GPU_BATCH_SIZE))
     if pressure["level"] == "critical":
-        return max(2, base // 3)
+        return min(base, max(2, base // 3))
     if pressure["level"] == "constrained":
-        return max(4, (base * 2) // 3)
+        return min(base, max(4, (base * 2) // 3))
     return base
