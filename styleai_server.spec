@@ -6,7 +6,7 @@ from PyInstaller.utils.hooks import copy_metadata, collect_data_files
 
 # Collect package data and metadata needed by the frozen runtime.
 datas = collect_data_files('open_clip')
-datas += [('server/src/migrations/versions', 'migrations/versions')]
+datas += [('server/src/migrations/versions/*.py', 'migrations/versions')]
 datas += copy_metadata('tqdm')
 datas += copy_metadata('transformers')
 datas += copy_metadata('tokenizers')

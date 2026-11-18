@@ -10,7 +10,20 @@ permissions:
   contents: read
 
 jobs:
+  validate-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate the shared Lightroom plug-in with Lua
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+          lua -v
+          luac -v
+          python3 scripts/validate_lrc_plugin.py
+
   build:
+    needs: validate-plugin
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -33,12 +46,10 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Sync locked dependencies
         run: uv sync --project server --locked --dev
-      - name: Validate plug-in
-        run: python scripts/validate_lrc_plugin.py
       - name: Freeze backend
         run: uv run --project server pyinstaller styleai_server.spec --noconfirm
       - name: Smoke test frozen backend
-        run: python scripts/smoke_release_backend.py ${{ matrix.executable }}
+        run: uv run --project server --locked python scripts/smoke_release_backend.py ${{ matrix.executable }}
       - name: Package release
         shell: bash
         env:

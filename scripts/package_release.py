@@ -31,7 +31,13 @@ def package_release(backend: Path, platform: str, version: str, output: Path) ->
         root = Path(directory)
         build_package("release", root / "StyleAI.lrplugin")
         # Dereference PyInstaller's macOS links so ordinary ZIP extractors work.
-        shutil.copytree(backend, root / "styleai-server", symlinks=False)
+        # Initialization can leave bytecode beside the frozen migration sources.
+        def ignore_migration_artifacts(directory, names):
+            if Path(directory) == backend / "_internal/migrations/versions":
+                return [n for n in names if not n.endswith(".py") or not (Path(directory) / n).is_file()]
+            return []
+
+        shutil.copytree(backend, root / "styleai-server", symlinks=False, ignore=ignore_migration_artifacts)
         shutil.copy2(REPOSITORY_ROOT / "docs" / "INSTALL.md", root / "INSTALL.md")
         shutil.copy2(REPOSITORY_ROOT / "LICENSE", root / "LICENSE")
         temp_archive = root / "release.zip"

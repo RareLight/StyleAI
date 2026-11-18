@@ -128,7 +128,7 @@ function OnboardingWizard.show(manualTrigger)
 					fill_horizontal = 1,
 					UIFactory.HelpText(f, {
 						title = LOC(
-							"$$$/StyleAI/Onboarding/Step2Desc=To predict your unique editing style, StyleAI requires the SigLIP2 vision model. This local model analyzes the lighting, subject, and composition of your photos entirely offline. (~4GB download)"
+							"$$$/StyleAI/Onboarding/Step2Desc=SigLIP2 analyzes photos offline. Its full download is about 9.1 GB. Allow at least 12 GB free on the drive that stores your model cache."
 						),
 					}),
 					f:spacer({ height = 5 }),
@@ -177,7 +177,7 @@ function OnboardingWizard.show(manualTrigger)
 					fill_horizontal = 1,
 					UIFactory.HelpText(f, {
 						title = LOC(
-							"$$$/StyleAI/Onboarding/Step3Desc=StyleAI uses local-first LLMs (Ollama or LM Studio) to generate keywords, titles, and descriptions during indexing without sending images to the cloud."
+							"$$$/StyleAI/Onboarding/Step3Desc=For generated metadata, choose Ollama, LM Studio, or AX Engine under Local metadata API in Plug-in Manager. For AX Engine, set the AX model folder there."
 						),
 					}),
 					f:spacer({ height = 10 }),

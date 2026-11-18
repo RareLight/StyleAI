@@ -4,6 +4,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -519,6 +520,11 @@ def test_release_archive_contains_complete_plugin_backend_and_instructions(tmp_p
     (backend / "styleai-server").write_text("fake executable")
     (backend / "styleai-server").chmod(0o755)
     (backend / "library.dat").write_text("runtime")
+    versions = backend / "_internal/migrations/versions"
+    (versions / "__pycache__").mkdir(parents=True)
+    (versions / "007_schema.py").write_bytes(b"# migration")
+    (versions / "__pycache__/001_removed.pyc").write_bytes(b"builder path")
+    (versions / "008_stale.pyc").write_bytes(b"stale")
     output = tmp_path / "output"
     result = subprocess.run(
         [
@@ -548,6 +554,11 @@ def test_release_archive_contains_complete_plugin_backend_and_instructions(tmp_p
                     == source.read_bytes()
                 )
         assert zf.read("styleai-server/library.dat") == b"runtime"
+        prefix = "styleai-server/_internal/migrations/versions/"
+        assert [n for n in zf.namelist() if n.startswith(prefix)] == [
+            prefix + "007_schema.py"
+        ]
+        assert zf.read(prefix + "007_schema.py") == b"# migration"
         assert zf.getinfo("styleai-server/styleai-server").external_attr >> 16 & 0o111
         assert "INSTALL.md" in zf.namelist()
         assert "LICENSE" in zf.namelist()
@@ -589,3 +600,72 @@ def test_packaged_backend_takes_precedence_over_legacy_system_install():
         '"/Applications/StyleAI/Server/styleai-server"'
     )
     assert "if not LrFileUtils.exists(serverBinary) then" in selection
+
+
+def test_local_release_builder_validates_options_before_building():
+    script = REPOSITORY_ROOT / "scripts" / "build-local-release.sh"
+    help_result = subprocess.run(
+        ["bash", str(script), "--help"], capture_output=True, text=True
+    )
+    assert help_result.returncode == 0
+    assert "--version" in help_result.stdout
+    invalid = subprocess.run(
+        ["bash", str(script), "--version"], capture_output=True, text=True
+    )
+    assert invalid.returncode != 0
+    assert "Missing value" in invalid.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="macOS builder uses POSIX tools")
+@pytest.mark.parametrize("missing", ["lua", "luac", None])
+def test_release_builder_preflight_and_label_forwarding(tmp_path, missing):
+    # No real uv sync, freezer, or listener. Use the real final argument parser.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name in ("dirname", "mktemp", "rm", "mkdir", "touch"):
+        (bin_dir / name).symlink_to(shutil.which(name))
+    for name in ("git", "lua", "luac"):
+        if name != missing:
+            (bin_dir / name).symlink_to(shutil.which("true"))
+    for name, body in {
+        "uname": 'if [ "$1" = "-s" ]; then echo Darwin; else echo arm64; fi',
+        "uv": """
+touch "$UV_CALLED"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --distpath) mkdir -p "$2/styleai-server"; touch "$2/styleai-server/styleai-server"; exit ;;
+        scripts/package_release.py) exec "$PYTHON" "$@" ;;
+    esac
+    shift
+done
+""",
+    }.items():
+        (bin_dir / name).write_text("#!/bin/sh\nset -eu\n" + body)
+        (bin_dir / name).chmod(0o755)
+    marker = tmp_path / "uv-called"
+    output = tmp_path / "release output"
+    result = subprocess.run(
+        [
+            "/bin/bash",
+            str(REPOSITORY_ROOT / "scripts/build-local-release.sh"),
+            "--version",
+            "-preview",
+            "--output",
+            str(output),
+        ],
+        env={
+            **os.environ,
+            "PATH": str(bin_dir),
+            "UV_CALLED": str(marker),
+            "PYTHON": sys.executable,
+        },
+        capture_output=True,
+        text=True,
+    )
+    if missing:
+        assert result.returncode != 0
+        assert f"{missing} is required" in result.stderr
+        assert not marker.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert (output / "StyleAI-macos-arm64--preview.zip.sha256").is_file()

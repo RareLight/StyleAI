@@ -13,7 +13,7 @@ StyleAI learns how a photographer edits, applies those decisions to new RAW or
 DNG photos, builds a local visual index, and can generate Lightroom metadata.
 Photo analysis, learned editing, and catalog storage run on the user's machine.
 Optional text generation uses an open-weights vision-language model running
-locally through Ollama or LM Studio.
+locally through Ollama, LM Studio, or AX Engine.
 
 StyleAI does not support cloud AI providers or remote backend servers. The
 service listens only on `127.0.0.1:19819`, and each Lightroom catalog owns one
@@ -36,7 +36,7 @@ Use **File → Plug-in Extras** in Lightroom Classic:
 - **Find More Training Examples...** creates Lightroom collections of
   high-confidence photos that improve policy coverage.
 
-Learned editing is mathematical and does not require Ollama or LM Studio.
+Learned editing is mathematical and does not require a local language model.
 Metadata generation does.
 
 ## Install and start
@@ -48,7 +48,9 @@ Plug-in Manager**. Keep the adjacent `styleai-server` folder in place.
 
 Follow the [installation instructions](docs/INSTALL.md) for first-time setup,
 unsigned builds, updates, and removal. Source developers should read the
-[Developer Guide](docs/wiki/Developer-Guide.md) and [contribution guide](CONTRIBUTING.md).
+[Developer Guide](docs/wiki/Developer-Guide.md) and [contribution guide](CONTRIBUTING.md). To create an
+Apple silicon distribution locally, run `bash scripts/build-local-release.sh`;
+see the Developer Guide for prerequisites and release options.
 
 ## Architecture
 
@@ -59,7 +61,7 @@ unsigned builds, updates, and removal. Source developers should read the
 - **Vision:** SigLIP2 through OpenCLIP/PyTorch.
 - **Storage:** isolated Chroma visual/training collections plus transactional
   SQLite policy, recommendation, operation, and edit-history state.
-- **Local metadata:** Ollama or LM Studio only.
+- **Local metadata:** Ollama, LM Studio, or AX Engine.
 
 See [Architecture](https://github.com/RareLight/StyleAI/wiki/Architecture),
 [Privacy](https://github.com/RareLight/StyleAI/blob/main/PRIVACY.md), and the

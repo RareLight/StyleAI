@@ -467,22 +467,55 @@ catalog.
 
 The release workflow syncs the locked `uv` environment, freezes the backend
 with PyInstaller, includes OpenCLIP package data and migration modules, and
-packages it beside the Lightroom plug-in, and smoke-tests the frozen backend
-against a disposable database. A push to `dev` or a manual workflow run uploads
-ZIP artifacts; a `v*` tag creates a draft GitHub release after both builds pass.
-Tag versions must match the checked-in plug-in, backend, and project versions;
-prerelease suffixes are allowed. Review and publish the draft separately. To
-bundle any already frozen backend:
+smoke-tests it against a disposable database before packaging. A push to `dev`
+or a manual workflow run uploads ZIP artifacts; a `v*` tag creates a draft
+GitHub release after both platform builds pass. Review and publish the draft
+separately.
+
+### Build an Apple silicon release locally
+
+On a native Apple silicon Mac with `uv`, Git, and both `lua` and `luac` on
+`PATH`, run from the checkout:
+
+```sh
+bash scripts/build-local-release.sh
+```
+
+This installs the locked development dependencies, validates the plug-in,
+builds the backend in a temporary directory, and writes a ZIP and SHA-256
+checksum to `dist/release/`. Before packaging, the smoke test verifies the
+frozen child owns the connection, initializes a disposable catalog, and checks
+that Chroma and all source migrations are present. It does not download models
+or send a shutdown request to the service port. Port 19819
+must be free for the smoke test; quit Lightroom and stop any existing StyleAI
+service first. The default filename includes the Git commit and `-dirty` when
+there are uncommitted changes. The plug-in's displayed version is taken from the
+checked-in source; the filename does not change it.
+
+To choose a label and destination:
+
+```sh
+bash scripts/build-local-release.sh --version v0.8.2 --output dist/release
+```
+
+Labels beginning with `v` must match the numeric versions in `Info.lua`,
+`server/src/version_info.py`, and `server/pyproject.toml`; prerelease suffixes
+are allowed. Existing archives with the same name are replaced. Keep enough
+free disk space for the frozen backend and archive. Builds are unsigned and not
+notarized. Upload the resulting ZIP and checksum to a GitHub release manually
+when distributing a local build. The macOS script cannot build Windows binaries;
+use the Windows CI job or build on a Windows x64 machine.
+
+To package an already frozen backend on either platform:
 
 ```sh
 python scripts/package_release.py --backend dist/styleai-server --platform macos-arm64 --version build-identifier
 ```
 
-Use `windows-x64` on Windows. The command produces a ZIP and SHA-256 file in
-`dist/release`; run it on the target platform after building that platform's
-backend. Release archives contain the canonical plug-in, backend, installation
-instructions, and license. Test releases on clean target machines with Lightroom
-before publishing; CI cannot verify Lightroom or OS security dialogs.
+Use `windows-x64` on Windows. Archives contain the complete canonical plug-in,
+backend, installation instructions, and license. Test on clean target machines
+with Lightroom before publishing; the smoke test does not exercise Lightroom or
+OS security dialogs.
 
 Wiki sources live in `docs/wiki`. `Project-README.md` is generated from the root
 README; run `bash scripts/build-wiki-pages.sh` after changing it. Keep all five

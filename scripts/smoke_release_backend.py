@@ -1,47 +1,124 @@
 #!/usr/bin/env python3
 """Smoke-test a frozen backend against a disposable catalog database."""
+
 import argparse
+from contextlib import closing
+from http.client import HTTPConnection
+import json
+import os
 from pathlib import Path
-import subprocess
 import socket
+import sqlite3
+import subprocess
 import tempfile
 import time
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+
+import psutil
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("executable", type=Path)
-    args = parser.parse_args()
+ADDRESS = ("127.0.0.1", 19819)
+MIGRATIONS = Path(__file__).resolve().parents[1] / "server/src/migrations/versions"
+
+
+def check_port():
     # Never contact or stop an already running user's service.
     with socket.socket() as probe:
         try:
-            probe.bind(("127.0.0.1", 19819))
+            probe.bind(ADDRESS)
         except OSError as exc:
-            raise RuntimeError("Port 19819 is in use; refusing smoke test") from exc
+            raise RuntimeError(
+                f"Cannot use loopback port 19819 for the smoke test: {exc}"
+            ) from exc
+
+
+def wait_for_socket(process, child, predicate, timeout):
+    deadline = time.monotonic() + timeout
+    while process.poll() is None and time.monotonic() < deadline:
+        if any(predicate(conn) for conn in child.net_connections(kind="tcp4")):
+            return
+        time.sleep(0.1)
+    raise RuntimeError("Frozen backend exited or did not own the expected socket")
+
+
+def initialize_database(process, db_path):
+    child = psutil.Process(process.pid)
+    wait_for_socket(
+        process,
+        child,
+        lambda c: c.laddr == ADDRESS and c.status == psutil.CONN_LISTEN,
+        150,
+    )
+    with closing(HTTPConnection(*ADDRESS, timeout=30)) as http:
+        http.connect()
+        # Verify the accepted connection, not just the listener: another service
+        # can take the port between the readiness check and connect().
+        peer = http.sock.getsockname()
+        wait_for_socket(
+            process, child, lambda c: c.laddr == ADDRESS and c.raddr == peer, 5
+        )
+        http.request(
+            "POST",
+            "/initialize",
+            json.dumps({"db_path": str(db_path)}),
+            {"Content-Type": "application/json"},
+        )
+        response = http.getresponse()
+        payload = json.loads(response.read())
+        if (
+            response.status != 200
+            or payload.get("error")
+            or payload.get("results") != {"status": "success", "db_path": str(db_path)}
+        ):
+            raise RuntimeError(
+                f"Catalog initialization failed: {response.status} {payload}"
+            )
+
+    if not (db_path / "chroma.sqlite3").is_file():
+        raise RuntimeError("Catalog initialization did not create the Chroma database")
+    expected = {p.stem for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"}
+    with closing(
+        sqlite3.connect((db_path / "styles.sqlite").as_uri() + "?mode=ro", uri=True)
+    ) as db:
+        applied = {
+            row[0] for row in db.execute("SELECT version_id FROM schema_versions")
+        }
+    if not expected or applied != expected:
+        raise RuntimeError(
+            f"Frozen migrations differ from source: {sorted(applied ^ expected)}"
+        )
+
+
+def smoke_test(executable):
+    check_port()
     with tempfile.TemporaryDirectory(prefix="styleai-smoke-") as directory:
-        log = Path(directory) / "backend.log"
-        with log.open("w+") as output:
-            process = subprocess.Popen([str(args.executable.resolve()), "--db-path", str(Path(directory) / "styleai.db")], stdout=output, stderr=subprocess.STDOUT)
+        root = Path(directory).resolve()
+        db_path = root / "styleai.db"
+        log = root / "backend.log"
+        with log.open("w") as output:
+            process = subprocess.Popen(
+                [
+                    str(executable.resolve()),
+                    "--db-path",
+                    str(db_path),
+                    "--disable-backup",
+                ],
+                cwd=root,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                env={
+                    **os.environ,
+                    "HF_HOME": str(root / "hf"),
+                    "HF_HUB_CACHE": str(root / "hf/hub"),
+                    "HF_HUB_OFFLINE": "1",
+                    "TRANSFORMERS_OFFLINE": "1",
+                },
+            )
             try:
-                deadline = time.monotonic() + 150
-                while time.monotonic() < deadline and process.poll() is None:
-                    try:
-                        with urlopen("http://127.0.0.1:19819/ping", timeout=2) as response:
-                            if b"pong" in response.read():
-                                break
-                    except (URLError, TimeoutError):
-                        pass
-                    time.sleep(0.5)
-                else:
-                    output.flush()
-                    raise RuntimeError(f"Backend did not become ready:\n{log.read_text(errors='replace')}")
-                # Ensure we tested the process we launched, not an unrelated server.
-                if process.poll() is not None:
-                    raise RuntimeError("Backend exited during smoke test")
-                with urlopen(Request("http://127.0.0.1:19819/shutdown", data=b"", method="POST"), timeout=10):
-                    pass
+                initialize_database(process, db_path)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Smoke test failed: {exc}\n{log.read_text(errors='replace')}"
+                ) from exc
             finally:
                 if process.poll() is None:
                     process.terminate()
@@ -50,7 +127,15 @@ def main():
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
-    print("Frozen backend responded to /ping with a disposable database")
+    print(
+        "Frozen backend initialized a disposable Chroma database and applied all migrations"
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("executable", type=Path)
+    smoke_test(parser.parse_args().executable)
 
 
 if __name__ == "__main__":

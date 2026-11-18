@@ -14,16 +14,17 @@ Source developers should instead run `bash scripts/setup-local-uv-env.sh`, add
 
 ## Configure local models
 
-Open StyleAI in Plug-in Manager and choose **Configure Local Models...**. The
-setup view checks:
+In Plug-in Manager, select StyleAI and choose **Configure Local Models...** to
+check the service and install SigLIP2. Its full snapshot is about 9.1 GB; allow
+at least 12 GB free on the model-cache drive. SigLIP2 is required for visual
+analysis, training, recommendations, and learned editing. **Learn From My Edits**
+also needs [ExifTool](https://exiftool.org/) to extract embedded RAW previews;
+it is not included in the release ZIP.
 
-- whether the background service is reachable;
-- whether the SigLIP2 vision model is cached and ready; and
-- which local Ollama or LM Studio vision-language models are available.
-
-SigLIP2 is required for visual analysis, training, recommendations, and learned
-editing. Ollama or LM Studio is required only for generated keywords, titles,
-captions, or alt text.
+To generate keywords, titles, captions, or alt text, return to **Status & Setup →
+Local metadata API** and choose Ollama, LM Studio, or AX Engine. For AX Engine,
+set the **AX model folder** in that same section. The metadata model list uses
+the selected provider; the setup wizard does not list models.
 
 Developers can pre-cache SigLIP2 from `server/`:
 
