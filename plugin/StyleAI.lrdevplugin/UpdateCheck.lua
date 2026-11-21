@@ -102,6 +102,20 @@ end
 -- UI Helpers
 -- ─────────────────────────────────────────────────────────────────────────────
 
+local function promptForRelease(info)
+	local button = LrDialogs.confirm(
+		LOC("$$$/StyleAI/UpdateCheck/CodeOnlyAvailableTitle=Update Available: ^1", info.tag_name),
+		LOC(
+			"$$$/StyleAI/UpdateCheck/FullReleaseUpgrade=Download the complete archive for your platform. Quit Lightroom Classic, then replace the current StyleAI folder as described in INSTALL.md. Your catalog database and cached model weights are stored separately."
+		),
+		LOC("$$$/StyleAI/PluginInfo/DownloadNow=Download now"),
+		LOC("$$$/StyleAI/common/Later=Later")
+	)
+	if button == "ok" then
+		LrHttp.openUrlInBrowser(info.release_url or "https://github.com/RareLight/StyleAI/releases/latest")
+	end
+end
+
 --- Manual update check trigger.
 function UpdateCheck.checkForNewVersion()
 	local info = UpdateCheck.getLatestReleaseInfo()
@@ -111,7 +125,7 @@ function UpdateCheck.checkForNewVersion()
 	end
 
 	if info.is_newer then
-		LrHttp.openUrlInBrowser(info.release_url or "https://github.com/RareLight/StyleAI/releases/latest")
+		promptForRelease(info)
 	else
 		LrDialogs.message(
 			LOC(
@@ -131,15 +145,7 @@ function UpdateCheck.checkForNewVersionInBackground()
 	end
 
 	prefs.lastPromptedRelease = info.tag_name
-	local btn = LrDialogs.confirm(
-		LOC("$$$/StyleAI/UpdateCheck/NewVersionAvailableTitle=New Version Available"),
-		LOC("$$$/StyleAI/UpdateCheck/CodeOnlyAvailableTitle=Update Available: ^1", info.tag_name),
-		LOC("$$$/StyleAI/PluginInfo/DownloadNow=Download now"),
-		LOC("$$$/StyleAI/common/Later=Later")
-	)
-	if btn == "ok" then
-		LrHttp.openUrlInBrowser(info.release_url or "https://github.com/RareLight/StyleAI/releases/latest")
-	end
+	promptForRelease(info)
 	return nil
 end
 

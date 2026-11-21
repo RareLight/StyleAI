@@ -14,6 +14,11 @@ build-<commit> (with -dirty for uncommitted changes), and output is dist/release
 A label beginning with v must match the checked-in release version. Existing
 archives with the same label are replaced. Requires uv, Git, lua, luac, and
 free loopback port 19819.
+
+Set STYLEAI_MACOS_CODESIGN_IDENTITY to a Keychain signing identity to sign
+the backend, including an Apple Development identity for local builds.
+For notarization, use a Developer ID Application identity and also set
+STYLEAI_MACOS_NOTARY_PROFILE to a notarytool Keychain profile.
 HELP
 }
 
@@ -40,6 +45,14 @@ command -v git >/dev/null || { echo "Git is required." >&2; exit 1; }
 for tool in lua luac; do
   command -v "$tool" >/dev/null || { echo "$tool is required for release validation." >&2; exit 1; }
 done
+NOTARY_ARGS=()
+if [[ -n "${STYLEAI_MACOS_NOTARY_PROFILE:-}" ]]; then
+  if [[ -z "${STYLEAI_MACOS_CODESIGN_IDENTITY:-}" ]]; then
+    echo "Set STYLEAI_MACOS_CODESIGN_IDENTITY to a Developer ID Application identity for notarization." >&2
+    exit 1
+  fi
+  NOTARY_ARGS=(--notary-profile "$STYLEAI_MACOS_NOTARY_PROFILE")
+fi
 if [[ -z "$VERSION" ]]; then
   VERSION="build-$(git -c core.fsmonitor=false rev-parse --short=12 HEAD)"
   if [[ -n "$(git -c core.fsmonitor=false status --porcelain --untracked-files=normal)" ]]; then
@@ -67,5 +80,5 @@ uv run --project "$ROOT_DIR/server" --locked python scripts/smoke_release_backen
   "$WORK_DIR/dist/styleai-server/styleai-server"
 uv run --project "$ROOT_DIR/server" --locked python scripts/package_release.py \
   --backend "$WORK_DIR/dist/styleai-server" --platform macos-arm64 \
-  --version="$VERSION" --output="$OUTPUT"
+  --version="$VERSION" --output="$OUTPUT" ${NOTARY_ARGS[@]+"${NOTARY_ARGS[@]}"}
 echo "Checksum: $OUTPUT/StyleAI-macos-arm64-${VERSION}.zip.sha256"

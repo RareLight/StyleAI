@@ -3,12 +3,11 @@
 Choose the archive for your computer: `macos-arm64` is for Apple silicon Macs;
 `windows-x64` is for 64-bit Intel/AMD Windows. Intel Macs and Windows ARM are
 not included in these builds. Lightroom **Classic**, not Lightroom cloud, is
-required. The backend is unsigned and macOS builds are not notarized.
+required. The macOS backend needs either Apple notarization or your approval
+for that build in macOS. The Windows backend is unsigned.
 
-**Updates use the same full ZIP as installation.** The historical macOS
-`.pkg` and Windows Inno Setup recipes in `installers/` are not supported
-release artifacts. You do not need a system service, startup shortcut, or
-separate backend installer.
+Use the complete platform ZIP for both installation and upgrades. Lightroom
+starts the service from the `styleai-server` folder beside the plug-in.
 
 1. Quit Lightroom Classic. Download the ZIP from the project's GitHub Releases
    page and extract the entire archive to a permanent folder you can write to,
@@ -20,8 +19,9 @@ separate backend installer.
 3. Start Lightroom Classic. Choose **File → Plug-in Manager → Add**, select
    `StyleAI.lrplugin`, and enable it. The plug-in starts its backend when needed.
 4. In Plug-in Manager, select StyleAI and open **Configure Local Models...**.
-   Download SigLIP2; the full model snapshot is about 9.1 GB. Allow at least
-   12 GB free on the model-cache drive for the first download.
+   Setup checks for SigLIP2 in your existing Hugging Face cache. If the
+   model is missing, download it here and allow at least 12 GB free on the
+   model-cache drive. The full snapshot is about 9.1 GB.
 5. For **Learn From My Edits**, install [ExifTool](https://exiftool.org/)
    separately so the backend can extract embedded RAW/DNG previews. Make sure
    `exiftool -ver` prints a version. On Windows, put `exiftool.exe` on `PATH`
@@ -34,29 +34,71 @@ separate backend installer.
 7. Select photos and use **File → Plug-in Extras → Prepare Photos...** or
    **Learn From My Edits...** to get started.
 
-If macOS blocks the downloaded unsigned backend, review the downloaded release's
-origin, then open Terminal and run the following, replacing the quoted path with
-the full path to the extracted `styleai-server` folder (drag the folder into
-Terminal to insert its path):
+## Upgrade an existing installation
+
+1. In Plug-in Manager, find the current path to `StyleAI.lrplugin`. Extract
+   the new ZIP to a separate folder. Keep a catalog backup and use **Data &
+   Recovery** in Plug-in Manager to export a StyleAI backup if needed.
+2. Quit Lightroom Classic. If the plug-in and backend already live in a
+   dedicated release folder, rename that folder to keep it as a backup.
+   Put the newly extracted folder at the original path. This keeps Lightroom's
+   registered plug-in path and replaces the plug-in and backend together.
+   For an older installation with the plug-in and backend in separate locations,
+   add the new `StyleAI.lrplugin` in Plug-in Manager and disable the old entry.
+3. Reopen the same Lightroom catalog. In **Plug-in Manager → StyleAI**,
+   check that the background service and vision model show **Ready**.
+   Use **Repair Background Service** if the service needs another start attempt.
+
+StyleAI opens the same `styleai.db` beside the active catalog. Keep each
+catalog in its own folder. The release folder contains only application files.
+SigLIP2 is shared through your user model cache and is reused when its model
+files are already present. Ollama, LM Studio, and AX Engine keep their own
+weights in their configured locations.
+
+## If the service is blocked
+
+On macOS, after Gatekeeper blocks `styleai-server`, verify that you trust the
+release. In **System Settings → Privacy & Security**, choose **Open Anyway**
+for `styleai-server` if offered. Then retry from **Plug-in Manager → StyleAI →
+Repair Background Service**. [Apple's Gatekeeper instructions](https://support.apple.com/en-us/102445)
+
+For a trusted ZIP built on your Mac, you can extract it directly to a new
+staging folder with macOS's built-in tool. Then follow the in-place upgrade
+steps above with the whole staged folder.
 
 ```sh
-xattr -dr com.apple.quarantine "/path/to/StyleAI/styleai-server"
+ditto -x -k "/path/to/your/local-build.zip" "/path/to/new/StyleAI"
 ```
 
-Restart Lightroom and try again. If the backend still cannot start, check that
-port `127.0.0.1:19819` is free and that the complete `styleai-server` folder is
-beside the plug-in. If Windows SmartScreen blocks the backend,
-review the publisher and release source before choosing **More info → Run
-anyway**, if offered. Security controls may also quarantine a file; consult your
-organization's policy before allowing it. Do not run an unknown executable.
+On Windows, verify the publisher and release source before choosing **More
+info → Run anyway** if SmartScreen offers it. If the service still fails,
+check that the complete `styleai-server` folder is beside the plug-in and
+that port `127.0.0.1:19819` is free.
 
-Each catalog must live in its own folder. StyleAI stores its database in
-`styleai.db` beside the catalog; the archive does not contain your photos or
-catalog. To update, quit Lightroom, keep a backup of your catalog and StyleAI
-data, extract the new release into a new permanent folder, and use Plug-in
-Manager to remove the old plug-in and add the new one. Retain the old folder
-until the new version works. To remove StyleAI, remove it in Plug-in Manager and
-delete the extracted application folder; catalog data stays beside the catalog.
-Use **Data & Recovery** in Plug-in Manager to export a StyleAI backup.
+## Sign a local macOS build
+
+Use `security find-identity -v -p codesigning` to find the Apple Development
+identity created by Xcode. From the repository, use its identifier to sign
+the frozen backend and its native libraries.
+
+```sh
+STYLEAI_MACOS_CODESIGN_IDENTITY="<identity hash>" bash scripts/build-local-release.sh
+```
+
+Apple Development signing is for local development. Gatekeeper's standard
+approval for downloaded software requires Developer ID signing and
+notarization. Extract your own local build directly from the build output
+using the command above. [Apple's Developer ID guide](https://developer.apple.com/developer-id/)
+
+## Build a notarized macOS ZIP
+
+For distribution, build with a Developer ID Application certificate in
+Keychain and a profile created with `xcrun notarytool store-credentials`.
+Set `STYLEAI_MACOS_CODESIGN_IDENTITY` to the certificate identity and
+`STYLEAI_MACOS_NOTARY_PROFILE` to the profile name, then run
+`bash scripts/build-local-release.sh`. The build signs the frozen backend
+with hardened runtime and releases the ZIP locally after Apple accepts that
+archive. Gatekeeper can retrieve the notarization ticket online. The GitHub
+workflow currently creates unnotarized artifacts. [Apple's notarization guide](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
 
 For troubleshooting, see https://github.com/RareLight/StyleAI/wiki/Troubleshooting.

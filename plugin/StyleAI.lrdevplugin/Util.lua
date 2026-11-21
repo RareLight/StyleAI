@@ -1159,234 +1159,65 @@ end
 
 function Util.waitForServerDialog(options)
 	options = options or {}
-	if SearchIndexAPI.pingServer() then
-		if not SearchIndexAPI.initializeCatalog() then
-			return false
-		end
-		local compatible, versionMessage = SearchIndexAPI.ensureVersionCompatibility()
-		if compatible then
-			if not options.skipHealthCheck then
-				-- Deep health check for soft warnings
-				local report = Util.checkPluginHealth(options)
-				if not report.healthy then
-					return Util.showHealthIssuesDialog(report)
-				end
-			end
-			-- Check for updates via backend if enabled
-			if prefs.periodicalUpdateCheck then
-				LrTasks.startAsyncTask(function()
-					require("UpdateCheck")
-					UpdateCheck.checkForNewVersionInBackground()
-				end)
-			end
-			return true
-		end
-
-		-- If the backend is local and currently running an older process, we can restart it
-		-- once and then re-check compatibility (covers "stale backend still running").
-		if SearchIndexAPI.isBackendOnLocalhost() then
-			log:trace("Backend version mismatch detected; attempting local backend restart once.")
-
-			-- Best-effort: try graceful shutdown first; structured lifecycle will escalate if needed.
-			LrTasks.pcall(function()
-				SearchIndexAPI.shutdownServer({
-					graceSeconds = 5,
-					forceWaitSeconds = 5,
-					pollIntervalSeconds = 0.5,
-					shutdownRequestTimeoutSeconds = 5,
-				})
-			end)
-
-			LrTasks.sleep(1)
-			LrTasks.pcall(function()
-				SearchIndexAPI.startServer({ readyTimeoutSeconds = 120 })
-			end)
-
-			if SearchIndexAPI.pingServer() then
-				if not SearchIndexAPI.initializeCatalog() then
-					return false
-				end
-				local compatible2, versionMessage2 = SearchIndexAPI.ensureVersionCompatibility()
-				if compatible2 then
-					if not options.skipHealthCheck then
-						-- Deep health check for soft warnings
-						local report = Util.checkPluginHealth(options)
-						if not report.healthy then
-							return Util.showHealthIssuesDialog(report)
-						end
-					end
-					-- Check for updates via backend if enabled
-					if prefs.periodicalUpdateCheck then
-						LrTasks.startAsyncTask(function()
-							require("UpdateCheck")
-							UpdateCheck.checkForNewVersionInBackground()
-						end)
-					end
-					return true
-				end
-				versionMessage = versionMessage2 or versionMessage
-			end
-		end
-
-		LrDialogs.message("Plugin/Backend version mismatch", versionMessage or "Version check failed.", "critical")
-		return false
-	end
-
-	local result = false
-
-	LrFunctionContext.callWithContext("WaitForServerContext", function(waitContext)
-		local progressScope = nil
-		if not options.suppressProgressDialog then
-			progressScope = LrDialogs.showModalProgressDialog({
+	local ready, problem
+	if SearchIndexAPI.pingServer() or options.suppressProgressDialog then
+		ready, problem = SearchIndexAPI.startServer({ readyTimeoutSeconds = 120 })
+	else
+		LrFunctionContext.callWithContext("WaitForServerContext", function(context)
+			local progress = LrDialogs.showModalProgressDialog({
 				title = LOC("$$$/StyleAI/WaitForServer/title=StyleAI"),
 				caption = LOC("$$$/StyleAI/WaitForServer/caption=Waiting for StyleAI database to load..."),
 				cannotCancel = false,
-				functionContext = waitContext,
+				functionContext = context,
 			})
-		end
-
-		local elapsedTime = 0
-		local timeout = 120 -- 120 seconds timeout
-
-		if not SearchIndexAPI.pingServer() then
 			LrTasks.startAsyncTask(function()
-				SearchIndexAPI.startServer({ readyTimeoutSeconds = timeout })
+				local ok, started, reason = LrTasks.pcall(SearchIndexAPI.startServer, { readyTimeoutSeconds = 120 })
+				ready = ok and started == true
+				problem = ok and reason or nil
+				if not ok then
+					log:error("Could not start the background service: " .. tostring(started))
+				end
 			end)
-		end
-
-		while (not progressScope or not progressScope:isCanceled()) and elapsedTime < timeout do
-			if SearchIndexAPI.pingServer() then
-				if not SearchIndexAPI.initializeCatalog() then
-					if progressScope then
-						progressScope:done()
-					end
-					return
-				end
-				local compatible, versionMessage = SearchIndexAPI.ensureVersionCompatibility()
-				if progressScope then
-					progressScope:done()
-				end
-				if compatible then
-					if options.skipHealthCheck then
-						result = true
-					else
-						-- Deep health check for soft warnings
-						local report = Util.checkPluginHealth(options)
-						if not report.healthy then
-							result = Util.showHealthIssuesDialog(report)
-						else
-							-- Check for updates via backend if enabled
-							if prefs.periodicalUpdateCheck then
-								LrTasks.startAsyncTask(function()
-									require("UpdateCheck")
-									UpdateCheck.checkForNewVersionInBackground()
-								end)
-							end
-							result = true
-						end
-					end
-					return
-				end
-
-				-- If we found a mismatch after the server started (likely a stale backend),
-				-- restart it once and re-check.
-				if SearchIndexAPI.isBackendOnLocalhost() then
-					log:trace("Backend version mismatch detected after ping; restarting local backend once.")
-
-					LrTasks.pcall(function()
-						SearchIndexAPI.shutdownServer({
-							graceSeconds = 5,
-							forceWaitSeconds = 5,
-							pollIntervalSeconds = 0.5,
-							shutdownRequestTimeoutSeconds = 5,
-						})
-					end)
-					LrTasks.sleep(1)
-					LrTasks.pcall(function()
-						SearchIndexAPI.startServer({ readyTimeoutSeconds = 120 })
-					end)
-
-					-- Re-check compatibility immediately (without restarting the modal loop).
-					if SearchIndexAPI.pingServer() then
-						if not SearchIndexAPI.initializeCatalog() then
-							return
-						end
-						local compatible2, versionMessage2 = SearchIndexAPI.ensureVersionCompatibility()
-						if compatible2 then
-							if options.skipHealthCheck then
-								result = true
-							else
-								-- Deep health check for soft warnings
-								local report = Util.checkPluginHealth(options)
-								if not report.healthy then
-									result = Util.showHealthIssuesDialog(report)
-								else
-									-- Check for updates via backend if enabled
-									if prefs.periodicalUpdateCheck then
-										LrTasks.startAsyncTask(function()
-											require("UpdateCheck")
-											UpdateCheck.checkForNewVersionInBackground()
-										end)
-									end
-									result = true
-								end
-							end
-							return
-						end
-						versionMessage = versionMessage2 or versionMessage
-					end
-				end
-
-				LrDialogs.message(
-					"Plugin/Backend version mismatch",
-					versionMessage or "Version check failed.",
-					"critical"
-				)
-				result = false
-				return
+			local deadline = LrDate.currentTime() + 125
+			while ready == nil and not progress:isCanceled() and LrDate.currentTime() < deadline do
+				LrTasks.sleep(0.25)
 			end
-			LrTasks.sleep(0.5) -- Poll every 500ms
-			elapsedTime = elapsedTime + 0.5
-			if progressScope then
-				progressScope:setPortionComplete(elapsedTime, timeout)
+			if ready == nil and not progress:isCanceled() then
+				ready = false
 			end
-		end
+			progress:done()
+		end)
+	end
 
-		if elapsedTime >= timeout then
-			if progressScope then
-				progressScope:done()
-			end
-			-- Diagnose and show detailed error
-			local diag = SearchIndexAPI.diagnoseStartupFailure()
-			Util.showDiagnosticFailureDialog(diag)
-			result = false
-		end
-	end)
+	if ready == nil then
+		return false -- The caller canceled its wait. Startup can finish in the background.
+	elseif not ready then
+		Util.showDiagnosticFailureDialog(SearchIndexAPI.diagnoseStartupFailure(), problem)
+		return false
+	end
 
-	return result
+	if not options.skipHealthCheck then
+		local report = Util.checkPluginHealth(options)
+		if not report.healthy then
+			return Util.showHealthIssuesDialog(report)
+		end
+	end
+	if prefs.periodicalUpdateCheck then
+		LrTasks.startAsyncTask(function()
+			require("UpdateCheck")
+			UpdateCheck.checkForNewVersionInBackground()
+		end)
+	end
+	return true
 end
 
-function Util.showDiagnosticFailureDialog(diag)
+function Util.showDiagnosticFailureDialog(diag, problem)
 	local f = LrView.osFactory()
 	local UIFactory = require("UIFactory")
 
 	local message =
 		LOC("$$$/StyleAI/Health/BackendCritical=The local backend server is not running and could not be started.")
-	local hint
-
-	if diag.binaryMissing then
-		hint = LOC(
-			"$$$/StyleAI/Diagnostics/BinaryMissingHint=Please reinstall the StyleAI plugin or check if your antivirus has quarantined the 'styleai-server' file."
-		)
-	elseif diag.portBusy then
-		hint = LOC(
-			"$$$/StyleAI/Diagnostics/PortBusyHint=Please close other applications like Ollama or another instance of Lightroom that might be using this port."
-		)
-	else
-		hint = LOC(
-			"$$$/StyleAI/Onboarding/BackendHint=If the server fails to start, check if another application is using port 19819 or if your firewall is blocking it."
-		)
-	end
+	local hint = problem or SearchIndexAPI.getStartupFailureHint(diag)
 
 	local contents = UIFactory.DialogColumn(f, {
 		spacing = f:control_spacing(),

@@ -20,7 +20,7 @@ import datetime
 import gc
 from uuid import uuid4
 import psutil
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, try_to_load_from_cache
 from services import chroma as service_chroma
 
 
@@ -186,7 +186,7 @@ def _needs_unload():
 
 
 def is_model_cached() -> bool:
-    """Check if the model is bundled or cached locally without downloading.
+    """Check the current model's local cache without initializing a download.
 
     This intentionally does not acquire ``_model_lock``. The endpoint reports
     installation readiness, not whether the model is currently resident, and
@@ -197,19 +197,17 @@ def is_model_cached() -> bool:
         return True
 
     try:
-        cached_model_file = hf_hub_download(
+        cached_model_file = try_to_load_from_cache(
             repo_id=IMAGE_MODEL_ID,
             filename="open_clip_model.safetensors",
-            local_files_only=True,
         )
-        cached_model_dir = os.path.dirname(cached_model_file)
-        if os.path.isdir(cached_model_dir):
-            config_file = os.path.join(cached_model_dir, "open_clip_config.json")
-            weights_file = os.path.join(cached_model_dir, "open_clip_model.safetensors")
-            if os.path.isfile(config_file) and os.path.isfile(weights_file):
-                return True
-        return False
-    except Exception:
+        if not isinstance(cached_model_file, str):
+            return False
+        model_config = os.path.join(
+            os.path.dirname(cached_model_file), "open_clip_config.json"
+        )
+        return os.path.isfile(model_config)
+    except OSError:
         return False
 
 

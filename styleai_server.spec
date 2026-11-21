@@ -2,6 +2,8 @@
 
 block_cipher = None
 
+import os
+
 from PyInstaller.utils.hooks import copy_metadata, collect_data_files
 
 # Collect package data and metadata needed by the frozen runtime.
@@ -56,7 +58,7 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
-    codesign_identity=None,
+    codesign_identity=os.environ.get('STYLEAI_MACOS_CODESIGN_IDENTITY') or None,
     entitlements_file=None,
 )
 coll = COLLECT(

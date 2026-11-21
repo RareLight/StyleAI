@@ -2,16 +2,16 @@ OnboardingWizard = {}
 
 local UIFactory = require("UIFactory")
 
-function OnboardingWizard.show(manualTrigger)
+function OnboardingWizard.show()
 	LrTasks.startAsyncTask(function()
 		LrFunctionContext.callWithContext("OnboardingWizard", function(context)
 			local propertyTable = LrBinding.makePropertyTable(context)
 
-			-- Initial states with robust defaults
-			propertyTable.backendRunning = SearchIndexAPI.pingServer() or false
-			propertyTable.clipReady = SearchIndexAPI.isClipReady() or false
+			propertyTable.backendRunning = false
+			propertyTable.backendProblem = ""
+			propertyTable.clipReady = false
 			propertyTable.clipDownloading = false
-			propertyTable.setupReady = propertyTable.backendRunning == true and propertyTable.clipReady == true
+			propertyTable.setupReady = false
 
 			local function updateSetupState()
 				propertyTable.setupReady = propertyTable.backendRunning == true and propertyTable.clipReady == true
@@ -19,42 +19,30 @@ function OnboardingWizard.show(manualTrigger)
 			propertyTable:addObserver("backendRunning", updateSetupState)
 			propertyTable:addObserver("clipReady", updateSetupState)
 
-			if propertyTable.backendRunning == true and prefs.indexingPerformanceProfile == nil then
-				local vInfo = SearchIndexAPI.getBackendVersion()
-				if vInfo and vInfo.recommended_parallel_tasks then
-					local rec = tonumber(vInfo.recommended_parallel_tasks) or 4
-					local profile = math.ceil(rec / 2)
-					prefs.indexingPerformanceProfile = math.min(math.max(profile, 1), 4)
-					log:info(
-						"Dynamically profiled indexingPerformanceProfile to "
-							.. tostring(prefs.indexingPerformanceProfile)
-					)
-				end
-			end
-
 			local f = LrView.osFactory()
 			local bind = LrView.bind
 			local share = LrView.share
 
 			local function startBackend()
 				propertyTable.backendRunning = "starting"
+				propertyTable.backendProblem = ""
 				LrTasks.startAsyncTask(function()
-					SearchIndexAPI.startServer({ readyTimeoutSeconds = 30 })
-					propertyTable.backendRunning = SearchIndexAPI.pingServer() and true or "failed"
-					if propertyTable.backendRunning == true and prefs.indexingPerformanceProfile == nil then
-						local vInfo = SearchIndexAPI.getBackendVersion()
-						if vInfo and vInfo.recommended_parallel_tasks then
-							local rec = tonumber(vInfo.recommended_parallel_tasks) or 4
-							local profile = math.ceil(rec / 2)
-							prefs.indexingPerformanceProfile = math.min(math.max(profile, 1), 4)
-							log:info(
-								"Dynamically profiled indexingPerformanceProfile to "
-									.. tostring(prefs.indexingPerformanceProfile)
-							)
+					local started, problem = SearchIndexAPI.startServer({ readyTimeoutSeconds = 120 })
+					if started then
+						propertyTable.clipReady = SearchIndexAPI.isClipReady()
+						if prefs.indexingPerformanceProfile == nil then
+							local version = SearchIndexAPI.getBackendVersion()
+							if version and version.recommended_parallel_tasks then
+								local recommended = tonumber(version.recommended_parallel_tasks) or 4
+								prefs.indexingPerformanceProfile = math.min(math.max(math.ceil(recommended / 2), 1), 4)
+							end
 						end
 					end
+					propertyTable.backendProblem = problem or ""
+					propertyTable.backendRunning = started and true or "failed"
 				end)
 			end
+			startBackend()
 
 			local dialogContents = UIFactory.DialogColumn(f, {
 				bind_to_object = propertyTable,
@@ -117,9 +105,13 @@ function OnboardingWizard.show(manualTrigger)
 					}),
 					f:spacer({ height = 5 }),
 					UIFactory.HelpText(f, {
-						title = LOC(
-							"$$$/StyleAI/Onboarding/BackendHint=If the server fails to start, check if another application is using port 19819 or if your firewall is blocking it."
-						),
+						title = bind("backendProblem"),
+						visible = bind({
+							key = "backendRunning",
+							transform = function(value)
+								return value == "failed"
+							end,
+						}),
 					}),
 				}),
 
@@ -157,15 +149,23 @@ function OnboardingWizard.show(manualTrigger)
 							action = function()
 								propertyTable.clipDownloading = true
 								LrTasks.startAsyncTask(function()
-									SearchIndexAPI.startClipDownload()
+									local ok, result, problem = LrTasks.pcall(SearchIndexAPI.startClipDownload)
 									propertyTable.clipReady = SearchIndexAPI.isClipReady()
 									propertyTable.clipDownloading = false
+									if not ok or problem then
+										ErrorHandler.handleError(
+											LOC("$$$/StyleAI/ClipDownload/ErrorTitle=Error downloading CLIP model"),
+											problem or tostring(result)
+										)
+									end
 								end)
 							end,
 							enabled = bind({
-								keys = { "clipReady", "clipDownloading" },
-								transform = function(v)
-									return not propertyTable.clipReady and not propertyTable.clipDownloading
+								keys = { "backendRunning", "clipReady", "clipDownloading" },
+								transform = function()
+									return propertyTable.backendRunning == true
+										and not propertyTable.clipReady
+										and not propertyTable.clipDownloading
 								end,
 							}),
 						}),
@@ -215,7 +215,7 @@ function OnboardingWizard.show(manualTrigger)
 							transform = function(ready)
 								if ready then
 									return LOC(
-										"$$$/StyleAI/Onboarding/SetupReady=StyleAI is ready. Index photos next to prepare visual analysis for search, learning, and editing."
+										"$$$/StyleAI/Onboarding/SetupReady=The background service is connected to this catalog and SigLIP2 is ready."
 									)
 								end
 								return LOC(

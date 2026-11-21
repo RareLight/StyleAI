@@ -7,6 +7,7 @@ import subprocess
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -364,7 +365,16 @@ api.pingServer = function()
     return true
 end
 api.initializeCatalog = function() return true end
-api.checkServerHealth = function() end
+Info = { MAJOR = 0, MINOR = 8, REVISION = 2, BUILD = 20261118 }
+local runningBuild = Info.BUILD
+api.checkVersionCompatibility = function()
+    return {
+        compatible = true,
+        reason = "exact version match",
+        backend_version = "0.8.2",
+        backend_build = runningBuild,
+    }
+end
 local function plistLabel(path)
     local f = io.open(path, "r")
     if not f then return nil end
@@ -392,8 +402,70 @@ runStart("uv", __CAT_UV__)
 stub.exists = { ["/Applications/StyleAI/Server/styleai-server"] = true }
 runStart("system", __CAT_SYS__)
 local localBinary = LrPathUtils.parent(pluginDir) .. "/styleai-server/styleai-server"
-stub.exists = { [localBinary] = true }
+stub.exists = {
+    [localBinary] = true,
+    ["/Applications/StyleAI/Server/styleai-server"] = true,
+    [devScript] = true,
+}
 runStart("local", __CAT_LOCAL__)
+
+local lockPath = __CAT_LOCAL__ .. "/styleai-server.lock"
+local lockFile = assert(io.open(lockPath, "w"))
+lockFile:write("ts=" .. tostring(os.time()))
+lockFile:close()
+stub.exists[lockPath] = true
+local clock = os.time()
+local previousTime = os.time
+local previousCurrentTime = LrDate.currentTime
+local previousSleep = LrTasks.sleep
+os.time = function() return clock end
+LrDate.currentTime = function() return clock + 0.5 end
+LrTasks.sleep = function() clock = clock + 1 end
+pingQueue = { false, false }
+stub.command = nil
+assert(api.startServer({ readyTimeoutSeconds = 5, lockStaleSeconds = 1 }))
+assert(stub.command and stub.command:find("launchctl bootstrap", 1, true))
+assert(not io.open(lockPath, "r"))
+stub.exists[lockPath] = nil
+os.time = previousTime
+LrDate.currentTime = previousCurrentTime
+LrTasks.sleep = previousSleep
+
+local stopCalls = 0
+api.shutdownServer = function(options)
+    assert(options.gracefulOnly)
+    stopCalls = stopCalls + 1
+    runningBuild = Info.BUILD
+    return true
+end
+api.initializeCatalog = function(path)
+    assert(path == __CAT_LOCAL__ .. "/styleai.db")
+    return true
+end
+runningBuild = 20260808
+assert(not api.ensureVersionCompatibility())
+assert(api.startServer())
+assert(stopCalls == 1)
+assert(plistLabel(__CAT_LOCAL__ .. "/styleai-server-launch.plist"))
+
+runningBuild = Info.BUILD + 1
+assert(not api.startServer())
+assert(stopCalls == 1)
+runningBuild = 20260808
+api.initializeCatalog = function() return false, "Other catalog" end
+local ready, problem = api.startServer()
+assert(not ready and problem == "Other catalog")
+assert(stopCalls == 1)
+
+LrTasks.execute = function(command)
+    if command:find("xattr -r", 1, true)
+        and command:find("com.apple.quarantine", 1, true) then return 0 end
+    return 1
+end
+local diagnostics = api.diagnoseStartupFailure()
+assert(diagnostics.binaryQuarantined and not diagnostics.portBusy)
+assert(api.getStartupFailureHint(diagnostics):find("Open Anyway", 1, true))
+
 local shutdownResult = false
 local startCalls = 0
 local startOpts = nil
@@ -585,21 +657,55 @@ def test_release_archive_rejects_missing_backend_and_unsafe_version(tmp_path):
     assert subprocess.run(command + ["../escape"], capture_output=True).returncode != 0
 
 
+@pytest.mark.parametrize("status", ["Accepted", "Invalid"])
+def test_notarized_archive_is_only_published_after_acceptance(
+    tmp_path, monkeypatch, status
+):
+    monkeypatch.syspath_prepend(str(REPOSITORY_ROOT / "scripts"))
+    import package_release
+
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "styleai-server").write_bytes(b"test binary")
+    output = tmp_path / "output"
+    archive = output / "StyleAI-macos-arm64-test.zip"
+    monkeypatch.setattr(package_release, "sys", SimpleNamespace(platform="darwin"))
+
+    def submit(args, **kwargs):
+        assert kwargs["check"]
+        assert args[:3] == ["xcrun", "notarytool", "submit"]
+        assert Path(args[3]).is_file()
+        assert args[4:] == [
+            "--keychain-profile",
+            "test-profile",
+            "--wait",
+            "--output-format",
+            "json",
+        ]
+        assert not archive.exists()
+        return SimpleNamespace(stdout=json.dumps({"status": status, "id": "test-id"}))
+
+    monkeypatch.setattr(package_release.subprocess, "run", submit)
+    if status == "Accepted":
+        assert (
+            package_release.package_release(
+                backend, "macos-arm64", "test", output, notary_profile="test-profile"
+            )
+            == archive
+        )
+        assert archive.is_file()
+    else:
+        with pytest.raises(RuntimeError, match="test-id: Invalid"):
+            package_release.package_release(
+                backend, "macos-arm64", "test", output, notary_profile="test-profile"
+            )
+        assert not archive.exists()
+
+
 def test_packager_rejects_source_ancestor():
     packager = _load_packager()
     with pytest.raises(ValueError):
         packager.build_package("release", packager.SOURCE_PLUGIN.parent)
-
-
-def test_packaged_backend_takes_precedence_over_legacy_system_install():
-    source = (PLUGIN_ROOT / "APISearchIndex.lua").read_text(encoding="utf-8")
-    start = source.index("-- Prefer the backend shipped beside this plug-in")
-    end = source.index("local startServerCmd", start)
-    selection = source[start:end]
-    assert selection.index("LrPathUtils.parent(_PLUGIN.path)") < selection.index(
-        '"/Applications/StyleAI/Server/styleai-server"'
-    )
-    assert "if not LrFileUtils.exists(serverBinary) then" in selection
 
 
 def test_local_release_builder_validates_options_before_building():
@@ -617,8 +723,19 @@ def test_local_release_builder_validates_options_before_building():
 
 
 @pytest.mark.skipif(os.name == "nt", reason="macOS builder uses POSIX tools")
-@pytest.mark.parametrize("missing", ["lua", "luac", None])
-def test_release_builder_preflight_and_label_forwarding(tmp_path, missing):
+@pytest.mark.parametrize(
+    ("missing", "identity", "notary_profile"),
+    [
+        ("lua", "", ""),
+        ("luac", "", ""),
+        (None, "", ""),
+        (None, "Apple Development: Local Test", ""),
+        (None, "", "test-notary-profile"),
+    ],
+)
+def test_release_builder_preflight_and_label_forwarding(
+    tmp_path, missing, identity, notary_profile
+):
     # No real uv sync, freezer, or listener. Use the real final argument parser.
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -633,7 +750,12 @@ def test_release_builder_preflight_and_label_forwarding(tmp_path, missing):
 touch "$UV_CALLED"
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --distpath) mkdir -p "$2/styleai-server"; touch "$2/styleai-server/styleai-server"; exit ;;
+        --distpath)
+            test "$STYLEAI_MACOS_CODESIGN_IDENTITY" = "$EXPECTED_LOCAL_SIGNING"
+            mkdir -p "$2/styleai-server"
+            touch "$2/styleai-server/styleai-server"
+            exit
+            ;;
         scripts/package_release.py) exec "$PYTHON" "$@" ;;
     esac
     shift
@@ -658,6 +780,9 @@ done
             "PATH": str(bin_dir),
             "UV_CALLED": str(marker),
             "PYTHON": sys.executable,
+            "STYLEAI_MACOS_CODESIGN_IDENTITY": identity,
+            "STYLEAI_MACOS_NOTARY_PROFILE": notary_profile,
+            "EXPECTED_LOCAL_SIGNING": identity,
         },
         capture_output=True,
         text=True,
@@ -665,6 +790,10 @@ done
     if missing:
         assert result.returncode != 0
         assert f"{missing} is required" in result.stderr
+        assert not marker.exists()
+    elif notary_profile:
+        assert result.returncode != 0
+        assert "Developer ID Application" in result.stderr
         assert not marker.exists()
     else:
         assert result.returncode == 0, result.stderr

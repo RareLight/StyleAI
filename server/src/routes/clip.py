@@ -28,6 +28,8 @@ def download_clip_model_start():
     logger.info("Download CLIP model request received")
 
     try:
+        if is_model_cached():
+            return jsonify({"download": "cached"})
         start_download_clip_model()
         return jsonify({"download": "started"})
     except Exception as e:

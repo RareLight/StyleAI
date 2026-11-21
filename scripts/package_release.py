@@ -4,18 +4,30 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import zipfile
 
 from package_lrc_plugin import SOURCE_PLUGIN, REPOSITORY_ROOT, build_package
 
 
-def package_release(backend: Path, platform: str, version: str, output: Path) -> Path:
+def package_release(
+    backend: Path,
+    platform: str,
+    version: str,
+    output: Path,
+    *,
+    notary_profile: str | None = None,
+) -> Path:
     if platform not in ("macos-arm64", "windows-x64"):
         raise ValueError("Unsupported platform")
+    if notary_profile and (platform != "macos-arm64" or sys.platform != "darwin"):
+        raise ValueError("Notarization requires a macOS release built on macOS")
     if not version or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_" for c in version):
         raise ValueError("Invalid version label")
     backend = backend.resolve()
@@ -46,6 +58,28 @@ def package_release(backend: Path, platform: str, version: str, output: Path) ->
                 if path == temp_archive or not path.is_file():
                     continue
                 zf.write(path, path.relative_to(root).as_posix())
+        if notary_profile:
+            submission = subprocess.run(
+                [
+                    "xcrun",
+                    "notarytool",
+                    "submit",
+                    str(temp_archive),
+                    "--keychain-profile",
+                    notary_profile,
+                    "--wait",
+                    "--output-format",
+                    "json",
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            report = json.loads(submission.stdout)
+            if report["status"] != "Accepted":
+                raise RuntimeError(
+                    f"Apple notarization {report['id']}: {report['status']}"
+                )
         os.replace(temp_archive, archive) if root.stat().st_dev == output.stat().st_dev else shutil.copy2(temp_archive, archive)
     digest = hashlib.sha256()
     with archive.open("rb") as stream:
@@ -61,8 +95,20 @@ def main() -> None:
     parser.add_argument("--platform", required=True, choices=("macos-arm64", "windows-x64"))
     parser.add_argument("--version", required=True, help="Version or build identifier")
     parser.add_argument("--output", type=Path, default=REPOSITORY_ROOT / "dist" / "release")
+    parser.add_argument(
+        "--notary-profile",
+        help="Submit a signed macOS ZIP using this notarytool Keychain profile",
+    )
     args = parser.parse_args()
-    print(package_release(args.backend, args.platform, args.version, args.output))
+    print(
+        package_release(
+            args.backend,
+            args.platform,
+            args.version,
+            args.output,
+            notary_profile=args.notary_profile,
+        )
+    )
 
 
 if __name__ == "__main__":

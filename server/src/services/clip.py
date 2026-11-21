@@ -59,6 +59,9 @@ def start_download_clip_model():
         if _download_thread and _download_thread.is_alive():
             logger.warning("Download thread is already running.")
             return
+        _download_status.update(
+            status="starting", progress=0, total=0, error=None, current_file=None
+        )
         _download_thread = threading.Thread(
             target=_download_clip_model_thread, name="clip_model_downloader"
         )
@@ -67,12 +70,6 @@ def start_download_clip_model():
 
 
 def _download_clip_model_thread():
-    global _download_status
-    with _download_lock:
-        if _download_status["status"] == "downloading":
-            logger.warning("Download already in progress.")
-            return
-
     logger.info(f"Starting granular CLIP model download: {IMAGE_MODEL_ID}")
 
     try:

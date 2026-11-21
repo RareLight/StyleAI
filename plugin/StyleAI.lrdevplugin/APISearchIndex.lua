@@ -1155,9 +1155,11 @@ function SearchIndexAPI.startOperation(kind, itemIds, details, requestFingerprin
 			for index = first, last do
 				table.insert(ids, registration[index])
 			end
-			local accepted, problem = _request("POST", getBaseUrl() .. ENDPOINTS.OPERATIONS .. "/" .. jobId .. "/register", {
-				item_ids = ids, final = last == #registration,
-			}, 30)
+			local accepted, problem =
+				_request("POST", getBaseUrl() .. ENDPOINTS.OPERATIONS .. "/" .. jobId .. "/register", {
+					item_ids = ids,
+					final = last == #registration,
+				}, 30)
 			if not accepted then
 				SearchIndexAPI.cancelOperation(jobId)
 				return false, problem
@@ -1758,7 +1760,7 @@ function SearchIndexAPI.checkVersionCompatibility()
 		plugin_release_tag = pluginReleaseTag,
 		plugin_build = tonumber(Info.BUILD) or 0,
 	}
-	return _request("POST", getBaseUrl() .. ENDPOINTS.VERSION_CHECK, body)
+	return _request("POST", getBaseUrl() .. ENDPOINTS.VERSION_CHECK, body, 10)
 end
 
 function SearchIndexAPI.ensureVersionCompatibility()
@@ -1769,22 +1771,25 @@ function SearchIndexAPI.ensureVersionCompatibility()
 	if type(result) ~= "table" then
 		return false, "Version check failed: invalid response from backend.", nil
 	end
-	if result.compatible then
+	local backendBuild = tonumber(result.backend_build)
+	local pluginBuild = tonumber(Info.BUILD)
+	local buildMismatch = result.reason == "exact version match"
+		and backendBuild
+		and pluginBuild
+		and backendBuild ~= pluginBuild
+	if result.compatible and not buildMismatch then
 		return true, nil, result
 	end
 
 	local pluginTag = tostring(result.plugin_release_tag or ("v" .. tostring(result.plugin_version or "unknown")))
 	local backendTag = tostring(result.backend_release_tag or ("v" .. tostring(result.backend_version or "unknown")))
-	local reason = tostring(result.reason or "plugin and backend version differ")
-	local message = "Plugin and backend versions are not compatible.\n"
-		.. "Plugin: "
-		.. pluginTag
-		.. "\n"
-		.. "Backend: "
-		.. backendTag
-		.. "\n"
-		.. "Reason: "
-		.. reason
+	local message = LOC(
+		"$$$/StyleAI/Diagnostics/ReleaseMismatch=Install the plug-in and background service from the same StyleAI archive. Plug-in ^1 (build ^2), service ^3 (build ^4).",
+		pluginTag,
+		tostring(pluginBuild or "?"),
+		backendTag,
+		tostring(backendBuild or "?")
+	)
 	return false, message, result
 end
 
@@ -3024,11 +3029,6 @@ function SearchIndexAPI.pingServer(timeoutSeconds)
 	end
 end
 
-function SearchIndexAPI.isBackendOnLocalhost()
-	local url = getBaseUrl()
-	return not not (url:match("^https?://127%.0%.0%.1") or url:match("^https?://localhost"))
-end
-
 function SearchIndexAPI.chooseDatabaseBackupDestination()
 	local catalog = LrApplication.activeCatalog()
 	local catalogPath = catalog:getPath()
@@ -3141,7 +3141,7 @@ local SERVER_PID_FILENAME = "styleai-server.pid"
 local SERVER_OK_FILENAME = "styleai-server.OK"
 local SERVER_LOCK_FILENAME = "styleai-server.lock"
 
-local serverStartInProgress = false
+local serverStartAttempt
 
 local function getServerControlDir()
 	-- Backend uses --db-path = "<catalogParent>/styleai.db", and writes pid/OK files next to it.
@@ -3154,10 +3154,6 @@ end
 
 local function getServerOkFilePath()
 	return LrPathUtils.child(getServerControlDir(), SERVER_OK_FILENAME)
-end
-
-local function getServerLockFilePath()
-	return LrPathUtils.child(getServerControlDir(), SERVER_LOCK_FILENAME)
 end
 
 local readPidFromPidFile
@@ -3215,13 +3211,7 @@ local function isPidAlive(pid)
 	return false
 end
 
-local function acquireStartLock(lockStaleSeconds)
-	if serverStartInProgress then
-		return false
-	end
-	lockStaleSeconds = lockStaleSeconds or 120
-
-	local lockPath = getServerLockFilePath()
+local function acquireStartLock(lockPath, lockStaleSeconds)
 	if LrFileUtils.exists(lockPath) then
 		local lockFile = io.open(lockPath, "r")
 		local content = lockFile and lockFile:read("*a") or ""
@@ -3244,18 +3234,15 @@ local function acquireStartLock(lockStaleSeconds)
 
 	local f = io.open(lockPath, "w")
 	if not f then
-		return false
+		return nil
 	end
 	f:write("ts=" .. tostring(os.time()))
 	f:close()
 
-	serverStartInProgress = true
 	return true
 end
 
-local function releaseStartLock()
-	serverStartInProgress = false
-	local lockPath = getServerLockFilePath()
+local function releaseStartLock(lockPath)
 	if LrFileUtils.exists(lockPath) then
 		LrTasks.pcall(function()
 			LrFileUtils.delete(lockPath)
@@ -3407,6 +3394,9 @@ function SearchIndexAPI.shutdownServer(opts)
 		LrTasks.sleep(pollIntervalSeconds)
 	end
 
+	if opts.gracefulOnly then
+		return false
+	end
 	log:trace("Graceful shutdown timed out; escalating to kill")
 	return SearchIndexAPI.killServer({
 		killMode = "force",
@@ -3448,18 +3438,7 @@ end
 -- could only call a service that was already reachable, making it useless for
 -- the failure state where users actually needed help.
 function SearchIndexAPI.repairBackend()
-	if SearchIndexAPI.pingServer() then
-		return SearchIndexAPI.restartBackend()
-	end
-
-	local started = SearchIndexAPI.startServer({ readyTimeoutSeconds = 120 })
-	if started then
-		return true, nil
-	end
-	return false,
-		LOC(
-			"$$$/StyleAI/PluginInfo/RepairStartFailed=The service did not start. Wait a moment and try again, then generate a support report if the problem continues."
-		)
+	return SearchIndexAPI.startServer({ readyTimeoutSeconds = 120 })
 end
 
 function SearchIndexAPI.initializeCatalog(dbPath)
@@ -3471,7 +3450,11 @@ function SearchIndexAPI.initializeCatalog(dbPath)
 	log:info("Initializing catalog database at backend: " .. tostring(dbPath))
 	local response, err = _request("POST", url, { db_path = dbPath }, 10)
 
-	if response and (response.status == "success" or response.status == "already_initialized") then
+	if
+		response
+		and response.db_path == dbPath
+		and (response.status == "success" or response.status == "already_initialized")
+	then
 		log:info("Backend initialized successfully for database: " .. tostring(dbPath))
 		return true
 	else
@@ -3479,7 +3462,10 @@ function SearchIndexAPI.initializeCatalog(dbPath)
 			"Failed to initialize backend for catalog: "
 				.. tostring(err or (response and response.error) or "Unknown error")
 		)
-		return false, err or (response and response.error)
+		return false,
+			err or LOC(
+				"$$$/StyleAI/Diagnostics/CatalogAttachmentFailed=The background service could not verify that it is connected to this catalog."
+			)
 	end
 end
 
@@ -3542,35 +3528,95 @@ function SearchIndexAPI.killServer(opts)
 	return false
 end
 
+local function bundledServerBinary()
+	local serverDir = LrPathUtils.child(LrPathUtils.parent(_PLUGIN.path), "styleai-server")
+	local binary = LrPathUtils.child(serverDir, "styleai-server")
+	if WIN_ENV then
+		return LrFileUtils.exists(binary .. ".cmd") and (binary .. ".cmd") or (binary .. ".exe")
+	end
+	return binary
+end
+
+local function isOlderBackend(versionInfo)
+	local major, minor, revision = tostring(versionInfo.backend_version):match("^(%d+)%.(%d+)%.(%d+)")
+	if not major then
+		return false
+	end
+	local backendVersion = { tonumber(major), tonumber(minor), tonumber(revision) }
+	for index, pluginVersion in ipairs({ Info.MAJOR, Info.MINOR, Info.REVISION }) do
+		if backendVersion[index] ~= pluginVersion then
+			return backendVersion[index] < pluginVersion
+		end
+	end
+	local backendBuild = tonumber(versionInfo.backend_build)
+	return backendBuild and backendBuild < Info.BUILD
+end
+
+local function checkCatalogService(dbPath)
+	local attached, problem = SearchIndexAPI.initializeCatalog(dbPath)
+	if not attached then
+		return false, problem
+	end
+	return SearchIndexAPI.ensureVersionCompatibility()
+end
+
 function SearchIndexAPI.startServer(opts)
 	opts = opts or {}
 	local readyTimeoutSeconds = opts.readyTimeoutSeconds or 60
-	local lockStaleSeconds = opts.lockStaleSeconds or 120
-
-	if SearchIndexAPI.pingServer() then
-		log:trace("Search index server is already running, triggering initialization")
-		local catalog = LrApplication.activeCatalog()
-		local catalogPath = catalog:getPath()
-		local catalogDir = LrPathUtils.parent(catalogPath)
-		local dbPath = LrPathUtils.child(catalogDir, "styleai.db")
-		if SearchIndexAPI.initializeCatalog(dbPath) then
-			return true
-		end
-		return false
-	end
-
-	if not acquireStartLock(lockStaleSeconds) then
-		log:trace("Backend start lock is active; another start attempt may be in progress")
-		return false
-	end
-
-	local catalog = LrApplication.activeCatalog()
-	local catalogPath = catalog:getPath()
-	local catalogDir = LrPathUtils.parent(catalogPath)
+	local deadline = LrDate.currentTime() + readyTimeoutSeconds
+	local lockStaleSeconds = opts.lockStaleSeconds or math.max(120, readyTimeoutSeconds + 30)
+	local catalogDir = getServerControlDir()
 	local dbPath = LrPathUtils.child(catalogDir, "styleai.db")
+	local attempt = serverStartAttempt
+	if attempt then
+		while not attempt.done and LrDate.currentTime() < deadline do
+			LrTasks.sleep(0.25)
+		end
+		if attempt.done and attempt.dbPath == dbPath then
+			return attempt.started, attempt.problem
+		end
+		return false, SearchIndexAPI.getStartupFailureHint()
+	end
 
-	-- Make sure we don't leave the lock behind on early returns.
-	local ok, startResult = LrTasks.pcall(function()
+	local lockPath = LrPathUtils.child(catalogDir, SERVER_LOCK_FILENAME)
+	attempt = { dbPath = dbPath }
+	serverStartAttempt = attempt
+
+	local locked
+	local ok, startResult, problem = LrTasks.pcall(function()
+		locked = acquireStartLock(lockPath, lockStaleSeconds)
+		if locked == false then
+			log:trace("Backend start lock is active; waiting for catalog service")
+			while locked == false and LrDate.currentTime() < deadline do
+				if SearchIndexAPI.pingServer() and checkCatalogService(dbPath) then
+					return true
+				end
+				LrTasks.sleep(0.5)
+				locked = acquireStartLock(lockPath, lockStaleSeconds)
+			end
+		end
+		if not locked then
+			return false
+		end
+
+		local serverBinary = bundledServerBinary()
+		if SearchIndexAPI.pingServer() then
+			local compatible, message, versionInfo = checkCatalogService(dbPath)
+			if compatible then
+				return true
+			end
+			if not versionInfo or not isOlderBackend(versionInfo) or not LrFileUtils.exists(serverBinary) then
+				return false, message
+			end
+			log:info("Replacing an older StyleAI backend attached to the current catalog")
+			if not SearchIndexAPI.shutdownServer({ gracefulOnly = true }) then
+				return false,
+					LOC(
+						"$$$/StyleAI/Diagnostics/UpgradeStopFailed=The previous StyleAI service is still running. Quit and reopen Lightroom Classic, then try again."
+					)
+			end
+		end
+
 		-- If pid/OK are stale, clean them before starting.
 		local pid = readPidFromPidFile()
 		if pid and not isPidAlive(pid) then
@@ -3578,12 +3624,6 @@ function SearchIndexAPI.startServer(opts)
 		end
 
 		-- Prefer the backend shipped beside this plug-in over an older system install.
-		local serverDir = LrPathUtils.child(LrPathUtils.parent(_PLUGIN.path), "styleai-server")
-		local serverBinary = LrPathUtils.child(serverDir, "styleai-server")
-		if WIN_ENV then
-			local serverLauncherCmd = serverBinary .. ".cmd"
-			serverBinary = LrFileUtils.exists(serverLauncherCmd) and serverLauncherCmd or (serverBinary .. ".exe")
-		end
 		if not LrFileUtils.exists(serverBinary) then
 			if MAC_ENV then
 				serverBinary = "/Applications/StyleAI/Server/styleai-server"
@@ -3721,21 +3761,18 @@ function SearchIndexAPI.startServer(opts)
 			end
 		end
 
+		local launchDeadline = LrDate.currentTime() + readyTimeoutSeconds
 		log:trace("Trying to start search index server with command: " .. tostring(startServerCmd))
-		LrTasks.startAsyncTask(function()
-			local result = LrTasks.execute(startServerCmd)
-			log:trace("Search index server start command exit code: " .. tostring(result))
-		end)
+		local exitCode = LrTasks.execute(startServerCmd)
+		log:trace("Search index server start command exit code: " .. tostring(exitCode))
+		if exitCode ~= 0 then
+			return false
+		end
 
-		local deadline = LrDate.currentTime() + readyTimeoutSeconds
-		while LrDate.currentTime() < deadline do
+		while LrDate.currentTime() < launchDeadline do
 			if SearchIndexAPI.pingServer() then
 				log:trace("Search index server is running")
-				-- Initialize with current catalog
-				if SearchIndexAPI.initializeCatalog(dbPath) then
-					SearchIndexAPI.checkServerHealth()
-					return true
-				end
+				return checkCatalogService(dbPath)
 			end
 			LrTasks.sleep(0.5)
 		end
@@ -3756,17 +3793,20 @@ function SearchIndexAPI.startServer(opts)
 		if diag.logSnippet then
 			log:error(LOC("$$$/StyleAI/Diagnostics/LogSnippet=Recent service errors:") .. "\n" .. diag.logSnippet)
 		end
-		return false
+		return false, SearchIndexAPI.getStartupFailureHint(diag)
 	end)
-
-	releaseStartLock()
 
 	if not ok then
 		log:error("startServer: unexpected error: " .. tostring(startResult))
-		return false
 	end
-
-	return startResult == true
+	attempt.started = ok and startResult == true
+	if locked then
+		releaseStartLock(lockPath)
+	end
+	attempt.problem = not attempt.started and (problem or SearchIndexAPI.getStartupFailureHint()) or nil
+	attempt.done = true
+	serverStartAttempt = nil
+	return attempt.started, attempt.problem
 end
 
 local function catalogHeaders(jsonBody)
@@ -3861,13 +3901,7 @@ _request = function(method, url, body, timeout, options)
 		if method == "GET" then
 			result, hdrs = LrHttp.get(tostring(url), catalogHeaders(), timeout)
 		else
-			result, hdrs = LrHttp.post(
-				tostring(url),
-				bodyString or "",
-				catalogHeaders(true),
-				method,
-				timeout
-			)
+			result, hdrs = LrHttp.post(tostring(url), bodyString or "", catalogHeaders(true), method, timeout)
 		end
 	end)
 
@@ -3918,7 +3952,7 @@ _request = function(method, url, body, timeout, options)
 		local statusStr = httpStatusForLog(status, hdrs)
 		local err_msg
 		if status == nil then
-			local urlFixed = tostring(url):gsub("%%?.*", "")
+			local urlFixed = tostring(url):gsub("%?.*", "")
 			err_msg = "API request failed (no response). URL: " .. urlFixed
 			if type(hdrs) == "string" and hdrs ~= "" then
 				err_msg = err_msg .. " - error: " .. hdrs
@@ -4341,78 +4375,38 @@ function SearchIndexAPI.generateGlobalPhotoIdsForCatalog()
 end
 
 function SearchIndexAPI.startClipDownload()
-	LrTasks.startAsyncTask(function()
-		if SearchIndexAPI.isClipReady() then
-			log:trace("CLIP model is already cached")
-			return
+	local ready, message, checked = SearchIndexAPI.isClipReady()
+	if not checked then
+		return false, message
+	elseif ready then
+		return true
+	end
+
+	local response, err = _request("POST", getBaseUrl() .. ENDPOINTS.START_CLIP_DOWNLOAD, {})
+	if not response then
+		return false, err
+	elseif response.download == "cached" then
+		return true
+	end
+
+	local progress = LrProgressScope({
+		title = LOC("$$$/StyleAI/ClipDownload/ProgressTitle=Downloading StyleAI vision model"),
+	})
+	while not progress:isCanceled() do
+		local status, problem = _request("GET", getBaseUrl() .. ENDPOINTS.STATUS_CLIP_DOWNLOAD)
+		if not status or status.status == "error" then
+			progress:done()
+			return false, problem or (status and status.error)
+		elseif status.status == "completed" then
+			progress:done()
+			return true
+		elseif status.status == "downloading" and status.total > 0 then
+			progress:setPortionComplete(status.progress, status.total)
 		end
-
-		local status, err = _request("GET", getBaseUrl() .. ENDPOINTS.STATUS_CLIP_DOWNLOAD)
-		if not err and status ~= nil and status.status == "downloading" then
-			log:trace("CLIP model download is already in progress")
-			return
-		end
-
-		local progressScope = LrProgressScope({
-			title = LOC("$$$/StyleAI/ClipDownload/ProgressTitle=Downloading StyleAI vision model"),
-			functionContext = nil,
-		})
-
-		local url = getBaseUrl() .. ENDPOINTS.START_CLIP_DOWNLOAD
-		local body = {}
-
-		local _, requestErr = _request("POST", url, body)
-
-		if requestErr then
-			log:error("startClipDownload failed: " .. requestErr)
-			return nil, requestErr
-		end
-
-		while true do
-			local pollStatus, pollErr = _request("GET", getBaseUrl() .. ENDPOINTS.STATUS_CLIP_DOWNLOAD)
-			if pollErr then
-				ErrorHandler.handleError("Error downloading CLIP model", pollErr)
-				if progressScope ~= nil then
-					progressScope:setCaption(
-						LOC("$$$/StyleAI/ClipDownload/Error=Error downloading CLIP model: ^1"),
-						pollErr
-					)
-					progressScope:done()
-				end
-				break
-			end
-
-			if pollStatus ~= nil then
-				if progressScope ~= nil then
-					progressScope:setCaption(LOC("$$$/StyleAI/ClipDownload/Downloading=Downloading CLIP model..."))
-				end
-				if pollStatus.status == "downloading" then
-					progressScope:setPortionComplete(pollStatus.progress, pollStatus.total)
-				elseif pollStatus.status == "completed" then
-					log:trace("CLIP model download completed")
-					progressScope:done()
-					LrDialogs.message(
-						LOC("$$$/StyleAI/ClipDownload/SuccessTitle=CLIP Download"),
-						LOC("$$$/StyleAI/ClipDownload/SuccessMessage=CLIP model downloaded successfully.")
-					)
-					break
-				elseif
-					pollStatus.status == "error"
-					or (pollStatus.error and pollStatus.error ~= "null" and pollStatus.error ~= "")
-				then
-					local error_msg = pollStatus.error or "Unknown download error"
-					ErrorHandler.handleError(
-						LOC("$$$/StyleAI/ClipDownload/ErrorTitle=Error downloading CLIP model"),
-						error_msg
-					)
-					progressScope:done()
-					break
-				end
-			end
-
-			LrTasks.sleep(2)
-		end
-	end)
+		LrTasks.sleep(2)
+	end
+	progress:done()
+	return false
 end
 
 local lastClipReadyStatus = nil
@@ -4436,9 +4430,9 @@ function SearchIndexAPI.isClipReady()
 		end
 
 		if currentStatus == "ready" then
-			return true, res.message
+			return true, res.message, true
 		else
-			return false, res.message
+			return false, res.message, currentStatus == "not_ready"
 		end
 	end
 	log:error("isClipReady: Unknown error")
@@ -4509,35 +4503,32 @@ function SearchIndexAPI.diagnoseStartupFailure()
 	local results = {
 		binaryMissing = false,
 		portBusy = false,
+		binaryQuarantined = false,
 		logSnippet = nil,
 	}
 
-	-- 1. Check binary existence
-	local serverDir = LrPathUtils.child(LrPathUtils.parent(_PLUGIN.path), "styleai-server")
-	local serverBinary = LrPathUtils.child(serverDir, "styleai-server")
-	if WIN_ENV then
-		local serverLauncherCmd = serverBinary .. ".cmd"
-		local serverExe = serverBinary .. ".exe"
-		if LrFileUtils.exists(serverLauncherCmd) then
-			serverBinary = serverLauncherCmd
-		else
-			serverBinary = serverExe
-		end
-	end
-
+	local serverBinary = bundledServerBinary()
 	if not LrFileUtils.exists(serverBinary) then
 		results.binaryMissing = true
 		return results
 	end
 
-	-- 2. Check port 19819 (Mac only for now)
 	if MAC_ENV then
-		local status, output = LrTasks.pcall(function()
-			return LrTasks.execute('bash -c "lsof -i :19819 | grep LISTEN"')
+		local ok, exitCode = LrTasks.pcall(function()
+			return LrTasks.execute("/usr/sbin/lsof -nP -t -iTCP:19819 -sTCP:LISTEN >/dev/null 2>&1")
 		end)
-		if status and output and output ~= "" then
-			results.portBusy = true
-		end
+		results.portBusy = ok and exitCode == 0
+		ok, exitCode = LrTasks.pcall(function()
+			local serverDir = LrPathUtils.parent(serverBinary)
+			return LrTasks.execute(
+				"/usr/bin/xattr -p com.apple.quarantine "
+					.. shellQuotePath(LrPathUtils.parent(serverDir))
+					.. " >/dev/null 2>&1 || /usr/bin/xattr -r "
+					.. shellQuotePath(serverDir)
+					.. " 2>/dev/null | /usr/bin/grep -q ': com.apple.quarantine$'"
+			)
+		end)
+		results.binaryQuarantined = ok and exitCode == 0
 	end
 
 	-- 3. Check logs for errors
@@ -4561,6 +4552,24 @@ function SearchIndexAPI.diagnoseStartupFailure()
 	end
 
 	return results
+end
+
+function SearchIndexAPI.getStartupFailureHint(diag)
+	diag = diag or SearchIndexAPI.diagnoseStartupFailure()
+	if diag.binaryMissing then
+		return LOC(
+			"$$$/StyleAI/Diagnostics/InstallFullRelease=Extract the complete StyleAI archive and keep the plug-in beside its bundled background service."
+		)
+	elseif diag.portBusy then
+		return LOC("$$$/StyleAI/Diagnostics/PortBusy=Port 19819 is already in use by another application.")
+	elseif diag.binaryQuarantined then
+		return LOC(
+			"$$$/StyleAI/Diagnostics/MacQuarantine=macOS may be blocking the downloaded service. If you trust this release and macOS blocked it, open System Settings → Privacy & Security, choose Open Anyway for styleai-server, then retry."
+		)
+	end
+	return LOC(
+		"$$$/StyleAI/Diagnostics/ServiceStartFailed=The StyleAI service could not start. Try Repair Background Service in Plug-in Manager or generate a support report."
+	)
 end
 
 function SearchIndexAPI.getDetailedHealth()

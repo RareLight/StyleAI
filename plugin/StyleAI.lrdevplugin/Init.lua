@@ -67,18 +67,7 @@ function _G.JSON.assert(v, message)
 	return v
 end
 
--- Update check is now handled via Backend + Util.waitForServerDialog
-
--- if prefs.onboardingCompleted == nil then
--- 	Do not set to false yet, let the wizard trigger
--- end
-
 LrTasks.startAsyncTask(function()
-	-- Check if onboarding is needed
-	-- if not prefs.onboardingCompleted then
-	--     OnboardingWizard.show()
-	-- end
-
 	if SearchIndexAPI.startServer() then
 		SearchIndexAPI.checkServerHealth()
 	end

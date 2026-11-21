@@ -15,6 +15,11 @@ import time
 
 import psutil
 
+if __package__:
+    from .validate_release_version import plugin_release
+else:
+    from validate_release_version import plugin_release
+
 
 ADDRESS = ("127.0.0.1", 19819)
 MIGRATIONS = Path(__file__).resolve().parents[1] / "server/src/migrations/versions"
@@ -40,14 +45,7 @@ def wait_for_socket(process, child, predicate, timeout):
     raise RuntimeError("Frozen backend exited or did not own the expected socket")
 
 
-def initialize_database(process, db_path):
-    child = psutil.Process(process.pid)
-    wait_for_socket(
-        process,
-        child,
-        lambda c: c.laddr == ADDRESS and c.status == psutil.CONN_LISTEN,
-        150,
-    )
+def request_owned_backend(process, child, method, path, body=None, headers=None):
     with closing(HTTPConnection(*ADDRESS, timeout=30)) as http:
         http.connect()
         # Verify the accepted connection, not just the listener: another service
@@ -56,26 +54,35 @@ def initialize_database(process, db_path):
         wait_for_socket(
             process, child, lambda c: c.laddr == ADDRESS and c.raddr == peer, 5
         )
-        http.request(
-            "POST",
-            "/initialize",
-            json.dumps({"db_path": str(db_path)}),
-            {"Content-Type": "application/json"},
-        )
+        http.request(method, path, body, headers or {})
         response = http.getresponse()
-        payload = json.loads(response.read())
-        results = payload.get("results") or {}
-        # Startup attach may complete init before this request: either a fresh
-        # "success" or "already_initialized" for the same path proves readiness.
-        if (
-            response.status != 200
-            or payload.get("error")
-            or results.get("db_path") != str(db_path)
-            or results.get("status") not in ("success", "already_initialized")
-        ):
-            raise RuntimeError(
-                f"Catalog initialization failed: {response.status} {payload}"
-            )
+        return response.status, json.loads(response.read())
+
+
+def initialize_database(process, db_path, expected_release=None):
+    child = psutil.Process(process.pid)
+    wait_for_socket(
+        process,
+        child,
+        lambda c: c.laddr == ADDRESS and c.status == psutil.CONN_LISTEN,
+        150,
+    )
+    status, payload = request_owned_backend(
+        process,
+        child,
+        "POST",
+        "/initialize",
+        json.dumps({"db_path": str(db_path)}),
+        {"Content-Type": "application/json"},
+    )
+    results = payload.get("results") or {}
+    if (
+        status != 200
+        or payload.get("error")
+        or results.get("db_path") != str(db_path)
+        or results.get("status") not in ("success", "already_initialized")
+    ):
+        raise RuntimeError(f"Catalog initialization failed: {status} {payload}")
 
     if not (db_path / "chroma.sqlite3").is_file():
         raise RuntimeError("Catalog initialization did not create the Chroma database")
@@ -90,6 +97,15 @@ def initialize_database(process, db_path):
         raise RuntimeError(
             f"Frozen migrations differ from source: {sorted(applied ^ expected)}"
         )
+
+    if expected_release:
+        status, payload = request_owned_backend(process, child, "GET", "/version")
+        version = payload.get("results") or {}
+        actual = version.get("backend_version"), version.get("backend_build")
+        if status != 200 or actual != expected_release:
+            raise RuntimeError(
+                f"Frozen backend release {actual} differs from plug-in {expected_release}"
+            )
 
 
 def smoke_test(executable):
@@ -118,7 +134,7 @@ def smoke_test(executable):
                 },
             )
             try:
-                initialize_database(process, db_path)
+                initialize_database(process, db_path, plugin_release())
             except Exception as exc:
                 raise RuntimeError(
                     f"Smoke test failed: {exc}\n{log.read_text(errors='replace')}"
@@ -132,7 +148,7 @@ def smoke_test(executable):
                     process.kill()
                     process.wait()
     print(
-        "Frozen backend initialized a disposable Chroma database and applied all migrations"
+        "Frozen backend matched the plug-in release and initialized a disposable catalog with all migrations"
     )
 
 

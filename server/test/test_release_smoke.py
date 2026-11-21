@@ -53,7 +53,10 @@ def _initialize_http(smoke, payload, status=200):
     return http
 
 
-def test_already_initialized_for_same_catalog_is_accepted(smoke, tmp_path, monkeypatch):
+@pytest.mark.parametrize("backend_build", [1, 2])
+def test_already_initialized_for_same_catalog_checks_frozen_build(
+    smoke, tmp_path, monkeypatch, backend_build
+):
     db_path = tmp_path / "styleai.db"
     db_path.mkdir()
     (db_path / "chroma.sqlite3").touch()
@@ -62,19 +65,28 @@ def test_already_initialized_for_same_catalog_is_accepted(smoke, tmp_path, monke
     expected = {
         p.stem for p in smoke.MIGRATIONS.glob("*.py") if p.name != "__init__.py"
     }
-    db.executemany(
-        "INSERT INTO schema_versions VALUES (?)", [(v,) for v in expected]
-    )
+    db.executemany("INSERT INTO schema_versions VALUES (?)", [(v,) for v in expected])
     db.commit()
     db.close()
     monkeypatch.setattr(smoke, "wait_for_socket", Mock())
     monkeypatch.setattr(smoke.psutil, "Process", Mock())
     http = _initialize_http(
         smoke,
-        {"results": {"status": "already_initialized", "db_path": str(db_path)}, "error": None},
+        {
+            "results": {"status": "already_initialized", "db_path": str(db_path)},
+            "error": None,
+        },
     )
-    monkeypatch.setattr(smoke, "HTTPConnection", Mock(return_value=http))
-    smoke.initialize_database(Mock(), db_path)
+    version_http = _initialize_http(
+        smoke,
+        {"results": {"backend_version": "0.8.2", "backend_build": backend_build}},
+    )
+    monkeypatch.setattr(smoke, "HTTPConnection", Mock(side_effect=[http, version_http]))
+    if backend_build == 1:
+        smoke.initialize_database(Mock(), db_path, ("0.8.2", 1))
+    else:
+        with pytest.raises(RuntimeError, match="differs from plug-in"):
+            smoke.initialize_database(Mock(), db_path, ("0.8.2", 1))
 
 
 def test_already_initialized_for_other_catalog_is_rejected(

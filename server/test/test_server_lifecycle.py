@@ -306,10 +306,14 @@ def test_cached_model_check_does_not_wait_for_model_load_lock(mocker, tmp_path):
     model_lock = MagicMock()
     mocker.patch.object(server_lifecycle, "_model_lock", model_lock)
     mocker.patch.object(server_lifecycle, "model", None)
-    mocker.patch.object(server_lifecycle, "hf_hub_download", return_value=str(weights))
+    mocker.patch.object(
+        server_lifecycle, "try_to_load_from_cache", return_value=str(weights)
+    )
+    download = mocker.patch.object(server_lifecycle, "hf_hub_download")
 
     assert server_lifecycle.is_model_cached() is True
     model_lock.__enter__.assert_not_called()
+    download.assert_not_called()
 
 
 def test_scheduled_shutdown_removes_markers_before_forced_exit(mocker):
@@ -701,6 +705,7 @@ def test_shutdown_deadline_exits_real_process_when_cleanup_stalls(tmp_path):
 
         hf = types.ModuleType("huggingface_hub")
         hf.hf_hub_download = lambda *a, **k: ""
+        hf.try_to_load_from_cache = lambda *a, **k: None
         sys.modules["huggingface_hub"] = hf
 
         services_pkg = types.ModuleType("services")
